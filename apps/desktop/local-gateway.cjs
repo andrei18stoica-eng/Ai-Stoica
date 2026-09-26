@@ -137,7 +137,7 @@ function nextRun(automation, from = Date.now()) {
   return next.getTime();
 }
 
-function startLocalGateway({ dataDir, port = 8787, getOmniConfig }) {
+function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig }) {
   const store = createStore(dataDir);
   const secret = loadOrCreateSecret(dataDir);
   const app = express();
@@ -166,7 +166,7 @@ function startLocalGateway({ dataDir, port = 8787, getOmniConfig }) {
         signal: AbortSignal.timeout(2500)
       }); omni = r.status > 0;
     } catch {}
-    res.json({ ok: true, service: "AI Stoica Local Gateway", omni, model: cfg.model || "Ai principal" });
+    res.json({ ok: true, service: serviceName, omni, model: cfg.model || "Ai principal" });
   });
 
   app.post("/auth/register", async (req, res) => {
@@ -399,7 +399,7 @@ function startLocalGateway({ dataDir, port = 8787, getOmniConfig }) {
     }finally{automationBusy=false;}
   },30000);
 
-  const server=app.listen(port,"127.0.0.1");
-  return {server,port,close:()=>new Promise(resolve=>{clearInterval(automationTimer);server.close(resolve);})};
+  const server=app.listen(port,host);
+  return {server,port,host,close:()=>new Promise(resolve=>{clearInterval(automationTimer);server.close(resolve);})};
 }
 module.exports={startLocalGateway};
