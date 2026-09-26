@@ -303,6 +303,51 @@ function startLocalGateway({ dataDir, port = 8787, getOmniConfig }) {
   });
   app.delete("/api/automations/:id", auth, (req,res) => {const db=store.read();db.automations=db.automations.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));store.write(db);res.json({ok:true});});
 
+  app.post("/api/transcribe", auth, async (req, res) => {
+    const cfg = getOmniConfig();
+    const raw = String(req.body?.audio || "");
+    const match = raw.match(/^data:([^;]+);base64,(.+)$/s);
+    if (!match) return res.status(400).json({ error: "Înregistrarea audio nu este validă." });
+    const mime = String(req.body?.mime || match[1] || "audio/webm");
+    const bytes = Buffer.from(match[2], "base64");
+    if (!bytes.length) return res.status(400).json({ error: "Înregistrarea audio este goală." });
+    if (bytes.length > 20 * 1024 * 1024) return res.status(413).json({ error: "Înregistrarea audio este prea mare." });
+
+    const ext = mime.includes("ogg") ? "ogg" : mime.includes("wav") ? "wav" : mime.includes("mp4") || mime.includes("m4a") ? "m4a" : "webm";
+    const candidates = [...new Set([
+      String(req.body?.model || "").trim(),
+      String(cfg.speechModel || "").trim(),
+      "openai/whisper-1",
+      "groq/whisper-large-v3-turbo",
+      "deepgram/nova-3"
+    ].filter(Boolean))];
+    const errors = [];
+    for (const model of candidates) {
+      try {
+        const form = new FormData();
+        form.append("file", new Blob([bytes], { type: mime }), `recording.${ext}`);
+        form.append("model", model);
+        const language = String(req.body?.language || cfg.speechLanguage || "ro").trim();
+        if (language) form.append("language", language);
+        const r = await fetch(`${String(cfg.baseUrl).replace(/\/+$/, "")}/audio/transcriptions`, {
+          method: "POST",
+          headers: cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {},
+          body: form,
+          signal: AbortSignal.timeout(45000)
+        });
+        const body = await r.text();
+        if (!r.ok) { errors.push(`${model}: HTTP ${r.status}`); continue; }
+        let data; try { data = JSON.parse(body); } catch { data = { text: body }; }
+        const text = String(data?.text || data?.transcript || "").trim();
+        if (text) return res.json({ text, model });
+        errors.push(`${model}: răspuns fără text`);
+      } catch (e) {
+        errors.push(`${model}: ${e.message}`);
+      }
+    }
+    res.status(502).json({ error: `Nu am putut transcrie vocea prin OmniRoute. Verifică modelul de voce din Setări. ${errors.join(" | ")}` });
+  });
+
   async function prepareMessages(rawMessages, assistantId, userId) {
     const db=store.read(),messages=Array.isArray(rawMessages)?rawMessages:[];
     const latest=[...messages].reverse().find(m=>m.role==="user");const latestText=textFromContent(latest?.content);
