@@ -134,16 +134,23 @@ function nextRun(automation, from = Date.now()) {
     const target = Number.isInteger(Number(automation.weekday)) ? Number(automation.weekday) : 1;
     while (next.getDay() !== target || next.getTime() <= from) next.setDate(next.getDate() + 1);
   }
+  if (freq === "selected_days") {
+    const days = Array.isArray(automation.days) ? automation.days.map(Number) : [];
+    if (!days.length) return null;
+    while (!days.includes(next.getDay()) || next.getTime() <= from) next.setDate(next.getDate() + 1);
+  }
   return next.getTime();
 }
 
 function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig }) {
   const store = createStore(dataDir);
   const secret = loadOrCreateSecret(dataDir);
+  const filesDir = path.join(dataDir, "library-files");
+  fs.mkdirSync(filesDir, { recursive: true });
   const app = express();
   app.use(helmet({ crossOriginResourcePolicy: false }));
   app.use(cors({ origin: true, credentials: false }));
-  app.use(express.json({ limit: "32mb" }));
+  app.use(express.json({ limit: "64mb" }));
 
   function sign(user) { return jwt.sign({ sub: user.id, email: user.email }, secret); }
   function auth(req, res, next) {
@@ -258,15 +265,60 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.delete("/api/memory/:id", auth, (req,res) => {const db=store.read();db.memories=db.memories.filter(m=>!(m.id===req.params.id&&m.userId===req.user.id));store.write(db);res.json({ok:true});});
   app.delete("/api/memory", auth, (req,res) => {const db=store.read();db.memories=db.memories.filter(m=>m.userId!==req.user.id);store.write(db);res.json({ok:true});});
 
-  app.get("/api/library", auth, (req,res) => {const db=store.read();res.json({data:db.library.filter(x=>x.userId===req.user.id).sort((a,b)=>b.createdAt-a.createdAt).map(({dataUrl,text,...x})=>x)});});
+  app.get("/api/library", auth, (req,res) => {const db=store.read();res.json({data:db.library.filter(x=>x.userId===req.user.id).sort((a,b)=>b.createdAt-a.createdAt).map(({dataUrl,text,filePath,...x})=>x)});});
+
+  app.post("/api/library/upload", auth, async (req,res) => {
+    const rawName=String(req.headers["x-file-name"]||"").trim();
+    let name=rawName;
+    try{name=decodeURIComponent(rawName)}catch{}
+    if(!name)return res.status(400).json({error:"Numele fișierului lipsește."});
+    const mime=String(req.headers["x-file-type"]||"application/octet-stream");
+    const declared=Number(req.headers["x-file-size"]||0)||0;
+    const id=crypto.randomUUID();
+    const safeExt=path.extname(name).replace(/[^.a-z0-9_-]/gi,"").slice(0,20);
+    const target=path.join(filesDir,`${id}${safeExt}`);
+    let bytes=0,finished=false;
+    const out=fs.createWriteStream(target,{flags:"wx"});
+    const cleanup=()=>{try{out.destroy()}catch{};try{fs.unlinkSync(target)}catch{}};
+    req.on("data",chunk=>{bytes+=chunk.length});
+    req.on("aborted",()=>{if(!finished)cleanup()});
+    req.on("error",()=>{if(!finished)cleanup()});
+    out.on("error",e=>{if(!res.headersSent)res.status(500).json({error:`Nu am putut salva fișierul: ${e.message}`})});
+    out.on("finish",()=>{
+      finished=true;
+      const db=store.read();
+      const kind=mime.startsWith("image/")?"image":mime.startsWith("text/")?"text":"file";
+      const item={id,userId:req.user.id,name,mime,size:bytes||declared,kind,filePath:target,storage:"disk",createdAt:Date.now()};
+      db.library.push(item);store.write(db);
+      res.json({data:{...item,filePath:undefined}});
+    });
+    req.pipe(out);
+  });
+
+  app.get("/api/library/:id/content", auth, (req,res) => {
+    const db=store.read(),item=db.library.find(x=>x.id===req.params.id&&x.userId===req.user.id);
+    if(!item)return res.status(404).json({error:"Fișierul nu a fost găsit."});
+    if(item.filePath&&fs.existsSync(item.filePath)){
+      res.setHeader("Content-Type",item.mime||"application/octet-stream");
+      res.setHeader("Content-Length",String(item.size||fs.statSync(item.filePath).size));
+      return fs.createReadStream(item.filePath).pipe(res);
+    }
+    if(item.dataUrl){
+      const m=String(item.dataUrl).match(/^data:([^;]+);base64,(.+)$/s);
+      if(!m)return res.status(404).json({error:"Conținut indisponibil."});
+      const b=Buffer.from(m[2],"base64");res.type(item.mime||m[1]||"application/octet-stream");return res.send(b);
+    }
+    if(item.text!=null){res.type(item.mime||"text/plain");return res.send(String(item.text));}
+    return res.status(404).json({error:"Conținut indisponibil."});
+  });
+
   app.post("/api/library", auth, (req,res) => {
     const name=String(req.body?.name||"").trim();if(!name)return res.status(400).json({error:"Numele fișierului lipsește."});
-    if(Number(req.body?.size||0)>8*1024*1024)return res.status(413).json({error:"Fișierul depășește 8 MB."});
     const db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,name,mime:String(req.body?.mime||""),size:Number(req.body?.size||0),kind:String(req.body?.kind||"file"),dataUrl:req.body?.dataUrl||null,text:req.body?.text||null,createdAt:Date.now()};
     db.library.push(item);store.write(db);res.json({data:{...item,dataUrl:undefined,text:undefined}});
   });
-  app.get("/api/library/:id", auth, (req,res) => {const db=store.read(),item=db.library.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Fișierul nu a fost găsit."});res.json({data:item});});
-  app.delete("/api/library/:id", auth, (req,res) => {const db=store.read();db.library=db.library.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));store.write(db);res.json({ok:true});});
+  app.get("/api/library/:id", auth, (req,res) => {const db=store.read(),item=db.library.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Fișierul nu a fost găsit."});const {filePath,...safe}=item;res.json({data:safe});});
+  app.delete("/api/library/:id", auth, (req,res) => {const db=store.read(),item=db.library.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(item?.filePath){try{fs.unlinkSync(item.filePath)}catch{}}db.library=db.library.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));store.write(db);res.json({ok:true});});
 
   app.get("/api/plugins", auth, (req,res) => {const db=store.read();res.json({data:db.plugins.filter(x=>x.userId===req.user.id).map(({apiKey,...x})=>({...x,hasKey:!!apiKey}))});});
   app.post("/api/plugins", auth, (req,res) => {
@@ -289,12 +341,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.get("/api/automations", auth, (req,res) => {const db=store.read();res.json({data:db.automations.filter(x=>x.userId===req.user.id).sort((a,b)=>b.createdAt-a.createdAt)});});
   app.post("/api/automations", auth, (req,res) => {
     const title=String(req.body?.title||"").trim(),prompt=String(req.body?.prompt||"").trim();if(!title||!prompt)return res.status(400).json({error:"Titlul și instrucțiunea sunt obligatorii."});
-    const db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,title,prompt,frequency:req.body?.frequency||"daily",time:req.body?.time||"09:00",weekday:Number(req.body?.weekday??1),runAt:Number(req.body?.runAt||0)||null,model:req.body?.model||null,enabled:true,lastRunAt:null,lastResult:"",createdAt:Date.now()};
+    const db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,title,prompt,trigger:String(req.body?.trigger||`@${title.toLowerCase().replace(/[^a-z0-9ăâîșț]+/gi,"-").replace(/^-|-$/g,"")}`),frequency:req.body?.frequency||"daily",time:req.body?.time||"09:00",weekday:Number(req.body?.weekday??1),days:Array.isArray(req.body?.days)?req.body.days.map(Number):[],runAt:Number(req.body?.runAt||0)||null,model:req.body?.model||null,enabled:true,lastRunAt:null,lastResult:"",createdAt:Date.now()};
     item.nextRunAt=nextRun(item,Date.now());db.automations.push(item);store.write(db);res.json({data:item});
   });
   app.patch("/api/automations/:id", auth, (req,res) => {
     const db=store.read(),item=db.automations.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Automatizarea nu a fost găsită."});
-    for(const k of ["title","prompt","frequency","time","weekday","runAt","model","enabled"])if(Object.prototype.hasOwnProperty.call(req.body||{},k))item[k]=req.body[k];
+    for(const k of ["title","prompt","trigger","frequency","time","weekday","days","runAt","model","enabled"])if(Object.prototype.hasOwnProperty.call(req.body||{},k))item[k]=req.body[k];
     item.nextRunAt=item.enabled?nextRun(item,Date.now()):null;store.write(db);res.json({data:item});
   });
   app.post("/api/automations/:id/run", auth, async (req,res) => {
