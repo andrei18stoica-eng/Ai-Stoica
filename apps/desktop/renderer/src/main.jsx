@@ -31,6 +31,25 @@ async function api(path, options = {}) {
   return data;
 }
 
+class ErrorBoundary extends React.Component {
+  constructor(props){super(props);this.state={error:null};}
+  static getDerivedStateFromError(error){return {error};}
+  componentDidCatch(error,info){console.error("AI Stoica renderer error",error,info);}
+  render(){
+    if(this.state.error){
+      return <div style={{height:"100vh",background:"#05070b",color:"#e9eef7",display:"grid",placeItems:"center",fontFamily:"Segoe UI, sans-serif",padding:24}}>
+        <div style={{maxWidth:720}}>
+          <h1 style={{marginTop:0}}>AI Stoica a întâmpinat o eroare de interfață</h1>
+          <p style={{color:"#9ba9bc",lineHeight:1.6}}>Aplicația nu mai rămâne pe ecran negru. Închide complet AI Stoica din system tray și pornește-o din nou. Dacă mesajul reapare, trimite-mi textul de mai jos.</p>
+          <pre style={{whiteSpace:"pre-wrap",background:"#0d131d",border:"1px solid #26354a",borderRadius:12,padding:14,color:"#ffb0b8"}}>{String(this.state.error?.stack||this.state.error?.message||this.state.error)}</pre>
+          <button onClick={()=>location.reload()} style={{border:"1px solid #2a8cff",background:"#126bd0",color:"white",borderRadius:10,padding:"10px 14px",cursor:"pointer"}}>Reîncarcă AI Stoica</button>
+        </div>
+      </div>;
+    }
+    return this.props.children;
+  }
+}
+
 function cx(...v) { return v.filter(Boolean).join(" "); }
 function uid() { return `${Date.now().toString(36)}${Math.random().toString(36).slice(2,8)}`; }
 function titleFrom(text) {
@@ -426,4 +445,4 @@ function App() {
     {toolPanel==="automations"&&<AutomationsPanel onClose={()=>setToolPanel(null)} model={model}/>}
   </div>;
 }
-createRoot(document.getElementById("root")).render(<App/>);
+createRoot(document.getElementById("root")).render(<ErrorBoundary><App/></ErrorBoundary>);
