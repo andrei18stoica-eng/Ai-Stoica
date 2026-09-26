@@ -87,7 +87,8 @@ async function ensureOmniRoute() {
   try {
     const quoted = cmd.includes(" ") ? `\"${cmd.replaceAll('"','')}\"` : cmd;
     const child = spawn("cmd.exe", ["/d", "/s", "/c", `${quoted} serve`], {
-      windowsHide: true, detached: true, stdio: "ignore", shell: false
+      windowsHide: true, detached: true, stdio: "ignore", shell: false,
+      env: { ...process.env, OMNIROUTE_SERVER_HOST: "127.0.0.1" }
     });
     child.unref();
   } catch {}
