@@ -1,6 +1,6 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "AI Stoica - Stoica Enterprises AI for Windows with memory, library, plugins and automations",
   "main": "main.cjs",
