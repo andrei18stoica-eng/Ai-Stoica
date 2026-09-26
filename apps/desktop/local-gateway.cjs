@@ -216,7 +216,7 @@ function startLocalGateway({ dataDir, port = 8787, getOmniConfig }) {
   });
   app.put("/api/conversations/:id", auth, (req,res) => {
     const db=store.read(),item=db.conversations.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Conversația nu a fost găsită."});
-    for(const k of ["title","projectId","assistantId","model","messages"])if(Object.prototype.hasOwnProperty.call(req.body||{},k))item[k]=req.body[k];
+    for(const k of ["title","projectId","assistantId","model","messages","archived"])if(Object.prototype.hasOwnProperty.call(req.body||{},k))item[k]=req.body[k];
     item.updatedAt=Date.now();store.write(db);res.json({data:item});
   });
   app.delete("/api/conversations/:id", auth, (req,res) => {
