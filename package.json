@@ -1,0 +1,15 @@
+{
+  "name": "ai-stoica",
+  "private": true,
+  "version": "0.4.1",
+  "description": "AI Stoica — Stoica Enterprises AI. Windows + iPhone/iPad/Android, cont email, chat, proiecte, asistenți și OmniRoute.",
+  "scripts": {
+    "desktop:install": "npm --prefix apps/desktop install --legacy-peer-deps",
+    "desktop:dev": "npm --prefix apps/desktop run dev",
+    "desktop:build": "npm --prefix apps/desktop run build",
+    "mobile:install": "npm --prefix apps/mobile install --legacy-peer-deps",
+    "mobile:start": "npm --prefix apps/mobile run start",
+    "gateway:install": "npm --prefix gateway install",
+    "gateway:start": "npm --prefix gateway run start"
+  }
+}

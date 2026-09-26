@@ -1,0 +1,13 @@
+node_modules/
+apps/desktop/node_modules/
+apps/desktop/dist/
+apps/desktop/release/
+apps/mobile/node_modules/
+apps/mobile/.expo/
+gateway/node_modules/
+gateway/data/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store

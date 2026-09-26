@@ -1,0 +1,12 @@
+AI STOICA v0.4.1 — CE FACI DUPĂ CE DEZARHIVEZI
+
+1. În GitHub deschide repository-ul: andrei18stoica-eng/Ai-Stoica
+2. Înlocuiește conținutul repository-ului cu TOATE fișierele și folderele din acest pachet.
+3. Verifică să existe: .github/workflows/windows-build.yml
+4. Intră la Actions -> Build AI Stoica Windows.
+5. Rulează workflow-ul dacă nu pornește automat.
+6. După bifa verde, descarcă artifact-ul: AI-Stoica-Windows-v0.4.1
+7. Extrage ZIP-ul și rulează installerul AI_Stoica_Setup_0.4.1_x64.exe.
+8. La prima pornire: creează cont cu email.
+9. În Setări: Base URL http://127.0.0.1:20128/v1, cheia API OmniRoute, model Ai principal.
+10. Lasă active Pornire OmniRoute automată și Pornire AI Stoica cu Windows.

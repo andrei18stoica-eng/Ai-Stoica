@@ -1,0 +1,77 @@
+{
+  "name": "ai-stoica-desktop",
+  "version": "0.4.1",
+  "private": true,
+  "description": "AI Stoica - Stoica Enterprises AI for Windows",
+  "main": "main.cjs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/andrei18stoica-eng/Ai-Stoica.git"
+  },
+  "scripts": {
+    "dev:ui": "vite --config vite.config.mjs",
+    "dev": "vite build --config vite.config.mjs && electron .",
+    "build:ui": "vite build --config vite.config.mjs",
+    "build": "npm run build:ui && electron-builder --win --x64 --publish never",
+    "release": "npm run build:ui && electron-builder --win --x64 --publish always"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "electron-updater": "^6.6.2",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.12",
+    "vite": "^6.1.0"
+  },
+  "build": {
+    "appId": "ro.stoica.aistoica",
+    "productName": "AI Stoica",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "local-gateway.cjs",
+      "dist/**/*",
+      "build/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "AI_Stoica_Setup_${version}_${arch}.${ext}",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AI Stoica"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "andrei18stoica-eng",
+        "repo": "Ai-Stoica"
+      }
+    ]
+  }
+}
