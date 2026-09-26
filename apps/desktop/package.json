@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "private": true,
-  "description": "AI Stoica - Windows with memory, library, plugins, automations, voice, Explore, advanced settings and hardened startup",
+  "description": "AI Stoica - unlimited streamed files, conversation delete, @ plugin/automation mentions, plugin catalog and richer automations",
   "main": "main.cjs",
   "repository": {
     "type": "git",
