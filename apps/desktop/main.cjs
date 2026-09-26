@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, safeStorage, Tray, Menu, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, safeStorage, Tray, Menu, nativeImage, session } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const net = require("net");
@@ -21,7 +21,11 @@ function defaults() {
     model: "Ai principal",
     omniCommand: "omniroute.cmd",
     autoStartOmniRoute: true,
-    startWithWindows: true
+    startWithWindows: true,
+    closeToTray: true,
+    autoUpdate: true,
+    speechModel: "openai/whisper-1",
+    speechLanguage: "ro"
   };
 }
 function loadConfig() {
@@ -39,7 +43,9 @@ function saveConfig(input) {
   const cfg = { ...old, ...input };
   const stored = {
     baseUrl: cfg.baseUrl, model: cfg.model, omniCommand: cfg.omniCommand,
-    autoStartOmniRoute: !!cfg.autoStartOmniRoute, startWithWindows: !!cfg.startWithWindows
+    autoStartOmniRoute: !!cfg.autoStartOmniRoute, startWithWindows: !!cfg.startWithWindows,
+    closeToTray: cfg.closeToTray !== false, autoUpdate: cfg.autoUpdate !== false,
+    speechModel: cfg.speechModel || "openai/whisper-1", speechLanguage: cfg.speechLanguage || "ro"
   };
   if (cfg.apiKey) {
     if (safeStorage.isEncryptionAvailable()) stored.apiKeyEncrypted = safeStorage.encryptString(cfg.apiKey).toString("base64");
@@ -102,7 +108,7 @@ function createWindow(show = true) {
   });
   mainWindow.loadFile(path.join(__dirname, "dist", "index.html"));
   mainWindow.on("close", (e) => {
-    if (!isQuitting) { e.preventDefault(); mainWindow.hide(); }
+    if (!isQuitting && loadConfig().closeToTray !== false) { e.preventDefault(); mainWindow.hide(); }
   });
 }
 
@@ -122,6 +128,8 @@ function createTray() {
 
 app.whenReady().then(async () => {
   if (process.platform === "win32") app.setAppUserModelId("ro.stoica.aistoica");
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === "media");
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(permission === "media"));
   const cfg = loadConfig();
   app.setLoginItemSettings({ openAtLogin: !!cfg.startWithWindows, args: ["--background"] });
   gateway = startLocalGateway({ dataDir: app.getPath("userData"), port: 8787, getOmniConfig: loadConfig });
@@ -132,7 +140,7 @@ app.whenReady().then(async () => {
   watchdog = setInterval(() => ensureOmniRoute().catch(() => {}), 30000);
 
   autoUpdater.autoDownload = true;
-  autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+  if (cfg.autoUpdate !== false) autoUpdater.checkForUpdatesAndNotify().catch(() => {});
   autoUpdater.on("update-downloaded", () => mainWindow?.webContents.send("update-ready"));
 
   ipcMain.handle("config:get", () => loadConfig());
@@ -140,6 +148,10 @@ app.whenReady().then(async () => {
   ipcMain.handle("system:status", () => systemStatus());
   ipcMain.handle("system:ensure-omni", () => ensureOmniRoute());
   ipcMain.handle("system:set-startup", (_e, enabled) => { const cfg2 = saveConfig({ startWithWindows: !!enabled }); return { ok: true, enabled: cfg2.startWithWindows }; });
+  ipcMain.handle("update:check", async () => {
+    try { const result = await autoUpdater.checkForUpdates(); return { ok: true, version: result?.updateInfo?.version || null }; }
+    catch (e) { return { ok: false, error: e.message }; }
+  });
   ipcMain.on("update:install", () => autoUpdater.quitAndInstall());
 });
 
