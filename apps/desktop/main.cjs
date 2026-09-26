@@ -6,6 +6,13 @@ const { spawn } = require("child_process");
 const { autoUpdater } = require("electron-updater");
 const { startLocalGateway } = require("./local-gateway.cjs");
 
+if (process.platform === "win32") app.disableHardwareAcceleration();
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
 let mainWindow;
 let tray;
 let isQuitting = false;
@@ -103,10 +110,45 @@ function createWindow(show = true) {
   mainWindow = new BrowserWindow({
     width: 1440, height: 920, minWidth: 980, minHeight: 680,
     backgroundColor: "#05070b", title: "AI Stoica — Stoica Enterprises AI", autoHideMenuBar: true,
-    show,
+    show: false,
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
-  mainWindow.loadFile(path.join(__dirname, "dist", "index.html"));
+
+  const reveal = () => {
+    if (show && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  };
+  mainWindow.once("ready-to-show", reveal);
+  const revealTimer = setTimeout(reveal, 3500);
+
+  mainWindow.webContents.on("did-fail-load", (_e, code, desc) => {
+    const safe = String(desc || "eroare necunoscută").replace(/[<>&]/g, "");
+    mainWindow.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(
+      `<!doctype html><html><body style="margin:0;background:#05070b;color:#e9eef7;font-family:Segoe UI,sans-serif;display:grid;place-items:center;height:100vh">
+      <div style="max-width:680px;padding:32px"><h1>AI Stoica nu a putut încărca interfața</h1>
+      <p>Eroare: ${code} — ${safe}</p><p>Închide complet aplicația din system tray și pornește-o din nou.</p></div></body></html>`
+    )).catch(() => {});
+    reveal();
+  });
+
+  mainWindow.webContents.on("render-process-gone", (_e, details) => {
+    try {
+      fs.appendFileSync(path.join(app.getPath("userData"), "ai-stoica-errors.log"),
+        `[${new Date().toISOString()}] Renderer stopped: ${details.reason} / ${details.exitCode}\n`);
+    } catch {}
+  });
+
+  mainWindow.loadFile(path.join(__dirname, "dist", "index.html")).catch((e) => {
+    try {
+      fs.appendFileSync(path.join(app.getPath("userData"), "ai-stoica-errors.log"),
+        `[${new Date().toISOString()}] loadFile failed: ${e.stack || e.message}\n`);
+    } catch {}
+    reveal();
+  });
+
+  mainWindow.on("closed", () => clearTimeout(revealTimer));
   mainWindow.on("close", (e) => {
     if (!isQuitting && loadConfig().closeToTray !== false) { e.preventDefault(); mainWindow.hide(); }
   });
@@ -126,15 +168,39 @@ function createTray() {
   tray.on("double-click", () => { mainWindow.show(); mainWindow.focus(); });
 }
 
+app.on("second-instance", () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
+
 app.whenReady().then(async () => {
   if (process.platform === "win32") app.setAppUserModelId("ro.stoica.aistoica");
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === "media");
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(permission === "media"));
   const cfg = loadConfig();
   app.setLoginItemSettings({ openAtLogin: !!cfg.startWithWindows, args: ["--background"] });
-  gateway = startLocalGateway({ dataDir: app.getPath("userData"), port: 8787, getOmniConfig: loadConfig });
   const background = process.argv.includes("--background");
   createWindow(!background);
+
+  try {
+    if (!(await isPortOpen(8787))) {
+      gateway = startLocalGateway({ dataDir: app.getPath("userData"), port: 8787, getOmniConfig: loadConfig });
+      gateway?.server?.on?.("error", (e) => {
+        try {
+          fs.appendFileSync(path.join(app.getPath("userData"), "ai-stoica-errors.log"),
+            `[${new Date().toISOString()}] Gateway error: ${e.stack || e.message}\n`);
+        } catch {}
+      });
+    }
+  } catch (e) {
+    try {
+      fs.appendFileSync(path.join(app.getPath("userData"), "ai-stoica-errors.log"),
+        `[${new Date().toISOString()}] Gateway startup failed: ${e.stack || e.message}\n`);
+    } catch {}
+  }
   createTray();
   ensureOmniRoute().catch(() => {});
   watchdog = setInterval(() => ensureOmniRoute().catch(() => {}), 30000);
