@@ -75,3 +75,27 @@
 .userMessageActions{display:flex;justify-content:flex-end;margin-top:5px;min-height:26px}
 .userMessageActions button{width:28px;height:28px;border:0;background:transparent;color:#718198;border-radius:7px;display:grid;place-items:center;cursor:pointer}
 .userMessageActions button:hover{background:#111925;color:white}
+
+
+/* v0.5.7 — ChatGPT-like clipboard + composer polish */
+::selection{background:#2c6fbf88;color:#fff}
+.copyByRightClick{cursor:text;user-select:text}
+.assistantBody,.userBubble,.assistantBody *{user-select:text}
+.userBubble{border-radius:20px;background:#151a22;border-color:#252c36}
+.assistantBlock{margin-bottom:30px}
+.messageActions{opacity:.58;transition:opacity .15s ease}
+.assistantBlock:hover .messageActions,.messageActions:focus-within{opacity:1}
+.userMessageActions{opacity:.48;transition:opacity .15s ease}
+.userMessageWrap:hover .userMessageActions,.userMessageActions:focus-within{opacity:1}
+.composerCard{background:#171b22;border-color:#303743;border-radius:28px;box-shadow:0 16px 50px #0007}
+.composerCard:focus-within{border-color:#465161;box-shadow:0 16px 50px #0008,0 0 0 1px #46516155}
+.composerLine{padding:7px 9px}
+.composerLine textarea{font-family:inherit;font-size:15px;padding:12px 9px;caret-color:#fff}
+.composerIcon,.sendButton{border-radius:999px}
+.sendButton{width:36px;height:36px;margin:2px;background:#f1f1f1;color:#111}
+.composerIcon{width:38px;height:38px;margin:1px}
+.assistantBody pre{position:relative;border-radius:13px}
+@media(max-width:900px){
+  .composerDock{padding-left:10px;padding-right:10px}
+  .composerCard{width:100%}
+}
