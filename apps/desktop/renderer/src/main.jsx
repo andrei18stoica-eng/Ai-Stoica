@@ -7,7 +7,7 @@ import {
   Paperclip, Mic, ArrowUp, Copy, ThumbsUp, ThumbsDown, RotateCcw, X,
   ChevronDown, User, Check, Wifi, WifiOff, Sparkles, SquarePen,
   CalendarClock, Plug, Library, Brain, Upload, Trash2, Play, Pin, PinOff,
-  FileText, Image as ImageIcon, HardDrive, ToggleLeft, ToggleRight,
+  FileText, Image as ImageIcon, HardDrive, ToggleLeft, ToggleRight, MapPinned, Globe2, Compass, Archive, ExternalLink, SlidersHorizontal, Volume2,
   Compass, Map, Globe2, MicOff, RefreshCw, ExternalLink
 } from "lucide-react";
 import "./styles.css";
@@ -107,14 +107,15 @@ function AuthScreen({ onAuth }) {
 
 function BrandMark({small=false}) { return <div className={cx("brandMark",small&&"small")}><img src="./stoica-enterprises-ai.png" alt="S"/></div>; }
 
-function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,conversations,currentId,onSelect,onNew,selectedProject,setSelectedProject,selectedAssistant,setSelectedAssistant,onNewProject,onNewAssistant,onTool,onSettings,onLogout}) {
-  const filtered=conversations.filter(c=>!search||(c.title||"").toLowerCase().includes(search.toLowerCase()));
+function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,conversations,currentId,onSelect,onNew,selectedProject,setSelectedProject,selectedAssistant,setSelectedAssistant,onNewProject,onNewAssistant,onTool,onExplore,onSettings,onLogout}) {
+  const filtered=conversations.filter(c=>!c.archived&&(!search||(c.title||"").toLowerCase().includes(search.toLowerCase())));
   const groups=useMemo(()=>{const out={};filtered.forEach(c=>{const g=groupLabel(c.updatedAt);(out[g]||=[]).push(c)});return out},[filtered]);
   return <aside className={cx("sidebar",open&&"open")}>
     <div className="sideTop"><div className="brandLine"><BrandMark small/><div><b>AI Stoica</b><span>Enterprises AI</span></div></div><button className="iconOnly mobileClose" onClick={()=>setOpen(false)}><X size={20}/></button></div>
     <button className="newChat" onClick={onNew}><SquarePen size={17}/> Conversație nouă</button>
     <div className="searchBox"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Caută conversații"/></div>
     <div className="sideScroll">
+      <button className="exploreBtn" onClick={onExplore}><Compass size={17}/> Explorează</button>
       <div className="sideSection"><div className="sectionHead"><span>Instrumente</span></div>
         <button className="sideItem exploreItem" onClick={()=>onTool("explore")}><Compass size={16}/> Explorează</button>
         <button className="sideItem toolItem" onClick={()=>onTool("automations")}><CalendarClock size={16}/> Automatizări</button>
@@ -137,8 +138,33 @@ function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,convers
   </aside>;
 }
 
-function Header({onMenu,model,setModel,models,omni,onShare,onMore}) {
-  return <header className="topbar"><button className="iconOnly menuBtn" onClick={onMenu} title="Arată sau ascunde meniul"><Menu size={20}/></button><div className="modelWrap"><select value={model} onChange={e=>setModel(e.target.value)}>{models.map(m=><option key={m} value={m}>{m}</option>)}</select><ChevronDown size={15}/></div><div className="topSpacer"/><div className={cx("connection",omni?"ok":"bad")}>{omni?<Wifi size={15}/>:<WifiOff size={15}/>} {omni?"OmniRoute conectat":"OmniRoute se reconectează"}</div><button className="topAction" onClick={onShare}><Share2 size={16}/> Distribuie</button><button className="iconOnly" onClick={onMore} title="Setări și opțiuni"><MoreHorizontal size={20}/></button></header>;
+function Header({onMenu,model,setModel,models,omni,onShare,current,projects,onDetach,onMoveProject,onFiles,onArchive,onDelete}) {
+  const [more,setMore]=useState(false),[moveOpen,setMoveOpen]=useState(false);
+  return <header className="topbar">
+    <button className="iconOnly menuBtn" onClick={onMenu}><Menu size={20}/></button>
+    <div className="modelWrap"><select value={model} onChange={e=>setModel(e.target.value)}>{models.map(m=><option key={m} value={m}>{m}</option>)}</select><ChevronDown size={15}/></div>
+    <div className="topSpacer"/>
+    <div className={cx("connection",omni?"ok":"bad")}>{omni?<Wifi size={15}/>:<WifiOff size={15}/>} {omni?"OmniRoute conectat":"OmniRoute se reconectează"}</div>
+    <button className="topAction" onClick={onShare}><Share2 size={16}/> Distribuie</button>
+    <div className="moreWrap">
+      <button className="iconOnly" onClick={()=>{setMore(!more);setMoveOpen(false)}}><MoreHorizontal size={20}/></button>
+      {more&&<div className="conversationMenu">
+        <button disabled={!current?.projectId} onClick={()=>{onDetach();setMore(false)}}><PanelTopOpen size={18}/> Detașează</button>
+        <div className="menuSubWrap">
+          <button disabled={!current} onClick={()=>setMoveOpen(!moveOpen)}><Folder size={18}/> Mută în proiect <span className="menuChevron">›</span></button>
+          {moveOpen&&<div className="projectSubmenu">
+            <button onClick={()=>{onMoveProject(null);setMore(false)}}>Fără proiect</button>
+            {projects.map(p=><button key={p.id} onClick={()=>{onMoveProject(p.id);setMore(false)}}>{p.name}</button>)}
+          </div>}
+        </div>
+        <div className="menuDivider"/>
+        <button disabled={!current} onClick={()=>{onFiles();setMore(false)}}><Library size={18}/> Vizualizare fișiere din conversație</button>
+        <div className="menuDivider"/>
+        <button disabled={!current} onClick={()=>{onArchive();setMore(false)}}><Archive size={18}/> Arhivează</button>
+        <button className="dangerMenuItem" disabled={!current} onClick={()=>{onDelete();setMore(false)}}><Trash2 size={18}/> Șterge</button>
+      </div>}
+    </div>
+  </header>;
 }
 
 function MessageActions({message,onRegenerate,onRate}) {
@@ -153,10 +179,9 @@ function ConversationView({conversation,busy,onRegenerate,onRate}) {
 }
 
 function Composer({centered,draft,setDraft,onSend,busy,attachments,setAttachments,onOpenLibrary}) {
-  const ta=useRef(null),fileInput=useRef(null),recorderRef=useRef(null),streamRef=useRef(null),timerRef=useRef(null);
+  const ta=useRef(null),fileInput=useRef(null),recorderRef=useRef(null),streamRef=useRef(null),chunksRef=useRef([]);
   const [menu,setMenu]=useState(false),[recording,setRecording]=useState(false),[transcribing,setTranscribing]=useState(false);
   useEffect(()=>{if(ta.current){ta.current.style.height="0px";ta.current.style.height=Math.min(ta.current.scrollHeight,190)+"px"}},[draft]);
-  useEffect(()=>()=>{try{if(timerRef.current)clearTimeout(timerRef.current);streamRef.current?.getTracks?.().forEach(t=>t.stop())}catch{}},[]);
   async function filesChosen(e){
     const files=[...e.target.files],next=[];
     for(const f of files.slice(0,5)){
@@ -167,40 +192,43 @@ function Composer({centered,draft,setDraft,onSend,busy,attachments,setAttachment
     }
     setAttachments([...attachments,...next]);e.target.value="";setMenu(false);
   }
+  async function fallbackSpeech(){
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR)throw new Error("Recunoașterea vocală nu este disponibilă.");
+    const r=new SR();r.lang="ro-RO";r.interimResults=false;
+    r.onresult=e=>setDraft(v=>(v?v+" ":"")+e.results[0][0].transcript);
+    r.onerror=e=>alert("Microfon: "+(e.error||"eroare de recunoaștere"));
+    r.start();
+  }
   async function mic(){
-    if(recording){try{recorderRef.current?.stop()}catch{};return}
-    if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){alert("Microfonul nu este disponibil pe acest sistem.");return}
+    if(recording&&recorderRef.current){recorderRef.current.stop();return;}
     try{
-      const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-      streamRef.current=stream;
-      const preferred=["audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus"].find(x=>MediaRecorder.isTypeSupported(x));
-      const rec=preferred?new MediaRecorder(stream,{mimeType:preferred}):new MediaRecorder(stream);
-      recorderRef.current=rec;const chunks=[];
-      rec.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};
-      rec.onerror=()=>{setRecording(false);stream.getTracks().forEach(t=>t.stop());alert("A apărut o eroare la înregistrarea microfonului.")};
+      if(!navigator.mediaDevices?.getUserMedia){await fallbackSpeech();return;}
+      const stream=await navigator.mediaDevices.getUserMedia({audio:true});streamRef.current=stream;chunksRef.current=[];
+      const candidates=["audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus"];
+      const mime=candidates.find(x=>window.MediaRecorder?.isTypeSupported?.(x))||"";
+      const rec=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);recorderRef.current=rec;
+      rec.ondataavailable=e=>{if(e.data?.size)chunksRef.current.push(e.data)};
+      rec.onerror=()=>{setRecording(false);stream.getTracks().forEach(t=>t.stop())};
       rec.onstop=async()=>{
-        if(timerRef.current)clearTimeout(timerRef.current);
-        setRecording(false);stream.getTracks().forEach(t=>t.stop());streamRef.current=null;
-        if(!chunks.length)return;
-        setTranscribing(true);
+        setRecording(false);setTranscribing(true);
         try{
-          const blob=new Blob(chunks,{type:rec.mimeType||"audio/webm"});
-          const audio=await readDataUrl(blob);
-          const d=await api("/api/transcribe",{method:"POST",body:JSON.stringify({audio,mime:blob.type})});
-          if(d?.text)setDraft(prev=>`${prev}${prev.trim()?" ":""}${d.text}`);
-        }catch(e){alert(e.message)}finally{setTranscribing(false)}
+          const blob=new Blob(chunksRef.current,{type:rec.mimeType||"audio/webm"});const audio=await readDataUrl(blob);
+          const d=await api("/api/transcribe",{method:"POST",body:JSON.stringify({audio,mime:blob.type,language:"ro"})});
+          if(d.text)setDraft(v=>(v?v+" ":"")+d.text);
+        }catch(e){
+          try{await fallbackSpeech()}catch{alert("Microfonul nu a putut fi folosit. Verifică permisiunea de microfon în Windows și setările de voce din AI Stoica.")}
+        }finally{setTranscribing(false);stream.getTracks().forEach(t=>t.stop());streamRef.current=null;}
       };
-      rec.start(250);setRecording(true);
-      timerRef.current=setTimeout(()=>{try{if(rec.state==="recording")rec.stop()}catch{}},60000);
+      rec.start();setRecording(true);
     }catch(e){
-      setRecording(false);
-      alert(e?.name==="NotAllowedError"?"Permite accesul AI Stoica la microfon în Windows și încearcă din nou.":`Nu pot porni microfonul: ${e.message}`);
+      try{await fallbackSpeech()}catch{alert("Accesul la microfon a fost refuzat sau microfonul nu este disponibil.")}
     }
   }
   return <div className={cx("composerDock",centered&&"centered")}><div className="composerCard">
     {attachments.length>0&&<div className="attachmentTray">{attachments.map((a,i)=><span className={a.type==="unsupported"||a.type==="stored"?"unsupported":""} key={i}><Paperclip size={13}/>{a.name}<button onClick={()=>setAttachments(attachments.filter((_,j)=>j!==i))}><X size={13}/></button></span>)}</div>}
-    <div className="composerLine"><input ref={fileInput} type="file" hidden multiple onChange={filesChosen}/><div className="attachWrap"><button className="composerIcon" onClick={()=>setMenu(!menu)} title="Fișiere și bibliotecă"><Plus size={21}/></button>{menu&&<div className="attachMenu"><button onClick={()=>fileInput.current?.click()}><Upload size={16}/> Încarcă de pe PC</button><button onClick={()=>{setMenu(false);onOpenLibrary()}}><Library size={16}/> Alege din Bibliotecă</button></div>}</div><textarea ref={ta} value={draft} onChange={e=>setDraft(e.target.value)} placeholder={recording?"Ascult… apasă din nou microfonul când termini":transcribing?"Transcriu vocea…":"Întreabă orice"} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();onSend()}}}/><button className={cx("composerIcon",recording&&"recording")} onClick={mic} disabled={transcribing} title={recording?"Oprește și transcrie":"Dictare vocală"}>{recording?<MicOff size={20}/>:transcribing?<RefreshCw className="spin" size={19}/>:<Mic size={20}/>}</button><button className="sendButton" disabled={busy||recording||transcribing||(!draft.trim()&&!attachments.some(a=>a.part))} onClick={onSend}><ArrowUp size={20}/></button></div>
-  </div><div className="composerHint">{recording?"Înregistrare activă · maxim 60 secunde":transcribing?"AI Stoica transcrie vocea prin OmniRoute…":"AI Stoica poate greși. Verifică informațiile importante."}</div></div>;
+    <div className="composerLine"><input ref={fileInput} type="file" hidden multiple onChange={filesChosen}/><div className="attachWrap"><button className="composerIcon" onClick={()=>setMenu(!menu)} title="Fișiere și bibliotecă"><Plus size={21}/></button>{menu&&<div className="attachMenu"><button onClick={()=>fileInput.current?.click()}><Upload size={16}/> Încarcă de pe PC</button><button onClick={()=>{setMenu(false);onOpenLibrary()}}><Library size={16}/> Alege din Bibliotecă</button></div>}</div><textarea ref={ta} value={draft} onChange={e=>setDraft(e.target.value)} placeholder={recording?"Ascult… apasă microfonul pentru oprire":transcribing?"Transcriu vocea…":"Întreabă orice"} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();onSend()}}}/><button className={cx("composerIcon",recording&&"recording")} onClick={mic} title={recording?"Oprește înregistrarea":"Dictare vocală"} disabled={transcribing}><Mic size={20}/></button><button className="sendButton" disabled={busy||recording||transcribing||(!draft.trim()&&!attachments.some(a=>a.part))} onClick={onSend}><ArrowUp size={20}/></button></div>
+  </div><div className="composerHint">{recording?"Microfon activ — vorbește acum":transcribing?"AI Stoica transcrie înregistrarea…":"AI Stoica poate greși. Verifică informațiile importante."}</div></div>;
 }
 
 function ToolShell({title,subtitle,onClose,children}) {
@@ -292,27 +320,50 @@ function ExplorePanel({onClose,assistants,models,onUseAssistant,onImagePrompt,on
   </ToolShell>;
 }
 
-function SettingsModal({onClose,onSaved}) {
-  const [cfg,setCfg]=useState(null),[key,setKey]=useState(""),[tab,setTab]=useState("general"),[status,setStatus]=useState(null),[checking,setChecking]=useState(false);
-  async function refreshStatus(){try{setStatus(await window.AIStoica.systemStatus())}catch{}}
-  useEffect(()=>{window.AIStoica.getConfig().then(setCfg);refreshStatus()},[]);
+function ConversationFilesPanel({conversation,onClose}) {
+  const files=(conversation?.messages||[]).flatMap(m=>(m.attachments||[]).map(a=>({...a,messageRole:m.role,createdAt:m.createdAt})));
+  return <ToolShell title="Fișiere din conversație" subtitle="Toate fișierele atașate în conversația curentă." onClose={onClose}>
+    <div className="conversationFiles">{files.length===0?<div className="emptyState"><Paperclip size={28}/>Nu există fișiere atașate în această conversație.</div>:files.map((x,i)=><div className="conversationFile" key={i}><FileText size={20}/><div><b>{x.name}</b><span>{x.type||"fișier"} · {fmtTime(x.createdAt)}</span></div></div>)}</div>
+  </ToolShell>;
+}
+
+function ExplorePanel({onClose,assistants,onUseAssistant,onPrompt}) {
+  const [tab,setTab]=useState("maps"),[mapQuery,setMapQuery]=useState(""),[imagePrompt,setImagePrompt]=useState(""),[site,setSite]=useState("");
+  async function openUrl(url){try{await window.AIStoica?.openExternal?.(url)}catch{}}
+  function openSite(){let u=site.trim();if(!u)return;if(!/^https?:\/\//i.test(u))u="https://"+u;openUrl(u)}
+  return <ToolShell title="Explorează" subtitle="Hărți, imagini, GPT-uri și site-uri într-un singur loc." onClose={onClose}>
+    <div className="exploreTabs">
+      <button className={tab==="maps"?"active":""} onClick={()=>setTab("maps")}><MapPinned size={18}/> Hărți</button>
+      <button className={tab==="images"?"active":""} onClick={()=>setTab("images")}><ImageIcon size={18}/> Imagini</button>
+      <button className={tab==="gpts"?"active":""} onClick={()=>setTab("gpts")}><Bot size={18}/> GPT-uri</button>
+      <button className={tab==="sites"?"active":""} onClick={()=>setTab("sites")}><Globe2 size={18}/> Site-uri</button>
+    </div>
+    {tab==="maps"&&<div className="explorePane"><div className="exploreHero"><MapPinned size={34}/><div><h3>Hărți</h3><p>Caută o adresă, un obiectiv sau un loc și deschide-l pe hartă.</p></div></div><div className="exploreInputRow"><input value={mapQuery} onChange={e=>setMapQuery(e.target.value)} placeholder="Ex. Piața Victoriei, București"/><button className="primary" onClick={()=>mapQuery.trim()&&openUrl("https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(mapQuery))}>Deschide harta <ExternalLink size={15}/></button></div></div>}
+    {tab==="images"&&<div className="explorePane"><div className="exploreHero"><ImageIcon size={34}/><div><h3>Imagini</h3><p>Pornește rapid o cerere de generare sau editare de imagine.</p></div></div><textarea className="exploreTextarea" value={imagePrompt} onChange={e=>setImagePrompt(e.target.value)} placeholder="Descrie imaginea pe care vrei să o creezi…"/><button className="primary" onClick={()=>{if(imagePrompt.trim()){onPrompt("Generează o imagine: "+imagePrompt.trim());onClose()}}}>Trimite în chat</button></div>}
+    {tab==="gpts"&&<div className="explorePane"><div className="exploreHero"><Bot size={34}/><div><h3>GPT-uri / Asistenți</h3><p>Alege unul dintre asistenții tăi specializați.</p></div></div><div className="gptGrid">{assistants.map(a=><button key={a.id} onClick={()=>{onUseAssistant(a.id);onClose()}}><div className="gptIcon">{a.icon||a.name?.[0]||"A"}</div><div><b>{a.name}</b><span>{a.builtIn?"Asistent principal":"Asistent personalizat"}</span></div></button>)}</div></div>}
+    {tab==="sites"&&<div className="explorePane"><div className="exploreHero"><Globe2 size={34}/><div><h3>Site-uri</h3><p>Deschide rapid un site sau un serviciu web.</p></div></div><div className="exploreInputRow"><input value={site} onChange={e=>setSite(e.target.value)} placeholder="Ex. github.com"/><button className="primary" onClick={openSite}>Deschide <ExternalLink size={15}/></button></div><div className="siteShortcuts"><button onClick={()=>openUrl("https://www.google.com")}>Google</button><button onClick={()=>openUrl("https://www.youtube.com")}>YouTube</button><button onClick={()=>openUrl("https://github.com")}>GitHub</button><button onClick={()=>openUrl("https://maps.google.com")}>Google Maps</button></div></div>}
+  </ToolShell>;
+}
+
+function SettingsModal({onClose,onSaved,user}) {
+  const [cfg,setCfg]=useState(null),[key,setKey]=useState(""),[tab,setTab]=useState("general"),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState("");
+  useEffect(()=>{Promise.all([window.AIStoica.getConfig(),window.AIStoica.systemStatus()]).then(([c,s])=>{setCfg(c);setStatus(s)})},[]);
   if(!cfg)return null;
-  async function save(){const r=await window.AIStoica.setConfig({...cfg,apiKey:key||cfg.apiKey});onSaved?.(r?.config||cfg);onClose()}
-  async function checkUpdate(){setChecking(true);try{const r=await window.AIStoica.checkUpdate();alert(r?.ok?(r.version?`Cea mai nouă versiune detectată: ${r.version}`:"Verificarea actualizărilor s-a încheiat."):`Nu am putut verifica actualizările: ${r?.error||"eroare necunoscută"}`)}finally{setChecking(false)}}
-  async function testOmni(){await window.AIStoica.ensureOmni();setTimeout(refreshStatus,900)}
-  return <div className="modalBackdrop"><div className="settingsModal">
-    <div className="modalHead"><div><h2>Setări AI Stoica</h2><p>Controlează aplicația, OmniRoute, vocea și actualizările.</p></div><button className="iconOnly" onClick={onClose}><X size={20}/></button></div>
-    <div className="settingsLayout"><nav className="settingsNav">
-      <button className={tab==="general"?"active":""} onClick={()=>setTab("general")}>General</button>
-      <button className={tab==="ai"?"active":""} onClick={()=>setTab("ai")}>AI & OmniRoute</button>
-      <button className={tab==="voice"?"active":""} onClick={()=>setTab("voice")}>Voce</button>
-      <button className={tab==="system"?"active":""} onClick={()=>setTab("system")}>Sistem & update</button>
-    </nav><section className="settingsContent">
-      {tab==="general"&&<><h3>Comportament aplicație</h3><div className="toggleRow"><div><b>Pornește AI Stoica cu Windows</b><span>AI Stoica pornește automat și poate rămâne în fundal.</span></div><input type="checkbox" checked={!!cfg.startWithWindows} onChange={e=>setCfg({...cfg,startWithWindows:e.target.checked})}/></div><div className="toggleRow"><div><b>Închidere în System Tray</b><span>Când apeși X, aplicația rămâne activă în fundal.</span></div><input type="checkbox" checked={cfg.closeToTray!==false} onChange={e=>setCfg({...cfg,closeToTray:e.target.checked})}/></div><div className="toggleRow"><div><b>Actualizări automate</b><span>Verifică automat dacă există o versiune nouă.</span></div><input type="checkbox" checked={cfg.autoUpdate!==false} onChange={e=>setCfg({...cfg,autoUpdate:e.target.checked})}/></div></>}
-      {tab==="ai"&&<><h3>Conexiune AI</h3><label>Base URL OmniRoute<input value={cfg.baseUrl||""} onChange={e=>setCfg({...cfg,baseUrl:e.target.value})}/></label><label>Cheie API<input type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder={cfg.apiKey?"Cheie salvată — lasă gol pentru a o păstra":"Cheia OmniRoute"}/></label><label>Model/combo implicit<input value={cfg.model||""} onChange={e=>setCfg({...cfg,model:e.target.value})}/></label><label>Comandă OmniRoute<input value={cfg.omniCommand||"omniroute.cmd"} onChange={e=>setCfg({...cfg,omniCommand:e.target.value})}/></label><div className="toggleRow"><div><b>Pornește OmniRoute automat</b><span>Dacă serviciul se oprește, AI Stoica încearcă să-l repornească.</span></div><input type="checkbox" checked={!!cfg.autoStartOmniRoute} onChange={e=>setCfg({...cfg,autoStartOmniRoute:e.target.checked})}/></div><button className="secondary" onClick={testOmni}>Testează / repornește OmniRoute</button></>}
-      {tab==="voice"&&<><h3>Dictare vocală</h3><p className="settingsHelp">Microfonul înregistrează local, apoi AI Stoica trimite audio către endpointul de transcriere al OmniRoute.</p><label>Model pentru transcriere<input value={cfg.speechModel||"openai/whisper-1"} onChange={e=>setCfg({...cfg,speechModel:e.target.value})}/></label><label>Limbă<input value={cfg.speechLanguage||"ro"} onChange={e=>setCfg({...cfg,speechLanguage:e.target.value})}/></label><div className="statusCard"><Mic size={18}/><div><b>Permisiune microfon</b><span>La prima utilizare, Windows trebuie să permită accesul aplicației la microfon.</span></div></div></>}
-      {tab==="system"&&<><h3>Stare sistem</h3><div className="statusGrid"><div className={cx("statusCard",status?.omniRunning&&"good")}><Wifi size={18}/><div><b>OmniRoute</b><span>{status?.omniRunning?"Pornit":"Oprit / indisponibil"}</span></div></div><div className={cx("statusCard",status?.gatewayRunning&&"good")}><Globe2 size={18}/><div><b>Gateway local</b><span>{status?.gatewayRunning?"Pornit":"Oprit"}</span></div></div></div><div className="settingsButtons"><button className="secondary" onClick={refreshStatus}><RefreshCw size={15}/> Reîmprospătează starea</button><button className="secondary" disabled={checking} onClick={checkUpdate}><RefreshCw size={15}/> {checking?"Verific…":"Verifică actualizări"}</button></div></>}
-    </section></div>
+  async function save(){await window.AIStoica.setConfig({...cfg,apiKey:key||cfg.apiKey});onSaved?.();onClose()}
+  async function testMic(){setMicStatus("Se verifică…");try{const s=await navigator.mediaDevices.getUserMedia({audio:true});s.getTracks().forEach(t=>t.stop());setMicStatus("Microfon disponibil și permis ✓")}catch{setMicStatus("Microfon indisponibil sau fără permisiune")}}
+  return <div className="modalBackdrop"><div className="settingsModal"><div className="modalHead"><div><h2>Setări AI Stoica</h2><p>Controlează aplicația, vocea, OmniRoute și actualizările.</p></div><button className="iconOnly" onClick={onClose}><X size={20}/></button></div>
+    <div className="settingsBody"><div className="settingsNav">
+      <button className={tab==="general"?"active":""} onClick={()=>setTab("general")}><SlidersHorizontal size={17}/> General</button>
+      <button className={tab==="ai"?"active":""} onClick={()=>setTab("ai")}><Bot size={17}/> AI & OmniRoute</button>
+      <button className={tab==="voice"?"active":""} onClick={()=>setTab("voice")}><Volume2 size={17}/> Voce și microfon</button>
+      <button className={tab==="account"?"active":""} onClick={()=>setTab("account")}><User size={17}/> Cont și date</button>
+    </div>
+    <div className="settingsPane">
+      {tab==="general"&&<><h3>General</h3><div className="toggleRow"><div><b>Pornește AI Stoica cu Windows</b><span>Aplicația pornește automat și poate rămâne în fundal.</span></div><input type="checkbox" checked={!!cfg.startWithWindows} onChange={e=>setCfg({...cfg,startWithWindows:e.target.checked})}/></div><div className="toggleRow"><div><b>Închidere în system tray</b><span>Butonul X ascunde aplicația fără să oprească serviciile.</span></div><input type="checkbox" checked={cfg.closeToTray!==false} onChange={e=>setCfg({...cfg,closeToTray:e.target.checked})}/></div><div className="toggleRow"><div><b>Actualizări automate</b><span>AI Stoica caută versiuni noi la pornire.</span></div><input type="checkbox" checked={cfg.autoUpdate!==false} onChange={e=>setCfg({...cfg,autoUpdate:e.target.checked})}/></div></>}
+      {tab==="ai"&&<><h3>AI & OmniRoute</h3><label>Base URL OmniRoute<input value={cfg.baseUrl} onChange={e=>setCfg({...cfg,baseUrl:e.target.value})}/></label><label>Cheie API<input type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder={cfg.apiKey?"Cheie salvată — lasă gol pentru a o păstra":"Cheie OmniRoute"}/></label><label>Model / combo implicit<input value={cfg.model} onChange={e=>setCfg({...cfg,model:e.target.value})}/></label><label>Comandă OmniRoute<input value={cfg.omniCommand||"omniroute.cmd"} onChange={e=>setCfg({...cfg,omniCommand:e.target.value})}/></label><div className="toggleRow"><div><b>Pornește OmniRoute automat</b><span>Dacă serviciul cade, AI Stoica încearcă să îl repornească.</span></div><input type="checkbox" checked={!!cfg.autoStartOmniRoute} onChange={e=>setCfg({...cfg,autoStartOmniRoute:e.target.checked})}/></div><div className="statusGrid"><div><span>Gateway local</span><b>{status?.gatewayRunning?"Conectat":"Indisponibil"}</b></div><div><span>OmniRoute</span><b>{status?.omniRunning?"Conectat":"Indisponibil"}</b></div></div></>}
+      {tab==="voice"&&<><h3>Voce și microfon</h3><label>Limba dictării<select value={cfg.speechLanguage||"ro"} onChange={e=>setCfg({...cfg,speechLanguage:e.target.value})}><option value="ro">Română</option><option value="en">English</option><option value="fr">Français</option></select></label><label>Model transcriere<input value={cfg.speechModel||"openai/whisper-1"} onChange={e=>setCfg({...cfg,speechModel:e.target.value})}/></label><button className="secondary testMicBtn" onClick={testMic}><Mic size={16}/> Testează microfonul</button>{micStatus&&<div className="micStatus">{micStatus}</div>}<p className="settingsHelp">La microfon: apeși o dată pentru a începe înregistrarea și încă o dată pentru a o opri. AI Stoica trimite apoi sunetul către transcriere prin OmniRoute.</p></>}
+      {tab==="account"&&<><h3>Cont și date</h3><div className="accountSettingsCard"><div className="accountAvatar big">{(user?.name||user?.email||"S")[0].toUpperCase()}</div><div><b>{user?.name||"Cont AI Stoica"}</b><span>{user?.email}</span></div></div><p className="settingsHelp">Conversațiile, memoria, biblioteca, proiectele, pluginurile și automatizările sunt în prezent păstrate local. După mutarea pe AI Stoica Cloud, acestea vor putea fi sincronizate între PC și telefon.</p></>}
+    </div></div>
     <div className="modalActions"><button className="secondary" onClick={onClose}>Anulează</button><button className="primary" onClick={save}>Salvează setările</button></div>
   </div></div>;
 }
@@ -373,6 +424,9 @@ function App() {
   async function share(){if(!current)return;await navigator.clipboard.writeText(current.messages.map(m=>`${m.role==="user"?"Eu":"AI Stoica"}:\n${messageText(m)}`).join("\n\n"));alert("Conversația a fost copiată în clipboard.")}
   function openTool(name){setSidebar(false);setToolPanel(name)}
   function attachFromLibrary(a){setAttachments(v=>[...v,a])}
+  async function moveCurrent(projectId){if(!current)return;const saved=await saveConversation({...current,projectId});setSelectedProject(projectId);return saved}
+  async function archiveCurrent(){if(!current)return;await saveConversation({...current,archived:true});setCurrentId(null)}
+  async function deleteCurrent(){if(!current)return;if(!confirm("Ștergi definitiv această conversație?"))return;await api(`/api/conversations/${current.id}`,{method:"DELETE"});setConversations(v=>v.filter(x=>x.id!==current.id));setCurrentId(null)}
   function toggleMenu(){if(window.innerWidth<=900)setSidebar(v=>!v);else setSidebarCollapsed(v=>!v)}
   function useAssistant(id){setSelectedAssistant(id);setCurrentId(null);setDraft("");setToolPanel(null)}
   function startImagePrompt(imageModel){if(imageModel)setModel(imageModel);setCurrentId(null);setDraft("Creează o imagine cu ");setToolPanel(null)}
@@ -381,10 +435,10 @@ function App() {
   if(!user)return <AuthScreen onAuth={setUser}/>;
   const hasMessages=!!current?.messages?.length;
   return <div className={cx("appShell",sidebarCollapsed&&"sidebarCollapsed")}>
-    <Sidebar open={sidebar} setOpen={setSidebar} user={user} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} onSelect={id=>{setCurrentId(id);setSidebar(false)}} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} selectedAssistant={selectedAssistant} setSelectedAssistant={setSelectedAssistant} onNewProject={()=>setCreateType("project")} onNewAssistant={()=>setCreateType("assistant")} onTool={openTool} onSettings={()=>setSettings(true)} onLogout={logout}/>
+    <Sidebar open={sidebar} setOpen={setSidebar} user={user} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} onSelect={id=>{setCurrentId(id);setSidebar(false)}} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} selectedAssistant={selectedAssistant} setSelectedAssistant={setSelectedAssistant} onNewProject={()=>setCreateType("project")} onNewAssistant={()=>setCreateType("assistant")} onTool={openTool} onExplore={()=>{setSidebar(false);setExplore(true)}} onSettings={()=>setSettings(true)} onLogout={logout}/>
     {sidebar&&<div className="mobileScrim" onClick={()=>setSidebar(false)}/>}
     <main className="mainArea"><Header onMenu={toggleMenu} model={model} setModel={setModel} models={models} omni={omni} onShare={share} onMore={()=>setSettings(true)}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} onRegenerate={regenerate} onRate={rate}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
-    {settings&&<SettingsModal onClose={()=>setSettings(false)} onSaved={()=>{window.AIStoica.ensureOmni();setTimeout(loadData,1000)}}/>}
+    {settings&&<SettingsModal user={user} onClose={()=>setSettings(false)} onSaved={()=>{window.AIStoica.ensureOmni();setTimeout(loadData,1000)}}/>}
     {createType&&<CreateModal type={createType} onClose={()=>setCreateType(null)} onCreate={createItem}/>}
     {toolPanel==="explore"&&<ExplorePanel onClose={()=>setToolPanel(null)} assistants={assistants} models={models} onUseAssistant={useAssistant} onImagePrompt={startImagePrompt} onOpenLibrary={()=>setToolPanel("library")}/>} 
     {toolPanel==="library"&&<LibraryPanel onClose={()=>setToolPanel(null)} onAttach={attachFromLibrary}/>} 
