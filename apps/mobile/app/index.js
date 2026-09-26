@@ -22,7 +22,7 @@ function Auth({onAuth}){
 export default function Home(){
   const[token,setToken]=useState(null),[user,setUser]=useState(null),[loading,setLoading]=useState(true),[convs,setConvs]=useState([]),[currentId,setCurrentId]=useState(null),[text,setText]=useState(""),[busy,setBusy]=useState(false),[menu,setMenu]=useState(false);
   const current=useMemo(()=>convs.find(c=>c.id===currentId)||null,[convs,currentId]);
-  useEffect(()=>{AsyncStorage.getItem(TOKEN_KEY).then(async t=>{if(t){try{const me=await api("/auth/me",t);setToken(t);setUser(me.user)}catch{await AsyncStorage.removeItem(TOKEN_KEY)}}setLoading(false)})},[]);
+  useEffect(()=>{AsyncStorage.getItem(TOKEN_KEY).then(async t=>{if(t){try{const me=await api("/auth/me",t);const nextToken=me.token||t;await AsyncStorage.setItem(TOKEN_KEY,nextToken);setToken(nextToken);setUser(me.user)}catch{await AsyncStorage.removeItem(TOKEN_KEY)}}setLoading(false)})},[]);
   useEffect(()=>{if(token)reload()},[token]);
   async function reload(){const d=await api("/api/conversations",token);setConvs(d.data||[]);if(!currentId&&d.data?.length)setCurrentId(d.data[0].id)}
   async function authDone(t,u){setToken(t);setUser(u)}
