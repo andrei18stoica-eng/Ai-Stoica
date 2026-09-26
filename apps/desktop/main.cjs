@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, safeStorage, Tray, Menu, nativeImage, session, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, safeStorage, Tray, Menu, nativeImage, session, shell, clipboard } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const net = require("net");
@@ -135,6 +135,35 @@ function createWindow(show = true) {
     reveal();
   });
 
+  // ChatGPT-like editing: native Cut/Copy/Paste menu in every editable field.
+  mainWindow.webContents.on("context-menu", (_event, params) => {
+    const items = [];
+    if (params.isEditable) {
+      items.push(
+        { role: "undo", enabled: !!params.editFlags?.canUndo },
+        { role: "redo", enabled: !!params.editFlags?.canRedo },
+        { type: "separator" },
+        { role: "cut", enabled: !!params.editFlags?.canCut },
+        { role: "copy", enabled: !!params.editFlags?.canCopy },
+        { role: "paste", enabled: !!params.editFlags?.canPaste },
+        { role: "selectAll" }
+      );
+    } else if (params.selectionText) {
+      items.push({ role: "copy" }, { role: "selectAll" });
+    }
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: mainWindow });
+  });
+
+  // Keep Windows keyboard shortcuts reliable even with the application menu hidden.
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    if (!(input.control || input.meta) || input.type !== "keyDown") return;
+    const key = String(input.key || "").toLowerCase();
+    if (key === "c") { mainWindow.webContents.copy(); event.preventDefault(); }
+    else if (key === "v") { mainWindow.webContents.paste(); event.preventDefault(); }
+    else if (key === "x") { mainWindow.webContents.cut(); event.preventDefault(); }
+    else if (key === "a") { mainWindow.webContents.selectAll(); event.preventDefault(); }
+  });
+
   mainWindow.webContents.on("render-process-gone", (_e, details) => {
     try {
       fs.appendFileSync(path.join(app.getPath("userData"), "ai-stoica-errors.log"),
@@ -216,6 +245,16 @@ app.whenReady().then(async () => {
   ipcMain.handle("system:status", () => systemStatus());
   ipcMain.handle("system:ensure-omni", () => ensureOmniRoute());
   ipcMain.handle("system:set-startup", (_e, enabled) => { const cfg2 = saveConfig({ startWithWindows: !!enabled }); return { ok: true, enabled: cfg2.startWithWindows }; });
+  ipcMain.handle("clipboard:write-text", (_e, value) => {
+    try {
+      clipboard.writeText(String(value ?? ""));
+      return { ok: true };
+    } catch (e) { return { ok: false, error: e.message }; }
+  });
+  ipcMain.handle("clipboard:read-text", () => {
+    try { return { ok: true, text: clipboard.readText() }; }
+    catch (e) { return { ok: false, text: "", error: e.message }; }
+  });
   ipcMain.handle("system:open-external", async (_e, rawUrl) => {
     try {
       const url = new URL(String(rawUrl || ""));
