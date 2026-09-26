@@ -263,7 +263,7 @@ function App() {
     if(!localStorage.getItem(TOKEN_KEY)){setBoot(false);return}
     try{
       const [me,cs,ps,as,ms]=await Promise.all([api("/auth/me"),api("/api/conversations"),api("/api/projects"),api("/api/assistants"),api("/api/models").catch(()=>({data:[]}))]);
-      setUser(me.user);localStorage.setItem(USER_KEY,JSON.stringify(me.user));setConversations(cs.data||[]);setProjects(ps.data||[]);setAssistants(as.data||[]);
+      if(me.token)localStorage.setItem(TOKEN_KEY,me.token);setUser(me.user);localStorage.setItem(USER_KEY,JSON.stringify(me.user));setConversations(cs.data||[]);setProjects(ps.data||[]);setAssistants(as.data||[]);
       const ids=(ms.data||[]).map(x=>x.id).filter(Boolean);if(ids.length){setModels(ids);setModel(ids.find(x=>/ai[ _-]*principal/i.test(x))||ids[0])}
       if((as.data||[]).length&&!selectedAssistant)setSelectedAssistant(as.data[0].id);if((cs.data||[]).length&&!currentId)setCurrentId(cs.data[0].id);
     }catch(e){if(/Autentificare|Sesiune|401/i.test(e.message))logout()}finally{setBoot(false)}
