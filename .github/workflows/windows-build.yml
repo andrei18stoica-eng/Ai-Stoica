@@ -1,0 +1,36 @@
+name: Build AI Stoica Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Download project
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Windows app dependencies
+        working-directory: apps/desktop
+        run: npm install --legacy-peer-deps
+
+      - name: Build AI Stoica Windows
+        working-directory: apps/desktop
+        run: npm run build
+
+      - name: Upload AI Stoica
+        uses: actions/upload-artifact@v4
+        with:
+          name: AI-Stoica-Windows
+          path: apps/desktop/release/**
+          if-no-files-found: error
+          retention-days: 14
