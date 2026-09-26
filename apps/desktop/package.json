@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "private": true,
-  "description": "AI Stoica - ChatGPT-like desktop UI with reliable native copy/paste, files, memory, plugins and automations",
+  "description": "AI Stoica - Claude-inspired plugins directory, ChatGPT-like chat, reliable native copy/paste, memory and automations",
   "main": "main.cjs",
   "repository": {
     "type": "git",
