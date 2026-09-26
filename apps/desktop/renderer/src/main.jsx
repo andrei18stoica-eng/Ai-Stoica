@@ -96,6 +96,32 @@ function messageText(m) {
   if (Array.isArray(m?.content)) return m.content.filter(x => x?.type === "text").map(x => x.text).join("\n");
   return "";
 }
+
+async function writeClipboardText(value) {
+  const text=String(value??"");
+  if(!text) return false;
+  try {
+    const result=await window.AIStoica?.writeClipboardText?.(text);
+    if(result?.ok) return true;
+  } catch {}
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {}
+  try {
+    const helper=document.createElement("textarea");
+    helper.value=text;
+    helper.setAttribute("readonly","");
+    helper.style.position="fixed";
+    helper.style.opacity="0";
+    helper.style.pointerEvents="none";
+    document.body.appendChild(helper);
+    helper.select();
+    const ok=document.execCommand("copy");
+    helper.remove();
+    return !!ok;
+  } catch { return false; }
+}
 function groupLabel(ts) {
   const d = new Date(ts || Date.now()), now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -228,10 +254,11 @@ function Header({onMenu,model,setModel,models,omni,onShare,current,projects,onDe
 function CopyMessageButton({message,className=""}) {
   const [copied,setCopied]=useState(false);
   async function copy(){
-    await navigator.clipboard.writeText(messageText(message));
+    const ok=await writeClipboardText(messageText(message));
+    if(!ok){alert("Nu am putut copia textul în clipboard.");return;}
     setCopied(true);setTimeout(()=>setCopied(false),1200);
   }
-  return <button className={className} onClick={copy} title={copied?"Copiat":"Copiază mesajul"}>{copied?<Check size={15}/>:<Copy size={15}/>}</button>;
+  return <button className={className} onClick={copy} title={copied?"Copiat":"Copiază mesajul"} aria-label="Copiază mesajul">{copied?<Check size={15}/>:<Copy size={15}/>}</button>;
 }
 
 function MessageActions({message,onRegenerate,onRate}) {
@@ -261,7 +288,7 @@ function ConversationView({conversation,busy,onRegenerate,onRate}) {
       selection
     });
   }
-  async function copyValue(value){if(!value)return;await navigator.clipboard.writeText(value);setContextMenu(null)}
+  async function copyValue(value){if(!value)return;const ok=await writeClipboardText(value);if(!ok)alert("Nu am putut copia textul în clipboard.");setContextMenu(null)}
   if(!conversation||!conversation.messages?.length)return <div className="welcome"><BrandMark/><h1>Cu ce lucrăm astăzi?</h1><p>Întreabă orice. AI Stoica poate folosi memoria, biblioteca, pluginurile și automatizările tale.</p></div>;
   return <div className="messagesColumn">
     {conversation.messages.map((m,i)=>m.role==="user"
@@ -287,8 +314,9 @@ function Composer({centered,draft,setDraft,onSend,busy,attachments,setAttachment
   const mentionQuery=(mentionMatch?.[1]||"").toLowerCase();
   const mentionOptions=mentionMatch?mentions.filter(x=>x.name.toLowerCase().includes(mentionQuery)||x.trigger.toLowerCase().includes("@"+mentionQuery)).slice(0,8):[];
   function insertMention(x){setDraft(v=>v.replace(/@([^\s@]*)$/,(x.trigger||"@"+x.name)+" "));setTimeout(()=>ta.current?.focus(),0)}
-  async function filesChosen(e){
-    const files=[...e.target.files];setUploading(true);
+  async function addComposerFiles(files){
+    if(!files?.length)return;
+    setUploading(true);
     try{
       const next=[];
       for(const f of files){
@@ -297,7 +325,32 @@ function Composer({centered,draft,setDraft,onSend,busy,attachments,setAttachment
       }
       setAttachments(v=>[...v,...next]);
     }catch(err){alert("Fișier: "+err.message)}
-    finally{setUploading(false);e.target.value="";setMenu(false)}
+    finally{setUploading(false)}
+  }
+  async function filesChosen(e){
+    const input=e.target;
+    await addComposerFiles([...input.files]);
+    input.value="";
+    setMenu(false);
+  }
+  async function pasteIntoComposer(e){
+    const files=[...(e.clipboardData?.files||[])];
+    if(files.length){
+      e.preventDefault();
+      await addComposerFiles(files);
+      return;
+    }
+    const text=e.clipboardData?.getData("text/plain");
+    if(!text)return;
+    e.preventDefault();
+    const el=e.currentTarget;
+    const start=typeof el.selectionStart==="number"?el.selectionStart:draft.length;
+    const end=typeof el.selectionEnd==="number"?el.selectionEnd:draft.length;
+    const next=draft.slice(0,start)+text+draft.slice(end);
+    setDraft(next);
+    requestAnimationFrame(()=>{
+      try{el.focus();el.selectionStart=el.selectionEnd=start+text.length}catch{}
+    });
   }
   async function fallbackSpeech(){
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -336,7 +389,7 @@ function Composer({centered,draft,setDraft,onSend,busy,attachments,setAttachment
     {mentionOptions.length>0&&<div className="mentionMenu">{mentionOptions.map((x,i)=><button key={x.type+x.trigger+i} onClick={()=>insertMention(x)}><span className={cx("mentionType",x.type)}>{x.type==="plugin"?<Plug size={14}/>:<CalendarClock size={14}/>}</span><span><b>{x.name}</b><small>{x.type==="plugin"?"Plugin":"Automatizare"} · {x.trigger}</small></span></button>)}</div>}
     <div className="composerCard">
       {attachments.length>0&&<div className="attachmentTray">{attachments.map((a,i)=><span className={a.type==="unsupported"||a.type==="stored"?"unsupported":""} key={i}><Paperclip size={13}/>{a.name}<button onClick={()=>setAttachments(attachments.filter((_,j)=>j!==i))}><X size={13}/></button></span>)}</div>}
-      <div className="composerLine"><input ref={fileInput} type="file" hidden multiple onChange={filesChosen}/><div className="attachWrap"><button className="composerIcon" onClick={()=>setMenu(!menu)} title="Fișiere și bibliotecă"><Plus size={21}/></button>{menu&&<div className="attachMenu"><button onClick={()=>fileInput.current?.click()}><Upload size={16}/> Încarcă de pe PC</button><button onClick={()=>{setMenu(false);onOpenLibrary()}}><Library size={16}/> Alege din Bibliotecă</button></div>}</div><textarea ref={ta} value={draft} onChange={e=>setDraft(e.target.value)} placeholder={uploading?"Încarc fișierul…":recording?"Ascult… apasă microfonul pentru oprire":transcribing?"Transcriu vocea…":"Întreabă orice · scrie @ pentru pluginuri și automatizări"} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!mentionOptions.length){e.preventDefault();onSend()}}}/><button className={cx("composerIcon",recording&&"recording")} onClick={mic} title={recording?"Oprește înregistrarea":"Dictare vocală"} disabled={transcribing}><Mic size={20}/></button><button className="sendButton" disabled={busy||recording||transcribing||uploading||(!draft.trim()&&!attachments.some(a=>a.part))} onClick={onSend}><ArrowUp size={20}/></button></div>
+      <div className="composerLine"><input ref={fileInput} type="file" hidden multiple onChange={filesChosen}/><div className="attachWrap"><button className="composerIcon" onClick={()=>setMenu(!menu)} title="Fișiere și bibliotecă"><Plus size={21}/></button>{menu&&<div className="attachMenu"><button onClick={()=>fileInput.current?.click()}><Upload size={16}/> Încarcă de pe PC</button><button onClick={()=>{setMenu(false);onOpenLibrary()}}><Library size={16}/> Alege din Bibliotecă</button></div>}</div><textarea ref={ta} value={draft} onChange={e=>setDraft(e.target.value)} onPaste={pasteIntoComposer} spellCheck={true} aria-label="Mesaj pentru AI Stoica" placeholder={uploading?"Încarc fișierul…":recording?"Ascult… apasă microfonul pentru oprire":transcribing?"Transcriu vocea…":"Mesaj pentru AI Stoica"} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!mentionOptions.length){e.preventDefault();onSend()}}}/><button className={cx("composerIcon",recording&&"recording")} onClick={mic} title={recording?"Oprește înregistrarea":"Dictare vocală"} disabled={transcribing}><Mic size={20}/></button><button className="sendButton" disabled={busy||recording||transcribing||uploading||(!draft.trim()&&!attachments.some(a=>a.part))} onClick={onSend}><ArrowUp size={20}/></button></div>
     </div><div className="composerHint">{uploading?"Fișierul se salvează în Biblioteca AI Stoica — fără limită software de dimensiune":recording?"Microfon activ — vorbește acum":transcribing?"AI Stoica transcrie înregistrarea…":"AI Stoica poate greși. Verifică informațiile importante."}</div></div>;
 }
 
