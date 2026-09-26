@@ -56,3 +56,14 @@
   .pluginCatalog{grid-template-columns:1fr 1fr}
   .historyDelete{opacity:1}
 }
+
+
+/* v0.5.5 — right-click copy for messages and code */
+.copyByRightClick{cursor:context-menu}
+.copyContextMenu{position:fixed;z-index:500;width:225px;padding:6px;border:1px solid #2b3b50;background:#0b121c;border-radius:12px;box-shadow:0 18px 60px #000c}
+.copyContextMenu button{width:100%;display:grid;grid-template-columns:28px 1fr;gap:8px;align-items:center;text-align:left;border:0;background:transparent;color:#dce6f3;padding:8px;border-radius:8px;cursor:pointer}
+.copyContextMenu button:hover{background:#142033}
+.copyContextMenu button svg{color:#66aaff}
+.copyContextMenu button b,.copyContextMenu button small{display:block}
+.copyContextMenu button b{font-size:12px}
+.copyContextMenu button small{font-size:9px;color:#73849a;margin-top:2px}
