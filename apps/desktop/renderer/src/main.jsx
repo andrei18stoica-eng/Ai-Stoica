@@ -437,27 +437,106 @@ function MemoryPanel({onClose}) {
 function PluginsPanel({onClose}) {
   const blank={name:"",description:"",url:"",method:"POST",trigger:"",apiKey:"",auto:false};
   const catalog=[
-    ["Gmail","Email Google","@gmail"],["Google Calendar","Calendar Google","@calendar"],["Google Drive","Fișiere Google Drive","@drive"],["GitHub","Repository, issues și cod","@github"],
-    ["Outlook","Email Microsoft","@outlook"],["OneDrive","Fișiere Microsoft","@onedrive"],["SharePoint","Documente și site-uri Microsoft","@sharepoint"],["Microsoft Teams","Mesaje și colaborare","@teams"],
-    ["Slack","Mesaje și canale","@slack"],["Dropbox","Fișiere Dropbox","@dropbox"],["Box","Fișiere Box","@box"],["Notion","Pagini și baze de date","@notion"],
-    ["Trello","Board-uri și carduri","@trello"],["Jira","Issue tracking","@jira"],["Asana","Task management","@asana"],["Linear","Issues și proiecte","@linear"],
-    ["Zoom","Întâlniri","@zoom"],["HubSpot","CRM","@hubspot"],["Salesforce","CRM","@salesforce"],["Discord","Mesaje și comunități","@discord"]
+    {name:"Gmail",description:"Caută, citește și lucrează cu emailurile tale Google.",trigger:"@gmail",group:"Google",mark:"G"},
+    {name:"Google Calendar",description:"Vezi programul și lucrează cu evenimentele din calendar.",trigger:"@calendar",group:"Google",mark:"31"},
+    {name:"Google Drive",description:"Folosește documente și fișiere din Google Drive.",trigger:"@drive",group:"Google",mark:"△"},
+    {name:"GitHub",description:"Lucrează cu repository-uri, cod, issues și pull request-uri.",trigger:"@github",group:"Dezvoltare",mark:"GH"},
+    {name:"Outlook",description:"Conectează emailul Microsoft Outlook.",trigger:"@outlook",group:"Microsoft",mark:"O"},
+    {name:"OneDrive",description:"Accesează fișierele tale Microsoft OneDrive.",trigger:"@onedrive",group:"Microsoft",mark:"☁"},
+    {name:"SharePoint",description:"Lucrează cu documente și site-uri SharePoint.",trigger:"@sharepoint",group:"Microsoft",mark:"S"},
+    {name:"Microsoft Teams",description:"Mesaje, conversații și colaborare în Teams.",trigger:"@teams",group:"Microsoft",mark:"T"},
+    {name:"Slack",description:"Folosește mesaje și canale din Slack.",trigger:"@slack",group:"Productivitate",mark:"S"},
+    {name:"Dropbox",description:"Folosește fișiere și foldere din Dropbox.",trigger:"@dropbox",group:"Fișiere",mark:"D"},
+    {name:"Box",description:"Accesează conținutul stocat în Box.",trigger:"@box",group:"Fișiere",mark:"B"},
+    {name:"Notion",description:"Lucrează cu pagini și baze de date Notion.",trigger:"@notion",group:"Productivitate",mark:"N"},
+    {name:"Trello",description:"Board-uri, liste și carduri Trello.",trigger:"@trello",group:"Productivitate",mark:"T"},
+    {name:"Jira",description:"Issues, proiecte și fluxuri Jira.",trigger:"@jira",group:"Dezvoltare",mark:"J"},
+    {name:"Asana",description:"Task-uri și proiecte Asana.",trigger:"@asana",group:"Productivitate",mark:"A"},
+    {name:"Linear",description:"Issues și proiecte pentru echipe software.",trigger:"@linear",group:"Dezvoltare",mark:"L"},
+    {name:"Zoom",description:"Întâlniri și informații din Zoom.",trigger:"@zoom",group:"Comunicare",mark:"Z"},
+    {name:"HubSpot",description:"Date și activități din CRM-ul HubSpot.",trigger:"@hubspot",group:"Business",mark:"H"},
+    {name:"Salesforce",description:"Lucrează cu date din Salesforce CRM.",trigger:"@salesforce",group:"Business",mark:"SF"},
+    {name:"Discord",description:"Mesaje și comunități Discord.",trigger:"@discord",group:"Comunicare",mark:"D"}
   ];
-  const [items,setItems]=useState([]),[form,setForm]=useState(blank),[result,setResult]=useState(""),[catalogOpen,setCatalogOpen]=useState(true);
+  const [items,setItems]=useState([]),[form,setForm]=useState(blank),[result,setResult]=useState(""),[tab,setTab]=useState("discover"),[query,setQuery]=useState(""),[selected,setSelected]=useState(null);
   async function load(){setItems((await api("/api/plugins")).data||[])}
   useEffect(()=>{load()},[]);
-  async function add(){if(!form.name.trim()||!form.url.trim())return;await api("/api/plugins",{method:"POST",body:JSON.stringify(form)});setForm(blank);await load()}
+  async function add(){
+    if(!form.name.trim()||!form.url.trim())return;
+    await api("/api/plugins",{method:"POST",body:JSON.stringify(form)});
+    setForm(blank);setSelected(null);setTab("connected");await load()
+  }
   async function patch(x,p){await api(`/api/plugins/${x.id}`,{method:"PATCH",body:JSON.stringify(p)});await load()}
   async function test(x){try{const d=await api(`/api/plugins/${x.id}/test`,{method:"POST",body:JSON.stringify({message:"Test conexiune AI Stoica"})});setResult(`${x.name}: ${d.result}`)}catch(e){setResult(`${x.name}: Eroare — ${e.message}`)}}
-  async function remove(id){await api(`/api/plugins/${id}`,{method:"DELETE"});await load()}
-  function chooseCatalog(x){setForm({...blank,name:x[0],description:x[1],trigger:x[2]});setCatalogOpen(false)}
-  return <ToolShell title="Pluginuri" subtitle="Catalog de servicii + orice plugin HTTP/Webhook. În chat scrie @ și alege pluginul." onClose={onClose}>
-    <div className="pluginCatalogHead"><b>Catalog conexiuni</b><button className="smallBtn" onClick={()=>setCatalogOpen(!catalogOpen)}>{catalogOpen?"Ascunde":"Arată"}</button></div>
-    {catalogOpen&&<div className="pluginCatalog">{catalog.map(x=><button key={x[0]} onClick={()=>chooseCatalog(x)}><span className="pluginCatalogIcon"><Plug size={16}/></span><span><b>{x[0]}</b><small>{x[1]}</small></span></button>)}</div>}
-    <div className="pluginForm"><input placeholder="Nume plugin" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/><input placeholder="URL endpoint / webhook (https://…)" value={form.url} onChange={e=>setForm({...form,url:e.target.value})}/><input placeholder="Trigger, ex. @gmail" value={form.trigger} onChange={e=>setForm({...form,trigger:e.target.value})}/><input type="password" placeholder="API key opțională" value={form.apiKey} onChange={e=>setForm({...form,apiKey:e.target.value})}/><select value={form.method} onChange={e=>setForm({...form,method:e.target.value})}><option>POST</option><option>GET</option></select><label className="checkLabel"><input type="checkbox" checked={form.auto} onChange={e=>setForm({...form,auto:e.target.checked})}/> Folosește automat la fiecare mesaj</label><button className="primary" onClick={add}><Plus size={16}/> Adaugă plugin</button></div>
-    <div className="toolNote catalogNote">Serviciile precum Gmail, GitHub sau Slack au nevoie de o conexiune autorizată (OAuth/API). Catalogul le pregătește în AI Stoica; nu inventează acces la cont fără autentificare.</div>
-    {result&&<div className="pluginResult">{result}</div>}
-    <div className="pluginList">{items.map(x=><div className="pluginCard" key={x.id}><div className="pluginBadge"><Plug size={18}/></div><div className="pluginInfo"><b>{x.name}</b><span>{x.url}</span><small>Trigger: {x.trigger||"—"} {x.hasKey?"· cheie salvată":""}</small></div><button className="smallBtn" onClick={()=>test(x)}>Testează</button><button className="smallBtn" onClick={()=>patch(x,{enabled:!x.enabled})}>{x.enabled?"Activ":"Oprit"}</button><button className="iconDanger" onClick={()=>remove(x.id)}><Trash2 size={16}/></button></div>)}</div>
+  async function remove(id){if(confirm("Ștergi această conexiune?")){await api(`/api/plugins/${id}`,{method:"DELETE"});await load()}}
+  function chooseCatalog(x){setSelected(x);setForm({...blank,name:x.name,description:x.description,trigger:x.trigger})}
+  function closeSetup(){setSelected(null);setForm(blank)}
+  const normalized=query.trim().toLowerCase();
+  const filtered=catalog.filter(x=>!normalized||x.name.toLowerCase().includes(normalized)||x.description.toLowerCase().includes(normalized)||x.group.toLowerCase().includes(normalized));
+  const installedNames=new Set(items.map(x=>String(x.name||"").toLowerCase()));
+  return <ToolShell title="Pluginuri" subtitle="Conectează serviciile pe care AI Stoica le poate folosi în conversații." onClose={onClose}>
+    <div className="claudePlugins">
+      <div className="claudePluginTabs">
+        <button className={tab==="discover"?"active":""} onClick={()=>setTab("discover")}>Descoperă</button>
+        <button className={tab==="connected"?"active":""} onClick={()=>setTab("connected")}>Conectate <span>{items.length}</span></button>
+      </div>
+
+      {tab==="discover"&&<>
+        <div className="claudePluginSearch"><Search size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Caută integrări"/></div>
+        <div className="claudePluginIntro">
+          <div><h3>Conectează aplicațiile tale</h3><p>Adaugă servicii pe care AI Stoica le poate folosi atunci când îi ceri explicit sau printr-un trigger @.</p></div>
+          <button className="secondary claudeCustomBtn" onClick={()=>chooseCatalog({name:"Plugin personalizat",description:"Conectează orice endpoint HTTP sau webhook.",trigger:"@plugin",group:"Personalizat",mark:"+"})}><Plus size={16}/> Adaugă personalizat</button>
+        </div>
+        <div className="claudePluginDirectory">
+          {filtered.map(x=>{
+            const connected=installedNames.has(x.name.toLowerCase());
+            return <button className="claudePluginRow" key={x.name} onClick={()=>chooseCatalog(x)}>
+              <span className="claudePluginLogo">{x.mark}</span>
+              <span className="claudePluginCopy"><b>{x.name}</b><small>{x.description}</small></span>
+              <span className="claudePluginGroup">{x.group}</span>
+              <span className={cx("claudeConnectPill",connected&&"connected")}>{connected?<><Check size={14}/> Conectat</>:"Configurează"}</span>
+            </button>
+          })}
+          {!filtered.length&&<div className="claudePluginEmpty">Nu am găsit nicio integrare pentru „{query}”.</div>}
+        </div>
+      </>}
+
+      {tab==="connected"&&<>
+        <div className="claudeConnectedHead"><div><h3>Conexiunile tale</h3><p>Controlează ce servicii poate folosi AI Stoica.</p></div><button className="secondary" onClick={()=>setTab("discover")}><Plus size={16}/> Adaugă conexiune</button></div>
+        {result&&<div className="pluginResult claudeResult">{result}</div>}
+        <div className="claudeConnectedList">
+          {!items.length&&<div className="claudePluginEmpty">Nu ai încă nicio conexiune configurată.</div>}
+          {items.map(x=><div className="claudeConnectedRow" key={x.id}>
+            <div className="claudePluginLogo">{String(x.name||"P").slice(0,2).toUpperCase()}</div>
+            <div className="claudeConnectedInfo"><b>{x.name}</b><span>{x.description||x.url}</span><small>{x.trigger||"Fără trigger"} {x.hasKey?"· autentificare salvată":""}</small></div>
+            <div className="claudeConnectedActions">
+              <button className="smallBtn" onClick={()=>test(x)}>Testează</button>
+              <button className={cx("claudeToggle",x.enabled&&"on")} onClick={()=>patch(x,{enabled:!x.enabled})} aria-label={x.enabled?"Dezactivează":"Activează"}><span/></button>
+              <button className="iconDanger" onClick={()=>remove(x.id)} title="Șterge"><Trash2 size={16}/></button>
+            </div>
+          </div>)}
+        </div>
+      </>}
+
+      {selected&&<div className="claudeSetupBackdrop" onMouseDown={e=>{if(e.target===e.currentTarget)closeSetup()}}>
+        <div className="claudeSetupPanel">
+          <div className="claudeSetupHead">
+            <div className="claudePluginLogo large">{selected.mark}</div>
+            <div><h3>{selected.name}</h3><p>{selected.description}</p></div>
+            <button className="iconOnly" onClick={closeSetup}><X size={18}/></button>
+          </div>
+          <div className="claudeSetupNotice"><Plug size={16}/><span>Configurează conexiunea. Serviciile cu autentificare proprie necesită endpoint/OAuth sau API autorizat; AI Stoica nu primește acces fără autorizarea ta.</span></div>
+          <div className="claudeSetupForm">
+            <label>Nume<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label>
+            <label>Endpoint sau webhook<input placeholder="https://…" value={form.url} onChange={e=>setForm({...form,url:e.target.value})}/></label>
+            <div className="claudeFormRow"><label>Trigger<input placeholder="@gmail" value={form.trigger} onChange={e=>setForm({...form,trigger:e.target.value})}/></label><label>Metodă<select value={form.method} onChange={e=>setForm({...form,method:e.target.value})}><option>POST</option><option>GET</option></select></label></div>
+            <label>API key <span className="optional">opțional</span><input type="password" placeholder="Cheie / token" value={form.apiKey} onChange={e=>setForm({...form,apiKey:e.target.value})}/></label>
+            <label className="claudeAutoRow"><span><b>Folosește automat</b><small>Permite pluginului să fie inclus automat în contextul mesajelor.</small></span><input type="checkbox" checked={form.auto} onChange={e=>setForm({...form,auto:e.target.checked})}/></label>
+          </div>
+          <div className="claudeSetupActions"><button className="secondary" onClick={closeSetup}>Anulează</button><button className="primary" disabled={!form.name.trim()||!form.url.trim()} onClick={add}>Salvează conexiunea</button></div>
+        </div>
+      </div>}
+    </div>
   </ToolShell>;
 }
 
