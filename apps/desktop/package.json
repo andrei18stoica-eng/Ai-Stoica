@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
-  "description": "AI Stoica - Stoica Enterprises AI for Windows with memory, library, plugins and automations",
+  "description": "AI Stoica - Windows with Explore, voice transcription, advanced settings, memory, library, plugins and automations",
   "main": "main.cjs",
   "repository": {
     "type": "git",
