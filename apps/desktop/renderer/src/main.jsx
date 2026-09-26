@@ -7,7 +7,7 @@ import {
   Paperclip, Mic, ArrowUp, Copy, ThumbsUp, ThumbsDown, RotateCcw, X,
   ChevronDown, User, Check, Wifi, WifiOff, Sparkles, SquarePen,
   CalendarClock, Plug, Library, Brain, Upload, Trash2, Play, Pin, PinOff,
-  FileText, Image as ImageIcon, HardDrive, ToggleLeft, ToggleRight, MapPinned, Globe2, Compass, Archive, ExternalLink, SlidersHorizontal, Volume2,
+  FileText, Image as ImageIcon, HardDrive, ToggleLeft, ToggleRight, MapPinned, Globe2, Compass, Archive, ExternalLink, SlidersHorizontal, Volume2, PanelTopOpen,
   Compass, Map, Globe2, MicOff, RefreshCw, ExternalLink
 } from "lucide-react";
 import "./styles.css";
