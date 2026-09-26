@@ -225,8 +225,17 @@ function Header({onMenu,model,setModel,models,omni,onShare,current,projects,onDe
   </header>;
 }
 
+function CopyMessageButton({message,className=""}) {
+  const [copied,setCopied]=useState(false);
+  async function copy(){
+    await navigator.clipboard.writeText(messageText(message));
+    setCopied(true);setTimeout(()=>setCopied(false),1200);
+  }
+  return <button className={className} onClick={copy} title={copied?"Copiat":"Copiază mesajul"}>{copied?<Check size={15}/>:<Copy size={15}/>}</button>;
+}
+
 function MessageActions({message,onRegenerate,onRate}) {
-  return <div className="messageActions"><button className={message.rating===1?"selected":""} onClick={()=>onRate(1)}><ThumbsUp size={15}/></button><button className={message.rating===-1?"selected":""} onClick={()=>onRate(-1)}><ThumbsDown size={15}/></button><button onClick={onRegenerate}><RotateCcw size={15}/></button></div>;
+  return <div className="messageActions"><CopyMessageButton message={message}/><button className={message.rating===1?"selected":""} onClick={()=>onRate(1)}><ThumbsUp size={15}/></button><button className={message.rating===-1?"selected":""} onClick={()=>onRate(-1)}><ThumbsDown size={15}/></button><button onClick={onRegenerate}><RotateCcw size={15}/></button></div>;
 }
 
 function ConversationView({conversation,busy,onRegenerate,onRate}) {
@@ -256,7 +265,7 @@ function ConversationView({conversation,busy,onRegenerate,onRate}) {
   if(!conversation||!conversation.messages?.length)return <div className="welcome"><BrandMark/><h1>Cu ce lucrăm astăzi?</h1><p>Întreabă orice. AI Stoica poate folosi memoria, biblioteca, pluginurile și automatizările tale.</p></div>;
   return <div className="messagesColumn">
     {conversation.messages.map((m,i)=>m.role==="user"
-      ?<div key={m.id||i} className="userRow"><div className="userBubble copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}><div>{messageText(m)}</div>{m.attachments?.length>0&&<div className="inlineAttachments">{m.attachments.map((a,j)=><span key={j}><Paperclip size={12}/>{a.name}</span>)}</div>}</div></div>
+      ?<div key={m.id||i} className="userRow"><div className="userMessageWrap"><div className="userBubble copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}><div>{messageText(m)}</div>{m.attachments?.length>0&&<div className="inlineAttachments">{m.attachments.map((a,j)=><span key={j}><Paperclip size={12}/>{a.name}</span>)}</div>}</div><div className="userMessageActions"><CopyMessageButton message={m}/></div></div></div>
       :m.role==="assistant"
         ?<div key={m.id||i} className="assistantBlock"><div className="assistantMark">S</div><div className="assistantBody copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}><ReactMarkdown remarkPlugins={[remarkGfm]}>{String(m.content||"")}</ReactMarkdown>{!m.streaming&&<MessageActions message={m} onRegenerate={()=>onRegenerate(i)} onRate={v=>onRate(i,v)}/>}</div></div>
         :null)}
