@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld("AIStoica", {
   onUpdateReady: (cb) => ipcRenderer.on("update-ready", cb),
   openExternal: (url) => ipcRenderer.invoke("external:open", url),
   checkUpdate: () => ipcRenderer.invoke("update:check"),
-  installUpdate: () => ipcRenderer.send("update:install")
+  installUpdate: () => ipcRenderer.send("update:install"),
+  openExternal: (url) => ipcRenderer.invoke("system:open-external", url)
 });
