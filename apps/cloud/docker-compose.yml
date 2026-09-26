@@ -1,0 +1,71 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - omniroute-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  omniroute:
+    image: diegosouzapw/omniroute:latest
+    restart: unless-stopped
+    stop_grace_period: 40s
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      OMNIROUTE_WS_BRIDGE_SECRET: ${OMNIROUTE_WS_BRIDGE_SECRET}
+      PORT: "20128"
+    volumes:
+      - omniroute-data:/app/data
+    ports:
+      - "127.0.0.1:20128:20128"
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: apps/cloud/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - omniroute
+    environment:
+      PORT: "8787"
+      HOST: "0.0.0.0"
+      DATA_DIR: /data
+      OMNIROUTE_BASE_URL: ${OMNIROUTE_BASE_URL:-http://omniroute:20128/v1}
+      OMNIROUTE_API_KEY: ${OMNIROUTE_API_KEY:-}
+      AI_STOICA_MODEL: ${AI_STOICA_MODEL:-Ai principal}
+      AI_STOICA_SPEECH_MODEL: ${AI_STOICA_SPEECH_MODEL:-openai/whisper-1}
+      AI_STOICA_SPEECH_LANGUAGE: ${AI_STOICA_SPEECH_LANGUAGE:-ro}
+    volumes:
+      - ai-stoica-data:/data
+    ports:
+      - "127.0.0.1:8787:8787"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - gateway
+    environment:
+      AI_STOICA_DOMAIN: ${AI_STOICA_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  ai-stoica-data:
+  omniroute-data:
+  omniroute-redis-data:
+  caddy-data:
+  caddy-config:
