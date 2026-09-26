@@ -148,6 +148,14 @@ app.whenReady().then(async () => {
   ipcMain.handle("system:status", () => systemStatus());
   ipcMain.handle("system:ensure-omni", () => ensureOmniRoute());
   ipcMain.handle("system:set-startup", (_e, enabled) => { const cfg2 = saveConfig({ startWithWindows: !!enabled }); return { ok: true, enabled: cfg2.startWithWindows }; });
+  ipcMain.handle("system:open-external", async (_e, rawUrl) => {
+    try {
+      const url = new URL(String(rawUrl || ""));
+      if (!["http:", "https:"].includes(url.protocol)) return { ok: false, error: "Protocol nepermis." };
+      await shell.openExternal(url.toString());
+      return { ok: true };
+    } catch (e) { return { ok: false, error: e.message }; }
+  });
   ipcMain.handle("external:open", async (_e, rawUrl) => {
     try {
       const url = new URL(String(rawUrl || ""));
