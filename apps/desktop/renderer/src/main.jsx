@@ -226,14 +226,47 @@ function Header({onMenu,model,setModel,models,omni,onShare,current,projects,onDe
 }
 
 function MessageActions({message,onRegenerate,onRate}) {
-  const [copied,setCopied]=useState(false);
-  async function copy(){await navigator.clipboard.writeText(messageText(message));setCopied(true);setTimeout(()=>setCopied(false),1200)}
-  return <div className="messageActions"><button onClick={copy} title="Copiază">{copied?<Check size={15}/>:<Copy size={15}/>}</button><button className={message.rating===1?"selected":""} onClick={()=>onRate(1)}><ThumbsUp size={15}/></button><button className={message.rating===-1?"selected":""} onClick={()=>onRate(-1)}><ThumbsDown size={15}/></button><button onClick={onRegenerate}><RotateCcw size={15}/></button></div>;
+  return <div className="messageActions"><button className={message.rating===1?"selected":""} onClick={()=>onRate(1)}><ThumbsUp size={15}/></button><button className={message.rating===-1?"selected":""} onClick={()=>onRate(-1)}><ThumbsDown size={15}/></button><button onClick={onRegenerate}><RotateCcw size={15}/></button></div>;
 }
 
 function ConversationView({conversation,busy,onRegenerate,onRate}) {
+  const [contextMenu,setContextMenu]=useState(null);
+  useEffect(()=>{
+    const close=()=>setContextMenu(null);
+    window.addEventListener("click",close);
+    window.addEventListener("blur",close);
+    window.addEventListener("scroll",close,true);
+    return()=>{window.removeEventListener("click",close);window.removeEventListener("blur",close);window.removeEventListener("scroll",close,true)};
+  },[]);
+  function openCopyMenu(e,message){
+    e.preventDefault();e.stopPropagation();
+    const pre=e.target?.closest?.("pre");
+    const code=e.target?.closest?.("code");
+    const selection=String(window.getSelection?.()?.toString?.()||"").trim();
+    const codeText=pre?.innerText||(code&&!pre?code.innerText:"");
+    setContextMenu({
+      x:Math.min(e.clientX,window.innerWidth-235),
+      y:Math.min(e.clientY,window.innerHeight-150),
+      messageText:messageText(message),
+      codeText:String(codeText||"").trim(),
+      selection
+    });
+  }
+  async function copyValue(value){if(!value)return;await navigator.clipboard.writeText(value);setContextMenu(null)}
   if(!conversation||!conversation.messages?.length)return <div className="welcome"><BrandMark/><h1>Cu ce lucrăm astăzi?</h1><p>Întreabă orice. AI Stoica poate folosi memoria, biblioteca, pluginurile și automatizările tale.</p></div>;
-  return <div className="messagesColumn">{conversation.messages.map((m,i)=>m.role==="user"?<div key={m.id||i} className="userRow"><div className="userBubble"><div>{messageText(m)}</div>{m.attachments?.length>0&&<div className="inlineAttachments">{m.attachments.map((a,j)=><span key={j}><Paperclip size={12}/>{a.name}</span>)}</div>}</div></div>:m.role==="assistant"?<div key={m.id||i} className="assistantBlock"><div className="assistantMark">S</div><div className="assistantBody"><ReactMarkdown remarkPlugins={[remarkGfm]}>{String(m.content||"")}</ReactMarkdown>{!m.streaming&&<MessageActions message={m} onRegenerate={()=>onRegenerate(i)} onRate={v=>onRate(i,v)}/>}</div></div>:null)}{busy&&<div className="thinking"><span/><span/><span/></div>}</div>;
+  return <div className="messagesColumn">
+    {conversation.messages.map((m,i)=>m.role==="user"
+      ?<div key={m.id||i} className="userRow"><div className="userBubble copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}><div>{messageText(m)}</div>{m.attachments?.length>0&&<div className="inlineAttachments">{m.attachments.map((a,j)=><span key={j}><Paperclip size={12}/>{a.name}</span>)}</div>}</div></div>
+      :m.role==="assistant"
+        ?<div key={m.id||i} className="assistantBlock"><div className="assistantMark">S</div><div className="assistantBody copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}><ReactMarkdown remarkPlugins={[remarkGfm]}>{String(m.content||"")}</ReactMarkdown>{!m.streaming&&<MessageActions message={m} onRegenerate={()=>onRegenerate(i)} onRate={v=>onRate(i,v)}/>}</div></div>
+        :null)}
+    {busy&&<div className="thinking"><span/><span/><span/></div>}
+    {contextMenu&&<div className="copyContextMenu" style={{left:contextMenu.x,top:contextMenu.y}} onClick={e=>e.stopPropagation()}>
+      {contextMenu.codeText&&<button onClick={()=>copyValue(contextMenu.codeText)}><Copy size={15}/><span><b>Copiază codul</b><small>Doar blocul de cod selectat</small></span></button>}
+      {contextMenu.selection&&<button onClick={()=>copyValue(contextMenu.selection)}><Copy size={15}/><span><b>Copiază selecția</b><small>Textul pe care l-ai selectat</small></span></button>}
+      <button onClick={()=>copyValue(contextMenu.messageText)}><Copy size={15}/><span><b>Copiază mesajul</b><small>Mesajul complet</small></span></button>
+    </div>}
+  </div>;
 }
 
 function Composer({centered,draft,setDraft,onSend,busy,attachments,setAttachments,onOpenLibrary}) {
