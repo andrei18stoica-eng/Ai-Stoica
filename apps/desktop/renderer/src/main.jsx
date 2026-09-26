@@ -1,14 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
   Menu, Plus, Search, Folder, Bot, Settings, LogOut, Share2, MoreHorizontal,
   Paperclip, Mic, ArrowUp, Copy, ThumbsUp, ThumbsDown, RotateCcw, X,
   ChevronDown, User, Check, Wifi, WifiOff, Sparkles, SquarePen,
   CalendarClock, Plug, Library, Brain, Upload, Trash2, Play, Pin, PinOff,
-  FileText, Image as ImageIcon, HardDrive, ToggleLeft, ToggleRight, MapPinned, Globe2, Compass, Archive, ExternalLink, SlidersHorizontal, Volume2, PanelTopOpen,
-  Compass, Map, Globe2, MicOff, RefreshCw, ExternalLink
+  FileText, Image as ImageIcon, HardDrive, ToggleLeft, ToggleRight,
+  Compass, Map, Globe2, Archive, ExternalLink, SlidersHorizontal, Volume2,
+  PanelTopOpen
 } from "lucide-react";
 import "./styles.css";
 
@@ -115,7 +113,6 @@ function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,convers
     <button className="newChat" onClick={onNew}><SquarePen size={17}/> Conversație nouă</button>
     <div className="searchBox"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Caută conversații"/></div>
     <div className="sideScroll">
-      <button className="exploreBtn" onClick={onExplore}><Compass size={17}/> Explorează</button>
       <div className="sideSection"><div className="sectionHead"><span>Instrumente</span></div>
         <button className="sideItem exploreItem" onClick={()=>onTool("explore")}><Compass size={16}/> Explorează</button>
         <button className="sideItem toolItem" onClick={()=>onTool("automations")}><CalendarClock size={16}/> Automatizări</button>
@@ -327,24 +324,6 @@ function ConversationFilesPanel({conversation,onClose}) {
   </ToolShell>;
 }
 
-function ExplorePanel({onClose,assistants,onUseAssistant,onPrompt}) {
-  const [tab,setTab]=useState("maps"),[mapQuery,setMapQuery]=useState(""),[imagePrompt,setImagePrompt]=useState(""),[site,setSite]=useState("");
-  async function openUrl(url){try{await window.AIStoica?.openExternal?.(url)}catch{}}
-  function openSite(){let u=site.trim();if(!u)return;if(!/^https?:\/\//i.test(u))u="https://"+u;openUrl(u)}
-  return <ToolShell title="Explorează" subtitle="Hărți, imagini, GPT-uri și site-uri într-un singur loc." onClose={onClose}>
-    <div className="exploreTabs">
-      <button className={tab==="maps"?"active":""} onClick={()=>setTab("maps")}><MapPinned size={18}/> Hărți</button>
-      <button className={tab==="images"?"active":""} onClick={()=>setTab("images")}><ImageIcon size={18}/> Imagini</button>
-      <button className={tab==="gpts"?"active":""} onClick={()=>setTab("gpts")}><Bot size={18}/> GPT-uri</button>
-      <button className={tab==="sites"?"active":""} onClick={()=>setTab("sites")}><Globe2 size={18}/> Site-uri</button>
-    </div>
-    {tab==="maps"&&<div className="explorePane"><div className="exploreHero"><MapPinned size={34}/><div><h3>Hărți</h3><p>Caută o adresă, un obiectiv sau un loc și deschide-l pe hartă.</p></div></div><div className="exploreInputRow"><input value={mapQuery} onChange={e=>setMapQuery(e.target.value)} placeholder="Ex. Piața Victoriei, București"/><button className="primary" onClick={()=>mapQuery.trim()&&openUrl("https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(mapQuery))}>Deschide harta <ExternalLink size={15}/></button></div></div>}
-    {tab==="images"&&<div className="explorePane"><div className="exploreHero"><ImageIcon size={34}/><div><h3>Imagini</h3><p>Pornește rapid o cerere de generare sau editare de imagine.</p></div></div><textarea className="exploreTextarea" value={imagePrompt} onChange={e=>setImagePrompt(e.target.value)} placeholder="Descrie imaginea pe care vrei să o creezi…"/><button className="primary" onClick={()=>{if(imagePrompt.trim()){onPrompt("Generează o imagine: "+imagePrompt.trim());onClose()}}}>Trimite în chat</button></div>}
-    {tab==="gpts"&&<div className="explorePane"><div className="exploreHero"><Bot size={34}/><div><h3>GPT-uri / Asistenți</h3><p>Alege unul dintre asistenții tăi specializați.</p></div></div><div className="gptGrid">{assistants.map(a=><button key={a.id} onClick={()=>{onUseAssistant(a.id);onClose()}}><div className="gptIcon">{a.icon||a.name?.[0]||"A"}</div><div><b>{a.name}</b><span>{a.builtIn?"Asistent principal":"Asistent personalizat"}</span></div></button>)}</div></div>}
-    {tab==="sites"&&<div className="explorePane"><div className="exploreHero"><Globe2 size={34}/><div><h3>Site-uri</h3><p>Deschide rapid un site sau un serviciu web.</p></div></div><div className="exploreInputRow"><input value={site} onChange={e=>setSite(e.target.value)} placeholder="Ex. github.com"/><button className="primary" onClick={openSite}>Deschide <ExternalLink size={15}/></button></div><div className="siteShortcuts"><button onClick={()=>openUrl("https://www.google.com")}>Google</button><button onClick={()=>openUrl("https://www.youtube.com")}>YouTube</button><button onClick={()=>openUrl("https://github.com")}>GitHub</button><button onClick={()=>openUrl("https://maps.google.com")}>Google Maps</button></div></div>}
-  </ToolShell>;
-}
-
 function SettingsModal({onClose,onSaved,user}) {
   const [cfg,setCfg]=useState(null),[key,setKey]=useState(""),[tab,setTab]=useState("general"),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState("");
   useEffect(()=>{Promise.all([window.AIStoica.getConfig(),window.AIStoica.systemStatus()]).then(([c,s])=>{setCfg(c);setStatus(s)})},[]);
@@ -378,7 +357,7 @@ function App() {
   const [boot,setBoot]=useState(true),[conversations,setConversations]=useState([]),[projects,setProjects]=useState([]),[assistants,setAssistants]=useState([]),[models,setModels]=useState(["Ai principal"]);
   const [currentId,setCurrentId]=useState(null),[model,setModel]=useState("Ai principal"),[selectedProject,setSelectedProject]=useState(null),[selectedAssistant,setSelectedAssistant]=useState(null);
   const [draft,setDraft]=useState(""),[attachments,setAttachments]=useState([]),[busy,setBusy]=useState(false),[search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[omni,setOmni]=useState(false);
-  const [settings,setSettings]=useState(false),[createType,setCreateType]=useState(null),[toolPanel,setToolPanel]=useState(null),[updateReady,setUpdateReady]=useState(false),[sidebarCollapsed,setSidebarCollapsed]=useState(false);
+  const [settings,setSettings]=useState(false),[createType,setCreateType]=useState(null),[toolPanel,setToolPanel]=useState(null),[filesPanel,setFilesPanel]=useState(false),[updateReady,setUpdateReady]=useState(false),[sidebarCollapsed,setSidebarCollapsed]=useState(false);
   const chatRef=useRef(null);
   const current=conversations.find(c=>c.id===currentId)||null;
 
@@ -435,9 +414,9 @@ function App() {
   if(!user)return <AuthScreen onAuth={setUser}/>;
   const hasMessages=!!current?.messages?.length;
   return <div className={cx("appShell",sidebarCollapsed&&"sidebarCollapsed")}>
-    <Sidebar open={sidebar} setOpen={setSidebar} user={user} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} onSelect={id=>{setCurrentId(id);setSidebar(false)}} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} selectedAssistant={selectedAssistant} setSelectedAssistant={setSelectedAssistant} onNewProject={()=>setCreateType("project")} onNewAssistant={()=>setCreateType("assistant")} onTool={openTool} onExplore={()=>{setSidebar(false);setExplore(true)}} onSettings={()=>setSettings(true)} onLogout={logout}/>
+    <Sidebar open={sidebar} setOpen={setSidebar} user={user} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} onSelect={id=>{setCurrentId(id);setSidebar(false)}} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} selectedAssistant={selectedAssistant} setSelectedAssistant={setSelectedAssistant} onNewProject={()=>setCreateType("project")} onNewAssistant={()=>setCreateType("assistant")} onTool={openTool} onExplore={()=>openTool("explore")} onSettings={()=>setSettings(true)} onLogout={logout}/>
     {sidebar&&<div className="mobileScrim" onClick={()=>setSidebar(false)}/>}
-    <main className="mainArea"><Header onMenu={toggleMenu} model={model} setModel={setModel} models={models} omni={omni} onShare={share} onMore={()=>setSettings(true)}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} onRegenerate={regenerate} onRate={rate}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
+    <main className="mainArea"><Header onMenu={toggleMenu} model={model} setModel={setModel} models={models} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} onRegenerate={regenerate} onRate={rate}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
     {settings&&<SettingsModal user={user} onClose={()=>setSettings(false)} onSaved={()=>{window.AIStoica.ensureOmni();setTimeout(loadData,1000)}}/>}
     {createType&&<CreateModal type={createType} onClose={()=>setCreateType(null)} onCreate={createItem}/>}
     {toolPanel==="explore"&&<ExplorePanel onClose={()=>setToolPanel(null)} assistants={assistants} models={models} onUseAssistant={useAssistant} onImagePrompt={startImagePrompt} onOpenLibrary={()=>setToolPanel("library")}/>} 
