@@ -99,3 +99,79 @@
   .composerDock{padding-left:10px;padding-right:10px}
   .composerCard{width:100%}
 }
+
+
+/* v0.5.8 — Claude-inspired integrations directory */
+.claudePlugins{position:relative;padding:2px 2px 8px}
+.claudePluginTabs{display:flex;gap:4px;border-bottom:1px solid #24272d;margin:0 0 18px;padding:0 2px}
+.claudePluginTabs button{border:0;background:transparent;color:#8f969f;padding:10px 12px 11px;cursor:pointer;font-weight:650;position:relative;border-radius:8px 8px 0 0}
+.claudePluginTabs button:hover{color:#e7e1d8;background:#15171b}
+.claudePluginTabs button.active{color:#f2ede6}
+.claudePluginTabs button.active:after{content:"";position:absolute;left:10px;right:10px;bottom:-1px;height:2px;background:#d97757;border-radius:2px}
+.claudePluginTabs button span{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;margin-left:5px;background:#22252a;border-radius:999px;font-size:10px;color:#aeb4bc}
+.claudePluginSearch{height:42px;border:1px solid #30343b;background:#14161a;border-radius:11px;display:flex;align-items:center;gap:9px;padding:0 12px;color:#838b96;margin-bottom:16px}
+.claudePluginSearch:focus-within{border-color:#5d626c;box-shadow:0 0 0 1px #5d626c44}
+.claudePluginSearch input{flex:1;border:0;outline:0;background:transparent;color:#f1ece5;font-size:14px}
+.claudePluginSearch input::placeholder{color:#717780}
+.claudePluginIntro,.claudeConnectedHead{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:14px}
+.claudePluginIntro h3,.claudeConnectedHead h3{margin:0;font-size:17px;color:#f1ece5;font-weight:680}
+.claudePluginIntro p,.claudeConnectedHead p{margin:5px 0 0;color:#858c96;font-size:12px;line-height:1.45;max-width:620px}
+.claudeCustomBtn,.claudeConnectedHead .secondary{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.claudePluginDirectory,.claudeConnectedList{border:1px solid #292d33;background:#101216;border-radius:14px;overflow:hidden}
+.claudePluginRow{width:100%;display:grid;grid-template-columns:44px minmax(0,1fr) 110px 118px;gap:12px;align-items:center;border:0;border-bottom:1px solid #23262c;background:transparent;color:#ece7df;padding:13px 14px;text-align:left;cursor:pointer}
+.claudePluginRow:last-child{border-bottom:0}
+.claudePluginRow:hover{background:#181a1f}
+.claudePluginLogo{width:40px;height:40px;border-radius:11px;border:1px solid #353940;background:#1d2025;color:#f0ebe4;display:grid;place-items:center;font-weight:750;font-size:12px;letter-spacing:-.02em;box-shadow:inset 0 1px #ffffff0b}
+.claudePluginLogo.large{width:48px;height:48px;border-radius:13px;font-size:14px}
+.claudePluginCopy{min-width:0}
+.claudePluginCopy b,.claudePluginCopy small{display:block}
+.claudePluginCopy b{font-size:13px;color:#f1ece5;margin-bottom:3px}
+.claudePluginCopy small{font-size:11px;color:#828a94;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.claudePluginGroup{font-size:10px;color:#727983}
+.claudeConnectPill{justify-self:end;min-width:104px;height:32px;border:1px solid #3b3f46;background:#1a1d22;color:#d9d3ca;border-radius:8px;display:flex;align-items:center;justify-content:center;gap:5px;font-size:11px;font-weight:650}
+.claudeConnectPill.connected{background:#1b2521;border-color:#315044;color:#a9d5bc}
+.claudePluginEmpty{padding:32px;text-align:center;color:#767e88;font-size:12px}
+.claudeConnectedRow{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 14px;border-bottom:1px solid #23262c}
+.claudeConnectedRow:last-child{border-bottom:0}
+.claudeConnectedInfo{min-width:0}
+.claudeConnectedInfo b,.claudeConnectedInfo span,.claudeConnectedInfo small{display:block}
+.claudeConnectedInfo b{font-size:13px;color:#f0ebe4;margin-bottom:3px}
+.claudeConnectedInfo span{font-size:11px;color:#969da7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.claudeConnectedInfo small{font-size:10px;color:#6f7782;margin-top:4px}
+.claudeConnectedActions{display:flex;align-items:center;gap:7px}
+.claudeToggle{width:38px;height:22px;border:0;border-radius:999px;background:#343840;padding:2px;cursor:pointer;transition:.18s}
+.claudeToggle span{display:block;width:18px;height:18px;border-radius:50%;background:#d4d8df;transition:.18s}
+.claudeToggle.on{background:#7b5d4d}
+.claudeToggle.on span{transform:translateX(16px);background:#fff7ed}
+.claudeResult{margin:0 0 12px}
+.claudeSetupBackdrop{position:fixed;inset:0;z-index:160;background:#0008;display:flex;justify-content:flex-end;backdrop-filter:blur(3px)}
+.claudeSetupPanel{height:100%;width:min(520px,94vw);background:#111317;border-left:1px solid #30343a;box-shadow:-24px 0 80px #0009;padding:22px;overflow:auto;animation:claudeSlide .18s ease-out}
+@keyframes claudeSlide{from{transform:translateX(20px);opacity:.4}to{transform:translateX(0);opacity:1}}
+.claudeSetupHead{display:grid;grid-template-columns:48px minmax(0,1fr) 36px;gap:12px;align-items:start;padding-bottom:18px;border-bottom:1px solid #282b31}
+.claudeSetupHead h3{margin:2px 0 4px;color:#f2ede6;font-size:18px}
+.claudeSetupHead p{margin:0;color:#878e98;font-size:11px;line-height:1.5}
+.claudeSetupNotice{display:flex;gap:9px;align-items:flex-start;margin:16px 0;padding:11px 12px;border:1px solid #3d3730;background:#1d1916;border-radius:10px;color:#b9aa9b;font-size:11px;line-height:1.5}
+.claudeSetupNotice svg{flex:0 0 auto;color:#d18463;margin-top:1px}
+.claudeSetupForm{display:grid;gap:12px}
+.claudeSetupForm label{display:grid;gap:6px;color:#a7adb6;font-size:11px}
+.claudeSetupForm input,.claudeSetupForm select{width:100%;border:1px solid #32363d;background:#0c0e12;color:#f1ece5;border-radius:9px;padding:10px 11px;outline:0}
+.claudeSetupForm input:focus,.claudeSetupForm select:focus{border-color:#696f78}
+.claudeSetupForm .optional{color:#666e79;font-weight:400}
+.claudeFormRow{display:grid;grid-template-columns:1fr 120px;gap:10px}
+.claudeAutoRow{grid-template-columns:1fr auto!important;align-items:center;padding:11px 0;border-top:1px solid #24272d;border-bottom:1px solid #24272d}
+.claudeAutoRow span b,.claudeAutoRow span small{display:block}
+.claudeAutoRow span b{color:#ece7df;font-size:12px}
+.claudeAutoRow span small{color:#757d87;margin-top:3px;line-height:1.35}
+.claudeAutoRow input{width:17px;height:17px;accent-color:#c66f50}
+.claudeSetupActions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.claudeSetupActions .primary{background:#d97757;border-color:#df8567;color:#17120f}
+.claudeSetupActions .primary:hover{filter:brightness(1.04)}
+.claudeSetupActions .primary:disabled{opacity:.4;cursor:not-allowed}
+@media(max-width:760px){
+  .claudePluginRow{grid-template-columns:42px minmax(0,1fr) 104px}
+  .claudePluginGroup{display:none}
+  .claudePluginIntro,.claudeConnectedHead{flex-direction:column}
+  .claudeConnectedRow{grid-template-columns:42px minmax(0,1fr)}
+  .claudeConnectedActions{grid-column:2;justify-content:flex-start}
+  .claudeFormRow{grid-template-columns:1fr}
+}
