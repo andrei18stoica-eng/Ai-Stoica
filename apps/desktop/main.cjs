@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, safeStorage, Tray, Menu, nativeImage, session } = require("electron");
+const { app, BrowserWindow, ipcMain, safeStorage, Tray, Menu, nativeImage, session, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const net = require("net");
@@ -148,6 +148,14 @@ app.whenReady().then(async () => {
   ipcMain.handle("system:status", () => systemStatus());
   ipcMain.handle("system:ensure-omni", () => ensureOmniRoute());
   ipcMain.handle("system:set-startup", (_e, enabled) => { const cfg2 = saveConfig({ startWithWindows: !!enabled }); return { ok: true, enabled: cfg2.startWithWindows }; });
+  ipcMain.handle("external:open", async (_e, rawUrl) => {
+    try {
+      const url = new URL(String(rawUrl || ""));
+      if (!["http:", "https:"].includes(url.protocol)) throw new Error("Protocol nepermis.");
+      await shell.openExternal(url.toString());
+      return { ok: true };
+    } catch (e) { return { ok: false, error: e.message }; }
+  });
   ipcMain.handle("update:check", async () => {
     try { const result = await autoUpdater.checkForUpdates(); return { ok: true, version: result?.updateInfo?.version || null }; }
     catch (e) { return { ok: false, error: e.message }; }
