@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("AIStoica", {
   ensureOmni: () => ipcRenderer.invoke("system:ensure-omni"),
   setStartup: (enabled) => ipcRenderer.invoke("system:set-startup", enabled),
   onUpdateReady: (cb) => ipcRenderer.on("update-ready", cb),
+  openExternal: (url) => ipcRenderer.invoke("external:open", url),
   checkUpdate: () => ipcRenderer.invoke("update:check"),
   installUpdate: () => ipcRenderer.send("update:install")
 });
