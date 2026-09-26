@@ -145,7 +145,7 @@ function startLocalGateway({ dataDir, port = 8787, getOmniConfig }) {
   app.use(cors({ origin: true, credentials: false }));
   app.use(express.json({ limit: "32mb" }));
 
-  function sign(user) { return jwt.sign({ sub: user.id, email: user.email }, secret, { expiresIn: "30d" }); }
+  function sign(user) { return jwt.sign({ sub: user.id, email: user.email }, secret); }
   function auth(req, res, next) {
     const raw = String(req.headers.authorization || "");
     const token = raw.startsWith("Bearer ") ? raw.slice(7) : "";
@@ -188,7 +188,7 @@ function startLocalGateway({ dataDir, port = 8787, getOmniConfig }) {
     if (typeof user.memoryEnabled !== "boolean") { user.memoryEnabled = true; store.write(db); }
     res.json({ token: sign(user), user: publicUser(user) });
   });
-  app.get("/auth/me", auth, (req, res) => res.json({ user: publicUser(req.user) }));
+  app.get("/auth/me", auth, (req, res) => res.json({ token: sign(req.user), user: publicUser(req.user) }));
 
   app.get("/api/models", auth, async (_req, res) => {
     const cfg = getOmniConfig();
