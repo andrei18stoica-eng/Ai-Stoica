@@ -22,6 +22,18 @@ function setGatewayUrl(url){
 }
 const TOKEN_KEY = "aiStoicaAuthTokenV3";
 const USER_KEY = "aiStoicaUserV3";
+const MODEL_CACHE_KEY = "aiStoicaModelsV1";
+const MODEL_SELECTED_KEY = "aiStoicaSelectedModelV1";
+
+function cachedModels() {
+  try {
+    const v=JSON.parse(localStorage.getItem(MODEL_CACHE_KEY)||"[]");
+    return Array.isArray(v)?v.filter(Boolean):[];
+  } catch { return []; }
+}
+function uniqueModels(values) {
+  return [...new Set((values||[]).map(x=>String(x||"").trim()).filter(Boolean))];
+}
 
 async function api(path, options = {}) {
   const token = localStorage.getItem(TOKEN_KEY) || "";
@@ -222,11 +234,45 @@ function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,convers
   </aside>;
 }
 
-function Header({onMenu,model,setModel,models,omni,onShare,current,projects,onDetach,onMoveProject,onFiles,onArchive,onDelete}) {
+function ModelPicker({model,onSelect,models,onRefresh,refreshing}) {
+  const [open,setOpen]=useState(false),[query,setQuery]=useState("");
+  const ref=useRef(null);
+  useEffect(()=>{
+    const close=e=>{if(!ref.current?.contains(e.target))setOpen(false)};
+    const key=e=>{if(e.key==="Escape")setOpen(false)};
+    document.addEventListener("mousedown",close);window.addEventListener("keydown",key);
+    return()=>{document.removeEventListener("mousedown",close);window.removeEventListener("keydown",key)};
+  },[]);
+  useEffect(()=>{if(!open)setQuery("")},[open]);
+  const list=uniqueModels([model,...models]);
+  const filtered=list.filter(x=>!query||x.toLowerCase().includes(query.toLowerCase()));
+  return <div className="modelPicker" ref={ref}>
+    <button className={cx("modelPickerButton",open&&"open")} onClick={()=>setOpen(v=>!v)} aria-haspopup="listbox" aria-expanded={open}>
+      <span className="modelPickerDot"/>
+      <span className="modelPickerText"><b>{model||"Alege AI"}</b><small>{list.length} {list.length===1?"model disponibil":"modele disponibile"}</small></span>
+      <ChevronDown size={15}/>
+    </button>
+    {open&&<div className="modelPickerMenu">
+      <div className="modelPickerHead"><div><b>Alege AI-ul</b><span>Schimbarea se aplică acestei conversații.</span></div><button className="modelRefresh" onClick={async e=>{e.stopPropagation();await onRefresh?.()}} disabled={refreshing} title="Actualizează modelele"><RotateCcw size={14}/></button></div>
+      {list.length>7&&<div className="modelSearch"><Search size={14}/><input autoFocus value={query} onChange={e=>setQuery(e.target.value)} placeholder="Caută model"/></div>}
+      <div className="modelPickerList" role="listbox">
+        {filtered.map(x=><button key={x} className={cx("modelOption",x===model&&"active")} onClick={()=>{onSelect(x);setOpen(false)}} role="option" aria-selected={x===model}>
+          <span className="modelOptionIcon"><Sparkles size={15}/></span>
+          <span className="modelOptionCopy"><b>{x}</b><small>{x===model?"Selectat acum":"Folosește acest AI"}</small></span>
+          {x===model&&<Check size={16}/>}
+        </button>)}
+        {!filtered.length&&<div className="modelEmpty">Nu am găsit modelul căutat.</div>}
+      </div>
+      <div className="modelPickerFoot">{refreshing?"Actualizez lista de la OmniRoute…":"Lista este preluată din OmniRoute și păstrată local ca rezervă."}</div>
+    </div>}
+  </div>;
+}
+
+function Header({onMenu,model,onSelectModel,models,onRefreshModels,refreshingModels,omni,onShare,current,projects,onDetach,onMoveProject,onFiles,onArchive,onDelete}) {
   const [more,setMore]=useState(false),[moveOpen,setMoveOpen]=useState(false);
   return <header className="topbar">
     <button className="iconOnly menuBtn" onClick={onMenu}><Menu size={20}/></button>
-    <div className="modelWrap"><select value={model} onChange={e=>setModel(e.target.value)}>{models.map(m=><option key={m} value={m}>{m}</option>)}</select><ChevronDown size={15}/></div>
+    <ModelPicker model={model} onSelect={onSelectModel} models={models} onRefresh={onRefreshModels} refreshing={refreshingModels}/>
     <div className="topSpacer"/>
     <div className={cx("connection",omni?"ok":"bad")}>{omni?<Wifi size={15}/>:<WifiOff size={15}/>} {omni?"OmniRoute conectat":"OmniRoute se reconectează"}</div>
     <button className="topAction" onClick={onShare}><Share2 size={16}/> Distribuie</button>
@@ -616,19 +662,57 @@ function CreateModal({type,onClose,onCreate}) {
 
 function App() {
   const [user,setUser]=useState(()=>{try{return JSON.parse(localStorage.getItem(USER_KEY)||"null")}catch{return null}});
-  const [boot,setBoot]=useState(true),[conversations,setConversations]=useState([]),[projects,setProjects]=useState([]),[assistants,setAssistants]=useState([]),[models,setModels]=useState(["Ai principal"]);
-  const [currentId,setCurrentId]=useState(null),[model,setModel]=useState("Ai principal"),[selectedProject,setSelectedProject]=useState(null),[selectedAssistant,setSelectedAssistant]=useState(null);
-  const [draft,setDraft]=useState(""),[attachments,setAttachments]=useState([]),[busy,setBusy]=useState(false),[search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[omni,setOmni]=useState(false);
+  const initialModels=useMemo(()=>{const cached=cachedModels();return cached.length?cached:["Ai principal"]},[]);
+  const [boot,setBoot]=useState(true),[conversations,setConversations]=useState([]),[projects,setProjects]=useState([]),[assistants,setAssistants]=useState([]),[models,setModels]=useState(initialModels);
+  const [currentId,setCurrentId]=useState(null),[model,setModel]=useState(()=>localStorage.getItem(MODEL_SELECTED_KEY)||initialModels[0]||"Ai principal"),[selectedProject,setSelectedProject]=useState(null),[selectedAssistant,setSelectedAssistant]=useState(null);
+  const [draft,setDraft]=useState(""),[attachments,setAttachments]=useState([]),[busy,setBusy]=useState(false),[search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[omni,setOmni]=useState(false),[refreshingModels,setRefreshingModels]=useState(false);
   const [settings,setSettings]=useState(false),[createType,setCreateType]=useState(null),[toolPanel,setToolPanel]=useState(null),[filesPanel,setFilesPanel]=useState(false),[updateReady,setUpdateReady]=useState(false),[sidebarCollapsed,setSidebarCollapsed]=useState(false);
   const chatRef=useRef(null);
   const current=conversations.find(c=>c.id===currentId)||null;
+
+  async function refreshModels({silent=false}={}){
+    if(!silent)setRefreshingModels(true);
+    try{
+      const ms=await api("/api/models");
+      const live=uniqueModels((ms.data||[]).map(x=>typeof x==="string"?x:x?.id));
+      if(!live.length)return models;
+      const previous=cachedModels();
+      // Keep previously discovered models as a fallback so a temporary OmniRoute
+      // response with only one route cannot collapse the selector.
+      const merged=uniqueModels([...live,...previous,model]);
+      setModels(merged);
+      localStorage.setItem(MODEL_CACHE_KEY,JSON.stringify(merged));
+      return merged;
+    }catch{
+      const fallback=uniqueModels([...cachedModels(),model]);
+      if(fallback.length)setModels(fallback);
+      return fallback;
+    }finally{if(!silent)setRefreshingModels(false)}
+  }
+  async function chooseModel(next){
+    const value=String(next||"").trim();if(!value)return;
+    setModel(value);
+    localStorage.setItem(MODEL_SELECTED_KEY,value);
+    setModels(v=>{const nextModels=uniqueModels([value,...v]);localStorage.setItem(MODEL_CACHE_KEY,JSON.stringify(nextModels));return nextModels});
+    if(current){
+      setConversations(v=>v.map(x=>x.id===current.id?{...x,model:value}:x));
+      api(`/api/conversations/${current.id}`,{method:"PUT",body:JSON.stringify({...current,model:value})}).then(d=>{
+        if(d?.data)setConversations(v=>v.map(x=>x.id===current.id?d.data:x));
+      }).catch(()=>{});
+    }
+  }
 
   async function loadData(){
     if(!localStorage.getItem(TOKEN_KEY)){setBoot(false);return}
     try{
       const [me,cs,ps,as,ms]=await Promise.all([api("/auth/me"),api("/api/conversations"),api("/api/projects"),api("/api/assistants"),api("/api/models").catch(()=>({data:[]}))]);
       if(me.token)localStorage.setItem(TOKEN_KEY,me.token);setUser(me.user);localStorage.setItem(USER_KEY,JSON.stringify(me.user));setConversations(cs.data||[]);setProjects(ps.data||[]);setAssistants(as.data||[]);
-      const ids=(ms.data||[]).map(x=>x.id).filter(Boolean);if(ids.length){setModels(ids);setModel(ids.find(x=>/ai[ _-]*principal/i.test(x))||ids[0])}
+      const ids=uniqueModels((ms.data||[]).map(x=>typeof x==="string"?x:x?.id));
+      const prior=cachedModels();
+      const remembered=localStorage.getItem(MODEL_SELECTED_KEY)||"";
+      const merged=uniqueModels([...ids,...prior,remembered]);
+      if(merged.length){setModels(merged);localStorage.setItem(MODEL_CACHE_KEY,JSON.stringify(merged))}
+      if(!remembered&&merged.length){const preferred=merged.find(x=>/ai[ _-]*principal/i.test(x))||merged[0];setModel(preferred);localStorage.setItem(MODEL_SELECTED_KEY,preferred)}
       if((as.data||[]).length&&!selectedAssistant)setSelectedAssistant(as.data[0].id);if((cs.data||[]).length&&!currentId)setCurrentId(cs.data[0].id);
     }catch(e){if(/Autentificare|Sesiune|401/i.test(e.message))logout()}finally{setBoot(false)}
   }
@@ -646,6 +730,12 @@ function App() {
   },[user?.id]);
   useEffect(()=>{const poll=async()=>{try{const h=await fetch(`${GATEWAY}/health`).then(r=>r.json());setOmni(!!h.omni)}catch{setOmni(false);window.AIStoica?.ensureOmni?.().catch(()=>{})}};poll();const id=setInterval(poll,8000);return()=>clearInterval(id)},[]);
   useEffect(()=>{setTimeout(()=>chatRef.current?.scrollTo({top:chatRef.current.scrollHeight,behavior:"smooth"}),30)},[current?.messages?.length,busy,current?.messages?.at(-1)?.content]);
+  useEffect(()=>{
+    if(!current?.model)return;
+    setModel(current.model);
+    localStorage.setItem(MODEL_SELECTED_KEY,current.model);
+    setModels(v=>uniqueModels([current.model,...v]));
+  },[currentId]);
 
   function logout(){localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(USER_KEY);setUser(null);setConversations([]);setCurrentId(null)}
   function newConversation(){setCurrentId(null);setDraft("");setAttachments([]);setSidebar(false)}
@@ -654,7 +744,7 @@ function App() {
     setBusy(true);const assistantMessage={id:uid(),role:"assistant",content:"",createdAt:Date.now(),streaming:true};let working={...baseConv,messages:[...messages,assistantMessage],updatedAt:Date.now()};setConversations(v=>v.map(x=>x.id===working.id?working:x));
     try{
       if(!omni){await window.AIStoica.ensureOmni();await new Promise(r=>setTimeout(r,1200))}
-      const token=localStorage.getItem(TOKEN_KEY)||"",r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({model,assistantId:working.assistantId,messages})});
+      const token=localStorage.getItem(TOKEN_KEY)||"",r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({model:working.model||model,assistantId:working.assistantId,messages})});
       if(!r.ok){let e;try{e=await r.json()}catch{e={error:await r.text()}};throw new Error(e?.error||`HTTP ${r.status}`)}
       const reader=r.body.getReader(),dec=new TextDecoder();let buf="",answer="";
       while(true){const {value,done}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const events=buf.split("\n\n");buf=events.pop()||"";for(const ev of events)for(const line of ev.split("\n")){if(!line.startsWith("data:"))continue;const raw=line.slice(5).trim();if(!raw||raw==="[DONE]")continue;try{const j=JSON.parse(raw),delta=j?.choices?.[0]?.delta?.content||j?.choices?.[0]?.message?.content||"";if(delta){answer+=delta;working={...working,messages:[...messages,{...assistantMessage,content:answer,streaming:true}]};setConversations(v=>v.map(x=>x.id===working.id?working:x))}}catch{}}}
@@ -682,7 +772,7 @@ function App() {
   async function deleteCurrent(){if(current)await deleteConversation(current.id)}
   function toggleMenu(){if(window.innerWidth<=900)setSidebar(v=>!v);else setSidebarCollapsed(v=>!v)}
   function useAssistant(id){setSelectedAssistant(id);setCurrentId(null);setDraft("");setToolPanel(null)}
-  function startImagePrompt(imageModel){if(imageModel)setModel(imageModel);setCurrentId(null);setDraft("Creează o imagine cu ");setToolPanel(null)}
+  function startImagePrompt(imageModel){if(imageModel)chooseModel(imageModel);setCurrentId(null);setDraft("Creează o imagine cu ");setToolPanel(null)}
 
   if(boot)return <div className="loadingScreen"><BrandMark/><span>Se pornește AI Stoica…</span></div>;
   if(!user)return <AuthScreen onAuth={setUser}/>;
@@ -690,7 +780,7 @@ function App() {
   return <div className={cx("appShell",sidebarCollapsed&&"sidebarCollapsed")}>
     <Sidebar open={sidebar} setOpen={setSidebar} user={user} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} onSelect={id=>{setCurrentId(id);setSidebar(false)}} onDeleteConversation={deleteConversation} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} selectedAssistant={selectedAssistant} setSelectedAssistant={setSelectedAssistant} onNewProject={()=>setCreateType("project")} onNewAssistant={()=>setCreateType("assistant")} onTool={openTool} onExplore={()=>openTool("explore")} onSettings={()=>setSettings(true)} onLogout={logout}/>
     {sidebar&&<div className="mobileScrim" onClick={()=>setSidebar(false)}/>}
-    <main className="mainArea"><Header onMenu={toggleMenu} model={model} setModel={setModel} models={models} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} onRegenerate={regenerate} onRate={rate}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
+    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} onRegenerate={regenerate} onRate={rate}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
     {settings&&<SettingsModal user={user} onClose={()=>setSettings(false)} onSaved={()=>{window.AIStoica.ensureOmni();setTimeout(loadData,1000)}}/>}
     {createType&&<CreateModal type={createType} onClose={()=>setCreateType(null)} onCreate={createItem}/>}
     {toolPanel==="explore"&&<ExplorePanel onClose={()=>setToolPanel(null)} assistants={assistants} models={models} onUseAssistant={useAssistant} onImagePrompt={startImagePrompt} onOpenLibrary={()=>setToolPanel("library")}/>} 
