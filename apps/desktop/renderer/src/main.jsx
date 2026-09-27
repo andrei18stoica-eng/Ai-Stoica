@@ -355,6 +355,28 @@ function Composer({centered,draft,setDraft,onSend,busy,attachments,setAttachment
   const ta=useRef(null),fileInput=useRef(null),recorderRef=useRef(null),streamRef=useRef(null),chunksRef=useRef([]);
   const [menu,setMenu]=useState(false),[recording,setRecording]=useState(false),[transcribing,setTranscribing]=useState(false),[uploading,setUploading]=useState(false),[mentions,setMentions]=useState([]);
   useEffect(()=>{if(ta.current){ta.current.style.height="0px";ta.current.style.height=Math.min(ta.current.scrollHeight,190)+"px"}},[draft]);
+  useEffect(()=>{
+    function focusComposerFromKeyboard(e){
+      if(e.defaultPrevented||e.ctrlKey||e.metaKey||e.altKey||e.isComposing)return;
+      if(document.querySelector(".modalBackdrop"))return;
+      const target=e.target;
+      if(target?.closest?.('input,textarea,select,button,a,[contenteditable="true"]'))return;
+      if(typeof e.key!=="string"||e.key.length!==1)return;
+      // ChatGPT-like behavior: start typing anywhere in the conversation.
+      // This includes Space, so the user never has to click the composer first.
+      e.preventDefault();
+      setDraft(v=>v+e.key);
+      requestAnimationFrame(()=>{
+        ta.current?.focus();
+        if(ta.current){
+          const end=ta.current.value.length;
+          try{ta.current.selectionStart=ta.current.selectionEnd=end}catch{}
+        }
+      });
+    }
+    window.addEventListener("keydown",focusComposerFromKeyboard);
+    return()=>window.removeEventListener("keydown",focusComposerFromKeyboard);
+  },[]);
   useEffect(()=>{(async()=>{try{const [p,a]=await Promise.all([api("/api/plugins"),api("/api/automations")]);setMentions([...(p.data||[]).filter(x=>x.enabled!==false).map(x=>({type:"plugin",name:x.name,trigger:x.trigger||("@"+x.name.toLowerCase().replace(/\s+/g,"-"))})),...(a.data||[]).filter(x=>x.enabled!==false).map(x=>({type:"automation",name:x.title,trigger:x.trigger||("@"+x.title.toLowerCase().replace(/\s+/g,"-"))}))])}catch{}})()},[]);
   const mentionMatch=draft.match(/@([^\s@]*)$/);
   const mentionQuery=(mentionMatch?.[1]||"").toLowerCase();
