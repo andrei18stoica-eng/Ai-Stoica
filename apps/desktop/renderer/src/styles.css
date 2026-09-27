@@ -175,3 +175,42 @@
   .claudeConnectedActions{grid-column:2;justify-content:flex-start}
   .claudeFormRow{grid-template-columns:1fr}
 }
+
+
+/* v0.5.9 — reliable ChatGPT-like model picker */
+.modelPicker{position:relative;z-index:35}
+.modelPickerButton{min-width:210px;max-width:360px;height:44px;border:1px solid transparent;background:transparent;color:#e7edf6;border-radius:12px;padding:5px 9px;display:grid;grid-template-columns:10px minmax(0,1fr) 18px;gap:9px;align-items:center;cursor:pointer;text-align:left}
+.modelPickerButton:hover,.modelPickerButton.open{background:#111821;border-color:#263241}
+.modelPickerDot{width:8px;height:8px;border-radius:50%;background:#4f9fff;box-shadow:0 0 10px #4f9fff66}
+.modelPickerText{min-width:0}
+.modelPickerText b,.modelPickerText small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.modelPickerText b{font-size:13px;font-weight:680}
+.modelPickerText small{font-size:9px;color:#738297;margin-top:2px}
+.modelPickerMenu{position:absolute;top:50px;left:0;width:min(390px,calc(100vw - 32px));background:#0d1219;border:1px solid #2a3749;border-radius:14px;box-shadow:0 24px 80px #000d;overflow:hidden}
+.modelPickerHead{display:flex;align-items:flex-start;gap:10px;padding:13px 13px 10px;border-bottom:1px solid #202b38}
+.modelPickerHead>div{flex:1;min-width:0}
+.modelPickerHead b,.modelPickerHead span{display:block}
+.modelPickerHead b{font-size:13px;color:#edf3fb}
+.modelPickerHead span{font-size:10px;color:#718198;margin-top:3px}
+.modelRefresh{width:30px;height:30px;border:0;background:transparent;color:#8796aa;border-radius:8px;display:grid;place-items:center;cursor:pointer}
+.modelRefresh:hover{background:#172130;color:white}
+.modelRefresh:disabled{opacity:.4;cursor:default}
+.modelSearch{margin:9px 9px 5px;border:1px solid #29374a;background:#090e15;border-radius:9px;height:36px;display:flex;align-items:center;gap:7px;padding:0 9px;color:#718198}
+.modelSearch input{flex:1;border:0;outline:0;background:transparent;color:#e8eef7;font-size:12px}
+.modelPickerList{max-height:340px;overflow:auto;padding:5px}
+.modelOption{width:100%;border:0;background:transparent;color:#dbe4ef;border-radius:9px;padding:9px;display:grid;grid-template-columns:32px minmax(0,1fr) 20px;gap:8px;align-items:center;text-align:left;cursor:pointer}
+.modelOption:hover{background:#141e2b}
+.modelOption.active{background:#17263a}
+.modelOptionIcon{width:30px;height:30px;border-radius:8px;background:#15243a;color:#5aa7ff;display:grid;place-items:center}
+.modelOptionCopy{min-width:0}
+.modelOptionCopy b,.modelOptionCopy small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.modelOptionCopy b{font-size:12px}
+.modelOptionCopy small{font-size:9px;color:#728197;margin-top:2px}
+.modelOption.active>svg{color:#67adff}
+.modelEmpty{padding:22px;text-align:center;color:#748196;font-size:11px}
+.modelPickerFoot{border-top:1px solid #202b38;padding:9px 12px;color:#69788d;font-size:9px;line-height:1.4}
+@media(max-width:760px){
+  .modelPickerButton{min-width:0;max-width:220px}
+  .modelPickerText small{display:none}
+  .modelPickerMenu{left:-44px}
+}
