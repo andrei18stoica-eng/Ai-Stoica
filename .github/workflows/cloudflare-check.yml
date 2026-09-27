@@ -3,7 +3,7 @@ name: Check AI Stoica Cloudflare
 on:
   workflow_dispatch:
   push:
-    branches: [cloudflare-free, cloudflare-max-model]
+    branches: [cloudflare-free, cloudflare-max-model, cerebras-primary]
     paths:
       - "apps/cloudflare/**"
       - ".github/workflows/cloudflare-check.yml"
