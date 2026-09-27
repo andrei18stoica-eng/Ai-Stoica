@@ -1,0 +1,49 @@
+name: Check AI Stoica Mobile
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, mobile-ios-oracle]
+    paths:
+      - "apps/mobile/**"
+      - ".github/workflows/mobile-check.yml"
+  pull_request:
+    paths:
+      - "apps/mobile/**"
+      - ".github/workflows/mobile-check.yml"
+
+jobs:
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: apps/mobile/package.json
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Expo doctor
+        run: npx expo-doctor
+
+      - name: Export iOS bundle
+        env:
+          EXPO_PUBLIC_GATEWAY_URL: https://gateway.example.com
+          EXPO_PUBLIC_DEFAULT_MODEL: Ai principal
+        run: npx expo export --platform ios --output-dir dist-ios
+
+      - name: Export Android bundle
+        env:
+          EXPO_PUBLIC_GATEWAY_URL: https://gateway.example.com
+          EXPO_PUBLIC_DEFAULT_MODEL: Ai principal
+        run: npx expo export --platform android --output-dir dist-android

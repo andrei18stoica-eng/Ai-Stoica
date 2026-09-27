@@ -6,16 +6,25 @@
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
-    "ios": "expo start --ios"
+    "ios": "expo start --ios",
+    "doctor": "expo-doctor",
+    "export:ios": "expo export --platform ios --output-dir dist-ios",
+    "export:android": "expo export --platform android --output-dir dist-android",
+    "build:ios": "eas build --platform ios",
+    "build:android": "eas build --platform android"
   },
   "dependencies": {
-    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~55.0.0",
-    "expo-router": "~6.0.0",
-    "expo-status-bar": "~3.0.8",
-    "expo-updates": "~29.0.0",
-    "react": "19.1.1",
-    "react-native": "0.82.0"
+    "expo-router": "~55.0.18",
+    "expo-status-bar": "~55.0.6",
+    "expo-updates": "~55.0.31",
+    "react": "19.2.0",
+    "react-native": "0.83.10",
+    "expo-constants": "~55.0.17",
+    "expo-linking": "~55.0.17",
+    "react-native-safe-area-context": "~5.6.2",
+    "react-native-screens": "~4.23.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",

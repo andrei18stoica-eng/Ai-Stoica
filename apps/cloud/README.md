@@ -63,3 +63,8 @@ Containerele au `restart: unless-stopped`, deci serviciile revin automat după r
 
 Nu publica direct portul OmniRoute 20128 și nu publica Redis 6379 pe internet.
 Păstrează secretele numai în fișierul `.env` de pe server; nu le comite în GitHub.
+
+
+## Oracle Cloud
+
+Pentru instalarea 24/7 pe Oracle Cloud, inclusiv varianta Always Free și HTTPS fără domeniu plătit, urmează [ORACLE_SETUP.md](./ORACLE_SETUP.md).

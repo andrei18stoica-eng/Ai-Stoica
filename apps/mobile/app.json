@@ -3,17 +3,19 @@
     "name": "AI Stoica",
     "slug": "ai-stoica",
     "scheme": "aistoica",
-    "version": "0.4.1",
+    "version": "0.5.1",
     "orientation": "portrait",
     "icon": "./icon.png",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
     "updates": {
       "fallbackToCacheTimeout": 0
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "ro.stoica.aistoica"
+      "bundleIdentifier": "ro.stoica.aistoica",
+      "config": {
+        "usesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "ro.stoica.aistoica",
