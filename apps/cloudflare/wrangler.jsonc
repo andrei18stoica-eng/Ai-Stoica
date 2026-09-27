@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "ai-stoica",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-27",
+  "ai": {
+    "binding": "AI"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ai-stoica",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "CF_MODEL": "@cf/meta/llama-3.1-8b-instruct-fp8",
+    "GROQ_MODEL": "openai/gpt-oss-20b",
+    "GEMINI_MODEL": "gemini-3.5-flash-lite",
+    "CEREBRAS_MODEL": "gpt-oss-120b",
+    "AI_STOICA_MAX_HISTORY": "12"
+  }
+}
