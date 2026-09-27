@@ -148,6 +148,25 @@ async function callOpenAICompatible({ baseUrl, apiKey, model, messages, provider
 
 async function routeAI(env, messages) {
   const errors = [];
+  const maxOutput = Number(env.AI_STOICA_MAX_OUTPUT || 4096);
+
+  // Primary engine for heavy free usage: Cerebras GPT-OSS 120B.
+  if (env.CEREBRAS_API_KEY) {
+    try {
+      return await callOpenAICompatible({
+        provider: "cerebras",
+        baseUrl: "https://api.cerebras.ai/v1",
+        apiKey: env.CEREBRAS_API_KEY,
+        model: env.CEREBRAS_MODEL || "gpt-oss-120b",
+        messages,
+        maxOutput
+      });
+    } catch (e) {
+      errors.push("Cerebras: " + e.message);
+    }
+  }
+
+  // First fallback: Cloudflare Workers AI.
   const primaryModel = env.CF_MODEL || "@cf/nvidia/nemotron-3-120b-a12b";
   const cloudflareFallback = env.CF_FALLBACK_MODEL || "@cf/openai/gpt-oss-120b";
   try {
@@ -163,19 +182,12 @@ async function routeAI(env, messages) {
     }
   }
 
-  const maxOutput = Number(env.AI_STOICA_MAX_OUTPUT || 4096);
   const fallbacks = [
     env.GROQ_API_KEY && {
       provider: "groq",
       baseUrl: "https://api.groq.com/openai/v1",
       apiKey: env.GROQ_API_KEY,
       model: env.GROQ_MODEL || "openai/gpt-oss-120b"
-    },
-    env.CEREBRAS_API_KEY && {
-      provider: "cerebras",
-      baseUrl: "https://api.cerebras.ai/v1",
-      apiKey: env.CEREBRAS_API_KEY,
-      model: env.CEREBRAS_MODEL || "gpt-oss-120b"
     },
     env.GEMINI_API_KEY && {
       provider: "gemini",
@@ -248,7 +260,8 @@ async function router(request, env) {
       ok:true,
       service:"AI Stoica Cloudflare",
       mode:"performance-max",
-      primaryModel:env.CF_MODEL || "@cf/nvidia/nemotron-3-120b-a12b",
+      primaryProvider:env.CEREBRAS_API_KEY ? "cerebras" : "cloudflare",
+      primaryModel:env.CEREBRAS_API_KEY ? (env.CEREBRAS_MODEL || "gpt-oss-120b") : (env.CF_MODEL || "@cf/nvidia/nemotron-3-120b-a12b"),
       cloudflareFallback:env.CF_FALLBACK_MODEL || "@cf/openai/gpt-oss-120b",
       fallbacks:{
         groq:!!env.GROQ_API_KEY,
@@ -271,10 +284,10 @@ async function router(request, env) {
 
   if(p==="/api/models" && request.method==="GET"){
     return json({data:[
-      {id:env.CF_MODEL || "@cf/nvidia/nemotron-3-120b-a12b",provider:"cloudflare",primary:true},
+      ...(env.CEREBRAS_API_KEY?[{id:env.CEREBRAS_MODEL||"gpt-oss-120b",provider:"cerebras",primary:true}]:[]),
+      {id:env.CF_MODEL || "@cf/nvidia/nemotron-3-120b-a12b",provider:"cloudflare",primary:!env.CEREBRAS_API_KEY},
       {id:env.CF_FALLBACK_MODEL || "@cf/openai/gpt-oss-120b",provider:"cloudflare",fallback:true},
       ...(env.GROQ_API_KEY?[{id:env.GROQ_MODEL||"openai/gpt-oss-120b",provider:"groq"}]:[]),
-      ...(env.CEREBRAS_API_KEY?[{id:env.CEREBRAS_MODEL||"gpt-oss-120b",provider:"cerebras"}]:[]),
       ...(env.GEMINI_API_KEY?[{id:env.GEMINI_MODEL||"gemini-2.5-pro",provider:"gemini"}]:[])
     ]});
   }
