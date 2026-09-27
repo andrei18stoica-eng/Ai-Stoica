@@ -15,13 +15,14 @@
     }
   ],
   "vars": {
-    "CF_MODEL": "@cf/openai/gpt-oss-120b",
+    "CF_MODEL": "@cf/nvidia/nemotron-3-120b-a12b",
+    "CF_FALLBACK_MODEL": "@cf/openai/gpt-oss-120b",
     "GROQ_MODEL": "openai/gpt-oss-120b",
     "GEMINI_MODEL": "gemini-2.5-pro",
     "CEREBRAS_MODEL": "gpt-oss-120b",
-    "AI_STOICA_MAX_HISTORY": "80",
-    "AI_STOICA_MAX_CONTEXT_CHARS": "320000",
-    "AI_STOICA_MAX_OUTPUT": "4096",
+    "AI_STOICA_MAX_HISTORY": "120",
+    "AI_STOICA_MAX_CONTEXT_CHARS": "600000",
+    "AI_STOICA_MAX_OUTPUT": "8192",
     "AI_STOICA_TEMPERATURE": "0.35"
   }
 }
