@@ -7,12 +7,14 @@ Această variantă mută backendul AI Stoica pe Cloudflare Workers + D1 + Worker
 Motorul principal este:
 
 ```
-@cf/openai/gpt-oss-120b
+@cf/nvidia/nemotron-3-120b-a12b
 ```
 
-Configurarea implicită păstrează până la 80 de mesaje recente, aproximativ 320.000 de caractere de context și permite răspunsuri de până la 4.096 tokeni.
+Motorul Cloudflare de rezervă este `@cf/openai/gpt-oss-120b`.
 
-Dacă Workers AI nu poate răspunde (limită, eroare sau indisponibilitate), routerul încearcă automat providerii opționali configurați prin secrete, în ordinea:
+Configurarea Performance Max păstrează până la 120 de mesaje recente, aproximativ 600.000 de caractere de context și permite răspunsuri de până la 8.192 tokeni.
+
+Dacă Nemotron nu poate răspunde, routerul încearcă GPT-OSS 120B pe Cloudflare, apoi providerii opționali configurați prin secrete, în ordinea:
 
 1. Groq
 2. Cerebras
