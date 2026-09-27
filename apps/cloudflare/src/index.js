@@ -114,16 +114,16 @@ function extractText(data) {
   return "";
 }
 
-async function callCloudflare(env, messages) {
-  const model = env.CF_MODEL || "@cf/openai/gpt-oss-120b";
-  const result = await env.AI.run(model, {
+async function callCloudflare(env, messages, model) {
+  const selectedModel = model || env.CF_MODEL || "@cf/nvidia/nemotron-3-120b-a12b";
+  const result = await env.AI.run(selectedModel, {
     messages,
     max_tokens: Number(env.AI_STOICA_MAX_OUTPUT || 4096),
     temperature: Number(env.AI_STOICA_TEMPERATURE || 0.35)
   });
   const text = extractText(result);
   if (!text) throw new Error("Cloudflare AI a răspuns fără text.");
-  return { text, provider: "cloudflare", model, raw: result };
+  return { text, provider: "cloudflare", model: selectedModel, raw: result };
 }
 
 async function callOpenAICompatible({ baseUrl, apiKey, model, messages, provider, maxOutput }) {
@@ -148,10 +148,19 @@ async function callOpenAICompatible({ baseUrl, apiKey, model, messages, provider
 
 async function routeAI(env, messages) {
   const errors = [];
+  const primaryModel = env.CF_MODEL || "@cf/nvidia/nemotron-3-120b-a12b";
+  const cloudflareFallback = env.CF_FALLBACK_MODEL || "@cf/openai/gpt-oss-120b";
   try {
-    return await callCloudflare(env, messages);
+    return await callCloudflare(env, messages, primaryModel);
   } catch (e) {
-    errors.push("Cloudflare: " + e.message);
+    errors.push("Cloudflare " + primaryModel + ": " + e.message);
+  }
+  if (cloudflareFallback && cloudflareFallback !== primaryModel) {
+    try {
+      return await callCloudflare(env, messages, cloudflareFallback);
+    } catch (e) {
+      errors.push("Cloudflare " + cloudflareFallback + ": " + e.message);
+    }
   }
 
   const maxOutput = Number(env.AI_STOICA_MAX_OUTPUT || 4096);
@@ -239,7 +248,8 @@ async function router(request, env) {
       ok:true,
       service:"AI Stoica Cloudflare",
       mode:"performance-max",
-      primaryModel:env.CF_MODEL || "@cf/openai/gpt-oss-120b",
+      primaryModel:env.CF_MODEL || "@cf/nvidia/nemotron-3-120b-a12b",
+      cloudflareFallback:env.CF_FALLBACK_MODEL || "@cf/openai/gpt-oss-120b",
       fallbacks:{
         groq:!!env.GROQ_API_KEY,
         cerebras:!!env.CEREBRAS_API_KEY,
@@ -261,7 +271,8 @@ async function router(request, env) {
 
   if(p==="/api/models" && request.method==="GET"){
     return json({data:[
-      {id:env.CF_MODEL || "@cf/openai/gpt-oss-120b",provider:"cloudflare",primary:true},
+      {id:env.CF_MODEL || "@cf/nvidia/nemotron-3-120b-a12b",provider:"cloudflare",primary:true},
+      {id:env.CF_FALLBACK_MODEL || "@cf/openai/gpt-oss-120b",provider:"cloudflare",fallback:true},
       ...(env.GROQ_API_KEY?[{id:env.GROQ_MODEL||"openai/gpt-oss-120b",provider:"groq"}]:[]),
       ...(env.CEREBRAS_API_KEY?[{id:env.CEREBRAS_MODEL||"gpt-oss-120b",provider:"cerebras"}]:[]),
       ...(env.GEMINI_API_KEY?[{id:env.GEMINI_MODEL||"gemini-2.5-pro",provider:"gemini"}]:[])
@@ -280,7 +291,7 @@ async function router(request, env) {
 
   if(p==="/api/conversations" && request.method==="POST"){
     const b=await bodyJson(request), t=now();
-    const item={id:uuid(),title:String(b.title||"Conversație nouă"),model:String(b.model||env.CF_MODEL||"@cf/openai/gpt-oss-120b"),messages:Array.isArray(b.messages)?b.messages:[],summary:"",createdAt:t,updatedAt:t};
+    const item={id:uuid(),title:String(b.title||"Conversație nouă"),model:String(b.model||env.CF_MODEL||"@cf/nvidia/nemotron-3-120b-a12b"),messages:Array.isArray(b.messages)?b.messages:[],summary:"",createdAt:t,updatedAt:t};
     await env.DB.prepare(
       "INSERT INTO conversations(id,user_id,title,model,messages_json,summary,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)"
     ).bind(item.id,user.id,item.title,item.model,JSON.stringify(item.messages),item.summary,t,t).run();
