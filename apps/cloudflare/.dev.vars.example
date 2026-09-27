@@ -1,0 +1,5 @@
+# Optional fallback providers.
+# Set them with: npx wrangler secret put NAME
+GROQ_API_KEY=
+GEMINI_API_KEY=
+CEREBRAS_API_KEY=
