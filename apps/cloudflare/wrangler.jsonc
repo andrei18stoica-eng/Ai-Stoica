@@ -15,10 +15,13 @@
     }
   ],
   "vars": {
-    "CF_MODEL": "@cf/meta/llama-3.1-8b-instruct-fp8",
-    "GROQ_MODEL": "openai/gpt-oss-20b",
-    "GEMINI_MODEL": "gemini-3.5-flash-lite",
+    "CF_MODEL": "@cf/openai/gpt-oss-120b",
+    "GROQ_MODEL": "openai/gpt-oss-120b",
+    "GEMINI_MODEL": "gemini-2.5-pro",
     "CEREBRAS_MODEL": "gpt-oss-120b",
-    "AI_STOICA_MAX_HISTORY": "12"
+    "AI_STOICA_MAX_HISTORY": "80",
+    "AI_STOICA_MAX_CONTEXT_CHARS": "320000",
+    "AI_STOICA_MAX_OUTPUT": "4096",
+    "AI_STOICA_TEMPERATURE": "0.35"
   }
 }
