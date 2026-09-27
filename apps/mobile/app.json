@@ -7,7 +7,6 @@
     "orientation": "portrait",
     "icon": "./icon.png",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
     "updates": {
       "fallbackToCacheTimeout": 0
     },
