@@ -14,11 +14,14 @@ Motorul Cloudflare de rezervă este `@cf/openai/gpt-oss-120b`.
 
 Configurarea Performance Max păstrează până la 120 de mesaje recente, aproximativ 600.000 de caractere de context și permite răspunsuri de până la 8.192 tokeni.
 
-Dacă Nemotron nu poate răspunde, routerul încearcă GPT-OSS 120B pe Cloudflare, apoi providerii opționali configurați prin secrete, în ordinea:
+Dacă este configurată cheia Cerebras, routerul încearcă mai întâi Cerebras GPT-OSS 120B. Dacă nu poate răspunde sau cota/creditul este epuizat, continuă automat în ordinea:
 
-1. Groq
-2. Cerebras
-3. Gemini
+1. Cloudflare Nemotron 120B
+2. Cloudflare GPT-OSS 120B
+3. Groq GPT-OSS 120B
+4. Gemini
+
+Astfel, Cloudflare rămâne backendul 24/7, iar motoarele AI se pot înlocui automat între ele.
 
 Cheile sunt opționale. Fără ele, AI Stoica funcționează doar pe Workers AI.
 
@@ -53,8 +56,8 @@ https://ai-stoica.<subdomain>.workers.dev/health
 Nu salva cheile în GitHub. Adaugă-le ca secrete Cloudflare:
 
 ```bash
-npx wrangler secret put GROQ_API_KEY
 npx wrangler secret put CEREBRAS_API_KEY
+npx wrangler secret put GROQ_API_KEY
 npx wrangler secret put GEMINI_API_KEY
 ```
 
