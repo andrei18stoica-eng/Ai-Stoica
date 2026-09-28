@@ -15,9 +15,10 @@ function normalizeIntent(value){
   return String(value||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
 }
 function requestedDocumentFormat(value){
-  const t=normalizeIntent(value);
+  const t=normalizeIntent(value).trim();
+  const simple=/^(in\s+)?(pdf|docx|pptx|word|powerpoint)(\s+te\s+rog)?[.!]?$/;
   const asks=/(trimite|da-mi|dami|descarc|export|salveaz|fisier|document|format|creeaz|genereaz|fa-mi|fami)/;
-  if(!asks.test(t))return null;
+  if(!simple.test(t)&&!asks.test(t))return null;
   if(/\bpptx\b|powerpoint|prezentare/.test(t))return "pptx";
   if(/\bdocx\b|\bword\b/.test(t))return "docx";
   if(/\bpdf\b/.test(t))return "pdf";
