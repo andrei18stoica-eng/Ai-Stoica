@@ -6,6 +6,11 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
+const fontkitModule = require("@pdf-lib/fontkit");
+const fontkit = fontkitModule.default || fontkitModule;
+const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = require("docx");
+const PptxGenJS = require("pptxgenjs");
 
 function createStore(dataDir) {
   const file = path.join(dataDir, "ai-stoica-data.json");
@@ -140,6 +145,146 @@ function nextRun(automation, from = Date.now()) {
     while (!days.includes(next.getDay()) || next.getTime() <= from) next.setDate(next.getDate() + 1);
   }
   return next.getTime();
+}
+
+function safeGeneratedName(value) {
+  return String(value || "AI Stoica").replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, " ").trim().slice(0, 120) || "AI Stoica";
+}
+function parseDocumentBlocks(content) {
+  const lines = String(content || "").replace(/\r/g, "").split("\n");
+  const blocks = [];
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (!line.trim()) { blocks.push({ type: "blank", text: "" }); continue; }
+    let m = line.match(/^(#{1,4})\s+(.+)$/);
+    if (m) { blocks.push({ type: "heading", level: m[1].length, text: m[2].trim() }); continue; }
+    m = line.match(/^[-*•]\s+(.+)$/);
+    if (m) { blocks.push({ type: "bullet", text: m[1].trim() }); continue; }
+    m = line.match(/^(\d+)[.)]\s+(.+)$/);
+    if (m) { blocks.push({ type: "number", text: m[2].trim(), number: Number(m[1]) }); continue; }
+    blocks.push({ type: "paragraph", text: line });
+  }
+  return blocks;
+}
+function plainMarkdownText(value) {
+  return String(value || "").replace(/\*\*(.*?)\*\*/g, "$1").replace(/__(.*?)__/g, "$1").replace(/`([^`]+)`/g, "$1");
+}
+function inlineRuns(text, size = 22) {
+  const src = String(text || "");
+  const runs = [];
+  const re = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`)/g;
+  let pos = 0, m;
+  while ((m = re.exec(src))) {
+    if (m.index > pos) runs.push(new TextRun({ text: src.slice(pos, m.index), size }));
+    const token = m[0];
+    if (token.startsWith("**") || token.startsWith("__")) runs.push(new TextRun({ text: token.slice(2, -2), size, bold: true }));
+    else runs.push(new TextRun({ text: token.slice(1, -1), size, font: "Consolas" }));
+    pos = m.index + token.length;
+  }
+  if (pos < src.length) runs.push(new TextRun({ text: src.slice(pos), size }));
+  return runs.length ? runs : [new TextRun({ text: src, size })];
+}
+function findWindowsFont() {
+  const candidates = [
+    path.join(process.env.WINDIR || "C:\\Windows", "Fonts", "segoeui.ttf"),
+    path.join(process.env.WINDIR || "C:\\Windows", "Fonts", "arial.ttf"),
+    path.join(process.env.WINDIR || "C:\\Windows", "Fonts", "calibri.ttf")
+  ];
+  return candidates.find(p => fs.existsSync(p)) || null;
+}
+function wrapTextByWidth(text, maxChars) {
+  const words = String(text || "").split(/\s+/);
+  const out = []; let cur = "";
+  for (const word of words) {
+    const candidate = (cur + " " + word).trim();
+    if (candidate.length > maxChars && cur) { out.push(cur); cur = word; }
+    else cur = candidate;
+  }
+  if (cur || !out.length) out.push(cur);
+  return out;
+}
+async function createPdfBytes(title, content) {
+  const pdf = await PDFDocument.create();
+  let regular, bold, unicode = false;
+  const fontPath = findWindowsFont();
+  if (fontPath) {
+    try {
+      pdf.registerFontkit(fontkit);
+      const fontBytes = fs.readFileSync(fontPath);
+      regular = await pdf.embedFont(fontBytes, { subset: true });
+      bold = regular;
+      unicode = true;
+    } catch {}
+  }
+  if (!regular) { regular = await pdf.embedFont(StandardFonts.Helvetica); bold = await pdf.embedFont(StandardFonts.HelveticaBold); }
+  const clean = v => unicode ? String(v || "") : String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[șş]/g,"s").replace(/[ȘŞ]/g,"S").replace(/[țţ]/g,"t").replace(/[ȚŢ]/g,"T");
+  let page = pdf.addPage([595.28, 841.89]), y = 792;
+  const draw = (text, opts = {}) => {
+    const size = opts.size || 11, indent = opts.indent || 0, font = opts.bold ? bold : regular;
+    const max = Math.max(28, Math.floor((88 - indent / 7) * (11 / size)));
+    for (const line of wrapTextByWidth(clean(plainMarkdownText(text)), max)) {
+      if (y < 58) { page = pdf.addPage([595.28, 841.89]); y = 792; }
+      page.drawText(line || " ", { x: 48 + indent, y, size, font, color: rgb(0.12,0.15,0.2) });
+      y -= size + (opts.after == null ? 5 : opts.after);
+    }
+  };
+  draw(title || "AI Stoica", { size: 20, bold: true, after: 8 }); y -= 8;
+  for (const b of parseDocumentBlocks(content)) {
+    if (b.type === "blank") { y -= 6; continue; }
+    if (b.type === "heading") { y -= 3; draw(b.text, { size: b.level === 1 ? 17 : b.level === 2 ? 15 : 13, bold: true, after: 7 }); continue; }
+    if (b.type === "bullet") { draw("• " + b.text, { indent: 10, after: 4 }); continue; }
+    if (b.type === "number") { draw(String(b.number) + ". " + b.text, { indent: 10, after: 4 }); continue; }
+    draw(b.text, { after: 5 });
+  }
+  return Buffer.from(await pdf.save());
+}
+async function createDocxBytes(title, content) {
+  const children = [
+    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: String(title || "AI Stoica"), bold: true, size: 36 })] }),
+    new Paragraph({ text: "" })
+  ];
+  for (const b of parseDocumentBlocks(content)) {
+    if (b.type === "blank") { children.push(new Paragraph({ text: "" })); continue; }
+    if (b.type === "heading") {
+      const level = b.level <= 1 ? HeadingLevel.HEADING_1 : b.level === 2 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3;
+      children.push(new Paragraph({ heading: level, children: inlineRuns(b.text, b.level <= 1 ? 30 : 26) }));
+      continue;
+    }
+    if (b.type === "bullet") { children.push(new Paragraph({ bullet: { level: 0 }, children: inlineRuns(b.text, 22) })); continue; }
+    if (b.type === "number") { children.push(new Paragraph({ children: [new TextRun({ text: String(b.number) + ". ", bold: true, size: 22 }), ...inlineRuns(b.text,22)] })); continue; }
+    children.push(new Paragraph({ children: inlineRuns(b.text,22), spacing: { after: 120 } }));
+  }
+  const doc = new Document({ sections: [{ properties: {}, children }] });
+  return Buffer.from(await Packer.toBuffer(doc));
+}
+function slideChunks(content, maxChars = 850) {
+  const blocks = parseDocumentBlocks(content).filter(b => b.type !== "blank");
+  const slides = []; let current = { title: "", body: [] }, chars = 0;
+  const flush = () => { if (current.title || current.body.length) slides.push(current); current = { title: "", body: [] }; chars = 0; };
+  for (const b of blocks) {
+    if (b.type === "heading" && b.level <= 2) { if (current.title || current.body.length) flush(); current.title = plainMarkdownText(b.text); continue; }
+    const prefix = b.type === "bullet" ? "• " : b.type === "number" ? String(b.number) + ". " : "";
+    const text = prefix + plainMarkdownText(b.text);
+    if (chars + text.length > maxChars && current.body.length) flush();
+    current.body.push(text); chars += text.length;
+  }
+  flush();
+  return slides.length ? slides : [{ title: "", body: [plainMarkdownText(content)] }];
+}
+async function createPptxBytes(title, content) {
+  const pptx = new PptxGenJS();
+  pptx.layout = "LAYOUT_WIDE";
+  pptx.author = "AI Stoica"; pptx.company = "Stoica Enterprises AI"; pptx.lang = "ro-RO";
+  let s = pptx.addSlide(); s.background = { color: "F7F9FC" };
+  s.addText(String(title || "AI Stoica"), { x:0.8,y:2.3,w:11.7,h:0.8,fontFace:"Aptos Display",fontSize:28,bold:true,color:"172033",align:"center",margin:0 });
+  s.addText("Document generat cu AI Stoica", { x:1.2,y:3.25,w:10.9,h:0.4,fontFace:"Aptos",fontSize:14,color:"52627A",align:"center",margin:0 });
+  for (const part of slideChunks(content)) {
+    s = pptx.addSlide(); s.background = { color: "FFFFFF" };
+    s.addText(part.title || String(title || "AI Stoica"), { x:0.65,y:0.45,w:12,h:0.55,fontFace:"Aptos Display",fontSize:23,bold:true,color:"172033",margin:0 });
+    s.addText(part.body.join("\n"), { x:0.8,y:1.25,w:11.7,h:5.65,fontFace:"Aptos",fontSize:18,color:"26354A",valign:"top",margin:0.08,fit:"shrink",breakLine:false });
+  }
+  const out = await pptx.write({ outputType: "arraybuffer" });
+  return Buffer.from(out);
 }
 
 function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig }) {
@@ -320,6 +465,39 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.get("/api/library/:id", auth, (req,res) => {const db=store.read(),item=db.library.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Fișierul nu a fost găsit."});const {filePath,...safe}=item;res.json({data:safe});});
   app.delete("/api/library/:id", auth, (req,res) => {const db=store.read(),item=db.library.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(item?.filePath){try{fs.unlinkSync(item.filePath)}catch{}}db.library=db.library.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));store.write(db);res.json({ok:true});});
 
+  app.post("/api/export", auth, async (req,res) => {
+    try {
+      const format=String(req.body?.format||"docx").toLowerCase();
+      const allowed=new Set(["pdf","docx","pptx","md","txt"]);
+      const title=String(req.body?.title||"AI Stoica").trim().slice(0,120)||"AI Stoica";
+      const content=String(req.body?.content||"");
+      if(!allowed.has(format))return res.status(400).json({error:"Format neacceptat. Folosește PDF, DOCX, PPTX, MD sau TXT."});
+      if(!content.trim())return res.status(400).json({error:"Nu există conținut de exportat."});
+      if(content.length>100000)return res.status(413).json({error:"Documentul depășește 100.000 de caractere."});
+      let bytes,mime;
+      if(format==="pdf"){bytes=await createPdfBytes(title,content);mime="application/pdf";}
+      else if(format==="docx"){bytes=await createDocxBytes(title,content);mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document";}
+      else if(format==="pptx"){bytes=await createPptxBytes(title,content);mime="application/vnd.openxmlformats-officedocument.presentationml.presentation";}
+      else if(format==="md"){bytes=Buffer.from(content,"utf8");mime="text/markdown; charset=utf-8";}
+      else {bytes=Buffer.from(content,"utf8");mime="text/plain; charset=utf-8";}
+      const id=crypto.randomUUID(),name=safeGeneratedName(title).replace(/\.[^.]+$/,"")+"."+format,target=path.join(filesDir,id+"."+format);
+      fs.writeFileSync(target,bytes);
+      const db=store.read(),item={id,userId:req.user.id,name,mime,size:bytes.length,kind:"file",filePath:target,storage:"disk",source:"ai-export",createdAt:Date.now()};
+      db.library.push(item);store.write(db);
+      res.json({data:{id:item.id,name:item.name,mimeType:item.mime,size:item.size,source:item.source,createdAt:item.createdAt}});
+    } catch(e) { res.status(500).json({error:"Nu am putut genera documentul: "+e.message}); }
+  });
+
+  app.get("/api/files/:id", auth, (req,res) => {
+    const db=store.read(),item=db.library.find(x=>x.id===req.params.id&&x.userId===req.user.id);
+    if(!item)return res.status(404).json({error:"Fișierul nu a fost găsit."});
+    if(!item.filePath||!fs.existsSync(item.filePath))return res.status(404).json({error:"Fișierul nu mai există pe disc."});
+    res.setHeader("Content-Type",item.mime||"application/octet-stream");
+    res.setHeader("Content-Length",String(item.size||fs.statSync(item.filePath).size));
+    res.setHeader("Content-Disposition",'attachment; filename*=UTF-8\'\''+encodeURIComponent(item.name));
+    fs.createReadStream(item.filePath).pipe(res);
+  });
+
   app.get("/api/plugins", auth, (req,res) => {const db=store.read();res.json({data:db.plugins.filter(x=>x.userId===req.user.id).map(({apiKey,...x})=>({...x,hasKey:!!apiKey}))});});
   app.post("/api/plugins", auth, (req,res) => {
     const name=String(req.body?.name||"").trim(),url=String(req.body?.url||"").trim();if(!name||!url)return res.status(400).json({error:"Numele și URL-ul sunt obligatorii."});
@@ -404,6 +582,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const db=store.read(),messages=Array.isArray(rawMessages)?rawMessages:[];
     const latest=[...messages].reverse().find(m=>m.role==="user");const latestText=textFromContent(latest?.content);
     const system=[];
+    system.push("Când utilizatorul cere PDF, DOCX sau PPTX, redactează conținutul bine structurat, cu titluri și liste unde este util. Nu afișa pseudo-comenzi precum <invoke generate_pdf>; aplicația creează fișierul real separat.");
     const assistant=db.assistants.find(a=>a.id===assistantId&&a.userId===userId);if(assistant?.systemPrompt)system.push(assistant.systemPrompt);
     const user=db.users.find(u=>u.id===userId);
     if(user?.memoryEnabled!==false){
