@@ -1,0 +1,22 @@
+ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user';
+ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'pending';
+ALTER TABLE users ADD COLUMN approved_at INTEGER;
+ALTER TABLE users ADD COLUMN approved_by TEXT;
+ALTER TABLE users ADD COLUMN last_login_at INTEGER;
+
+CREATE TABLE IF NOT EXISTS user_permissions (
+  user_id TEXT PRIMARY KEY,
+  cerebras INTEGER NOT NULL DEFAULT 1,
+  cloudflare INTEGER NOT NULL DEFAULT 1,
+  groq INTEGER NOT NULL DEFAULT 1,
+  gemini INTEGER NOT NULL DEFAULT 1,
+  image_generation INTEGER NOT NULL DEFAULT 1,
+  document_generation INTEGER NOT NULL DEFAULT 1,
+  file_upload INTEGER NOT NULL DEFAULT 1,
+  github_access INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS users_status_idx ON users(status);
+CREATE INDEX IF NOT EXISTS users_role_idx ON users(role);
