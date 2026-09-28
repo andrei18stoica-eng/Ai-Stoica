@@ -1,0 +1,113 @@
+name: AI Stoica - ZIP complet Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/desktop/**"
+      - ".github/workflows/ai-stoica-windows-zip.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build-zip:
+    runs-on: windows-latest
+
+    steps:
+      - name: Descarca proiectul
+        uses: actions/checkout@v4
+
+      - name: Instaleaza Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Instaleaza dependentele
+        working-directory: apps/desktop
+        run: npm install --legacy-peer-deps
+
+      - name: Verifica Electron
+        working-directory: apps/desktop
+        run: |
+          node --check main.cjs
+          node --check preload.cjs
+          node --check local-gateway.cjs
+
+      - name: Construieste AI Stoica Windows
+        working-directory: apps/desktop
+        run: npm run build
+
+      - name: Creeaza pachetul ZIP complet
+        shell: pwsh
+        run: |
+          $version = "0.6.0"
+          $releaseDir = "apps/desktop/release"
+          $installer = Join-Path $releaseDir "AI_Stoica_Setup_${version}_x64.exe"
+          $portable = Join-Path $releaseDir "win-unpacked"
+          $packageDir = "AI_Stoica_Windows_${version}_COMPLET"
+          $zip = "AI_Stoica_Windows_${version}_COMPLET.zip"
+
+          if (!(Test-Path $installer)) {
+            Write-Error "Installerul nu a fost gasit: $installer"
+            exit 1
+          }
+          if (!(Test-Path $portable)) {
+            Write-Error "Folderul win-unpacked nu a fost gasit: $portable"
+            exit 1
+          }
+
+          New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $packageDir "Portable") | Out-Null
+          Copy-Item $installer -Destination $packageDir
+          Copy-Item "$portable\*" -Destination (Join-Path $packageDir "Portable") -Recurse -Force
+
+          "AI STOICA 0.6.0 - WINDOWS" | Out-File -FilePath (Join-Path $packageDir "README_INSTALLARE.txt") -Encoding utf8
+          "" | Out-File -FilePath (Join-Path $packageDir "README_INSTALLARE.txt") -Append -Encoding utf8
+          "INSTALARE: ruleaza AI_Stoica_Setup_0.6.0_x64.exe." | Out-File -FilePath (Join-Path $packageDir "README_INSTALLARE.txt") -Append -Encoding utf8
+          "PORTABIL: intra in folderul Portable si ruleaza AI Stoica.exe." | Out-File -FilePath (Join-Path $packageDir "README_INSTALLARE.txt") -Append -Encoding utf8
+
+          $installerHash = (Get-FileHash $installer -Algorithm SHA256).Hash
+          $portableExe = Join-Path $packageDir "Portable\AI Stoica.exe"
+          $portableHash = if (Test-Path $portableExe) { (Get-FileHash $portableExe -Algorithm SHA256).Hash } else { "N/A" }
+          "SHA256" | Out-File -FilePath (Join-Path $packageDir "SHA256SUMS.txt") -Encoding utf8
+          "AI_Stoica_Setup_0.6.0_x64.exe  $installerHash" | Out-File -FilePath (Join-Path $packageDir "SHA256SUMS.txt") -Append -Encoding utf8
+          "Portable\AI Stoica.exe        $portableHash" | Out-File -FilePath (Join-Path $packageDir "SHA256SUMS.txt") -Append -Encoding utf8
+
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path "$packageDir\*" -DestinationPath $zip -CompressionLevel Optimal
+          Get-Item $zip | Format-List Name,Length,LastWriteTime
+
+      - name: Publica ZIP-ul in GitHub Releases
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "v0.6.0"
+          $zip = "AI_Stoica_Windows_0.6.0_COMPLET.zip"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $zip --clobber
+          } else {
+            gh release create $tag $zip --title "AI Stoica 0.6.0" --notes "AI Stoica principal pentru Windows."
+          }
+
+      - name: Incarca ZIP ca Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AI-Stoica-Windows-0.6.0-COMPLET
+          path: AI_Stoica_Windows_0.6.0_COMPLET.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Link descarcare
+        shell: pwsh
+        run: |
+          $url = "https://github.com/andrei18stoica-eng/Ai-Stoica/releases/download/v0.6.0/AI_Stoica_Windows_0.6.0_COMPLET.zip"
+          "# AI Stoica Windows ZIP complet este gata" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "## [DESCARCA ZIP COMPLET]($url)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "Contine installer EXE, varianta portabila, README si SHA256SUMS." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
