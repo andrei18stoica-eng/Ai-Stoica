@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - ai-stoica-main-files
 
 jobs:
   build-windows:
