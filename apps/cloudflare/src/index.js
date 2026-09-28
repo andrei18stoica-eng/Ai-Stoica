@@ -478,6 +478,147 @@ async function router(request, env) {
     ]});
   }
 
+  if(p==="/api/files" && request.method==="GET"){
+    const r=await env.DB.prepare(
+      "SELECT id,name,mime_type,size,source,created_at FROM files WHERE user_id=? ORDER BY created_at DESC LIMIT 200"
+    ).bind(user.id).all();
+    return json({data:(r.results||[]).map(publicFile)});
+  }
+
+  if(p==="/api/files" && request.method==="POST"){
+    const name=safeFileName(url.searchParams.get("name")||"file");
+    const mime=request.headers.get("content-type")||url.searchParams.get("type")||"application/octet-stream";
+    const declared=Number(request.headers.get("content-length")||0);
+    const maxBytes=Number(env.AI_STOICA_FILE_MAX_MB||25)*1024*1024;
+    if(declared>maxBytes)return json({error:"Fișierul depășește limita de "+(env.AI_STOICA_FILE_MAX_MB||25)+" MB."},413);
+    if(!request.body)return json({error:"Lipsește conținutul fișierului."},400);
+    const id=uuid(),key=user.id+"/"+id+"/"+name,createdAt=now();
+    const obj=await env.FILES.put(key,request.body,{
+      httpMetadata:{contentType:mime},
+      customMetadata:{userId:user.id,fileId:id,source:"upload"}
+    });
+    const size=Number(obj?.size||declared||0);
+    if(size>maxBytes){
+      await env.FILES.delete(key);
+      return json({error:"Fișierul depășește limita de "+(env.AI_STOICA_FILE_MAX_MB||25)+" MB."},413);
+    }
+    await env.DB.prepare(
+      "INSERT INTO files(id,user_id,name,mime_type,size,r2_key,source,created_at) VALUES(?,?,?,?,?,?,?,?)"
+    ).bind(id,user.id,name,mime,size,key,"upload",createdAt).run();
+    return json({data:{id,name,mimeType:mime,size,source:"upload",createdAt}});
+  }
+
+  const fileMatch=p.match(/^\/api\/files\/([^/]+)$/);
+  if(fileMatch && request.method==="GET"){
+    const row=await ownedFile(env,user.id,fileMatch[1]);
+    if(!row)return json({error:"Fișierul nu a fost găsit."},404);
+    const obj=await env.FILES.get(row.r2_key);
+    if(!obj)return json({error:"Fișierul nu mai există în stocare."},404);
+    const headers=new Headers(corsHeaders);
+    obj.writeHttpMetadata(headers);
+    headers.set("content-type",row.mime_type||"application/octet-stream");
+    headers.set("content-disposition","attachment; filename*=UTF-8''"+encodeURIComponent(row.name));
+    if(obj.size!=null)headers.set("content-length",String(obj.size));
+    return new Response(obj.body,{status:200,headers});
+  }
+  if(fileMatch && request.method==="DELETE"){
+    const row=await ownedFile(env,user.id,fileMatch[1]);
+    if(!row)return json({error:"Fișierul nu a fost găsit."},404);
+    await env.FILES.delete(row.r2_key);
+    await env.DB.prepare("DELETE FROM files WHERE id=? AND user_id=?").bind(row.id,user.id).run();
+    return json({ok:true});
+  }
+
+  if(p==="/api/export" && request.method==="POST"){
+    const b=await bodyJson(request);
+    const format=String(b.format||"docx").toLowerCase();
+    const title=String(b.title||"AI Stoica");
+    const content=String(b.content||"");
+    if(!content.trim())return json({error:"Nu există conținut de exportat."},400);
+    let bytes,mime,ext;
+    if(format==="pdf"){
+      bytes=await makePdf(title,content);mime="application/pdf";ext="pdf";
+    }else if(format==="docx"){
+      bytes=await makeDocx(title,content);mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document";ext="docx";
+    }else if(format==="md"){
+      bytes=enc.encode(content);mime="text/markdown; charset=utf-8";ext="md";
+    }else{
+      bytes=enc.encode(content);mime="text/plain; charset=utf-8";ext="txt";
+    }
+    const file=await storeFile(env,user.id,{
+      name:safeFileName(title).replace(/\.[^.]+$/,"")+"."+ext,
+      mimeType:mime,bytes,source:"ai-export"
+    });
+    return json({data:file});
+  }
+
+  if(p==="/api/generate/image" && request.method==="POST"){
+    const b=await bodyJson(request);
+    const prompt=String(b.prompt||"").trim();
+    if(!prompt)return json({error:"Scrie descrierea imaginii."},400);
+    const model=env.IMAGE_MODEL||"@cf/black-forest-labs/flux-1-schnell";
+    const result=await env.AI.run(model,{prompt});
+    if(!result?.image)return json({error:"Modelul de imagini nu a returnat o imagine."},502);
+    const bytes=base64ToBytes(result.image);
+    const file=await storeFile(env,user.id,{
+      name:"ai-stoica-image-"+new Date().toISOString().replace(/[:.]/g,"-")+".jpg",
+      mimeType:"image/jpeg",bytes,source:"ai-image"
+    });
+    return json({data:file,model});
+  }
+
+  if(p==="/api/github/file" && request.method==="GET"){
+    const path=String(url.searchParams.get("path")||"").replace(/^\/+/, "");
+    if(!path)return json({error:"Lipsește calea fișierului GitHub."},400);
+    const branchName=String(url.searchParams.get("ref")||env.GITHUB_BRANCH||"main");
+    const encoded=path.split("/").map(encodeURIComponent).join("/");
+    const data=await githubApi(env,"/contents/"+encoded+"?ref="+encodeURIComponent(branchName));
+    if(data.type!=="file")return json({error:"Calea GitHub nu indică un fișier."},400);
+    return json({data:{path:data.path,sha:data.sha,size:data.size,content:decodeBase64Utf8(data.content||"")}});
+  }
+
+  if(p==="/api/github/solve" && request.method==="POST"){
+    const b=await bodyJson(request);
+    const path=String(b.path||"").replace(/^\/+/, "");
+    const instruction=String(b.instruction||"Analizează fișierul, identifică problema și corectează-l.").trim();
+    if(!path)return json({error:"Lipsește calea fișierului GitHub."},400);
+    const branchName=String(b.branch||env.GITHUB_BRANCH||"main");
+    const encoded=path.split("/").map(encodeURIComponent).join("/");
+    const data=await githubApi(env,"/contents/"+encoded+"?ref="+encodeURIComponent(branchName));
+    if(data.type!=="file")return json({error:"Calea GitHub nu indică un fișier."},400);
+    const original=decodeBase64Utf8(data.content||"");
+    if(original.length>220000)return json({error:"Fișierul este prea mare pentru rezolvarea automată într-un singur pas."},413);
+    const messages=[
+      {role:"system",content:"Ești agentul de programare AI Stoica. Primești un fișier din repository și o cerință. Returnează EXCLUSIV conținutul complet al fișierului corectat, fără explicații și fără delimitatoare Markdown."},
+      {role:"user",content:"Repository: "+(env.GITHUB_REPO||"andrei18stoica-eng/Ai-Stoica")+"\nFișier: "+path+"\nCerință: "+instruction+"\n\nCONȚINUT ACTUAL:\n"+original}
+    ];
+    const out=await routeAI(env,messages);
+    let proposal=String(out.text||"").trim();
+    proposal=proposal.replace(/^\x60\x60\x60[^\n]*\n/,"").replace(/\n\x60\x60\x60$/,"").trim();
+    return json({data:{path,branch:branchName,sha:data.sha,original,proposal,provider:out.provider,model:out.model}});
+  }
+
+  if(p==="/api/github/apply" && request.method==="POST"){
+    const b=await bodyJson(request);
+    const path=String(b.path||"").replace(/^\/+/, "");
+    const content=String(b.content??"");
+    const sha=String(b.sha||"");
+    const branchName=String(b.branch||env.GITHUB_BRANCH||"main");
+    if(!path||!sha)return json({error:"Lipsesc path sau SHA pentru commit."},400);
+    const encoded=path.split("/").map(encodeURIComponent).join("/");
+    const data=await githubApi(env,"/contents/"+encoded,{
+      method:"PUT",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({
+        message:String(b.message||("AI Stoica: rezolvare "+path)),
+        content:bytesToBase64(enc.encode(content)),
+        sha,
+        branch:branchName
+      })
+    });
+    return json({ok:true,data:{path,branch:branchName,commit:data.commit?.sha||null}});
+  }
+
   if(p==="/api/conversations" && request.method==="GET"){
     const r=await env.DB.prepare(
       "SELECT id,title,model,messages_json,summary,created_at,updated_at FROM conversations WHERE user_id=? ORDER BY updated_at DESC"
