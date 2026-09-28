@@ -463,6 +463,13 @@ async function router(request, env) {
   const user=await requireUser(request,env);
   if(!user) return json({error:"Autentificare necesară."},401);
 
+  if(p.startsWith("/api/github/")){
+    const allowed=normalizeEmail(env.GITHUB_ALLOWED_EMAIL||"");
+    if(!allowed || normalizeEmail(user.email)!==allowed){
+      return json({error:"Funcțiile GitHub nu sunt autorizate pentru acest cont."},403);
+    }
+  }
+
   if(p==="/auth/me" && request.method==="GET"){
     const token=await createSession(env,user.id);
     return json({token,user:publicUser(user)});
