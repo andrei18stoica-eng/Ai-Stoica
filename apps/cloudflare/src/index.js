@@ -152,14 +152,19 @@ async function expandAttachmentMessages(env, userId, messages) {
   const out = [];
   for (const m of src) {
     if (!m || !["user","assistant","system"].includes(m.role)) continue;
-    let content = typeof m.content === "string" ? m.content : String(m.content ?? "");
+    let content = "";
+    if (typeof m.content === "string") content = m.content;
+    else if (Array.isArray(m.content)) {
+      content = m.content.filter(x=>x?.type==="text").map(x=>String(x.text||"")).join("\n");
+    } else content = String(m.content ?? "");
     const attachments = Array.isArray(m.attachments) ? m.attachments.slice(0, 6) : [];
     if (attachments.length) {
       for (const a of attachments) {
-        if (!a?.id) continue;
-        const row = await ownedFile(env, userId, a.id);
+        const fileId=a?.id||a?.libraryId;
+        if (!fileId) continue;
+        const row = await ownedFile(env, userId, fileId);
         if (!row) continue;
-        const extracted = await fileToText(env, userId, a.id);
+        const extracted = await fileToText(env, userId, fileId);
         content += "\n\n===== FIȘIER ATAȘAT: " + row.name + " =====\n" + extracted + "\n===== SFÂRȘIT FIȘIER =====";
       }
     }
