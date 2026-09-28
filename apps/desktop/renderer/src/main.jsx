@@ -151,6 +151,28 @@ async function exportMessageFile(message,format) {
   await downloadGeneratedFile(d.data);
 }
 
+function normalizeDocumentIntent(value){
+  return String(value||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+}
+function requestedDocumentFormat(value){
+  const t=normalizeDocumentIntent(value);
+  const asks=/(trimite|da-mi|dami|descarc|export|salveaz|fisier|document|format|creeaz|genereaz|fa-mi|fami)/;
+  if(!asks.test(t))return null;
+  if(/\bpptx\b|powerpoint|prezentare/.test(t))return "pptx";
+  if(/\bdocx\b|\bword\b/.test(t))return "docx";
+  if(/\bpdf\b/.test(t))return "pdf";
+  return null;
+}
+function standaloneExportRequest(value){
+  const t=normalizeDocumentIntent(value).replace(/[^a-z0-9\s-]/g," ").replace(/\s+/g," ").trim();
+  if(!requestedDocumentFormat(t))return false;
+  const stripped=t
+    .replace(/\b(pdf|docx|pptx|powerpoint|word|prezentare|document|fisier|format)\b/g," ")
+    .replace(/\b(trimite|da-mi|dami|descarca|descarc|exporta|export|salveaza|salveaz|creeaza|creeaz|genereaza|genereaz|fa-mi|fami|in|ca|te|rog|mi)\b/g," ")
+    .replace(/\s+/g," ").trim();
+  return stripped.length<12;
+}
+
 function groupLabel(ts) {
   const d = new Date(ts || Date.now()), now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -331,6 +353,7 @@ function MessageActions({message,onRegenerate,onRate}) {
     <CopyMessageButton message={message}/>
     <button onClick={()=>exp("pdf")} title="Descarcă PDF"><span style={{fontSize:10,fontWeight:800}}>PDF</span></button>
     <button onClick={()=>exp("docx")} title="Descarcă DOCX"><span style={{fontSize:9,fontWeight:800}}>DOCX</span></button>
+    <button onClick={()=>exp("pptx")} title="Descarcă PPTX"><span style={{fontSize:9,fontWeight:800}}>PPTX</span></button>
     <button className={message.rating===1?"selected":""} onClick={()=>onRate(1)}><ThumbsUp size={15}/></button>
     <button className={message.rating===-1?"selected":""} onClick={()=>onRate(-1)}><ThumbsDown size={15}/></button>
     <button onClick={onRegenerate}><RotateCcw size={15}/></button>
@@ -366,7 +389,7 @@ function ConversationView({conversation,busy,onRegenerate,onRate}) {
     {conversation.messages.map((m,i)=>m.role==="user"
       ?<div key={m.id||i} className="userRow"><div className="userMessageWrap"><div className="userBubble copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}><div>{messageText(m)}</div>{m.attachments?.length>0&&<div className="inlineAttachments">{m.attachments.map((a,j)=><span key={j}><Paperclip size={12}/>{a.name}</span>)}</div>}</div><div className="userMessageActions"><CopyMessageButton message={m}/></div></div></div>
       :m.role==="assistant"
-        ?<div key={m.id||i} className="assistantBlock"><div className="assistantMark">S</div><div className="assistantBody copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}><ReactMarkdown remarkPlugins={[remarkGfm]}>{String(m.content||"")}</ReactMarkdown>{!m.streaming&&<MessageActions message={m} onRegenerate={()=>onRegenerate(i)} onRate={v=>onRate(i,v)}/>}</div></div>
+        ?<div key={m.id||i} className="assistantBlock"><div className="assistantMark">S</div><div className="assistantBody copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}><ReactMarkdown remarkPlugins={[remarkGfm]}>{String(m.content||"")}</ReactMarkdown>{m.attachments?.length>0&&<div className="inlineAttachments">{m.attachments.map((a,j)=><span key={a.id||j} role="button" tabIndex={0} onClick={()=>downloadGeneratedFile(a)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" ")downloadGeneratedFile(a)}} title="Descarcă fișierul"><Paperclip size={12}/>{a.name}</span>)}</div>}{!m.streaming&&<MessageActions message={m} onRegenerate={()=>onRegenerate(i)} onRate={v=>onRate(i,v)}/>}</div></div>
         :null)}
     {busy&&<div className="thinking"><span/><span/><span/></div>}
     {contextMenu&&<div className="copyContextMenu" style={{left:contextMenu.x,top:contextMenu.y}} onClick={e=>e.stopPropagation()}>
@@ -796,8 +819,27 @@ function App() {
       if(!r.ok){let e;try{e=await r.json()}catch{e={error:await r.text()}};throw new Error(e?.error||`HTTP ${r.status}`)}
       const reader=r.body.getReader(),dec=new TextDecoder();let buf="",answer="";
       while(true){const {value,done}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const events=buf.split("\n\n");buf=events.pop()||"";for(const ev of events)for(const line of ev.split("\n")){if(!line.startsWith("data:"))continue;const raw=line.slice(5).trim();if(!raw||raw==="[DONE]")continue;try{const j=JSON.parse(raw),delta=j?.choices?.[0]?.delta?.content||j?.choices?.[0]?.message?.content||"";if(delta){answer+=delta;working={...working,messages:[...messages,{...assistantMessage,content:answer,streaming:true}]};setConversations(v=>v.map(x=>x.id===working.id?working:x))}}catch{}}}
-      working={...working,messages:[...messages,{...assistantMessage,content:answer||"Nu am primit răspuns.",streaming:false}],updatedAt:Date.now()};const saved=await saveConversation(working);
-      const lastUser=[...messages].reverse().find(m=>m.role==="user");api("/api/memory/capture",{method:"POST",body:JSON.stringify({conversationId:saved.id,userText:messageText(lastUser),assistantText:answer})}).catch(()=>{});
+      const lastUser=[...messages].reverse().find(m=>m.role==="user");
+      let generatedAttachments=[];
+      const requestedFormat=requestedDocumentFormat(messageText(lastUser));
+      if(requestedFormat){
+        try{
+          const previousAssistant=[...messages].reverse().find(m=>m.role==="assistant");
+          const exportContent=standaloneExportRequest(messageText(lastUser))&&previousAssistant
+            ? messageText(previousAssistant)
+            : (answer||"Nu am primit răspuns.");
+          const exported=await api("/api/export",{method:"POST",body:JSON.stringify({
+            format:requestedFormat,
+            title:working.title||"AI Stoica - document",
+            content:exportContent
+          })});
+          if(exported?.data)generatedAttachments=[exported.data];
+        }catch(exportError){
+          console.warn("Export document failed",exportError);
+        }
+      }
+      working={...working,messages:[...messages,{...assistantMessage,content:answer||"Nu am primit răspuns.",attachments:generatedAttachments,streaming:false}],updatedAt:Date.now()};const saved=await saveConversation(working);
+      api("/api/memory/capture",{method:"POST",body:JSON.stringify({conversationId:saved.id,userText:messageText(lastUser),assistantText:answer})}).catch(()=>{});
     }catch(e){working={...working,messages:[...messages,{...assistantMessage,content:`Eroare: ${e.message}`,streaming:false}],updatedAt:Date.now()};await saveConversation(working)}finally{setBusy(false)}
   }
   async function send(){
