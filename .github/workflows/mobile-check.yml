@@ -3,7 +3,7 @@ name: Check AI Stoica Mobile
 on:
   workflow_dispatch:
   push:
-    branches: [main, mobile-ios-oracle]
+    branches: [main, mobile-ios-oracle, ai-stoica-main-files]
     paths:
       - "apps/mobile/**"
       - ".github/workflows/mobile-check.yml"
