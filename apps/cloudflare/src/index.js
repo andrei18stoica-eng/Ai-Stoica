@@ -156,10 +156,11 @@ async function expandAttachmentMessages(env, userId, messages) {
     const attachments = Array.isArray(m.attachments) ? m.attachments.slice(0, 6) : [];
     if (attachments.length) {
       for (const a of attachments) {
-        if (!a?.id) continue;
-        const row = await ownedFile(env, userId, a.id);
+        const fileId = a?.id || a?.libraryId;
+        if (!fileId) continue;
+        const row = await ownedFile(env, userId, fileId);
         if (!row) continue;
-        const extracted = await fileToText(env, userId, a.id);
+        const extracted = await fileToText(env, userId, fileId);
         content += "\n\n===== FIȘIER ATAȘAT: " + row.name + " =====\n" + extracted + "\n===== SFÂRȘIT FIȘIER =====";
       }
     }
@@ -246,11 +247,24 @@ async function githubApi(env, suffix, options = {}) {
   return data;
 }
 
+function messageContentToText(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map(part => {
+      if (!part) return "";
+      if (part.type === "text") return String(part.text || "");
+      if (part.type === "image_url") return "[Imagine atașată]";
+      return "";
+    }).filter(Boolean).join("\n");
+  }
+  return String(content ?? "");
+}
+
 function parseMessages(value) {
   if (!Array.isArray(value)) return [];
   return value
     .filter(m => m && ["user","assistant","system"].includes(m.role))
-    .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : String(m.content ?? "") }))
+    .map(m => ({ role: m.role, content: messageContentToText(m.content) }))
     .filter(m => m.content.trim());
 }
 
@@ -475,6 +489,9 @@ async function router(request, env) {
     return json({token,user:publicUser(user)});
   }
 
+  if(p==="/api/projects" && request.method==="GET") return json({data:[]});
+  if(p==="/api/assistants" && request.method==="GET") return json({data:[]});
+
   if(p==="/api/models" && request.method==="GET"){
     return json({data:[
       ...(env.CEREBRAS_API_KEY?[{id:env.CEREBRAS_MODEL||"gpt-oss-120b",provider:"cerebras",primary:true}]:[]),
@@ -483,6 +500,64 @@ async function router(request, env) {
       ...(env.GROQ_API_KEY?[{id:env.GROQ_MODEL||"openai/gpt-oss-120b",provider:"groq"}]:[]),
       ...(env.GEMINI_API_KEY?[{id:env.GEMINI_MODEL||"gemini-2.5-pro",provider:"gemini"}]:[])
     ]});
+  }
+
+  if(p==="/api/library" && request.method==="GET"){
+    const r=await env.DB.prepare(
+      "SELECT id,name,mime_type,size,source,created_at FROM files WHERE user_id=? ORDER BY created_at DESC LIMIT 500"
+    ).bind(user.id).all();
+    return json({data:(r.results||[]).map(x=>({
+      id:x.id,name:x.name,mime:x.mime_type,size:Number(x.size||0),
+      kind:String(x.mime_type||"").startsWith("image/")?"image":(String(x.mime_type||"").startsWith("text/")||/\.(txt|md|csv|json|js|jsx|ts|tsx|py|html|css|xml|yaml|yml|sql)$/i.test(x.name)?"text":"file"),
+      source:x.source||"upload",createdAt:x.created_at
+    }))});
+  }
+
+  if(p==="/api/library/upload" && request.method==="POST"){
+    const name=safeFileName(decodeURIComponent(request.headers.get("x-file-name")||"file"));
+    const mime=request.headers.get("x-file-type")||request.headers.get("content-type")||"application/octet-stream";
+    const declared=Number(request.headers.get("x-file-size")||request.headers.get("content-length")||0);
+    const maxBytes=Number(env.AI_STOICA_FILE_MAX_MB||25)*1024*1024;
+    if(declared>maxBytes)return json({error:"Fișierul depășește limita de "+(env.AI_STOICA_FILE_MAX_MB||25)+" MB."},413);
+    if(!request.body)return json({error:"Lipsește conținutul fișierului."},400);
+    const id=uuid(),key=user.id+"/"+id+"/"+name,createdAt=now();
+    const obj=await env.FILES.put(key,request.body,{httpMetadata:{contentType:mime},customMetadata:{userId:user.id,fileId:id,source:"upload"}});
+    const size=Number(obj?.size||declared||0);
+    if(size>maxBytes){await env.FILES.delete(key);return json({error:"Fișierul depășește limita admisă."},413);}
+    await env.DB.prepare("INSERT INTO files(id,user_id,name,mime_type,size,r2_key,source,created_at) VALUES(?,?,?,?,?,?,?,?)")
+      .bind(id,user.id,name,mime,size,key,"upload",createdAt).run();
+    return json({data:{id,name,mime,size,kind:mime.startsWith("image/")?"image":(mime.startsWith("text/")?"text":"file"),createdAt}});
+  }
+
+  const libMetaMatch=p.match(/^\/api\/library\/([^/]+)$/);
+  if(libMetaMatch && request.method==="GET"){
+    const row=await ownedFile(env,user.id,libMetaMatch[1]);
+    if(!row)return json({error:"Fișierul nu a fost găsit."},404);
+    const mime=String(row.mime_type||"");
+    return json({data:{
+      id:row.id,name:row.name,mime,size:Number(row.size||0),
+      kind:mime.startsWith("image/")?"image":(mime.startsWith("text/")||/\.(txt|md|csv|json|js|jsx|ts|tsx|py|html|css|xml|yaml|yml|sql)$/i.test(row.name)?"text":"file"),
+      source:row.source||"upload",createdAt:row.created_at
+    }});
+  }
+  if(libMetaMatch && request.method==="DELETE"){
+    const row=await ownedFile(env,user.id,libMetaMatch[1]);
+    if(!row)return json({error:"Fișierul nu a fost găsit."},404);
+    await env.FILES.delete(row.r2_key);
+    await env.DB.prepare("DELETE FROM files WHERE id=? AND user_id=?").bind(row.id,user.id).run();
+    return json({ok:true});
+  }
+
+  const libContentMatch=p.match(/^\/api\/library\/([^/]+)\/content$/);
+  if(libContentMatch && request.method==="GET"){
+    const row=await ownedFile(env,user.id,libContentMatch[1]);
+    if(!row)return json({error:"Fișierul nu a fost găsit."},404);
+    const obj=await env.FILES.get(row.r2_key);
+    if(!obj)return json({error:"Fișierul nu mai există în stocare."},404);
+    const headers=new Headers(corsHeaders);
+    headers.set("content-type",row.mime_type||"application/octet-stream");
+    if(obj.size!=null)headers.set("content-length",String(obj.size));
+    return new Response(obj.body,{status:200,headers});
   }
 
   if(p==="/api/files" && request.method==="GET"){
