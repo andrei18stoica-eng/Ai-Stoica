@@ -752,6 +752,28 @@ async function router(request, env) {
     return json({data:item});
   }
 
+  if(p==="/api/chat/stream" && request.method==="POST"){
+    const b=await bodyJson(request);
+    const prepared=await chatMessages(env,user,b.messages);
+    try{
+      const out=await routeAI(env,prepared);
+      const payload=JSON.stringify({
+        choices:[{index:0,delta:{content:out.text},finish_reason:null}],
+        model:out.model,
+        provider:out.provider
+      });
+      const body="data: "+payload+"\n\ndata: [DONE]\n\n";
+      return new Response(body,{status:200,headers:{
+        ...corsHeaders,
+        "content-type":"text/event-stream; charset=utf-8",
+        "cache-control":"no-cache",
+        "connection":"keep-alive"
+      }});
+    }catch(e){
+      return json({error:e.message},502);
+    }
+  }
+
   if(p==="/api/chat" && request.method==="POST"){
     const b=await bodyJson(request);
     const prepared=await chatMessages(env,user,b.messages);
