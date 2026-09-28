@@ -554,87 +554,224 @@ function MemoryPanel({onClose}) {
 
 function PluginsPanel({onClose}) {
   const blank={name:"",description:"",url:"",method:"POST",trigger:"",apiKey:"",auto:false};
+
   const catalog=[
-    {name:"Gmail",description:"Caută, citește și lucrează cu emailurile tale Google.",trigger:"@gmail",group:"Google",mark:"G"},
-    {name:"Google Calendar",description:"Vezi programul și lucrează cu evenimentele din calendar.",trigger:"@calendar",group:"Google",mark:"31"},
-    {name:"Google Drive",description:"Folosește documente și fișiere din Google Drive.",trigger:"@drive",group:"Google",mark:"△"},
-    {name:"GitHub",description:"Lucrează cu repository-uri, cod, issues și pull request-uri.",trigger:"@github",group:"Dezvoltare",mark:"GH"},
-    {name:"Outlook",description:"Conectează emailul Microsoft Outlook.",trigger:"@outlook",group:"Microsoft",mark:"O"},
-    {name:"OneDrive",description:"Accesează fișierele tale Microsoft OneDrive.",trigger:"@onedrive",group:"Microsoft",mark:"☁"},
-    {name:"SharePoint",description:"Lucrează cu documente și site-uri SharePoint.",trigger:"@sharepoint",group:"Microsoft",mark:"S"},
-    {name:"Microsoft Teams",description:"Mesaje, conversații și colaborare în Teams.",trigger:"@teams",group:"Microsoft",mark:"T"},
-    {name:"Slack",description:"Folosește mesaje și canale din Slack.",trigger:"@slack",group:"Productivitate",mark:"S"},
-    {name:"Dropbox",description:"Folosește fișiere și foldere din Dropbox.",trigger:"@dropbox",group:"Fișiere",mark:"D"},
-    {name:"Box",description:"Accesează conținutul stocat în Box.",trigger:"@box",group:"Fișiere",mark:"B"},
-    {name:"Notion",description:"Lucrează cu pagini și baze de date Notion.",trigger:"@notion",group:"Productivitate",mark:"N"},
-    {name:"Trello",description:"Board-uri, liste și carduri Trello.",trigger:"@trello",group:"Productivitate",mark:"T"},
-    {name:"Jira",description:"Issues, proiecte și fluxuri Jira.",trigger:"@jira",group:"Dezvoltare",mark:"J"},
-    {name:"Asana",description:"Task-uri și proiecte Asana.",trigger:"@asana",group:"Productivitate",mark:"A"},
-    {name:"Linear",description:"Issues și proiecte pentru echipe software.",trigger:"@linear",group:"Dezvoltare",mark:"L"},
-    {name:"Zoom",description:"Întâlniri și informații din Zoom.",trigger:"@zoom",group:"Comunicare",mark:"Z"},
-    {name:"HubSpot",description:"Date și activități din CRM-ul HubSpot.",trigger:"@hubspot",group:"Business",mark:"H"},
-    {name:"Salesforce",description:"Lucrează cu date din Salesforce CRM.",trigger:"@salesforce",group:"Business",mark:"SF"},
-    {name:"Discord",description:"Mesaje și comunități Discord.",trigger:"@discord",group:"Comunicare",mark:"D"}
+    // Populare
+    {name:"Gmail",description:"Read and manage Gmail",trigger:"@gmail",group:"Populare",mark:"M",slug:"gmail"},
+    {name:"Google Drive",description:"Drive, Docs, Sheets or Slides",trigger:"@drive",group:"Populare",mark:"△",slug:"googledrive"},
+    {name:"GitHub",description:"Triage PRs, issues, and publish flows",trigger:"@github",group:"Populare",mark:"GH",slug:"github"},
+    {name:"Remote Desktop Commander",description:"Build and automate, anywhere",trigger:"@remote",group:"Populare",mark:"DC"},
+    {name:"Health",description:"Explore your health data in AI Stoica",trigger:"@health",group:"Populare",mark:"♥"},
+    {name:"Outlook Email",description:"Triage Outlook inboxes",trigger:"@outlook",group:"Populare",mark:"O",slug:"microsoftoutlook"},
+
+    // Noi și remarcabile
+    {name:"Adobe",description:"Design, combine, and edit",trigger:"@adobe",group:"Noi și remarcabile",mark:"A",slug:"adobe"},
+    {name:"Figma",description:"Create designs, ship to code",trigger:"@figma",group:"Noi și remarcabile",mark:"F",slug:"figma"},
+    {name:"MagicPath",description:"Design on a shared canvas",trigger:"@magicpath",group:"Noi și remarcabile",mark:"MP"},
+    {name:"Canva",description:"Create, review, edit designs",trigger:"@canva",group:"Noi și remarcabile",mark:"C",slug:"canva"},
+    {name:"Shopify",description:"Create and manage your store",trigger:"@shopify",group:"Noi și remarcabile",mark:"S",slug:"shopify"},
+    {name:"Atlassian Rovo",description:"Jira, Confluence, Loom, & more",trigger:"@rovo",group:"Noi și remarcabile",mark:"A",slug:"atlassian"},
+
+    // Productivitate
+    {name:"Firecrawl",description:"Search and extract web data",trigger:"@firecrawl",group:"Productivitate",mark:"🔥"},
+    {name:"Flaim Fantasy",description:"Fantasy Sports Analysis",trigger:"@flaim",group:"Productivitate",mark:"FF"},
+    {name:"monday.com",description:"Manage projects, tasks & CRM",trigger:"@monday",group:"Productivitate",mark:"M",slug:"mondaydotcom"},
+    {name:"Notion",description:"Notion docs and workflows",trigger:"@notion",group:"Productivitate",mark:"N",slug:"notion"},
+    {name:"Google Calendar",description:"Manage Google Calendar events",trigger:"@calendar",group:"Productivitate",mark:"31",slug:"googlecalendar"},
+    {name:"Metricool",description:"Analyze and schedule posts",trigger:"@metricool",group:"Productivitate",mark:"∞"},
+
+    // Comunicare
+    {name:"Slack",description:"Read and manage Slack",trigger:"@slack",group:"Comunicare",mark:"S",slug:"slack"},
+    {name:"Teams",description:"Summarize Teams and follow up",trigger:"@teams",group:"Comunicare",mark:"T",slug:"microsoftteams"},
+    {name:"Zoom",description:"Insights from Zoom",trigger:"@zoom",group:"Comunicare",mark:"Z",slug:"zoom"},
+    {name:"Superhuman Mail",description:"Best email+calendar assistant",trigger:"@superhuman",group:"Comunicare",mark:"✉"},
+    {name:"Hostinger Mail",description:"Use Hostinger Mail",trigger:"@hostinger",group:"Comunicare",mark:"H",slug:"hostinger"},
+    {name:"Mailopoly Inbox",description:"Search, send emails & messages",trigger:"@mailopoly",group:"Comunicare",mark:"◇"},
+
+    // Creativitate
+    {name:"Canva",description:"Create, review, edit designs",trigger:"@canva",group:"Creativitate",mark:"C",slug:"canva"},
+    {name:"Higgsfield",description:"Every image and video model",trigger:"@higgsfield",group:"Creativitate",mark:"HF"},
+    {name:"Figma",description:"Create designs, ship to code",trigger:"@figma",group:"Creativitate",mark:"F",slug:"figma"},
+    {name:"Viewmax",description:"Create videos with AI",trigger:"@viewmax",group:"Creativitate",mark:"▶"},
+    {name:"Runway",description:"Generate with every AI model",trigger:"@runway",group:"Creativitate",mark:"R",slug:"runway"},
+    {name:"invideo",description:"Create videos of any length",trigger:"@invideo",group:"Creativitate",mark:"IV"},
+
+    // Instrumente pentru dezvoltatori
+    {name:"Supabase",description:"Manage and query databases",trigger:"@supabase",group:"Instrumente pentru dezvoltatori",mark:"S",slug:"supabase"},
+    {name:"Render",description:"Manage Render resources",trigger:"@render",group:"Instrumente pentru dezvoltatori",mark:"R",slug:"render"},
+    {name:"WPVibe",description:"AI WordPress tools",trigger:"@wpvibe",group:"Instrumente pentru dezvoltatori",mark:"WP"},
+    {name:"Exa",description:"Web search for AI agents",trigger:"@exa",group:"Instrumente pentru dezvoltatori",mark:"E"},
+    {name:"Vercel",description:"Build and deploy web apps and agents",trigger:"@vercel",group:"Instrumente pentru dezvoltatori",mark:"▲",slug:"vercel"},
+    {name:"Railway",description:"Build and deploy apps",trigger:"@railway",group:"Instrumente pentru dezvoltatori",mark:"R",slug:"railway"},
+
+    // Sănătate
+    {name:"COROS",description:"Training and health insights",trigger:"@coros",group:"Sănătate",mark:"C",slug:"coros"},
+    {name:"Tredict",description:"Analyze workouts, create plans",trigger:"@tredict",group:"Sănătate",mark:"T"},
+    {name:"freddy",description:"Ask about your health data",trigger:"@freddy",group:"Sănătate",mark:"F"},
+    {name:"Fitness AI Connector",description:"AI coach for your Garmin data",trigger:"@fitness",group:"Sănătate",mark:"AI"},
+    {name:"Calorie Tracker",description:"Track your food and calories",trigger:"@calories",group:"Sănătate",mark:"CT"},
+    {name:"LiftTrack",description:"Weightlifting For Garmin",trigger:"@lifttrack",group:"Sănătate",mark:"LT"},
+
+    // Divertisment
+    {name:"Destiny AI Astrology",description:"Birth Charts & Horoscopes",trigger:"@destiny",group:"Divertisment",mark:"D"},
+    {name:"Smart Chess:Train+Learn to win",description:"Play+improve: coach+strategy",trigger:"@chess",group:"Divertisment",mark:"♞"},
+    {name:"Spotify",description:"Music and podcasts for you",trigger:"@spotify",group:"Divertisment",mark:"●",slug:"spotify"},
+    {name:"Chessy",description:"Play Chess Against AI Stoica",trigger:"@chessy",group:"Divertisment",mark:"♘"},
+    {name:"SoundBreak",description:"Create AI Music with Artists",trigger:"@soundbreak",group:"Divertisment",mark:"◉"},
+    {name:"PocketMind: Texas Hold'em",description:"Play Texas Hold'em with AI",trigger:"@pocketmind",group:"Divertisment",mark:"♠"},
+
+    // Educație
+    {name:"Consensus",description:"Explore scientific research",trigger:"@consensus",group:"Educație",mark:"C"},
+    {name:"SciSpace",description:"For science and research",trigger:"@scispace",group:"Educație",mark:"S"},
+    {name:"Acumen by Talarion",description:"Keep your AI up to date.",trigger:"@acumen",group:"Educație",mark:"T"},
+    {name:"Explain Video Generator",description:"Free AI explainer video maker",trigger:"@explain",group:"Educație",mark:"▶"},
+    {name:"Scite",description:"Search scientific literature",trigger:"@scite",group:"Educație",mark:"S"},
+    {name:"Tarteel",description:"Explore Quranic resources",trigger:"@tarteel",group:"Educație",mark:"◇"},
+
+    // Business și operațiuni
+    {name:"HubSpot",description:"Insights to action in HubSpot",trigger:"@hubspot",group:"Business și operațiuni",mark:"H",slug:"hubspot"},
+    {name:"Windsor.ai",description:"Connect 350+ data sources",trigger:"@windsor",group:"Business și operațiuni",mark:"W"},
+    {name:"Adspirer",description:"Create, launch & analyze ads",trigger:"@adspirer",group:"Business și operațiuni",mark:"AD"},
+    {name:"Shopify",description:"Create and manage your store",trigger:"@shopify",group:"Business și operațiuni",mark:"S",slug:"shopify"},
+    {name:"vidIQ",description:"YouTube stats and keywords",trigger:"@vidiq",group:"Business și operațiuni",mark:"IQ"},
+    {name:"Ubersuggest",description:"SEO research tools",trigger:"@ubersuggest",group:"Business și operațiuni",mark:"U"},
+
+    // Date și analiză
+    {name:"PostHog",description:"Analyze your product data",trigger:"@posthog",group:"Date și analiză",mark:"PH",slug:"posthog"},
+    {name:"Helium 10",description:"Access your Helium 10 data",trigger:"@helium",group:"Date și analiză",mark:"H10"},
+    {name:"Blockscout Blockchain Data",description:"Find & analyze blockchain data",trigger:"@blockscout",group:"Date și analiză",mark:"B",slug:"blockscout"},
+    {name:"Data",description:"Answer questions with data",trigger:"@data",group:"Date și analiză",mark:"▥"},
+    {name:"Amplitude",description:"Analyze your product data",trigger:"@amplitude",group:"Date și analiză",mark:"A",slug:"amplitude"},
+    {name:"Typeform",description:"Build forms, analyze responses",trigger:"@typeform",group:"Date și analiză",mark:"T",slug:"typeform"},
+
+    // Cercetare științifică
+    {name:"Undermind",description:"Find and read research papers",trigger:"@undermind",group:"Cercetare științifică",mark:"U"},
+    {name:"Inductive",description:"State-of-the-art ADMET models",trigger:"@inductive",group:"Cercetare științifică",mark:"I"},
+    {name:"Boltz",description:"Predict structures, screen molecules and proteins",trigger:"@boltz",group:"Cercetare științifică",mark:"B"},
+    {name:"Tamarind Bio",description:"Protein and molecular design",trigger:"@tamarind",group:"Cercetare științifică",mark:"TB"},
+    {name:"Proto",description:"Biological AI models and tools",trigger:"@proto",group:"Cercetare științifică",mark:"P"},
+    {name:"Rowan",description:"Chemistry & Biology Simulation",trigger:"@rowan",group:"Cercetare științifică",mark:"R"},
+
+    // Securitate
+    {name:"Codex Security",description:"Security scanning for your codebase",trigger:"@codexsecurity",group:"Securitate",mark:"CS"},
+    {name:"PrivacyHawk",description:"Protect your personal data",trigger:"@privacyhawk",group:"Securitate",mark:"PH"},
+    {name:"Soluvery",description:"Audit Google Drive Permissions",trigger:"@soluvery",group:"Securitate",mark:"S"},
+    {name:"Malwarebytes",description:"Verify links, domains, phones.",trigger:"@malwarebytes",group:"Securitate",mark:"M",slug:"malwarebytes"},
+    {name:"AJAXX Data Scrubber",description:"Remove exposed personal data",trigger:"@ajaxx",group:"Securitate",mark:"AX"},
+    {name:"Ansvar Gateway",description:"Laws, Security and Compliance",trigger:"@ansvar",group:"Securitate",mark:"AI"},
+
+    // Altele
+    {name:"Tarot",description:"Tarot Reading & Divination",trigger:"@tarot",group:"Altele",mark:"✦"},
+    {name:"Astrologic",description:"Birth charts and horoscopes",trigger:"@astrologic",group:"Altele",mark:"☾"},
+    {name:"Kleinanzeigen",description:"Echte Deals. Echte Menschen.",trigger:"@kleinanzeigen",group:"Altele",mark:"K",slug:"kleinanzeigen"},
+    {name:"Ask Tarot Cards",description:"Tarot card readings",trigger:"@asktarot",group:"Altele",mark:"☀"},
+    {name:"Steer Astro",description:"Your Personal AI Astrologer",trigger:"@steerastro",group:"Altele",mark:"◎"},
+    {name:"Astro Scope Tarot",description:"Daily & 3-card tarot reads",trigger:"@astroscope",group:"Altele",mark:"◇"}
   ];
-  const [items,setItems]=useState([]),[form,setForm]=useState(blank),[result,setResult]=useState(""),[tab,setTab]=useState("discover"),[query,setQuery]=useState(""),[selected,setSelected]=useState(null);
+
+  const categoryOrder=[
+    "Populare","Noi și remarcabile","Productivitate","Comunicare","Creativitate",
+    "Instrumente pentru dezvoltatori","Sănătate","Divertisment","Educație",
+    "Business și operațiuni","Date și analiză","Cercetare științifică","Securitate","Altele"
+  ];
+  const skills=[
+    {name:"Căutare web",description:"Caută informații actuale și surse online.",mark:"W"},
+    {name:"Documente",description:"Generează și lucrează cu PDF, DOCX și PPTX.",mark:"D"},
+    {name:"Cod",description:"Analizează cod și lucrează cu GitHub.",mark:"</>"},
+    {name:"Imagini",description:"Creează și editează imagini cu AI.",mark:"I"},
+    {name:"Date",description:"Analizează fișiere, tabele și rezultate.",mark:"∑"},
+    {name:"Automatizări",description:"Rulează sarcini programate și monitorizări.",mark:"A"}
+  ];
+
+  const [items,setItems]=useState([]),[form,setForm]=useState(blank),[result,setResult]=useState("");
+  const [topTab,setTopTab]=useState("plugins"),[scope,setScope]=useState("public"),[query,setQuery]=useState(""),[selected,setSelected]=useState(null);
+
   async function load(){setItems((await api("/api/plugins")).data||[])}
   useEffect(()=>{load()},[]);
+
   async function add(){
     if(!form.name.trim()||!form.url.trim())return;
     await api("/api/plugins",{method:"POST",body:JSON.stringify(form)});
-    setForm(blank);setSelected(null);setTab("connected");await load()
+    setForm(blank);setSelected(null);await load()
   }
   async function patch(x,p){await api(`/api/plugins/${x.id}`,{method:"PATCH",body:JSON.stringify(p)});await load()}
   async function test(x){try{const d=await api(`/api/plugins/${x.id}/test`,{method:"POST",body:JSON.stringify({message:"Test conexiune AI Stoica"})});setResult(`${x.name}: ${d.result}`)}catch(e){setResult(`${x.name}: Eroare — ${e.message}`)}}
   async function remove(id){if(confirm("Ștergi această conexiune?")){await api(`/api/plugins/${id}`,{method:"DELETE"});await load()}}
   function chooseCatalog(x){setSelected(x);setForm({...blank,name:x.name,description:x.description,trigger:x.trigger})}
   function closeSetup(){setSelected(null);setForm(blank)}
+  function iconUrl(x){return x.slug?`https://cdn.simpleicons.org/${x.slug}`:null}
+
+  const installedNames=new Set(items.map(x=>String(x.name||"").toLowerCase()));
   const normalized=query.trim().toLowerCase();
   const filtered=catalog.filter(x=>!normalized||x.name.toLowerCase().includes(normalized)||x.description.toLowerCase().includes(normalized)||x.group.toLowerCase().includes(normalized));
-  const installedNames=new Set(items.map(x=>String(x.name||"").toLowerCase()));
-  return <ToolShell title="Pluginuri" subtitle="Conectează serviciile pe care AI Stoica le poate folosi în conversații." onClose={onClose}>
-    <div className="claudePlugins">
-      <div className="claudePluginTabs">
-        <button className={tab==="discover"?"active":""} onClick={()=>setTab("discover")}>Descoperă</button>
-        <button className={tab==="connected"?"active":""} onClick={()=>setTab("connected")}>Conectate <span>{items.length}</span></button>
+  const groups=categoryOrder.map(group=>({group,items:filtered.filter(x=>x.group===group)})).filter(x=>x.items.length);
+
+  return <ToolShell title="" subtitle="" onClose={onClose}>
+    <div className="stoicaPluginStore">
+      <div className="stoicaPluginTop">
+        <div className="stoicaPluginMainTabs">
+          <button className={topTab==="plugins"?"active":""} onClick={()=>setTopTab("plugins")}>Pluginuri</button>
+          <button className={topTab==="skills"?"active":""} onClick={()=>setTopTab("skills")}>Competențe</button>
+        </div>
+        <button className="stoicaAddButton" onClick={()=>chooseCatalog({name:"Plugin personalizat",description:"Conectează orice API, endpoint sau webhook compatibil.",trigger:"@plugin",group:"Personal",mark:"+"})}><Plus size={15}/> Adaugă</button>
       </div>
 
-      {tab==="discover"&&<>
-        <div className="claudePluginSearch"><Search size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Caută integrări"/></div>
-        <div className="claudePluginIntro">
-          <div><h3>Conectează aplicațiile tale</h3><p>Adaugă servicii pe care AI Stoica le poate folosi atunci când îi ceri explicit sau printr-un trigger @.</p></div>
-          <button className="secondary claudeCustomBtn" onClick={()=>chooseCatalog({name:"Plugin personalizat",description:"Conectează orice endpoint HTTP sau webhook.",trigger:"@plugin",group:"Personalizat",mark:"+"})}><Plus size={16}/> Adaugă personalizat</button>
-        </div>
-        <div className="claudePluginDirectory">
-          {filtered.map(x=>{
-            const connected=installedNames.has(x.name.toLowerCase());
-            return <button className="claudePluginRow" key={x.name} onClick={()=>chooseCatalog(x)}>
-              <span className="claudePluginLogo">{x.mark}</span>
-              <span className="claudePluginCopy"><b>{x.name}</b><small>{x.description}</small></span>
-              <span className="claudePluginGroup">{x.group}</span>
-              <span className={cx("claudeConnectPill",connected&&"connected")}>{connected?<><Check size={14}/> Conectat</>:"Configurează"}</span>
-            </button>
-          })}
-          {!filtered.length&&<div className="claudePluginEmpty">Nu am găsit nicio integrare pentru „{query}”.</div>}
-        </div>
-      </>}
+      <div className="stoicaPluginSearch"><Search size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder={topTab==="plugins"?"Caută pluginuri":"Caută competențe"}/></div>
 
-      {tab==="connected"&&<>
-        <div className="claudeConnectedHead"><div><h3>Conexiunile tale</h3><p>Controlează ce servicii poate folosi AI Stoica.</p></div><button className="secondary" onClick={()=>setTab("discover")}><Plus size={16}/> Adaugă conexiune</button></div>
-        {result&&<div className="pluginResult claudeResult">{result}</div>}
-        <div className="claudeConnectedList">
-          {!items.length&&<div className="claudePluginEmpty">Nu ai încă nicio conexiune configurată.</div>}
-          {items.map(x=><div className="claudeConnectedRow" key={x.id}>
-            <div className="claudePluginLogo">{String(x.name||"P").slice(0,2).toUpperCase()}</div>
-            <div className="claudeConnectedInfo"><b>{x.name}</b><span>{x.description||x.url}</span><small>{x.trigger||"Fără trigger"} {x.hasKey?"· autentificare salvată":""}</small></div>
-            <div className="claudeConnectedActions">
-              <button className="smallBtn" onClick={()=>test(x)}>Testează</button>
-              <button className={cx("claudeToggle",x.enabled&&"on")} onClick={()=>patch(x,{enabled:!x.enabled})} aria-label={x.enabled?"Dezactivează":"Activează"}><span/></button>
-              <button className="iconDanger" onClick={()=>remove(x.id)} title="Șterge"><Trash2 size={16}/></button>
-            </div>
-          </div>)}
+      {topTab==="plugins"?<>
+        {!!items.length&&<section className="stoicaInstalled">
+          <button className="stoicaSectionTitle" onClick={()=>{}}>Instalate <span>›</span></button>
+          <div className="stoicaInstalledIcons">
+            {items.slice(0,8).map(x=><button key={x.id} className="stoicaInstalledIcon" title={x.name} onClick={()=>test(x)}>
+              <span>{String(x.name||"P").slice(0,2).toUpperCase()}</span>
+            </button>)}
+          </div>
+          {result&&<div className="pluginResult claudeResult">{result}</div>}
+        </section>}
+
+        <div className="stoicaScopeTabs">
+          <button className={scope==="public"?"active":""} onClick={()=>setScope("public")}>Publice</button>
+          <button className={scope==="personal"?"active":""} onClick={()=>setScope("personal")}>Personale</button>
         </div>
-      </>}
+
+        {scope==="personal"?<div className="stoicaPersonalList">
+          {!items.length?<div className="stoicaPluginEmpty">Nu ai încă pluginuri personale configurate. Apasă „Adaugă” pentru a conecta unul.</div>:
+          items.map(x=><div className="stoicaManageRow" key={x.id}>
+            <div className="stoicaPluginLogo"><span>{String(x.name||"P").slice(0,2).toUpperCase()}</span></div>
+            <div className="stoicaPluginInfo"><b>{x.name}</b><small>{x.description||x.url}</small></div>
+            <button className="smallBtn" onClick={()=>test(x)}>Testează</button>
+            <button className={cx("claudeToggle",x.enabled&&"on")} onClick={()=>patch(x,{enabled:!x.enabled})}><span/></button>
+            <button className="iconDanger" onClick={()=>remove(x.id)}><Trash2 size={16}/></button>
+          </div>)}
+        </div>:
+        <div className="stoicaCatalog">
+          {groups.map(({group,items:groupItems})=><section className="stoicaPluginSection" key={group}>
+            <button className="stoicaSectionTitle">{group} <span>›</span></button>
+            <div className="stoicaPluginGrid">
+              {groupItems.map((x,i)=>{
+                const connected=installedNames.has(x.name.toLowerCase());
+                const src=iconUrl(x);
+                return <button className="stoicaPluginCard" key={x.group+x.name+i} onClick={()=>chooseCatalog(x)}>
+                  <span className="stoicaPluginLogo">
+                    {src?<img src={src} alt="" onError={e=>{e.currentTarget.style.display="none";e.currentTarget.nextSibling.style.display="grid"}}/>:null}
+                    <span style={{display:src?"none":"grid"}}>{x.mark}</span>
+                  </span>
+                  <span className="stoicaPluginInfo"><b>{x.name}</b><small>{x.description}</small></span>
+                  <span className={cx("stoicaPluginAdd",connected&&"connected")}>{connected?<Check size={15}/>:<Plus size={18}/>}</span>
+                </button>
+              })}
+            </div>
+          </section>)}
+          {!groups.length&&<div className="stoicaPluginEmpty">Nu am găsit pluginul căutat.</div>}
+        </div>}
+      </>:
+      <div className="stoicaSkillsGrid">
+        {skills.filter(x=>!normalized||x.name.toLowerCase().includes(normalized)||x.description.toLowerCase().includes(normalized)).map(x=><div className="stoicaSkillCard" key={x.name}>
+          <span className="stoicaPluginLogo"><span>{x.mark}</span></span>
+          <div><b>{x.name}</b><small>{x.description}</small></div>
+          <Check size={16}/>
+        </div>)}
+      </div>}
 
       {selected&&<div className="claudeSetupBackdrop" onMouseDown={e=>{if(e.target===e.currentTarget)closeSetup()}}>
         <div className="claudeSetupPanel">
@@ -643,15 +780,15 @@ function PluginsPanel({onClose}) {
             <div><h3>{selected.name}</h3><p>{selected.description}</p></div>
             <button className="iconOnly" onClick={closeSetup}><X size={18}/></button>
           </div>
-          <div className="claudeSetupNotice"><Plug size={16}/><span>Configurează conexiunea. Serviciile cu autentificare proprie necesită endpoint/OAuth sau API autorizat; AI Stoica nu primește acces fără autorizarea ta.</span></div>
+          <div className="claudeSetupNotice"><Plug size={16}/><span>Pluginul devine funcțional numai după autorizarea serviciului sau configurarea unui endpoint/API valid. Afișarea lui în catalog nu oferă automat acces la contul tău.</span></div>
           <div className="claudeSetupForm">
             <label>Nume<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label>
-            <label>Endpoint sau webhook<input placeholder="https://…" value={form.url} onChange={e=>setForm({...form,url:e.target.value})}/></label>
+            <label>Endpoint / webhook / OAuth callback<input placeholder="https://…" value={form.url} onChange={e=>setForm({...form,url:e.target.value})}/></label>
             <div className="claudeFormRow"><label>Trigger<input placeholder="@gmail" value={form.trigger} onChange={e=>setForm({...form,trigger:e.target.value})}/></label><label>Metodă<select value={form.method} onChange={e=>setForm({...form,method:e.target.value})}><option>POST</option><option>GET</option></select></label></div>
             <label>API key <span className="optional">opțional</span><input type="password" placeholder="Cheie / token" value={form.apiKey} onChange={e=>setForm({...form,apiKey:e.target.value})}/></label>
-            <label className="claudeAutoRow"><span><b>Folosește automat</b><small>Permite pluginului să fie inclus automat în contextul mesajelor.</small></span><input type="checkbox" checked={form.auto} onChange={e=>setForm({...form,auto:e.target.checked})}/></label>
+            <label className="claudeAutoRow"><span><b>Folosește automat</b><small>Permite pluginului să fie inclus automat când este relevant.</small></span><input type="checkbox" checked={form.auto} onChange={e=>setForm({...form,auto:e.target.checked})}/></label>
           </div>
-          <div className="claudeSetupActions"><button className="secondary" onClick={closeSetup}>Anulează</button><button className="primary" disabled={!form.name.trim()||!form.url.trim()} onClick={add}>Salvează conexiunea</button></div>
+          <div className="claudeSetupActions"><button className="secondary" onClick={closeSetup}>Anulează</button><button className="primary" disabled={!form.name.trim()||!form.url.trim()} onClick={add}>Conectează</button></div>
         </div>
       </div>}
     </div>
