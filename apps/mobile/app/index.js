@@ -11,6 +11,28 @@ const GATEWAY=(process.env.EXPO_PUBLIC_GATEWAY_URL||"").replace(/\/+$/,"");
 const DEFAULT_MODEL=process.env.EXPO_PUBLIC_DEFAULT_MODEL||"AI Stoica Performance Max";
 const TOKEN_KEY="aiStoicaMobileTokenV4";
 
+function normalizeIntent(value){
+  return String(value||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+}
+function requestedDocumentFormat(value){
+  const t=normalizeIntent(value);
+  const asks=/(trimite|da-mi|dami|descarc|export|salveaz|fisier|document|format|creeaz|genereaz|fa-mi|fami)/;
+  if(!asks.test(t))return null;
+  if(/\bpptx\b|powerpoint|prezentare/.test(t))return "pptx";
+  if(/\bdocx\b|\bword\b/.test(t))return "docx";
+  if(/\bpdf\b/.test(t))return "pdf";
+  return null;
+}
+function standaloneExportRequest(value){
+  const t=normalizeIntent(value).replace(/[^a-z0-9\s-]/g," ").replace(/\s+/g," ").trim();
+  if(!requestedDocumentFormat(t))return false;
+  const stripped=t
+    .replace(/\b(pdf|docx|pptx|powerpoint|word|prezentare|document|fisier|format)\b/g," ")
+    .replace(/\b(trimite|da-mi|dami|descarca|descarc|exporta|export|salveaza|salveaz|creeaza|creeaz|genereaza|genereaz|fa-mi|fami|in|ca|te|rog|mi)\b/g," ")
+    .replace(/\s+/g," ").trim();
+  return stripped.length<12;
+}
+
 async function api(path,token,options={}){
   if(!GATEWAY)throw new Error("Gateway-ul AI Stoica nu este configurat.");
   const headers={...(token?{Authorization:`Bearer ${token}`}:{}),...(options.headers||{})};
@@ -124,7 +146,25 @@ export default function Home(){
       setConvs(v=>v.map(x=>x.id===c.id?{...x,messages}:x));
       const d=await api("/api/chat",token,{method:"POST",body:JSON.stringify({model:DEFAULT_MODEL,messages})});
       const ans=d?.choices?.[0]?.message?.content||"Nu am primit răspuns.";
-      const final=[...messages,{id:`a${Date.now()}`,role:"assistant",content:String(ans),createdAt:Date.now(),provider:d.provider,model:d.model}];
+      let generatedAttachments=[];
+      const requestedFormat=requestedDocumentFormat(p);
+      if(requestedFormat){
+        try{
+          const previousAssistant=[...(c.messages||[])].reverse().find(m=>m.role==="assistant");
+          const exportContent=standaloneExportRequest(p)&&previousAssistant?.content
+            ? String(previousAssistant.content)
+            : String(ans);
+          const exported=await api("/api/export",token,{method:"POST",body:JSON.stringify({
+            format:requestedFormat,
+            title:c.title||"AI Stoica - document",
+            content:exportContent
+          })});
+          if(exported?.data)generatedAttachments=[exported.data];
+        }catch(e){
+          Alert.alert("Document", "Răspunsul a fost generat, dar fișierul nu a putut fi creat: "+e.message);
+        }
+      }
+      const final=[...messages,{id:`a${Date.now()}`,role:"assistant",content:String(ans),attachments:generatedAttachments,createdAt:Date.now(),provider:d.provider,model:d.model}];
       await saveMessages(c,final);
     }catch(e){Alert.alert("AI Stoica",e.message);setPendingFiles(files)}finally{setBusy(false)}
   }
@@ -197,6 +237,7 @@ export default function Home(){
           <TouchableOpacity style={s.action} onPress={()=>copyText(m.content)}><Text style={s.actionText}>Copy</Text></TouchableOpacity>
           <TouchableOpacity style={s.action} onPress={()=>exportMessage(m,"pdf")}><Text style={s.actionText}>PDF</Text></TouchableOpacity>
           <TouchableOpacity style={s.action} onPress={()=>exportMessage(m,"docx")}><Text style={s.actionText}>DOCX</Text></TouchableOpacity>
+          <TouchableOpacity style={s.action} onPress={()=>exportMessage(m,"pptx")}><Text style={s.actionText}>PPTX</Text></TouchableOpacity>
           {!!m.githubProposal&&<TouchableOpacity style={[s.action,s.apply]} onPress={()=>applyGithub(m.githubProposal)}><Text style={s.applyText}>Aplică în GitHub</Text></TouchableOpacity>}
         </View>}
       </View>)}
