@@ -7,6 +7,9 @@ on:
       - main
       - ai-stoica-main-files
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -35,10 +38,17 @@ jobs:
         working-directory: apps/desktop
         run: npm run build
 
-      - name: Upload AI Stoica
-        uses: actions/upload-artifact@v4
-        with:
-          name: AI-Stoica-Windows
-          path: apps/desktop/release/**
-          if-no-files-found: error
-          retention-days: 14
+      - name: Publish Windows installer to GitHub Releases
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "v0.6.0"
+          $installer = "apps/desktop/release/AI_Stoica_Setup_0.6.0_x64.exe"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $installer --clobber
+          } else {
+            gh release create $tag $installer --title "AI Stoica 0.6.0" --notes "Versiunea principală AI Stoica 0.6.0 pentru Windows: Cloudflare backend, fișiere, PDF/DOCX, Copy, memorie și GitHub Solve."
+          }
