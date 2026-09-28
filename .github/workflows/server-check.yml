@@ -1,0 +1,33 @@
+name: AI Stoica Server Check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/server/**"
+      - "deploy/hetzner/**"
+      - ".github/workflows/server-check.yml"
+  workflow_dispatch:
+
+jobs:
+  server-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install server dependencies
+        run: npm --prefix apps/server install
+      - name: Check server syntax
+        run: node --check apps/server/server.cjs
+      - name: Validate Docker Compose
+        env:
+          POSTGRES_DB: aistoica
+          POSTGRES_USER: aistoica
+          POSTGRES_PASSWORD: test-only-password
+          OWNER_EMAIL: andrei18stoica@gmail.com
+          AI_STOICA_DOMAIN: api.example.com
+        run: docker compose -f deploy/hetzner/docker-compose.yml config >/dev/null
+      - name: Build API image
+        run: docker build -f apps/server/Dockerfile -t ai-stoica-server:test .
