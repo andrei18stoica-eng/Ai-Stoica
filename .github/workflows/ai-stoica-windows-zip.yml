@@ -95,12 +95,13 @@ jobs:
           }
 
       - name: Incarca ZIP ca Artifact
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: AI-Stoica-Windows-0.6.0-COMPLET
           path: AI_Stoica_Windows_0.6.0_COMPLET.zip
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
 
       - name: Link descarcare
         shell: pwsh
@@ -111,3 +112,5 @@ jobs:
           "## [DESCARCA ZIP COMPLET]($url)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           "Contine installer EXE, varianta portabila, README si SHA256SUMS." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+# retry-after-storage-cleanup
