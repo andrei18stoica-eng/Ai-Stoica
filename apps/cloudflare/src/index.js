@@ -1,5 +1,7 @@
 import { PDFDocument, StandardFonts } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
 import { Document, Packer, Paragraph, TextRun } from "docx";
+import PptxGenJS from "pptxgenjs";
 
 const enc = new TextEncoder();
 
@@ -173,7 +175,7 @@ async function expandAttachmentMessages(env, userId, messages) {
   return out;
 }
 
-function pdfSafeText(value) {
+function pdfFallbackText(value) {
   return String(value || "")
     .replace(/[ăĂ]/g, m => m === "ă" ? "a" : "A")
     .replace(/[âÂ]/g, m => m === "â" ? "a" : "A")
@@ -199,15 +201,44 @@ function wrapPdfLine(line, max = 92) {
   return lines;
 }
 
+let unicodePdfFontPromise = null;
+async function loadUnicodePdfFont() {
+  if (!unicodePdfFontPromise) {
+    unicodePdfFontPromise = fetch(
+      "https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf"
+    ).then(async r => {
+      if (!r.ok) throw new Error("Font Unicode HTTP " + r.status);
+      return new Uint8Array(await r.arrayBuffer());
+    }).catch(e => {
+      unicodePdfFontPromise = null;
+      throw e;
+    });
+  }
+  return unicodePdfFontPromise;
+}
+
 async function makePdf(title, content) {
   const pdf = await PDFDocument.create();
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  let font;
+  let titleFont;
+  let unicode = true;
+  try {
+    pdf.registerFontkit(fontkit);
+    const bytes = await loadUnicodePdfFont();
+    font = await pdf.embedFont(bytes, { subset: true });
+    titleFont = font;
+  } catch {
+    unicode = false;
+    font = await pdf.embedFont(StandardFonts.Helvetica);
+    titleFont = await pdf.embedFont(StandardFonts.HelveticaBold);
+  }
+
   let page = pdf.addPage([595.28, 841.89]);
   let y = 790;
   const addText = (text, fontRef, size) => {
     for (const raw of String(text || "").split("\n")) {
-      const lines = wrapPdfLine(pdfSafeText(raw), size >= 16 ? 66 : 92);
+      const prepared = unicode ? raw : pdfFallbackText(raw);
+      const lines = wrapPdfLine(prepared, size >= 16 ? 66 : 92);
       for (const line of lines) {
         if (y < 55) { page = pdf.addPage([595.28,841.89]); y = 790; }
         page.drawText(line || " ", { x: 48, y, size, font: fontRef });
@@ -215,7 +246,7 @@ async function makePdf(title, content) {
       }
     }
   };
-  addText(title || "AI Stoica", bold, 18);
+  addText(title || "AI Stoica", titleFont, 18);
   y -= 10;
   addText(content, font, 10.5);
   return new Uint8Array(await pdf.save());
@@ -230,6 +261,75 @@ async function makeDocx(title, content) {
   const doc = new Document({ sections:[{ properties:{}, children }] });
   const buf = await Packer.toBuffer(doc);
   return new Uint8Array(buf);
+}
+
+function splitForSlides(content, maxCharacters = 900) {
+  const paragraphs = String(content || "").split(/\n\s*\n/).map(x => x.trim()).filter(Boolean);
+  const chunks = [];
+  let current = "";
+  for (const paragraph of paragraphs.length ? paragraphs : [String(content || "")]) {
+    const words = paragraph.split(/\s+/);
+    for (const word of words) {
+      const candidate = (current + " " + word).trim();
+      if (candidate.length > maxCharacters && current) {
+        chunks.push(current);
+        current = word;
+      } else {
+        current = candidate;
+      }
+    }
+    if (current && current.length > maxCharacters * 0.6) {
+      chunks.push(current);
+      current = "";
+    } else if (current) {
+      current += "\n\n";
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+  return chunks.length ? chunks : [""];
+}
+
+async function makePptx(title, content) {
+  const pptx = new PptxGenJS();
+  pptx.layout = "LAYOUT_WIDE";
+  pptx.author = "AI Stoica";
+  pptx.company = "Stoica Enterprises AI";
+  pptx.subject = String(title || "AI Stoica");
+  pptx.title = String(title || "AI Stoica");
+  pptx.lang = "ro-RO";
+
+  let slide = pptx.addSlide();
+  slide.background = { color: "F7F9FC" };
+  slide.addText(String(title || "AI Stoica"), {
+    x: 0.8, y: 2.35, w: 11.7, h: 0.8,
+    fontFace: "Aptos Display", fontSize: 28, bold: true,
+    color: "172033", align: "center", margin: 0
+  });
+  slide.addText("Document generat cu AI Stoica", {
+    x: 1.2, y: 3.25, w: 10.9, h: 0.45,
+    fontFace: "Aptos", fontSize: 14, color: "52627A",
+    align: "center", margin: 0
+  });
+
+  const chunks = splitForSlides(content);
+  chunks.forEach((chunk, index) => {
+    const s = pptx.addSlide();
+    s.background = { color: "FFFFFF" };
+    s.addText(index === 0 ? String(title || "AI Stoica") : String(title || "AI Stoica") + " – continuare", {
+      x: 0.65, y: 0.45, w: 12.0, h: 0.55,
+      fontFace: "Aptos Display", fontSize: 23, bold: true,
+      color: "172033", margin: 0
+    });
+    s.addText(chunk, {
+      x: 0.75, y: 1.25, w: 11.8, h: 5.65,
+      fontFace: "Aptos", fontSize: 18, color: "26354A",
+      breakLine: false, valign: "top", margin: 0.08,
+      fit: "shrink"
+    });
+  });
+
+  const out = await pptx.write({ outputType: "arraybuffer" });
+  return new Uint8Array(out);
 }
 
 async function githubApi(env, suffix, options = {}) {
@@ -406,6 +506,7 @@ async function chatMessages(env, user, incoming) {
     "Ești AI Stoica, asistentul principal Stoica Enterprises AI.",
     "Răspunde în limba utilizatorului, riguros, clar și complet.",
     "Folosește capacitatea maximă de raționament disponibilă. Nu simplifica doar pentru a economisi resurse.",
+    "Când utilizatorul cere PDF, DOCX sau PPTX, redactează conținutul normal. Nu afișa pseudo-comenzi precum <invoke generate_pdf>; aplicația creează fișierul real separat.",
     memories.length ? "Memorie relevantă:\n" + memories.map((m,i)=>`${i+1}. ${m.text}`).join("\n") : ""
   ].filter(Boolean).join("\n\n");
   return [{ role: "system", content: system }, ...raw.filter(m => m.role !== "system")];
@@ -546,14 +647,19 @@ async function router(request, env) {
   if(p==="/api/export" && request.method==="POST"){
     const b=await bodyJson(request);
     const format=String(b.format||"docx").toLowerCase();
-    const title=String(b.title||"AI Stoica");
+    const title=String(b.title||"AI Stoica").trim().slice(0,120) || "AI Stoica";
     const content=String(b.content||"");
+    const allowed=new Set(["pdf","docx","pptx","md","txt"]);
+    if(!allowed.has(format))return json({error:"Format neacceptat. Folosește PDF, DOCX, PPTX, MD sau TXT."},400);
     if(!content.trim())return json({error:"Nu există conținut de exportat."},400);
+    if(content.length>100000)return json({error:"Documentul depășește limita de 100.000 de caractere pentru un singur export."},413);
     let bytes,mime,ext;
     if(format==="pdf"){
       bytes=await makePdf(title,content);mime="application/pdf";ext="pdf";
     }else if(format==="docx"){
       bytes=await makeDocx(title,content);mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document";ext="docx";
+    }else if(format==="pptx"){
+      bytes=await makePptx(title,content);mime="application/vnd.openxmlformats-officedocument.presentationml.presentation";ext="pptx";
     }else if(format==="md"){
       bytes=enc.encode(content);mime="text/markdown; charset=utf-8";ext="md";
     }else{
