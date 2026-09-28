@@ -446,6 +446,8 @@ async function router(request, env) {
       ok:true,
       service:"AI Stoica Cloudflare",
       mode:"performance-max",
+      omni:true,
+      cloud:true,
       primaryProvider:env.CEREBRAS_API_KEY ? "cerebras" : "cloudflare",
       primaryModel:env.CEREBRAS_API_KEY ? (env.CEREBRAS_MODEL || "gpt-oss-120b") : (env.CF_MODEL || "@cf/nvidia/nemotron-3-120b-a12b"),
       cloudflareFallback:env.CF_FALLBACK_MODEL || "@cf/openai/gpt-oss-120b",
@@ -624,6 +626,129 @@ async function router(request, env) {
       })
     });
     return json({ok:true,data:{path,branch:branchName,commit:data.commit?.sha||null}});
+  }
+
+
+  // Desktop compatibility: projects/assistants/plugins/automations are optional cloud features.
+  if(p==="/api/projects" && request.method==="GET") return json({data:[]});
+  if(p==="/api/assistants" && request.method==="GET") return json({data:[]});
+  if(p==="/api/plugins" && request.method==="GET") return json({data:[]});
+  if(p==="/api/automations" && request.method==="GET") return json({data:[]});
+
+  if((p==="/api/projects"||p==="/api/assistants"||p==="/api/plugins"||p==="/api/automations") && request.method==="POST"){
+    const b=await bodyJson(request);
+    return json({data:{id:uuid(),...b,createdAt:now(),updatedAt:now()}});
+  }
+
+  const optionalItemMatch=p.match(/^\/api\/(projects|assistants|plugins|automations)\/([^/]+)$/);
+  if(optionalItemMatch && (request.method==="PUT"||request.method==="PATCH")){
+    const b=await bodyJson(request);
+    return json({data:{id:optionalItemMatch[2],...b,updatedAt:now()}});
+  }
+  if(optionalItemMatch && request.method==="DELETE") return json({ok:true});
+
+  // Compatibility layer for the existing Windows "Biblioteca AI Stoica" UI.
+  if(p==="/api/library" && request.method==="GET"){
+    const r=await env.DB.prepare(
+      "SELECT id,name,mime_type,size,source,created_at FROM files WHERE user_id=? ORDER BY created_at DESC LIMIT 200"
+    ).bind(user.id).all();
+    return json({data:(r.results||[]).map(x=>({
+      id:x.id,name:x.name,mime:x.mime_type,size:Number(x.size||0),
+      kind:String(x.mime_type||"").startsWith("image/")?"image":(String(x.mime_type||"").startsWith("text/")?"text":"file"),
+      source:x.source||"upload",createdAt:x.created_at
+    }))});
+  }
+
+  if(p==="/api/library/upload" && request.method==="POST"){
+    const name=safeFileName(decodeURIComponent(request.headers.get("x-file-name")||"file"));
+    const mime=request.headers.get("x-file-type")||request.headers.get("content-type")||"application/octet-stream";
+    const declared=Number(request.headers.get("x-file-size")||request.headers.get("content-length")||0);
+    const maxBytes=Number(env.AI_STOICA_FILE_MAX_MB||25)*1024*1024;
+    if(declared>maxBytes)return json({error:"Fișierul depășește limita de "+(env.AI_STOICA_FILE_MAX_MB||25)+" MB."},413);
+    if(!request.body)return json({error:"Lipsește conținutul fișierului."},400);
+    const id=uuid(),key=user.id+"/"+id+"/"+name,createdAt=now();
+    const obj=await env.FILES.put(key,request.body,{
+      httpMetadata:{contentType:mime},
+      customMetadata:{userId:user.id,fileId:id,source:"upload"}
+    });
+    const size=Number(obj?.size||declared||0);
+    await env.DB.prepare(
+      "INSERT INTO files(id,user_id,name,mime_type,size,r2_key,source,created_at) VALUES(?,?,?,?,?,?,?,?)"
+    ).bind(id,user.id,name,mime,size,key,"upload",createdAt).run();
+    return json({data:{
+      id,name,mime,size,createdAt,
+      kind:mime.startsWith("image/")?"image":(mime.startsWith("text/")?"text":"file")
+    }});
+  }
+
+  const libMatch=p.match(/^\/api\/library\/([^/]+)$/);
+  if(libMatch && request.method==="GET"){
+    const row=await ownedFile(env,user.id,libMatch[1]);
+    if(!row)return json({error:"Fișierul nu a fost găsit."},404);
+    return json({data:{
+      id:row.id,name:row.name,mime:row.mime_type,size:Number(row.size||0),
+      kind:String(row.mime_type||"").startsWith("image/")?"image":(String(row.mime_type||"").startsWith("text/")?"text":"file"),
+      source:row.source||"upload",createdAt:row.created_at
+    }});
+  }
+  if(libMatch && request.method==="DELETE"){
+    const row=await ownedFile(env,user.id,libMatch[1]);
+    if(!row)return json({error:"Fișierul nu a fost găsit."},404);
+    await env.FILES.delete(row.r2_key);
+    await env.DB.prepare("DELETE FROM files WHERE id=? AND user_id=?").bind(row.id,user.id).run();
+    return json({ok:true});
+  }
+
+  const libContentMatch=p.match(/^\/api\/library\/([^/]+)\/content$/);
+  if(libContentMatch && request.method==="GET"){
+    const row=await ownedFile(env,user.id,libContentMatch[1]);
+    if(!row)return json({error:"Fișierul nu a fost găsit."},404);
+    const obj=await env.FILES.get(row.r2_key);
+    if(!obj)return json({error:"Fișierul nu mai există în stocare."},404);
+    const headers=new Headers(corsHeaders);
+    headers.set("content-type",row.mime_type||"application/octet-stream");
+    headers.set("content-disposition","inline; filename*=UTF-8''"+encodeURIComponent(row.name));
+    return new Response(obj.body,{status:200,headers});
+  }
+
+  if(p==="/api/memory/toggle" && request.method==="POST"){
+    return json({enabled:true});
+  }
+  if(p==="/api/memory/import-history" && request.method==="POST"){
+    return json({ok:true});
+  }
+  if(p==="/api/memory/capture" && request.method==="POST"){
+    const b=await bodyJson(request);
+    const text=[String(b.userText||"").trim(),String(b.assistantText||"").trim()].filter(Boolean).join("\n");
+    if(text){
+      await env.DB.prepare("INSERT INTO memories(id,user_id,text,pinned,source,created_at) VALUES(?,?,?,?,?,?)")
+        .bind(uuid(),user.id,text.slice(0,20000),0,"conversation",now()).run();
+    }
+    return json({ok:true});
+  }
+
+  // SSE endpoint expected by the existing Windows UI.
+  if(p==="/api/chat/stream" && request.method==="POST"){
+    const b=await bodyJson(request);
+    const prepared=await chatMessages(env,user,b.messages);
+    try{
+      const out=await routeAI(env,prepared);
+      const payload=JSON.stringify({choices:[{index:0,delta:{content:out.text},finish_reason:"stop"}],model:out.model,provider:out.provider});
+      const stream=new ReadableStream({
+        start(controller){
+          controller.enqueue(enc.encode("data: "+payload+"\n\n"));
+          controller.enqueue(enc.encode("data: [DONE]\n\n"));
+          controller.close();
+        }
+      });
+      return new Response(stream,{status:200,headers:{...corsHeaders,"content-type":"text/event-stream; charset=utf-8","cache-control":"no-cache"}});
+    }catch(e){
+      return json({error:e.message},502);
+    }
+  }
+
+  if(p==="/api/transcribe" && request.method==="POST"){
+    return json({error:"Transcrierea vocală cloud va fi activată într-o versiune ulterioară."},501);
   }
 
   if(p==="/api/conversations" && request.method==="GET"){
