@@ -34,6 +34,10 @@ jobs:
           node --check preload.cjs
           node --check local-gateway.cjs
 
+      - name: Test real PDF DOCX PPTX generation and download
+        working-directory: apps/desktop
+        run: node scripts/test-document-export.cjs
+
       - name: Build AI Stoica Windows
         working-directory: apps/desktop
         run: npm run build
