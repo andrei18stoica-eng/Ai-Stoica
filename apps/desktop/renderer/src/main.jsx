@@ -134,6 +134,23 @@ async function writeClipboardText(value) {
     return !!ok;
   } catch { return false; }
 }
+
+async function downloadGeneratedFile(file) {
+  const token=localStorage.getItem(TOKEN_KEY)||"";
+  const r=await fetch(`${GATEWAY}/api/files/${file.id}`,{headers:token?{Authorization:`Bearer ${token}`}:{}});
+  if(!r.ok)throw new Error("Nu am putut descărca fișierul generat.");
+  const blob=await r.blob();
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=file.name||"AI-Stoica-file";
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+async function exportMessageFile(message,format) {
+  const d=await api("/api/export",{method:"POST",body:JSON.stringify({format,title:"AI Stoica - răspuns",content:messageText(message)})});
+  await downloadGeneratedFile(d.data);
+}
+
 function groupLabel(ts) {
   const d = new Date(ts || Date.now()), now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -268,7 +285,7 @@ function ModelPicker({model,onSelect,models,onRefresh,refreshing}) {
   </div>;
 }
 
-function Header({onMenu,model,onSelectModel,models,onRefreshModels,refreshingModels,omni,onShare,current,projects,onDetach,onMoveProject,onFiles,onArchive,onDelete}) {
+function Header({onMenu,model,onSelectModel,models,onRefreshModels,refreshingModels,omni,onShare,current,projects,onDetach,onMoveProject,onFiles,onGitHub,onArchive,onDelete}) {
   const [more,setMore]=useState(false),[moveOpen,setMoveOpen]=useState(false);
   return <header className="topbar">
     <button className="iconOnly menuBtn" onClick={onMenu}><Menu size={20}/></button>
@@ -289,6 +306,7 @@ function Header({onMenu,model,onSelectModel,models,onRefreshModels,refreshingMod
         </div>
         <div className="menuDivider"/>
         <button disabled={!current} onClick={()=>{onFiles();setMore(false)}}><Library size={18}/> Vizualizare fișiere din conversație</button>
+        <button onClick={()=>{onGitHub();setMore(false)}}><Globe2 size={18}/> GitHub Solve</button>
         <div className="menuDivider"/>
         <button disabled={!current} onClick={()=>{onArchive();setMore(false)}}><Archive size={18}/> Arhivează</button>
         <button className="dangerMenuItem" disabled={!current} onClick={()=>{onDelete();setMore(false)}}><Trash2 size={18}/> Șterge</button>
@@ -308,7 +326,15 @@ function CopyMessageButton({message,className=""}) {
 }
 
 function MessageActions({message,onRegenerate,onRate}) {
-  return <div className="messageActions"><CopyMessageButton message={message}/><button className={message.rating===1?"selected":""} onClick={()=>onRate(1)}><ThumbsUp size={15}/></button><button className={message.rating===-1?"selected":""} onClick={()=>onRate(-1)}><ThumbsDown size={15}/></button><button onClick={onRegenerate}><RotateCcw size={15}/></button></div>;
+  async function exp(format){try{await exportMessageFile(message,format)}catch(e){alert("Export: "+e.message)}}
+  return <div className="messageActions">
+    <CopyMessageButton message={message}/>
+    <button onClick={()=>exp("pdf")} title="Descarcă PDF"><span style={{fontSize:10,fontWeight:800}}>PDF</span></button>
+    <button onClick={()=>exp("docx")} title="Descarcă DOCX"><span style={{fontSize:9,fontWeight:800}}>DOCX</span></button>
+    <button className={message.rating===1?"selected":""} onClick={()=>onRate(1)}><ThumbsUp size={15}/></button>
+    <button className={message.rating===-1?"selected":""} onClick={()=>onRate(-1)}><ThumbsDown size={15}/></button>
+    <button onClick={onRegenerate}><RotateCcw size={15}/></button>
+  </div>;
 }
 
 function ConversationView({conversation,busy,onRegenerate,onRate}) {
@@ -786,6 +812,25 @@ function App() {
   async function rate(index,value){if(!current)return;const msgs=current.messages.map((m,i)=>i===index?{...m,rating:m.rating===value?0:value}:m);await saveConversation({...current,messages:msgs})}
   async function createItem(data){if(createType==="project"){const d=await api("/api/projects",{method:"POST",body:JSON.stringify(data)});setProjects(v=>[d.data,...v]);setSelectedProject(d.data.id)}else{const d=await api("/api/assistants",{method:"POST",body:JSON.stringify(data)});setAssistants(v=>[...v,d.data]);setSelectedAssistant(d.data.id)}setCreateType(null)}
   async function share(){if(!current)return;await navigator.clipboard.writeText(current.messages.map(m=>`${m.role==="user"?"Eu":"AI Stoica"}:\n${messageText(m)}`).join("\n\n"));alert("Conversația a fost copiată în clipboard.")}
+  async function githubSolve(){
+    const path=prompt("Calea fișierului din GitHub (ex: apps/mobile/app/index.js):","");
+    if(!path)return;
+    const instruction=prompt("Ce trebuie să rezolve AI Stoica în acest fișier?","Analizează fișierul, identifică problema și corectează-l.");
+    if(instruction===null)return;
+    try{
+      const d=await api("/api/github/solve",{method:"POST",body:JSON.stringify({path,instruction})});
+      const proposal=d.data?.proposal||"";
+      await writeClipboardText(proposal);
+      const apply=confirm("Rezolvarea a fost generată și copiată în clipboard.\n\nVrei să o aplic direct în GitHub?");
+      if(apply){
+        const a=await api("/api/github/apply",{method:"POST",body:JSON.stringify({
+          path:d.data.path,content:proposal,sha:d.data.sha,branch:d.data.branch,
+          message:"AI Stoica: rezolvare "+d.data.path
+        })});
+        alert("Modificarea a fost aplicată în GitHub. Commit: "+(a.data?.commit||"creat"));
+      }
+    }catch(e){alert("GitHub: "+e.message)}
+  }
   function openTool(name){setSidebar(false);setToolPanel(name)}
   function attachFromLibrary(a){setAttachments(v=>[...v,a])}
   async function moveCurrent(projectId){if(!current)return;const saved=await saveConversation({...current,projectId});setSelectedProject(projectId);return saved}
@@ -802,7 +847,7 @@ function App() {
   return <div className={cx("appShell",sidebarCollapsed&&"sidebarCollapsed")}>
     <Sidebar open={sidebar} setOpen={setSidebar} user={user} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} onSelect={id=>{setCurrentId(id);setSidebar(false)}} onDeleteConversation={deleteConversation} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} selectedAssistant={selectedAssistant} setSelectedAssistant={setSelectedAssistant} onNewProject={()=>setCreateType("project")} onNewAssistant={()=>setCreateType("assistant")} onTool={openTool} onExplore={()=>openTool("explore")} onSettings={()=>setSettings(true)} onLogout={logout}/>
     {sidebar&&<div className="mobileScrim" onClick={()=>setSidebar(false)}/>}
-    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} onRegenerate={regenerate} onRate={rate}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
+    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} onRegenerate={regenerate} onRate={rate}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
     {settings&&<SettingsModal user={user} onClose={()=>setSettings(false)} onSaved={()=>{window.AIStoica.ensureOmni();setTimeout(loadData,1000)}}/>}
     {createType&&<CreateModal type={createType} onClose={()=>setCreateType(null)} onCreate={createItem}/>}
     {toolPanel==="explore"&&<ExplorePanel onClose={()=>setToolPanel(null)} assistants={assistants} models={models} onUseAssistant={useAssistant} onImagePrompt={startImagePrompt} onOpenLibrary={()=>setToolPanel("library")}/>} 
