@@ -1,0 +1,57 @@
+name: AI Stoica - Descarcare Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/desktop/**"
+      - ".github/workflows/ai-stoica-windows-download.yml"
+
+jobs:
+  build-windows-download:
+    runs-on: windows-latest
+
+    steps:
+      - name: Descarca proiectul
+        uses: actions/checkout@v4
+
+      - name: Instaleaza Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Instaleaza dependentele AI Stoica
+        working-directory: apps/desktop
+        run: npm install --legacy-peer-deps
+
+      - name: Verifica fisierele Electron
+        working-directory: apps/desktop
+        run: |
+          node --check main.cjs
+          node --check preload.cjs
+          node --check local-gateway.cjs
+
+      - name: Construieste AI Stoica pentru Windows
+        working-directory: apps/desktop
+        run: npm run build
+
+      - name: Verifica installerul
+        shell: pwsh
+        run: |
+          $installer = "apps/desktop/release/AI_Stoica_Setup_0.6.0_x64.exe"
+          if (!(Test-Path $installer)) {
+            Write-Error "Installerul AI Stoica nu a fost gasit: $installer"
+            exit 1
+          }
+          Write-Host "Installer gasit: $installer"
+          Get-Item $installer | Format-List Name,Length,LastWriteTime
+
+      - name: AI Stoica - Descarcare Windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: AI-Stoica-Windows-Download
+          path: apps/desktop/release/AI_Stoica_Setup_0.6.0_x64.exe
+          if-no-files-found: error
+          retention-days: 30
