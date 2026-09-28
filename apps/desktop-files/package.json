@@ -1,0 +1,55 @@
+{
+  "name": "ai-stoica-files-desktop",
+  "version": "0.6.0",
+  "private": true,
+  "description": "AI Stoica Files & GitHub for Windows",
+  "main": "main.cjs",
+  "scripts": {
+    "dev:ui": "vite --config vite.config.mjs",
+    "dev": "vite build --config vite.config.mjs && electron .",
+    "build:ui": "vite build --config vite.config.mjs",
+    "build": "npm run build:ui && electron-builder --win --x64 --publish never"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.12",
+    "vite": "^6.1.0"
+  },
+  "build": {
+    "appId": "ro.stoica.aistoica.files",
+    "productName": "AI Stoica Files",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "dist/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "AI_Stoica_Files_Setup_${version}_${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AI Stoica Files"
+    }
+  }
+}
