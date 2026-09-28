@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.5.9",
+  "version": "0.6.0",
   "private": true,
-  "description": "AI Stoica - reliable model picker, type-anywhere composer focus, Claude-inspired plugins, native copy/paste",
+  "description": "AI Stoica - principal app with files, PDF/DOCX export, images and GitHub Solve",
   "main": "main.cjs",
   "repository": {
     "type": "git",
