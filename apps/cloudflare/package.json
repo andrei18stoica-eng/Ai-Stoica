@@ -11,5 +11,9 @@
   },
   "devDependencies": {
     "wrangler": "^4.44.0"
+  },
+  "dependencies": {
+    "docx": "^9.8.0",
+    "pdf-lib": "^1.17.1"
   }
 }

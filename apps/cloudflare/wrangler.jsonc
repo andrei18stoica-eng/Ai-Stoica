@@ -23,6 +23,19 @@
     "AI_STOICA_MAX_HISTORY": "120",
     "AI_STOICA_MAX_CONTEXT_CHARS": "600000",
     "AI_STOICA_MAX_OUTPUT": "8192",
-    "AI_STOICA_TEMPERATURE": "0.35"
-  }
+    "AI_STOICA_TEMPERATURE": "0.35",
+    "GITHUB_REPO": "andrei18stoica-eng/Ai-Stoica",
+    "GITHUB_BRANCH": "main",
+    "AI_STOICA_FILE_MAX_MB": "25",
+    "IMAGE_MODEL": "@cf/black-forest-labs/flux-1-schnell"
+  },
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "ai-stoica-files-2026-001"
+    }
+  ]
 }
