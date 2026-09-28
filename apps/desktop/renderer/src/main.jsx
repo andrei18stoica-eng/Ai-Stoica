@@ -9,7 +9,7 @@ import {
   CalendarClock, Plug, Library, Brain, Upload, Trash2, Play, Pin, PinOff,
   FileText, Image as ImageIcon, HardDrive, ToggleLeft, ToggleRight,
   Compass, Map, Globe2, Archive, ExternalLink, SlidersHorizontal, Volume2,
-  PanelTopOpen
+  PanelTopOpen, Github
 } from "lucide-react";
 import "./styles.css";
 
@@ -217,6 +217,7 @@ function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,convers
         <button className="sideItem toolItem" onClick={()=>onTool("automations")}><CalendarClock size={16}/> Automatizări</button>
         <button className="sideItem toolItem" onClick={()=>onTool("plugins")}><Plug size={16}/> Pluginuri</button>
         <button className="sideItem toolItem" onClick={()=>onTool("library")}><Library size={16}/> Bibliotecă</button>
+        <button className="sideItem toolItem" onClick={()=>onTool("github")}><Github size={16}/> GitHub Solve</button>
         <button className="sideItem toolItem" onClick={()=>onTool("memory")}><Brain size={16}/> Memorie</button>
       </div>
       <div className="sideSection"><div className="sectionHead"><span>Proiecte</span><button onClick={onNewProject}><Plus size={15}/></button></div>
@@ -307,8 +308,36 @@ function CopyMessageButton({message,className=""}) {
   return <button className={className} onClick={copy} title={copied?"Copiat":"Copiază mesajul"} aria-label="Copiază mesajul">{copied?<Check size={15}/>:<Copy size={15}/>}</button>;
 }
 
+async function exportMessageFile(message,format){
+  try{
+    const created=await api("/api/export",{method:"POST",body:JSON.stringify({
+      format,
+      title:"AI Stoica - raspuns",
+      content:messageText(message)
+    })});
+    const file=created?.data;
+    if(!file?.id)throw new Error("Fișierul nu a fost generat.");
+    const token=localStorage.getItem(TOKEN_KEY)||"";
+    const r=await fetch(`${GATEWAY}/api/files/${file.id}`,{headers:token?{Authorization:`Bearer ${token}`}:{}});
+    if(!r.ok)throw new Error("Descărcarea fișierului a eșuat.");
+    const blob=await r.blob();
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;a.download=file.name||(`AI_Stoica.${format}`);
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+  }catch(e){alert("Export "+format.toUpperCase()+": "+e.message)}
+}
+
 function MessageActions({message,onRegenerate,onRate}) {
-  return <div className="messageActions"><CopyMessageButton message={message}/><button className={message.rating===1?"selected":""} onClick={()=>onRate(1)}><ThumbsUp size={15}/></button><button className={message.rating===-1?"selected":""} onClick={()=>onRate(-1)}><ThumbsDown size={15}/></button><button onClick={onRegenerate}><RotateCcw size={15}/></button></div>;
+  return <div className="messageActions">
+    <CopyMessageButton message={message}/>
+    <button onClick={()=>exportMessageFile(message,"pdf")} title="Descarcă PDF"><FileText size={15}/><span>PDF</span></button>
+    <button onClick={()=>exportMessageFile(message,"docx")} title="Descarcă DOCX"><FileText size={15}/><span>DOCX</span></button>
+    <button className={message.rating===1?"selected":""} onClick={()=>onRate(1)}><ThumbsUp size={15}/></button>
+    <button className={message.rating===-1?"selected":""} onClick={()=>onRate(-1)}><ThumbsDown size={15}/></button>
+    <button onClick={onRegenerate}><RotateCcw size={15}/></button>
+  </div>;
 }
 
 function ConversationView({conversation,busy,onRegenerate,onRate}) {
@@ -481,6 +510,49 @@ function LibraryPanel({onClose,onAttach}) {
     <div className="toolActions"><button className="primary" onClick={()=>input.current?.click()}><Upload size={16}/> Adaugă fișiere</button><input ref={input} type="file" multiple hidden onChange={upload}/><span className="toolNote">Fără limită software de dimensiune. Limita reală este spațiul disponibil pe PC/server și limitele sistemului de fișiere.</span></div>
     <div className="libraryGrid">{items.length===0?<div className="emptyState"><HardDrive size={30}/>Biblioteca este goală.</div>:items.map(x=><div className="libraryCard" key={x.id}><div className="fileIcon">{x.kind==="image"?<ImageIcon size={22}/>:<FileText size={22}/>}</div><div className="fileMeta"><b>{x.name}</b><span>{formatBytes(x.size)} · {fmtTime(x.createdAt)}</span></div><button className="smallBtn" onClick={()=>attach(x)}>Folosește</button><button className="iconDanger" onClick={()=>remove(x.id)}><Trash2 size={16}/></button></div>)}</div>
     {busy&&<div className="toolStatus">Se încarcă fișierul… pentru fișiere mari poate dura.</div>}
+  </ToolShell>;
+}
+
+function GitHubSolvePanel({onClose}){
+  const [path,setPath]=useState(""),[instruction,setInstruction]=useState(""),[result,setResult]=useState(null),[busy,setBusy]=useState(false),[status,setStatus]=useState("");
+  async function solve(){
+    if(!path.trim())return;
+    setBusy(true);setStatus("");
+    try{
+      const d=await api("/api/github/solve",{method:"POST",body:JSON.stringify({
+        path:path.trim(),
+        instruction:instruction.trim()||"Analizează fișierul, identifică problema și corectează-l."
+      })});
+      setResult(d.data);setStatus("Rezolvarea este pregătită. Verific-o înainte de aplicare.");
+    }catch(e){setStatus("Eroare: "+e.message)}finally{setBusy(false)}
+  }
+  async function apply(){
+    if(!result)return;
+    if(!confirm("Aplici această modificare în GitHub?"))return;
+    setBusy(true);setStatus("");
+    try{
+      const d=await api("/api/github/apply",{method:"POST",body:JSON.stringify({
+        path:result.path,content:result.proposal,sha:result.sha,branch:result.branch,
+        message:"AI Stoica: rezolvare "+result.path
+      })});
+      setStatus("Modificarea a fost aplicată în GitHub. Commit: "+(d.data?.commit||"creat"));
+    }catch(e){setStatus("Eroare la aplicare: "+e.message)}finally{setBusy(false)}
+  }
+  return <ToolShell title="GitHub Solve" subtitle="AI Stoica citește fișierul din repository, îl rezolvă și îl modifică numai după confirmarea ta." onClose={onClose}>
+    <div className="automationForm">
+      <input autoFocus placeholder="Calea fișierului, ex. apps/desktop/renderer/src/main.jsx" value={path} onChange={e=>setPath(e.target.value)}/>
+      <textarea placeholder="Ce vrei să rezolve AI Stoica?" value={instruction} onChange={e=>setInstruction(e.target.value)}/>
+      <div className="modalActions">
+        <button className="primary" disabled={busy||!path.trim()} onClick={solve}><Github size={16}/>{busy?" Analizez…":" Rezolvă"}</button>
+        {result&&<button className="secondary" onClick={()=>writeClipboardText(result.proposal)}>Copiază soluția</button>}
+        {result&&<button className="primary" disabled={busy} onClick={apply}>Aplică în GitHub</button>}
+      </div>
+      {status&&<div className="pluginResult">{status}</div>}
+      {result&&<div style={{marginTop:12}}>
+        <div className="sectionHead"><span>Propunere pentru {result.path}</span></div>
+        <textarea readOnly value={result.proposal||""} style={{width:"100%",minHeight:320,resize:"vertical",fontFamily:"Consolas, monospace",fontSize:12,lineHeight:1.45}}/>
+      </div>}
+    </div>
   </ToolShell>;
 }
 
@@ -765,7 +837,7 @@ function App() {
   async function streamAssistant(baseConv,messages){
     setBusy(true);const assistantMessage={id:uid(),role:"assistant",content:"",createdAt:Date.now(),streaming:true};let working={...baseConv,messages:[...messages,assistantMessage],updatedAt:Date.now()};setConversations(v=>v.map(x=>x.id===working.id?working:x));
     try{
-      if(!omni){await window.AIStoica.ensureOmni();await new Promise(r=>setTimeout(r,1200))}
+      if(!omni && /^(https?:\/\/)?(127\.0\.0\.1|localhost)(:|\/|$)/i.test(GATEWAY)){await window.AIStoica.ensureOmni();await new Promise(r=>setTimeout(r,1200))}
       const token=localStorage.getItem(TOKEN_KEY)||"",r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({model:working.model||model,assistantId:working.assistantId,messages})});
       if(!r.ok){let e;try{e=await r.json()}catch{e={error:await r.text()}};throw new Error(e?.error||`HTTP ${r.status}`)}
       const reader=r.body.getReader(),dec=new TextDecoder();let buf="",answer="";
