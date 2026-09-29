@@ -24,6 +24,7 @@ function configPath() { return path.join(app.getPath("userData"), "config.json")
 function defaults() {
   return {
     gatewayUrl: "http://127.0.0.1:8787",
+    controlApiUrl: "",
     baseUrl: "http://127.0.0.1:20128/v1",
     apiKey: "",
     model: "Ai principal",
@@ -50,7 +51,7 @@ function saveConfig(input) {
   const old = loadConfig();
   const cfg = { ...old, ...input };
   const stored = {
-    gatewayUrl: cfg.gatewayUrl || "http://127.0.0.1:8787", baseUrl: cfg.baseUrl, model: cfg.model, omniCommand: cfg.omniCommand,
+    gatewayUrl: cfg.gatewayUrl || "http://127.0.0.1:8787", controlApiUrl: String(cfg.controlApiUrl || "").trim().replace(/\/+$/,""), baseUrl: cfg.baseUrl, model: cfg.model, omniCommand: cfg.omniCommand,
     autoStartOmniRoute: !!cfg.autoStartOmniRoute, startWithWindows: !!cfg.startWithWindows,
     closeToTray: cfg.closeToTray !== false, autoUpdate: cfg.autoUpdate !== false,
     speechModel: cfg.speechModel || "openai/whisper-1", speechLanguage: cfg.speechLanguage || "ro"
