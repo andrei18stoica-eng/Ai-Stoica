@@ -343,3 +343,72 @@
   .adminComboList>div{grid-template-columns:1fr}
   .adminAudit>div{grid-template-columns:1fr}
 }
+
+
+/* v0.6.2 — Owner Control Center */
+.authNotice{background:#10261b;border:1px solid #245b3d;color:#9be0b9;border-radius:9px;padding:9px 10px;font-size:12px}
+.adminSideItem{margin-top:5px;border:1px solid #3b2f1f!important;background:#1b1710!important;color:#f1d39b!important}
+.adminSideItem svg{color:#e5aa54!important}
+.adminPanel{padding-top:14px}
+.adminSummary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:14px}
+.adminSummary>div,.adminPaidAi{border:1px solid #293442;background:#0e151e;border-radius:13px;padding:12px;text-align:left}
+.adminSummary span,.adminSummary b{display:block}
+.adminSummary span{font-size:10px;color:#718096;text-transform:uppercase;letter-spacing:.05em}
+.adminSummary b{font-size:20px;margin-top:5px;color:#edf3fb}
+.adminSummary .warn{border-color:#6b4a22;background:#21180e}
+.adminSummary .warn b{color:#f0ba68}
+.adminPaidAi{cursor:pointer;color:#e7edf5}
+.adminPaidAi.on{border-color:#2d654a;background:#10231a}
+.adminPaidAi.on b{color:#80d5a6}
+.adminPaidAi:not(.on) b{color:#e4a5a9}
+.adminToolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.adminToolbar .secondary{display:flex;align-items:center;gap:6px}
+.adminFilters{display:flex;gap:5px;flex-wrap:wrap}
+.adminFilters button{border:1px solid transparent;background:#111923;color:#78889b;border-radius:8px;padding:7px 9px;cursor:pointer;font-size:10px}
+.adminFilters button.active{border-color:#31506e;background:#172638;color:#dcecff}
+.adminLayout{display:grid;grid-template-columns:minmax(280px,38%) minmax(0,1fr);gap:12px;min-height:420px}
+.adminUsers{border:1px solid #243246;background:#091019;border-radius:13px;padding:6px;overflow:auto;max-height:58vh}
+.adminUserRow{width:100%;border:0;background:transparent;color:#d9e3ef;border-radius:10px;padding:9px;display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:9px;align-items:center;text-align:left;cursor:pointer}
+.adminUserRow:hover{background:#111b28}
+.adminUserRow.active{background:#17263a;box-shadow:0 0 0 1px #2c4f76 inset}
+.adminUserRow .accountAvatar{width:32px;height:32px;font-size:11px}
+.adminUserCopy{min-width:0}
+.adminUserCopy b,.adminUserCopy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.adminUserCopy b{font-size:12px}
+.adminUserCopy small{font-size:9px;color:#708197;margin-top:2px}
+.adminStatus{font-size:9px;padding:5px 7px;border-radius:999px;border:1px solid #344255;background:#151f2b;color:#9baabd;white-space:nowrap}
+.adminStatus.s-active{border-color:#285c46;background:#10261c;color:#91d4af}
+.adminStatus.s-pending{border-color:#6b4b27;background:#241a10;color:#efbc72}
+.adminStatus.s-blocked,.adminStatus.s-rejected{border-color:#68303a;background:#281218;color:#eb9ba5}
+.adminStatus.s-suspended{border-color:#554b67;background:#1c1826;color:#bea7df}
+.adminDetail{border:1px solid #243246;background:#0b121b;border-radius:13px;padding:14px;overflow:auto;max-height:58vh}
+.adminIdentity{display:flex;gap:11px;align-items:center;padding-bottom:13px;border-bottom:1px solid #1f2b3a}
+.adminIdentity h3{margin:0;font-size:16px}
+.adminIdentity p{margin:3px 0;color:#8d9caf;font-size:11px}
+.adminIdentity small{color:#65758a;font-size:9px}
+.adminApprovalActions{display:flex;gap:7px;flex-wrap:wrap;padding:13px 0;border-bottom:1px solid #1f2b3a}
+.adminApprovalActions button{display:flex;align-items:center;gap:5px}
+.adminPermissionHead{display:flex;justify-content:space-between;align-items:center;margin:13px 0 7px}
+.adminPermissionHead h4{margin:0;font-size:13px}
+.adminPermissionHead p{margin:3px 0 0;color:#6f8096;font-size:9px}
+.adminPermissions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.adminPermission{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;border:1px solid #223044;background:#0d1621;border-radius:9px;padding:9px}
+.adminPermission b,.adminPermission small{display:block}
+.adminPermission b{font-size:11px;color:#d5dfeb}
+.adminPermission small{font-size:8px;color:#5f7087;margin-top:2px}
+.adminPermission input{width:16px;height:16px;accent-color:#2b8cff}
+.adminPermission.locked{opacity:.7}
+.adminAudit{margin-top:12px;border:1px solid #243246;background:#0a111a;border-radius:11px;padding:9px 11px}
+.adminAudit summary{cursor:pointer;color:#93a2b5;font-size:11px}
+.adminAuditList{display:grid;gap:5px;margin-top:9px;max-height:220px;overflow:auto}
+.adminAuditList>div{display:grid;grid-template-columns:180px minmax(0,1fr) auto;gap:8px;padding:7px;border-radius:7px;background:#0e1722}
+.adminAuditList b{font-size:9px;color:#c4d1df}
+.adminAuditList span,.adminAuditList small{font-size:8px;color:#68798e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:760px){
+  .adminSummary{grid-template-columns:repeat(2,1fr)}
+  .adminToolbar{align-items:flex-start;flex-direction:column}
+  .adminLayout{grid-template-columns:1fr}
+  .adminUsers,.adminDetail{max-height:none}
+  .adminPermissions{grid-template-columns:1fr}
+  .adminAuditList>div{grid-template-columns:1fr}
+}
