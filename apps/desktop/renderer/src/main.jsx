@@ -884,6 +884,130 @@ function PluginsPanel({onClose}) {
   </ToolShell>;
 }
 
+function AdminPanel({onClose}) {
+  const permissionLabels={
+    chat:"Chat AI",cerebras:"Cerebras",gemini:"Gemini",groq:"Groq",cloudflare:"Cloudflare AI",
+    openrouter:"OpenRouter",image_generation:"Generare imagini",document_generation:"PDF / DOCX / PPTX",
+    file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",
+    automations:"Automatizări",plugins:"Pluginuri",github_access:"GitHub",openai:"OpenAI (plătit)",anthropic:"Claude / Anthropic (plătit)"
+  };
+  const statusLabels={pending:"În așteptare",active:"Activ",rejected:"Respins",suspended:"Suspendat",blocked:"Blocat"};
+  const [users,setUsers]=useState([]),[selectedId,setSelectedId]=useState(null),[filter,setFilter]=useState("all");
+  const [paidAi,setPaidAi]=useState(false),[auditRows,setAuditRows]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState("");
+  async function load(){
+    setBusy(true);setError("");
+    try{
+      const [u,a,l]=await Promise.all([
+        api("/api/admin/users"),
+        api("/api/admin/ai"),
+        api("/api/admin/audit?limit=50")
+      ]);
+      const rows=u.data||[];setUsers(rows);setPaidAi(!!a.paidAiEnabled);setAuditRows(l.data||[]);
+      setSelectedId(v=>v&&rows.some(x=>x.id===v)?v:(rows.find(x=>x.status==="pending"&&x.role!=="owner")?.id||rows.find(x=>x.role!=="owner")?.id||null));
+    }catch(e){setError(e.message)}finally{setBusy(false)}
+  }
+  useEffect(()=>{load()},[]);
+  const selected=users.find(x=>x.id===selectedId)||null;
+  const pendingCount=users.filter(x=>x.status==="pending").length;
+  const activeCount=users.filter(x=>x.status==="active").length;
+  const visible=users.filter(x=>filter==="all"||x.status===filter);
+
+  async function setStatus(user,status){
+    if(!user||user.role==="owner")return;
+    if((status==="blocked"||status==="rejected")&&!confirm(`Confirmi statusul „${statusLabels[status]}” pentru ${user.email}?`))return;
+    try{
+      await api(`/api/admin/users/${user.id}/status`,{method:"PATCH",body:JSON.stringify({status})});
+      await load();
+    }catch(e){alert("Administrare: "+e.message)}
+  }
+  async function togglePermission(user,key,value){
+    if(!user||user.role==="owner")return;
+    try{
+      const d=await api(`/api/admin/users/${user.id}/permissions`,{method:"PATCH",body:JSON.stringify({permissions:{[key]:value}})});
+      setUsers(rows=>rows.map(x=>x.id===user.id?{...x,permissions:d.permissions||x.permissions}:x));
+    }catch(e){alert("Permisiuni: "+e.message)}
+  }
+  async function revokeSessions(user){
+    if(!user||user.role==="owner")return;
+    if(!confirm(`Închizi toate sesiunile active pentru ${user.email}?`))return;
+    try{await api(`/api/admin/users/${user.id}/sessions/revoke`,{method:"POST",body:"{}"});await load()}
+    catch(e){alert("Sesiuni: "+e.message)}
+  }
+  async function togglePaid(){
+    const next=!paidAi;
+    if(next&&!confirm("Activezi serviciile AI plătite la nivel global? Acest comutator nu cumpără automat credite, dar permite folosirea furnizorilor plătiți dacă există chei și permisiuni."))return;
+    try{
+      const d=await api("/api/admin/ai",{method:"PATCH",body:JSON.stringify({paidAiEnabled:next})});
+      setPaidAi(!!d.paidAiEnabled);
+    }catch(e){alert("AI plătit: "+e.message)}
+  }
+
+  return <ToolShell title="AI Stoica Control Center" subtitle="Owner: utilizatori, aprobări, permisiuni, sesiuni și servicii AI." onClose={onClose}>
+    <div className="adminPanel">
+      {error&&<div className="authError">{error}</div>}
+      <div className="adminSummary">
+        <div><span>Utilizatori</span><b>{users.length}</b></div>
+        <div className={pendingCount?"warn":""}><span>În așteptare</span><b>{pendingCount}</b></div>
+        <div><span>Activi</span><b>{activeCount}</b></div>
+        <button className={cx("adminPaidAi",paidAi&&"on")} onClick={togglePaid}><span>AI plătit</span><b>{paidAi?"PORNIT":"OPRIT"}</b></button>
+      </div>
+
+      <div className="adminToolbar">
+        <div className="adminFilters">
+          {[["all","Toți"],["pending","În așteptare"],["active","Activi"],["suspended","Suspendați"],["blocked","Blocați"]].map(([k,label])=><button key={k} className={filter===k?"active":""} onClick={()=>setFilter(k)}>{label}</button>)}
+        </div>
+        <button className="secondary" onClick={load} disabled={busy}><RotateCcw size={15}/> {busy?"Actualizez…":"Actualizează"}</button>
+      </div>
+
+      <div className="adminLayout">
+        <div className="adminUsers">
+          {visible.map(u=><button key={u.id} className={cx("adminUserRow",selectedId===u.id&&"active")} onClick={()=>setSelectedId(u.id)}>
+            <span className="accountAvatar">{(u.name||u.email||"U")[0].toUpperCase()}</span>
+            <span className="adminUserCopy"><b>{u.name||u.email}</b><small>{u.email}</small></span>
+            <span className={cx("adminStatus","s-"+u.status)}>{u.role==="owner"?"Owner":statusLabels[u.status]||u.status}</span>
+          </button>)}
+          {!visible.length&&<div className="stoicaPluginEmpty">Nu există utilizatori în această categorie.</div>}
+        </div>
+
+        <div className="adminDetail">
+          {!selected?<div className="stoicaPluginEmpty">Selectează un utilizator.</div>:<>
+            <div className="adminIdentity">
+              <div className="accountAvatar big">{(selected.name||selected.email||"U")[0].toUpperCase()}</div>
+              <div><h3>{selected.name||"Utilizator"}</h3><p>{selected.email}</p><small>{selected.role==="owner"?"Owner":"Utilizator"} · {statusLabels[selected.status]||selected.status} · {Number(selected.active_sessions||0)} sesiuni active</small></div>
+            </div>
+
+            {selected.role!=="owner"&&<div className="adminApprovalActions">
+              {selected.status!=="active"&&<button className="primary" onClick={()=>setStatus(selected,"active")}><Check size={15}/> Aprobă / Reactivează</button>}
+              {selected.status!=="suspended"&&<button className="secondary" onClick={()=>setStatus(selected,"suspended")}>Suspendă</button>}
+              {selected.status!=="blocked"&&<button className="dangerButton" onClick={()=>setStatus(selected,"blocked")}>Blochează</button>}
+              {selected.status==="pending"&&<button className="secondary" onClick={()=>setStatus(selected,"rejected")}><X size={15}/> Respinge</button>}
+              <button className="secondary" onClick={()=>revokeSessions(selected)}>Închide sesiunile</button>
+            </div>}
+
+            <div className="adminPermissionHead"><div><h4>Permisiuni</h4><p>Se aplică server-side pentru acest cont.</p></div></div>
+            <div className="adminPermissions">
+              {Object.entries(permissionLabels).map(([key,label])=>{
+                const checked=selected.role==="owner"?true:selected.permissions?.[key]===true;
+                return <label key={key} className={cx("adminPermission",selected.role==="owner"&&"locked")}>
+                  <span><b>{label}</b><small>{key}</small></span>
+                  <input type="checkbox" checked={checked} disabled={selected.role==="owner"} onChange={e=>togglePermission(selected,key,e.target.checked)}/>
+                </label>
+              })}
+            </div>
+          </>}
+        </div>
+      </div>
+
+      <details className="adminAudit">
+        <summary>Jurnal administrativ ({auditRows.length})</summary>
+        <div className="adminAuditList">
+          {auditRows.map((x,i)=><div key={x.id||i}><b>{x.action}</b><span>{x.actor_email||"sistem"} → {x.target_email||"—"}</span><small>{fmtTime(x.created_at)}</small></div>)}
+        </div>
+      </details>
+    </div>
+  </ToolShell>;
+}
+
 function AutomationsPanel({onClose,model}) {
   const blank={title:"",prompt:"",trigger:"",frequency:"daily",time:"09:00",weekday:1,days:[1,2,3,4,5,6,0],runAt:""};
   const dayNames=[[1,"L"],[2,"Ma"],[3,"Mi"],[4,"J"],[5,"V"],[6,"S"],[0,"D"]];
@@ -1123,7 +1247,8 @@ function App() {
     {toolPanel==="library"&&<LibraryPanel onClose={()=>setToolPanel(null)} onAttach={attachFromLibrary}/>} 
     {toolPanel==="memory"&&<MemoryPanel onClose={()=>setToolPanel(null)}/>}
     {toolPanel==="admin"&&user?.role==="owner"&&<AdminPanel onClose={()=>setToolPanel(null)}/>}
-    {toolPanel==="plugins"&&<PluginsPanel onClose={()=>setToolPanel(null)}/>}
+    {toolPanel==="plugins"&&<PluginsPanel onClose={()=>setToolPanel(null)}/>} 
+    {toolPanel==="admin"&&user?.role==="owner"&&<AdminPanel onClose={()=>setToolPanel(null)}/>} 
     {toolPanel==="automations"&&<AutomationsPanel onClose={()=>setToolPanel(null)} model={model}/>}
   </div>;
 }
