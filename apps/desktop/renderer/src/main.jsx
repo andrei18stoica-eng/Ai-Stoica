@@ -9,7 +9,7 @@ import {
   CalendarClock, Plug, Library, Brain, Upload, Trash2, Play, Pin, PinOff,
   FileText, Image as ImageIcon, HardDrive, ToggleLeft, ToggleRight,
   Compass, Map, Globe2, Archive, ExternalLink, SlidersHorizontal, Volume2,
-  PanelTopOpen
+  PanelTopOpen, ShieldCheck, Users, UserCheck, UserX, Ban, Bell, Power
 } from "lucide-react";
 import "./styles.css";
 
@@ -214,11 +214,16 @@ async function libraryItemToAttachment(item) {
 }
 
 function AuthScreen({ onAuth }) {
-  const [mode,setMode]=useState("login"),[name,setName]=useState(""),[email,setEmail]=useState(""),[password,setPassword]=useState(""),[error,setError]=useState(""),[busy,setBusy]=useState(false);
+  const [mode,setMode]=useState("login"),[name,setName]=useState(""),[email,setEmail]=useState(""),[password,setPassword]=useState(""),[error,setError]=useState(""),[notice,setNotice]=useState(""),[busy,setBusy]=useState(false);
   async function submit(e) {
-    e.preventDefault(); setBusy(true); setError("");
+    e.preventDefault(); setBusy(true); setError(""); setNotice("");
     try {
       const data = await api(mode==="login"?"/auth/login":"/auth/register",{method:"POST",body:JSON.stringify({name,email,password})});
+      if(data?.status==="pending"&&!data?.token){
+        setNotice(data.message||"Contul a fost creat și așteaptă aprobarea Owner-ului.");
+        setMode("login"); setPassword(""); return;
+      }
+      if(!data?.token||!data?.user) throw new Error("Serverul nu a returnat o sesiune validă.");
       localStorage.setItem(TOKEN_KEY,data.token); localStorage.setItem(USER_KEY,JSON.stringify(data.user)); onAuth(data.user);
     } catch(e2){ setError(e2.message); } finally { setBusy(false); }
   }
@@ -226,18 +231,19 @@ function AuthScreen({ onAuth }) {
     <div className="authBrand"><img src="./stoica-enterprises-ai.png" alt="Stoica Enterprises AI"/><h1>AI Stoica</h1><p>Stoica Enterprises AI</p>
       <div className="authFeature"><Sparkles size={17}/> Chat AI profesional, memorie, fișiere și automatizări.</div>
       <div className="authFeature"><Wifi size={17}/> Conectare prin OmniRoute.</div>
-      <div className="authFeature"><User size={17}/> Cont personal cu email.</div>
+      <div className="authFeature"><User size={17}/> Cont personal cu aprobare Owner.</div>
     </div>
     <form className="authCard" onSubmit={submit}>
-      <div className="authTabs"><button type="button" className={mode==="login"?"active":""} onClick={()=>setMode("login")}>Autentificare</button><button type="button" className={mode==="register"?"active":""} onClick={()=>setMode("register")}>Creează cont</button></div>
+      <div className="authTabs"><button type="button" className={mode==="login"?"active":""} onClick={()=>{setMode("login");setError("");}}>Autentificare</button><button type="button" className={mode==="register"?"active":""} onClick={()=>{setMode("register");setError("");setNotice("");}}>Creează cont</button></div>
       <h2>{mode==="login"?"Bine ai revenit":"Creează contul AI Stoica"}</h2>
-      <p className="muted">Folosește emailul tău pentru contul AI Stoica.</p>
+      <p className="muted">{mode==="register"?"Conturile noi trebuie aprobate de Owner înainte de prima utilizare.":"Folosește emailul contului tău AI Stoica."}</p>
       {mode==="register"&&<label>Nume<input value={name} onChange={e=>setName(e.target.value)} placeholder="Numele tău"/></label>}
       <label>Email<input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="nume@email.ro" required/></label>
-      <label>Parolă<input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Minimum 8 caractere" required minLength={8}/></label>
+      <label>Parolă<input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Minimum 10 caractere" required minLength={10}/></label>
+      {notice&&<div className="authNotice"><UserCheck size={17}/><span>{notice}</span></div>}
       {error&&<div className="authError">{error}</div>}
-      <button className="primaryWide" disabled={busy}>{busy?"Se conectează…":mode==="login"?"Intră în AI Stoica":"Creează cont"}</button>
-      <div className="localNote">Datele sunt păstrate local pe acest PC până când publicăm Gateway-ul online.</div>
+      <button className="primaryWide" disabled={busy}>{busy?"Se procesează…":mode==="login"?"Intră în AI Stoica":"Trimite cererea de acces"}</button>
+      <div className="localNote">Owner-ul controlează aprobarea conturilor și permisiunile serviciilor AI.</div>
     </form>
   </div>;
 }
@@ -258,6 +264,7 @@ function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,convers
         <button className="sideItem toolItem" onClick={()=>onTool("plugins")}><Plug size={16}/> Pluginuri</button>
         <button className="sideItem toolItem" onClick={()=>onTool("library")}><Library size={16}/> Bibliotecă</button>
         <button className="sideItem toolItem" onClick={()=>onTool("memory")}><Brain size={16}/> Memorie</button>
+        {user?.role==="owner"&&<button className="sideItem ownerItem" onClick={()=>onTool("admin")}><ShieldCheck size={16}/> Control Center</button>}
       </div>
       <div className="sideSection"><div className="sectionHead"><span>Proiecte</span><button onClick={onNewProject}><Plus size={15}/></button></div>
         <button className={cx("sideItem",selectedProject===null&&"active")} onClick={()=>setSelectedProject(null)}><Folder size={16}/> Toate conversațiile</button>
