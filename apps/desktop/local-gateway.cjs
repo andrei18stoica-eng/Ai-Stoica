@@ -48,7 +48,9 @@ function normalizeEmail(email) { return String(email || "").trim().toLowerCase()
 function publicUser(user) {
   return {
     id: user.id, email: user.email, name: user.name || user.email.split("@")[0],
-    createdAt: user.createdAt, memoryEnabled: user.memoryEnabled !== false
+    createdAt: user.createdAt, memoryEnabled: user.memoryEnabled !== false,
+    role: user.role || "user", status: user.status || "active",
+    cloudUserId: user.cloudUserId || null
   };
 }
 function textFromContent(content) {
@@ -298,30 +300,136 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.use(express.json({ limit: "64mb" }));
 
   function sign(user) { return jwt.sign({ sub: user.id, email: user.email }, secret); }
-  function auth(req, res, next) {
-    const raw = String(req.headers.authorization || "");
-    const token = raw.startsWith("Bearer ") ? raw.slice(7) : "";
+  function cloudBase() {
+    const cfg = getOmniConfig?.() || {};
+    return String(cfg.controlApiUrl || "").trim().replace(/\/+$/,"");
+  }
+  async function cloudFetch(pathname, init = {}) {
+    const base = cloudBase();
+    if (!base) throw new Error("AI Stoica Cloud nu este configurat.");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Number(init.timeout || 9000));
+    try {
+      return await fetch(base + pathname, {
+        method: init.method || "GET",
+        headers: { ...(init.body !== undefined ? { "Content-Type":"application/json" } : {}), ...(init.headers || {}) },
+        body: init.body === undefined ? undefined : (typeof init.body === "string" ? init.body : JSON.stringify(init.body)),
+        signal: controller.signal
+      });
+    } finally { clearTimeout(timer); }
+  }
+  function ensureShadowUser(remoteUser) {
+    if (!remoteUser?.email) return null;
+    const db = store.read();
+    let user = db.users.find((u) => u.cloudUserId === remoteUser.id) || db.users.find((u) => normalizeEmail(u.email) === normalizeEmail(remoteUser.email));
+    if (!user) {
+      user = {
+        id: crypto.randomUUID(), email: normalizeEmail(remoteUser.email),
+        name: remoteUser.name || String(remoteUser.email).split("@")[0],
+        passwordHash: null, memoryEnabled: true, createdAt: Date.now()
+      };
+      db.users.push(user);
+      db.assistants.push({
+        id: crypto.randomUUID(), userId: user.id, name: "AI Stoica", icon: "S",
+        systemPrompt: "Ești AI Stoica, asistentul principal Stoica Enterprises AI. Răspunde clar, riguros și util, în limba utilizatorului.",
+        createdAt: Date.now(), builtIn: true
+      });
+    }
+    user.cloudUserId = remoteUser.id || user.cloudUserId || null;
+    user.email = normalizeEmail(remoteUser.email);
+    user.name = remoteUser.name || user.name || user.email.split("@")[0];
+    user.role = remoteUser.role || user.role || "user";
+    user.status = remoteUser.status || user.status || "active";
+    user.cloudSyncedAt = Date.now();
+    store.write(db);
+    return user;
+  }
+  function localUserFromToken(token) {
     try {
       const payload = jwt.verify(token, secret);
       const db = store.read();
-      const user = db.users.find((u) => u.id === payload.sub);
-      if (!user) return res.status(401).json({ error: "Sesiune invalidă." });
-      req.user = user; next();
-    } catch { return res.status(401).json({ error: "Autentificare necesară." }); }
+      return db.users.find((u) => u.id === payload.sub) || null;
+    } catch { return null; }
+  }
+  async function auth(req, res, next) {
+    const raw = String(req.headers.authorization || "");
+    const token = raw.startsWith("Bearer ") ? raw.slice(7) : "";
+    if (!token) return res.status(401).json({ error: "Autentificare necesară." });
+
+    // When Cloud is configured, validate there first. A 401/403 from Cloud wins over
+    // a legacy local session, so suspended/blocked accounts cannot bypass server policy.
+    if (cloudBase()) {
+      try {
+        const remote = await cloudFetch("/auth/me", { headers:{ Authorization:`Bearer ${token}` }, timeout:7000 });
+        const text = await remote.text();
+        let data={}; try { data=JSON.parse(text||"{}"); } catch {}
+        if (remote.ok && data?.user) {
+          const user = ensureShadowUser(data.user);
+          if (!user) return res.status(401).json({ error:"Sesiune Cloud invalidă." });
+          req.user = user;
+          req.cloudUser = data.user;
+          req.cloudToken = token;
+          req.permissions = data.permissions || {};
+          return next();
+        }
+        if (remote.status === 401 || remote.status === 403) {
+          return res.status(remote.status).json(data?.error ? data : { error:"Sesiunea AI Stoica Cloud nu mai este validă." });
+        }
+      } catch {
+        // If Cloud is temporarily unreachable we keep local-only features usable.
+        // Owner/admin actions still require a verified Cloud session below.
+      }
+    }
+
+    const user = localUserFromToken(token);
+    if (!user) return res.status(401).json({ error: "Autentificare necesară." });
+    req.user = user;
+    next();
+  }
+  function cloudOwnerOnly(req,res,next) {
+    if (!cloudBase()) return res.status(503).json({ error:"AI Stoica Cloud nu este configurat în Setări." });
+    if (!req.cloudToken) return res.status(401).json({ error:"Reautentifică-te prin AI Stoica Cloud pentru Control Center." });
+    if ((req.cloudUser?.role || req.user?.role) !== "owner") return res.status(403).json({ error:"Acces rezervat Owner." });
+    next();
+  }
+  async function proxyCloud(req,res) {
+    try {
+      const headers = { Authorization: String(req.headers.authorization || "") };
+      const hasBody = !["GET","HEAD"].includes(req.method);
+      const remote = await cloudFetch(req.originalUrl, {
+        method:req.method, headers, body:hasBody ? (req.body || {}) : undefined, timeout:12000
+      });
+      const contentType = remote.headers.get("content-type") || "application/json";
+      const body = await remote.text();
+      res.status(remote.status).type(contentType).send(body);
+    } catch (e) {
+      res.status(502).json({ error:`AI Stoica Cloud este indisponibil: ${e.message}` });
+    }
   }
 
   app.get("/health", async (_req, res) => {
-    const cfg = getOmniConfig(); let omni = false;
+    const cfg = getOmniConfig(); let omni = false, cloudOnline = false;
     try {
       const r = await fetch(`${String(cfg.baseUrl).replace(/\/+$/, "")}/models`, {
         headers: cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {},
         signal: AbortSignal.timeout(2500)
       }); omni = r.status > 0;
     } catch {}
-    res.json({ ok: true, service: serviceName, omni, model: cfg.model || "Ai principal" });
+    if (cloudBase()) {
+      try { const r = await cloudFetch("/health",{timeout:2500}); cloudOnline = r.ok; } catch {}
+    }
+    res.json({ ok: true, service: serviceName, omni, model: cfg.model || "Ai principal", cloudConfigured:!!cloudBase(), cloudOnline });
   });
 
   app.post("/auth/register", async (req, res) => {
+    if (cloudBase()) {
+      try {
+        const remote = await cloudFetch("/auth/register",{method:"POST",body:req.body || {},timeout:12000});
+        const text = await remote.text(); let data={}; try{data=JSON.parse(text||"{}")}catch{}
+        if (remote.ok && data?.token && data?.user) data.user = publicUser(ensureShadowUser(data.user));
+        return res.status(remote.status).json(Object.keys(data).length?data:{error:text||"Răspuns Cloud invalid."});
+      } catch(e) { return res.status(503).json({error:`AI Stoica Cloud este indisponibil: ${e.message}`}); }
+    }
     const email = normalizeEmail(req.body?.email), password = String(req.body?.password || ""), name = String(req.body?.name || "").trim();
     if (!/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ error: "Adresa de email nu este validă." });
     if (password.length < 8) return res.status(400).json({ error: "Parola trebuie să aibă cel puțin 8 caractere." });
@@ -334,13 +442,28 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
 
   app.post("/auth/login", async (req, res) => {
+    if (cloudBase()) {
+      try {
+        const remote = await cloudFetch("/auth/login",{method:"POST",body:req.body || {},timeout:12000});
+        const text = await remote.text(); let data={}; try{data=JSON.parse(text||"{}")}catch{}
+        if (remote.ok && data?.token && data?.user) data.user = publicUser(ensureShadowUser(data.user));
+        return res.status(remote.status).json(Object.keys(data).length?data:{error:text||"Răspuns Cloud invalid."});
+      } catch(e) { return res.status(503).json({error:`AI Stoica Cloud este indisponibil: ${e.message}`}); }
+    }
     const email = normalizeEmail(req.body?.email), password = String(req.body?.password || "");
     const db = store.read(), user = db.users.find((u) => u.email === email);
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) return res.status(401).json({ error: "Email sau parolă incorectă." });
     if (typeof user.memoryEnabled !== "boolean") { user.memoryEnabled = true; store.write(db); }
     res.json({ token: sign(user), user: publicUser(user) });
   });
-  app.get("/auth/me", auth, (req, res) => res.json({ token: sign(req.user), user: publicUser(req.user) }));
+  app.get("/auth/me", auth, (req, res) => res.json({
+    token: req.cloudToken || sign(req.user),
+    user: publicUser({ ...req.user, role:req.cloudUser?.role || req.user.role, status:req.cloudUser?.status || req.user.status }),
+    permissions: req.permissions || {}
+  }));
+
+  // Owner Control Center is always backed by PostgreSQL on the Hetzner API.
+  app.use("/api/admin", auth, cloudOwnerOnly, proxyCloud);
 
   app.get("/api/models", auth, async (_req, res) => {
     const cfg = getOmniConfig();
