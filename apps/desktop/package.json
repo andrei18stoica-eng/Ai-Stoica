@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "private": true,
-  "description": "AI Stoica 0.6.1 - real PDF/DOCX/PPTX files, cloud, images, memory and GitHub Solve",
+  "description": "AI Stoica 0.6.2 - Owner Control Center, Hetzner Cloud auth, plugins and document tools",
   "main": "main.cjs",
   "repository": {
     "type": "git",
