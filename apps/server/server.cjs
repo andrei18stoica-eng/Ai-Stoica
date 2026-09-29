@@ -60,6 +60,19 @@ async function audit(actorUserId, action, targetUserId = null, details = {}) {
   );
 }
 
+async function notify(userId, type, title, body = "") {
+  if (!userId) return;
+  await pool.query(
+    "INSERT INTO notifications(id,user_id,type,title,body) VALUES($1,$2,$3,$4,$5)",
+    [id(), userId, type, title, body]
+  );
+}
+
+async function ownerUserId() {
+  const q = await pool.query("SELECT id FROM users WHERE lower(email)=lower($1) LIMIT 1", [OWNER_EMAIL]);
+  return q.rows[0]?.id || null;
+}
+
 async function createSession(req, userId) {
   const token = randomToken();
   const tokenHash = sha256(token);
@@ -150,26 +163,33 @@ app.post("/auth/register", async (req, res, next) => {
     const role = isOwner ? "owner" : "user";
     const status = isOwner ? "active" : "pending";
 
-    await pool.query("BEGIN");
+    const client = await pool.connect();
     try {
-      await pool.query(
+      await client.query("BEGIN");
+      await client.query(
         `INSERT INTO users(id,email,name,password_hash,role,status,approved_at)
          VALUES($1,$2,$3,$4,$5,$6,$7)`,
         [userId, email, name, passwordHash, role, status, isOwner ? new Date() : null]
       );
-      await pool.query(
+      await client.query(
         "INSERT INTO user_permissions(user_id,permissions) VALUES($1,$2::jsonb)",
         [userId, JSON.stringify(isOwner ? { ...DEFAULT_USER_PERMISSIONS, deep_research:true, automations:true, plugins:true, github_access:true, openai:true, anthropic:true } : DEFAULT_USER_PERMISSIONS)]
       );
-      await pool.query("COMMIT");
+      await client.query("COMMIT");
     } catch (e) {
-      await pool.query("ROLLBACK");
+      await client.query("ROLLBACK");
       throw e;
+    } finally {
+      client.release();
     }
 
     await audit(userId, "user.register", userId, { status, role, ip: clientIp(req) });
 
     if (!isOwner) {
+      const ownerId = await ownerUserId();
+      if (ownerId) {
+        await notify(ownerId, "access_request", "Cerere nouă de acces", `${name} (${email}) a creat un cont și așteaptă aprobarea.`);
+      }
       return res.status(202).json({
         ok: true,
         status: "pending",
@@ -202,8 +222,17 @@ app.post("/auth/login", async (req, res, next) => {
     }
     await pool.query("UPDATE users SET last_login_at=NOW(), updated_at=NOW() WHERE id=$1", [user.id]);
     const token = await createSession(req, user.id);
-    await audit(user.id, "user.login", user.id, { ip: clientIp(req) });
-    res.json({ token, user: publicUser(user) });
+    const ip = clientIp(req);
+    await audit(user.id, "user.login", user.id, { ip });
+
+    await notify(user.id, "login", "Autentificare AI Stoica", `Te-ai autentificat la AI Stoica de la adresa ${ip || "necunoscută"}.`);
+    if (user.role !== "owner") {
+      const ownerId = await ownerUserId();
+      if (ownerId) await notify(ownerId, "user_login", "Utilizator conectat", `${user.name} (${user.email}) s-a autentificat. IP: ${ip || "necunoscut"}.`);
+    }
+
+    const refreshed = await pool.query("SELECT * FROM users WHERE id=$1", [user.id]);
+    res.json({ token, user: publicUser(refreshed.rows[0] || user) });
   } catch (e) { next(e); }
 });
 
@@ -259,6 +288,14 @@ app.patch("/api/admin/users/:id/status", auth, ownerOnly, async (req, res, next)
       await pool.query("DELETE FROM sessions WHERE user_id=$1", [targetId]);
     }
     await audit(req.user.id, "admin.user_status", targetId, { status });
+    const statusLabels = {
+      active: "Cont aprobat",
+      pending: "Cont în așteptare",
+      rejected: "Cerere respinsă",
+      suspended: "Cont suspendat",
+      blocked: "Cont blocat"
+    };
+    await notify(targetId, "account_status", statusLabels[status] || "Status cont actualizat", `Statusul contului tău AI Stoica este acum: ${status}.`);
     const updated = await pool.query("SELECT * FROM users WHERE id=$1", [targetId]);
     res.json({ user: publicUser(updated.rows[0]) });
   } catch (e) { next(e); }
@@ -293,6 +330,57 @@ app.post("/api/admin/users/:id/sessions/revoke", auth, ownerOnly, async (req, re
     await pool.query("DELETE FROM sessions WHERE user_id=$1", [targetId]);
     await audit(req.user.id, "admin.sessions_revoke", targetId, {});
     res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+
+app.get("/api/notifications", auth, async (req, res, next) => {
+  try {
+    const q = await pool.query(
+      `SELECT id,type,title,body,read_at,created_at
+       FROM notifications
+       WHERE user_id=$1
+       ORDER BY created_at DESC
+       LIMIT 100`,
+      [req.user.id]
+    );
+    const unread = q.rows.filter(x => !x.read_at).length;
+    res.json({ data: q.rows, unread });
+  } catch (e) { next(e); }
+});
+
+app.patch("/api/notifications/:id/read", auth, async (req, res, next) => {
+  try {
+    const q = await pool.query(
+      "UPDATE notifications SET read_at=COALESCE(read_at,NOW()) WHERE id=$1 AND user_id=$2 RETURNING id,read_at",
+      [req.params.id, req.user.id]
+    );
+    if (!q.rowCount) return res.status(404).json({ error: "Notificare inexistentă." });
+    res.json({ data: q.rows[0] });
+  } catch (e) { next(e); }
+});
+
+app.post("/api/notifications/read-all", auth, async (req, res, next) => {
+  try {
+    await pool.query("UPDATE notifications SET read_at=COALESCE(read_at,NOW()) WHERE user_id=$1", [req.user.id]);
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+app.get("/api/admin/audit", auth, ownerOnly, async (req, res, next) => {
+  try {
+    const limit = Math.min(200, Math.max(1, Number(req.query?.limit || 100)));
+    const q = await pool.query(
+      `SELECT a.id,a.action,a.details,a.created_at,
+              actor.email AS actor_email,target.email AS target_email
+       FROM audit_log a
+       LEFT JOIN users actor ON actor.id=a.actor_user_id
+       LEFT JOIN users target ON target.id=a.target_user_id
+       ORDER BY a.created_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+    res.json({ data: q.rows });
   } catch (e) { next(e); }
 });
 
