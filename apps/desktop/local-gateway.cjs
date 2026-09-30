@@ -496,6 +496,37 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       });
     } finally { clearTimeout(timer); }
   }
+  function policyFailure(message, status = 503) {
+    const error = new Error(message);
+    error.status = status;
+    return error;
+  }
+  async function cloudModelPolicy(token, models) {
+    const unique=[...new Set((models||[]).map(x=>String(x||"").trim()).filter(Boolean))];
+    if (!cloudBase()) return { policyEnforced:false, data:unique.map(model=>({model,allowed:true})) };
+    if (!token) throw policyFailure("Nu pot verifica permisiunile AI. Reautentifică-te prin AI Stoica Cloud.",503);
+    let remote;
+    try {
+      remote=await cloudFetch("/api/ai/access",{
+        method:"POST",
+        headers:{Authorization:`Bearer ${token}`},
+        body:{models:unique},
+        timeout:9000
+      });
+    } catch(e) {
+      throw policyFailure(`AI Stoica Cloud nu poate verifica permisiunile AI: ${e.message}`,503);
+    }
+    const text=await remote.text();let data={};try{data=JSON.parse(text||"{}")}catch{}
+    if(!remote.ok)throw policyFailure(data?.error||text||"Verificarea permisiunilor AI a eșuat.",remote.status||503);
+    if(!Array.isArray(data?.data))throw policyFailure("Răspuns invalid de la politica AI Stoica Cloud.",502);
+    return data;
+  }
+  async function requireModelAccess(token, model) {
+    const policy=await cloudModelPolicy(token,[model]);
+    const decision=policy.data.find(x=>String(x.model)===String(model))||policy.data[0];
+    if(!decision?.allowed)throw policyFailure(decision?.reason||"Modelul nu este permis pentru acest cont.",403);
+    return decision;
+  }
   function ensureShadowUser(remoteUser) {
     if (!remoteUser?.email) return null;
     const db = store.read();
@@ -643,12 +674,24 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   // Owner Control Center is always backed by PostgreSQL on the Hetzner API.
   app.use("/api/admin", auth, cloudOwnerOnly, proxyCloud);
 
-  app.get("/api/models", auth, async (_req, res) => {
+  app.get("/api/models", auth, async (req, res) => {
     const cfg = getOmniConfig();
     try {
       const r = await fetch(`${String(cfg.baseUrl).replace(/\/+$/, "")}/models`, { headers: cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {} });
-      res.status(r.status).type("application/json").send(await r.text());
-    } catch (e) { res.status(502).json({ error: `Nu mă pot conecta la OmniRoute: ${e.message}` }); }
+      const text=await r.text();
+      if(!r.ok)return res.status(r.status).type("application/json").send(text);
+      if(!cloudBase())return res.status(200).type("application/json").send(text);
+      let parsed;try{parsed=JSON.parse(text)}catch{return res.status(502).json({error:"OmniRoute a returnat o listă de modele invalidă."})}
+      const entries=Array.isArray(parsed)?parsed:(Array.isArray(parsed?.data)?parsed.data:[]);
+      const ids=entries.map(x=>typeof x==="string"?x:x?.id).map(x=>String(x||"").trim()).filter(Boolean);
+      const policy=await cloudModelPolicy(req.cloudToken,ids);
+      const allowed=new Set(policy.data.filter(x=>x.allowed).map(x=>String(x.model)));
+      const filtered=entries.filter(x=>allowed.has(String(typeof x==="string"?x:x?.id)));
+      const payload=Array.isArray(parsed)?{data:filtered}:{...parsed,data:filtered};
+      payload.policyEnforced=true;
+      payload.deniedCount=Math.max(0,entries.length-filtered.length);
+      res.json(payload);
+    } catch (e) { res.status(e.status||502).json({ error: e.message?.startsWith("Nu mă pot conecta")?e.message:`Nu pot încărca modelele permise: ${e.message}` }); }
   });
 
   app.get("/api/projects", auth, (req,res) => { const db=store.read(); res.json({data:db.projects.filter(x=>x.userId===req.user.id).sort((a,b)=>b.updatedAt-a.updatedAt)}); });
@@ -814,20 +857,26 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
   app.delete("/api/plugins/:id", auth, (req,res) => {const db=store.read();db.plugins=db.plugins.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));store.write(db);res.json({ok:true});});
 
-  app.get("/api/automations", auth, (req,res) => {const db=store.read();res.json({data:db.automations.filter(x=>x.userId===req.user.id).sort((a,b)=>b.createdAt-a.createdAt)});});
-  app.post("/api/automations", auth, (req,res) => {
+  function publicAutomation(item){const {cloudToken,...safe}=item||{};return safe;}
+  app.get("/api/automations", auth, (req,res) => {const db=store.read();res.json({data:db.automations.filter(x=>x.userId===req.user.id).sort((a,b)=>b.createdAt-a.createdAt).map(publicAutomation)});});
+  app.post("/api/automations", auth, async (req,res) => {
     const title=String(req.body?.title||"").trim(),prompt=String(req.body?.prompt||"").trim();if(!title||!prompt)return res.status(400).json({error:"Titlul și instrucțiunea sunt obligatorii."});
-    const db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,title,prompt,trigger:String(req.body?.trigger||`@${title.toLowerCase().replace(/[^a-z0-9ăâîșț]+/gi,"-").replace(/^-|-$/g,"")}`),frequency:req.body?.frequency||"daily",time:req.body?.time||"09:00",weekday:Number(req.body?.weekday??1),days:Array.isArray(req.body?.days)?req.body.days.map(Number):[],runAt:Number(req.body?.runAt||0)||null,model:req.body?.model||null,enabled:true,lastRunAt:null,lastResult:"",createdAt:Date.now()};
-    item.nextRunAt=nextRun(item,Date.now());db.automations.push(item);store.write(db);res.json({data:item});
+    const selectedModel=String(req.body?.model||getOmniConfig()?.model||"Ai principal").trim();
+    try{await requireModelAccess(req.cloudToken,selectedModel);}catch(e){return res.status(e.status||403).json({error:e.message})}
+    const db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,title,prompt,trigger:String(req.body?.trigger||`@${title.toLowerCase().replace(/[^a-z0-9ăâîșț]+/gi,"-").replace(/^-|-$/g,"")}`),frequency:req.body?.frequency||"daily",time:req.body?.time||"09:00",weekday:Number(req.body?.weekday??1),days:Array.isArray(req.body?.days)?req.body.days.map(Number):[],runAt:Number(req.body?.runAt||0)||null,model:selectedModel,cloudToken:req.cloudToken||null,enabled:true,lastRunAt:null,lastResult:"",createdAt:Date.now()};
+    item.nextRunAt=nextRun(item,Date.now());db.automations.push(item);store.write(db);res.json({data:publicAutomation(item)});
   });
-  app.patch("/api/automations/:id", auth, (req,res) => {
+  app.patch("/api/automations/:id", auth, async (req,res) => {
     const db=store.read(),item=db.automations.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Automatizarea nu a fost găsită."});
+    const nextModel=String(Object.prototype.hasOwnProperty.call(req.body||{},"model")?req.body.model:(item.model||getOmniConfig()?.model||"Ai principal")).trim();
+    try{await requireModelAccess(req.cloudToken,nextModel);}catch(e){return res.status(e.status||403).json({error:e.message})}
     for(const k of ["title","prompt","trigger","frequency","time","weekday","days","runAt","model","enabled"])if(Object.prototype.hasOwnProperty.call(req.body||{},k))item[k]=req.body[k];
-    item.nextRunAt=item.enabled?nextRun(item,Date.now()):null;store.write(db);res.json({data:item});
+    item.model=nextModel;if(req.cloudToken)item.cloudToken=req.cloudToken;
+    item.nextRunAt=item.enabled?nextRun(item,Date.now()):null;store.write(db);res.json({data:publicAutomation(item)});
   });
   app.post("/api/automations/:id/run", auth, async (req,res) => {
     const db=store.read(),item=db.automations.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Automatizarea nu a fost găsită."});
-    try{await runAutomation(item);const fresh=store.read().automations.find(x=>x.id===item.id);res.json({data:fresh});}catch(e){res.status(502).json({error:e.message});}
+    try{await runAutomation(item,req.cloudToken||item.cloudToken);const fresh=store.read().automations.find(x=>x.id===item.id);res.json({data:publicAutomation(fresh)});}catch(e){res.status(e.status||502).json({error:e.message});}
   });
   app.delete("/api/automations/:id", auth, (req,res) => {const db=store.read();db.automations=db.automations.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));store.write(db);res.json({ok:true});});
 
@@ -849,8 +898,17 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       "groq/whisper-large-v3-turbo",
       "deepgram/nova-3"
     ].filter(Boolean))];
+    let permittedCandidates=candidates;
+    if(cloudBase()){
+      try{
+        const policy=await cloudModelPolicy(req.cloudToken,candidates);
+        const allowed=new Set(policy.data.filter(x=>x.allowed).map(x=>String(x.model)));
+        permittedCandidates=candidates.filter(x=>allowed.has(String(x)));
+      }catch(e){return res.status(e.status||503).json({error:e.message})}
+      if(!permittedCandidates.length)return res.status(403).json({error:"Contul nu are acces la niciun model de transcriere disponibil."});
+    }
     const errors = [];
-    for (const model of candidates) {
+    for (const model of permittedCandidates) {
       try {
         const form = new FormData();
         form.append("file", new Blob([bytes], { type: mime }), `recording.${ext}`);
@@ -891,25 +949,28 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   }
 
   app.post("/api/chat", auth, async (req,res) => {
-    const cfg=getOmniConfig(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id);if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
-    try{const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},body:JSON.stringify({model:req.body?.model||cfg.model||"Ai principal",messages,stream:false,temperature:0.4})});res.status(r.status).type("application/json").send(await r.text());}
-    catch(e){res.status(502).json({error:`Nu mă pot conecta la OmniRoute: ${e.message}`});}
+    const cfg=getOmniConfig(),selectedModel=String(req.body?.model||cfg.model||"Ai principal").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id);if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
+    try{await requireModelAccess(req.cloudToken,selectedModel);const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},body:JSON.stringify({model:selectedModel,messages,stream:false,temperature:0.4})});res.status(r.status).type("application/json").send(await r.text());}
+    catch(e){res.status(e.status||502).json({error:e.status?e.message:`Nu mă pot conecta la OmniRoute: ${e.message}`});}
   });
   app.post("/api/chat/stream", auth, async (req,res) => {
-    const cfg=getOmniConfig(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id);if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
+    const cfg=getOmniConfig(),selectedModel=String(req.body?.model||cfg.model||"Ai principal").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id);if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
     try{
-      const upstream=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},body:JSON.stringify({model:req.body?.model||cfg.model||"Ai principal",messages,stream:true,temperature:0.4})});
+      await requireModelAccess(req.cloudToken,selectedModel);
+      const upstream=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},body:JSON.stringify({model:selectedModel,messages,stream:true,temperature:0.4})});
       if(!upstream.ok)return res.status(upstream.status).type("application/json").send(await upstream.text());
       const ctype=upstream.headers.get("content-type")||"";res.status(200);res.setHeader("Content-Type","text/event-stream; charset=utf-8");res.setHeader("Cache-Control","no-cache, no-transform");res.setHeader("Connection","keep-alive");
       if(!ctype.includes("text/event-stream")){const data=await upstream.json(),text=data?.choices?.[0]?.message?.content||"";res.write(`data: ${JSON.stringify({choices:[{delta:{content:text}}]})}\n\n`);res.write("data: [DONE]\n\n");return res.end();}
       const reader=upstream.body.getReader();while(true){const {value,done}=await reader.read();if(done)break;res.write(Buffer.from(value));}res.end();
-    }catch(e){if(!res.headersSent)res.status(502).json({error:`Nu mă pot conecta la OmniRoute: ${e.message}`});else{res.write(`data: ${JSON.stringify({error:e.message})}\n\n`);res.end();}}
+    }catch(e){if(!res.headersSent)res.status(e.status||502).json({error:e.status?e.message:`Nu mă pot conecta la OmniRoute: ${e.message}`});else{res.write(`data: ${JSON.stringify({error:e.message})}\n\n`);res.end();}}
   });
 
-  async function runAutomation(item) {
+  async function runAutomation(item, cloudToken) {
     const cfg=getOmniConfig(),db=store.read(),user=db.users.find(u=>u.id===item.userId);if(!user)throw new Error("Contul automatizării nu mai există.");
+    const selectedModel=String(item.model||cfg.model||"Ai principal").trim();
+    await requireModelAccess(cloudToken,selectedModel);
     const messages=await prepareMessages([{role:"user",content:item.prompt}],null,item.userId);
-    const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},body:JSON.stringify({model:item.model||cfg.model||"Ai principal",messages,stream:false,temperature:0.35})});
+    const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},body:JSON.stringify({model:selectedModel,messages,stream:false,temperature:0.35})});
     if(!r.ok)throw new Error(`OmniRoute HTTP ${r.status}: ${(await r.text()).slice(0,500)}`);
     const data=await r.json(),answer=data?.choices?.[0]?.message?.content||"";
     const fresh=store.read(),target=fresh.automations.find(x=>x.id===item.id);if(!target)return;
@@ -924,7 +985,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(automationBusy)return;automationBusy=true;
     try{
       const db=store.read(),now=Date.now(),due=db.automations.filter(a=>a.enabled&&a.nextRunAt&&a.nextRunAt<=now).slice(0,5);
-      for(const a of due){try{await runAutomation(a);}catch(e){const f=store.read(),t=f.automations.find(x=>x.id===a.id);if(t){t.lastRunAt=Date.now();t.lastResult=`Eroare: ${e.message}`;t.nextRunAt=nextRun(t,Date.now()+60000);store.write(f);}}}
+      for(const a of due){try{await runAutomation(a,a.cloudToken);}catch(e){const f=store.read(),t=f.automations.find(x=>x.id===a.id);if(t){t.lastRunAt=Date.now();t.lastResult=`Eroare: ${e.message}`;t.nextRunAt=nextRun(t,Date.now()+60000);store.write(f);}}}
     }finally{automationBusy=false;}
   },30000);
 
