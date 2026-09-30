@@ -9,7 +9,7 @@ import {
   CalendarClock, Plug, Library, Brain, Upload, Trash2, Play, Pin, PinOff,
   FileText, Image as ImageIcon, HardDrive, ToggleLeft, ToggleRight,
   Compass, Map, Globe2, Archive, ExternalLink, SlidersHorizontal, Volume2,
-  PanelTopOpen, ShieldCheck, Users, UserCheck, UserX, Ban, Bell, Power
+  PanelTopOpen, ShieldCheck, Users, UserCheck, UserX, Ban, Bell, Power, Download
 } from "lucide-react";
 import "./styles.css";
 
@@ -154,24 +154,30 @@ async function exportMessageFile(message,format) {
 function normalizeDocumentIntent(value){
   return String(value||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
 }
+const DOWNLOAD_FORMATS=["pdf","docx","pptx","xlsx","csv","json","md","txt","html","xml","rtf","zip","ipynb","svg","js","ts","jsx","tsx","py","java","c","cpp","cs","go","rs","php","rb","sh","ps1","sql","css","yaml","yml","toml","ini","tex"];
 function requestedDocumentFormat(value){
   const t=normalizeDocumentIntent(value).trim();
-  const simple=/^(in\s+)?(pdf|docx|pptx|word|powerpoint)(\s+te\s+rog)?[.!]?$/;
-  const asks=/(trimite|da-mi|dami|descarc|export|salveaz|fisier|document|format|creeaz|genereaz|fa-mi|fami)/;
-  if(!simple.test(t)&&!asks.test(t))return null;
-  if(/\bpptx\b|powerpoint|prezentare/.test(t))return "pptx";
-  if(/\bdocx\b|\bword\b/.test(t))return "docx";
-  if(/\bpdf\b/.test(t))return "pdf";
-  return null;
+  const asks=/(trimite|da-mi|dami|descarc|download|export|salveaz|fisier|document|format|creeaz|genereaz|fa-mi|fami|fa\s+un|make|create|save)/;
+  const explicit=t.match(/\.(pdf|docx|pptx|xlsx|csv|json|md|txt|html|xml|rtf|zip|ipynb|svg|js|ts|jsx|tsx|py|java|c|cpp|cs|go|rs|php|rb|sh|ps1|sql|css|yaml|yml|toml|ini|tex)\b/);
+  if(explicit&&asks.test(t))return explicit[1];
+  const candidates=[
+    ["pptx",/\bpptx\b|powerpoint|prezentare/],["docx",/\bdocx\b|\bword\b/],["xlsx",/\bxlsx\b|\bexcel\b|foaie de calcul|spreadsheet/],
+    ["pdf",/\bpdf\b/],["csv",/\bcsv\b/],["json",/\bjson\b/],["html",/\bhtml\b/],["xml",/\bxml\b/],["rtf",/\brtf\b/],
+    ["zip",/\bzip\b|arhiva/],["ipynb",/\bipynb\b|jupyter|notebook/],["svg",/\bsvg\b/],["md",/\bmarkdown\b|\bmd\b/],["txt",/\btxt\b|text simplu/],
+    ["py",/\bpython\b/],["js",/\bjavascript\b/],["ts",/\btypescript\b/],["ps1",/\bpowershell\b/],["sql",/\bsql\b/],["yaml",/\byaml\b/],["tex",/\blatex\b/]
+  ];
+  const found=candidates.find(([,re])=>re.test(t));
+  if(!found)return null;
+  const simple=new RegExp("^\\s*(in\\s+)?("+found[0]+"|word|powerpoint|excel|markdown|python|javascript|typescript|jupyter|notebook)(\\s+te\\s+rog)?[.!]?\\s*$");
+  return (simple.test(t)||asks.test(t))?found[0]:null;
 }
 function standaloneExportRequest(value){
-  const t=normalizeDocumentIntent(value).replace(/[^a-z0-9\s-]/g," ").replace(/\s+/g," ").trim();
-  if(!requestedDocumentFormat(t))return false;
-  const stripped=t
-    .replace(/\b(pdf|docx|pptx|powerpoint|word|prezentare|document|fisier|format)\b/g," ")
-    .replace(/\b(trimite|da-mi|dami|descarca|descarc|exporta|export|salveaza|salveaz|creeaza|creeaz|genereaza|genereaz|fa-mi|fami|in|ca|te|rog|mi)\b/g," ")
-    .replace(/\s+/g," ").trim();
-  return stripped.length<12;
+  const t=normalizeDocumentIntent(value).replace(/[^a-z0-9.\s-]/g," ").replace(/\s+/g," ").trim();
+  const format=requestedDocumentFormat(t);if(!format)return false;
+  if(/de mai sus|raspunsul|mesajul anterior|acesta|aceasta|asta|ultimul/.test(t))return true;
+  let stripped=t.replace(new RegExp("\\b("+DOWNLOAD_FORMATS.join("|")+"|word|powerpoint|excel|prezentare|document|fisier|format|markdown|jupyter|notebook)\\b","g")," ");
+  stripped=stripped.replace(/\b(trimite|da-mi|dami|descarca|descarc|download|exporta|export|salveaza|salveaz|creeaza|creeaz|genereaza|genereaz|fa-mi|fami|fa|in|ca|te|rog|mi|un|o)\b/g," ").replace(/\s+/g," ").trim();
+  return stripped.length<18;
 }
 
 function groupLabel(ts) {
@@ -397,7 +403,11 @@ function ConversationView({conversation,busy,onRegenerate,onRate}) {
     {conversation.messages.map((m,i)=>m.role==="user"
       ?<div key={m.id||i} className="userRow"><div className="userMessageWrap"><div className="userBubble copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}><div>{messageText(m)}</div>{m.attachments?.length>0&&<div className="inlineAttachments">{m.attachments.map((a,j)=><span key={j}><Paperclip size={12}/>{a.name}</span>)}</div>}</div><div className="userMessageActions"><CopyMessageButton message={m}/></div></div></div>
       :m.role==="assistant"
-        ?<div key={m.id||i} className="assistantBlock"><div className="assistantMark">S</div><div className="assistantBody copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}><ReactMarkdown remarkPlugins={[remarkGfm]}>{String(m.content||"")}</ReactMarkdown>{m.attachments?.length>0&&<div className="inlineAttachments">{m.attachments.map((a,j)=><span key={a.id||j} role="button" tabIndex={0} onClick={()=>downloadGeneratedFile(a)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" ")downloadGeneratedFile(a)}} title="Descarcă fișierul"><Paperclip size={12}/>{a.name}</span>)}</div>}{!m.streaming&&<MessageActions message={m} onRegenerate={()=>onRegenerate(i)} onRate={v=>onRate(i,v)}/>}</div></div>
+        ?<div key={m.id||i} className="assistantBlock"><div className="assistantMark">S</div><div className="assistantBody copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}>
+          {!m.attachmentOnly&&String(m.content||"").trim()&&<ReactMarkdown remarkPlugins={[remarkGfm]}>{String(m.content||"")}</ReactMarkdown>}
+          {m.attachments?.length>0&&<div className="generatedFiles">{m.attachments.map((a,j)=><button className="generatedDownload" key={a.id||j} onClick={()=>downloadGeneratedFile(a)} title={"Descarcă "+a.name}><span className="generatedFileIcon"><FileText size={20}/></span><span className="generatedFileMeta"><b>{a.name}</b><small>{(a.format||a.name?.split(".").pop()||"FIȘIER").toUpperCase()} · {formatBytes(a.size)}</small></span><span className="generatedDownloadAction"><Download size={18}/><em>Download</em></span></button>)}</div>}
+          {!m.streaming&&!m.attachmentOnly&&<MessageActions message={m} onRegenerate={()=>onRegenerate(i)} onRate={v=>onRate(i,v)}/>}
+        </div></div>
         :null)}
     {busy&&<div className="thinking"><span/><span/><span/></div>}
     {contextMenu&&<div className="copyContextMenu" style={{left:contextMenu.x,top:contextMenu.y}} onClick={e=>e.stopPropagation()}>
@@ -805,7 +815,7 @@ function PluginsPanel({onClose}) {
 function AdminPanel({onClose}) {
   const permissionLabels={
     chat:"Chat AI",cerebras:"Cerebras",gemini:"Gemini",groq:"Groq",cloudflare:"Cloudflare AI",
-    openrouter:"OpenRouter",image_generation:"Generare imagini",document_generation:"PDF / DOCX / PPTX",
+    openrouter:"OpenRouter",image_generation:"Generare imagini",document_generation:"Fișiere: PDF / Word / PowerPoint / Excel / CSV / ZIP / cod",
     file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",
     automations:"Automatizări",plugins:"Pluginuri",github_access:"GitHub",openai:"OpenAI (plătit)",anthropic:"Claude / Anthropic (plătit)"
   };
@@ -1081,33 +1091,36 @@ function App() {
   function newConversation(){setCurrentId(null);setDraft("");setAttachments([]);setSidebar(false)}
   async function saveConversation(conv){if(conv.id){const d=await api(`/api/conversations/${conv.id}`,{method:"PUT",body:JSON.stringify(conv)});setConversations(v=>v.map(x=>x.id===conv.id?d.data:x));return d.data}const d=await api("/api/conversations",{method:"POST",body:JSON.stringify(conv)});setConversations(v=>[d.data,...v]);setCurrentId(d.data.id);return d.data}
   async function streamAssistant(baseConv,messages){
-    setBusy(true);const assistantMessage={id:uid(),role:"assistant",content:"",createdAt:Date.now(),streaming:true};let working={...baseConv,messages:[...messages,assistantMessage],updatedAt:Date.now()};setConversations(v=>v.map(x=>x.id===working.id?working:x));
+    const lastUser=[...messages].reverse().find(m=>m.role==="user");
+    const requestedFormat=requestedDocumentFormat(messageText(lastUser));
+    const fileMode=!!requestedFormat;
+    setBusy(true);const assistantMessage={id:uid(),role:"assistant",content:"",attachmentOnly:fileMode,createdAt:Date.now(),streaming:true};let working={...baseConv,messages:[...messages,assistantMessage],updatedAt:Date.now()};setConversations(v=>v.map(x=>x.id===working.id?working:x));
     try{
       if(!omni){await window.AIStoica.ensureOmni();await new Promise(r=>setTimeout(r,1200))}
       const token=localStorage.getItem(TOKEN_KEY)||"",r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({model:working.model||model,assistantId:working.assistantId,messages})});
       if(!r.ok){let e;try{e=await r.json()}catch{e={error:await r.text()}};throw new Error(e?.error||`HTTP ${r.status}`)}
       const reader=r.body.getReader(),dec=new TextDecoder();let buf="",answer="";
-      while(true){const {value,done}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const events=buf.split("\n\n");buf=events.pop()||"";for(const ev of events)for(const line of ev.split("\n")){if(!line.startsWith("data:"))continue;const raw=line.slice(5).trim();if(!raw||raw==="[DONE]")continue;try{const j=JSON.parse(raw),delta=j?.choices?.[0]?.delta?.content||j?.choices?.[0]?.message?.content||"";if(delta){answer+=delta;working={...working,messages:[...messages,{...assistantMessage,content:answer,streaming:true}]};setConversations(v=>v.map(x=>x.id===working.id?working:x))}}catch{}}}
-      const lastUser=[...messages].reverse().find(m=>m.role==="user");
+      while(true){const {value,done}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const events=buf.split("\n\n");buf=events.pop()||"";for(const ev of events)for(const line of ev.split("\n")){if(!line.startsWith("data:"))continue;const raw=line.slice(5).trim();if(!raw||raw==="[DONE]")continue;try{const j=JSON.parse(raw),delta=j?.choices?.[0]?.delta?.content||j?.choices?.[0]?.message?.content||"";if(delta){answer+=delta;working={...working,messages:[...messages,{...assistantMessage,content:fileMode?"":answer,streaming:true}]};setConversations(v=>v.map(x=>x.id===working.id?working:x))}}catch{}}}
       let generatedAttachments=[];
-      const requestedFormat=requestedDocumentFormat(messageText(lastUser));
       if(requestedFormat){
         try{
           const previousAssistant=[...messages].reverse().find(m=>m.role==="assistant");
-          const exportContent=standaloneExportRequest(messageText(lastUser))&&previousAssistant
-            ? messageText(previousAssistant)
+          const previousSource=previousAssistant?.artifactSource||messageText(previousAssistant);
+          const exportContent=standaloneExportRequest(messageText(lastUser))&&previousSource
+            ? previousSource
             : (answer||"Nu am primit răspuns.");
           const exported=await api("/api/export",{method:"POST",body:JSON.stringify({
             format:requestedFormat,
-            title:working.title||"AI Stoica - document",
+            title:working.title||"AI Stoica - fișier",
             content:exportContent
           })});
           if(exported?.data)generatedAttachments=[exported.data];
         }catch(exportError){
-          console.warn("Export document failed",exportError);
+          console.warn("Export file failed",exportError);
         }
       }
-      working={...working,messages:[...messages,{...assistantMessage,content:answer||"Nu am primit răspuns.",attachments:generatedAttachments,streaming:false}],updatedAt:Date.now()};const saved=await saveConversation(working);
+      const attachmentOnly=!!requestedFormat&&generatedAttachments.length>0;
+      working={...working,messages:[...messages,{...assistantMessage,content:attachmentOnly?"":(answer||"Nu am primit răspuns."),artifactSource:attachmentOnly?answer:undefined,attachments:generatedAttachments,attachmentOnly,streaming:false}],updatedAt:Date.now()};const saved=await saveConversation(working);
       api("/api/memory/capture",{method:"POST",body:JSON.stringify({conversationId:saved.id,userText:messageText(lastUser),assistantText:answer})}).catch(()=>{});
     }catch(e){working={...working,messages:[...messages,{...assistantMessage,content:`Eroare: ${e.message}`,streaming:false}],updatedAt:Date.now()};await saveConversation(working)}finally{setBusy(false)}
   }
