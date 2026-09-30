@@ -7,6 +7,12 @@ on:
       - "apps/server/**"
       - "deploy/hetzner/**"
       - ".github/workflows/server-check.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/server/**"
+      - "deploy/hetzner/**"
+      - ".github/workflows/server-check.yml"
   workflow_dispatch:
 
 jobs:
@@ -20,7 +26,11 @@ jobs:
       - name: Install server dependencies
         run: npm --prefix apps/server install
       - name: Check server syntax
-        run: node --check apps/server/server.cjs
+        run: |
+          node --check apps/server/server.cjs
+          node --check apps/server/ai-policy.cjs
+      - name: Test AI permission policy
+        run: npm --prefix apps/server test
       - name: Validate Docker Compose
         env:
           POSTGRES_DB: aistoica
