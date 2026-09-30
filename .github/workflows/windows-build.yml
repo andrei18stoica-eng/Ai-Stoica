@@ -34,9 +34,13 @@ jobs:
           node --check preload.cjs
           node --check local-gateway.cjs
 
-      - name: Test real PDF DOCX PPTX generation and download
+      - name: Test real document generation and download
         working-directory: apps/desktop
         run: node scripts/test-document-export.cjs
+
+      - name: Test paid model access enforcement
+        working-directory: apps/desktop
+        run: node scripts/test-ai-access-enforcement.cjs
 
       - name: Build AI Stoica Windows
         working-directory: apps/desktop
@@ -48,11 +52,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v0.6.2"
-          $installer = "apps/desktop/release/AI_Stoica_Setup_0.6.2_x64.exe"
+          $tag = "v0.6.4"
+          $installer = "apps/desktop/release/AI_Stoica_Setup_0.6.4_x64.exe"
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $installer --clobber
           } else {
-            gh release create $tag $installer --title "AI Stoica 0.6.2" --notes "Versiunea principală AI Stoica 0.6.2 pentru Windows: Owner Control Center, Hetzner Cloud, pluginuri, fișiere și documente."
+            gh release create $tag $installer --title "AI Stoica 0.6.4" --notes "Versiunea principală AI Stoica 0.6.4 pentru Windows: Owner Control Center, Hetzner Cloud, pluginuri, fișiere și documente."
           }
