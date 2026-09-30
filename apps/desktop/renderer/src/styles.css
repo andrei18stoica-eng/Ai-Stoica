@@ -364,3 +364,17 @@
 .generatedDownloadAction{display:flex;align-items:center;gap:6px;color:#78b8ff;font-size:12px;font-weight:700}
 .generatedDownloadAction em{font-style:normal}
 @media(max-width:560px){.generatedDownloadAction em{display:none}.generatedDownload{grid-template-columns:38px 1fr auto}}
+
+
+/* v0.6.5 — audio, video and voice notes */
+.mediaAttachments{display:grid!important;gap:8px!important;margin-top:8px!important}
+.messageMedia{min-width:240px;max-width:520px;border:1px solid #2b394b;background:#0e1621;border-radius:12px;padding:9px;display:grid;gap:8px}
+.messageMediaHead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.messageMediaHead>span{display:flex;align-items:center;gap:7px;min-width:0}
+.messageMediaHead b{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.messageMediaHead button{border:0;background:#172334;color:#8fc4ff;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;cursor:pointer}
+.messageMedia audio,.messageMedia video{width:100%;max-width:100%;border-radius:9px;background:#05080c}
+.messageMedia.video video{max-height:300px}
+.messageMedia small{font-size:9px;color:#7f91a7}
+.attachmentTray span{max-width:290px}
+.attachmentTray span>svg{flex:0 0 auto}
