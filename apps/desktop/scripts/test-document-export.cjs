@@ -2,6 +2,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { PDFDocument } = require("pdf-lib");
+const JSZip = require("jszip");
 const { startLocalGateway } = require("../local-gateway.cjs");
 
 async function expect(cond, msg) {
@@ -45,7 +46,7 @@ async function main() {
       "**Text important** și `cod`."
     ].join("\n");
 
-    for (const format of ["pdf", "docx", "pptx"]) {
+    for (const format of ["pdf", "docx", "pptx", "xlsx", "csv", "json", "zip"]) {
       r = await fetch(base + "/api/export", {
         method: "POST",
         headers,
@@ -60,16 +61,24 @@ async function main() {
       });
       await expect(dl.ok, `Descărcarea ${format} a eșuat cu HTTP ${dl.status}`);
       const buf = Buffer.from(await dl.arrayBuffer());
-      await expect(buf.length > 500, `Fișierul ${format} este prea mic / gol.`);
+      await expect(buf.length > (["csv","json"].includes(format)?20:200), `Fișierul ${format} este prea mic / gol.`);
 
       if (format === "pdf") {
         await expect(buf.subarray(0, 5).toString() === "%PDF-", "PDF-ul nu are semnătură PDF validă.");
         const pdf = await PDFDocument.load(buf);
         await expect(pdf.getPageCount() >= 1, "PDF-ul nu are pagini.");
-      } else {
-        await expect(buf[0] === 0x50 && buf[1] === 0x4b, `${format} nu este un container ZIP Office valid.`);
-        const marker = format === "docx" ? "word/document.xml" : "ppt/presentation.xml";
-        await expect(buf.includes(Buffer.from(marker)), `${format} nu conține structura Office așteptată: ${marker}`);
+      } else if (["docx","pptx","xlsx","zip"].includes(format)) {
+        await expect(buf[0] === 0x50 && buf[1] === 0x4b, `${format} nu este un container ZIP valid.`);
+        const archive=await JSZip.loadAsync(buf);
+        if(format==="docx")await expect(!!archive.file("word/document.xml"),"DOCX fără word/document.xml");
+        if(format==="pptx")await expect(!!archive.file("ppt/presentation.xml"),"PPTX fără ppt/presentation.xml");
+        if(format==="xlsx")await expect(!!archive.file("xl/workbook.xml")&&!!archive.file("xl/worksheets/sheet1.xml"),"XLSX fără structura workbook");
+        if(format==="zip")await expect(!!archive.file("README.md"),"ZIP-ul AI Stoica nu conține README.md");
+      } else if(format==="csv") {
+        await expect(buf.toString("utf8").includes("Primul punct"),"CSV fără conținutul așteptat");
+      } else if(format==="json") {
+        const parsed=JSON.parse(buf.toString("utf8"));
+        await expect(!!parsed,"JSON invalid");
       }
 
       console.log(`OK ${format.toUpperCase()}: ${exported.data.name} (${buf.length} bytes)`);
