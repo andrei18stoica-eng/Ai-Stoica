@@ -7,6 +7,7 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const rateLimit = require("express-rate-limit");
 const { Pool } = require("pg");
+const { evaluateModelAccess, providerAccess } = require("./ai-policy.cjs");
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -37,6 +38,20 @@ const DEFAULT_USER_PERMISSIONS = {
   openai: false,
   anthropic: false
 };
+
+async function loadAiContext(user) {
+  const [permissionsRow, paidRow, combinationsRow] = await Promise.all([
+    pool.query("SELECT permissions FROM user_permissions WHERE user_id=$1", [user.id]),
+    pool.query("SELECT value FROM system_settings WHERE key='paid_ai_enabled'"),
+    pool.query("SELECT id,name,providers,paid_required,enabled FROM ai_combinations ORDER BY paid_required,id")
+  ]);
+  return {
+    user,
+    permissions: { ...DEFAULT_USER_PERMISSIONS, ...(permissionsRow.rows[0]?.permissions || {}) },
+    paidEnabled: paidRow.rows[0]?.value === true,
+    combinations: combinationsRow.rows
+  };
+}
 
 function normalizeEmail(v) { return String(v || "").trim().toLowerCase(); }
 function randomToken() { return crypto.randomBytes(32).toString("hex"); }
@@ -246,7 +261,7 @@ app.post("/auth/logout", auth, async (req, res, next) => {
 app.get("/auth/me", auth, async (req, res, next) => {
   try {
     const p = await pool.query("SELECT permissions FROM user_permissions WHERE user_id=$1", [req.user.id]);
-    res.json({ user: publicUser(req.user), permissions: p.rows[0]?.permissions || {} });
+    res.json({ user: publicUser(req.user), permissions: { ...DEFAULT_USER_PERMISSIONS, ...(p.rows[0]?.permissions || {}) } });
   } catch (e) { next(e); }
 });
 
@@ -406,26 +421,39 @@ app.patch("/api/admin/ai", auth, ownerOnly, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+app.post("/api/ai/access", auth, async (req, res, next) => {
+  try {
+    const raw = Array.isArray(req.body?.models) ? req.body.models : [req.body?.model];
+    const models = [...new Set(raw.map(x => String(x || "").trim()).filter(Boolean))];
+    if (!models.length) return res.status(400).json({ error:"Modelul sau lista de modele lipsește." });
+    if (models.length > 200) return res.status(413).json({ error:"Prea multe modele într-o singură verificare." });
+    const context = await loadAiContext(req.user);
+    const data = models.map(model => evaluateModelAccess(context, model));
+    res.json({ data, policyEnforced:true, paidAiEnabled:context.paidEnabled });
+  } catch (e) { next(e); }
+});
+
 app.get("/api/ai/catalog", auth, async (req, res, next) => {
   try {
-    const permissionsRow = await pool.query("SELECT permissions FROM user_permissions WHERE user_id=$1", [req.user.id]);
-    const permissions = permissionsRow.rows[0]?.permissions || {};
-    const paidRow = await pool.query("SELECT value FROM system_settings WHERE key='paid_ai_enabled'");
-    const paidEnabled = req.user.role === "owner" ? paidRow.rows[0]?.value === true : paidRow.rows[0]?.value === true;
-    const combinations = await pool.query("SELECT id,name,providers,paid_required,enabled FROM ai_combinations WHERE enabled=TRUE ORDER BY paid_required,id");
-    const providers = [
-      { id:"cerebras", tier:"free", enabled:req.user.role==="owner" || permissions.cerebras !== false },
-      { id:"gemini", tier:"free", enabled:req.user.role==="owner" || permissions.gemini !== false },
-      { id:"groq", tier:"free", enabled:req.user.role==="owner" || permissions.groq !== false },
-      { id:"cloudflare", tier:"free", enabled:req.user.role==="owner" || permissions.cloudflare !== false },
-      { id:"openrouter", tier:"free", enabled:req.user.role==="owner" || permissions.openrouter !== false },
-      { id:"openai", tier:"paid", enabled:paidEnabled && (req.user.role==="owner" || permissions.openai === true) },
-      { id:"anthropic", tier:"paid", enabled:paidEnabled && (req.user.role==="owner" || permissions.anthropic === true) }
-    ];
+    const context = await loadAiContext(req.user);
+    const providerIds = ["cerebras","gemini","groq","cloudflare","openrouter","openai","anthropic"];
+    const providers = providerIds.map(id => ({
+      id,
+      tier: ["openai","anthropic"].includes(id) ? "paid" : "free",
+      enabled: providerAccess(context,id).allowed
+    }));
+    const combinations = context.combinations
+      .filter(c => c.enabled !== false)
+      .map(c => {
+        const access = evaluateModelAccess(context, c.id);
+        return { ...c, available:access.allowed, unavailableReason:access.allowed ? "" : access.reason };
+      });
+    const paidAvailable = providers.some(p => p.tier === "paid" && p.enabled);
     res.json({
-      freeOnly: !paidEnabled,
+      freeOnly: !paidAvailable,
+      paidAiEnabled: context.paidEnabled,
       providers,
-      combinations: combinations.rows.map(c => ({ ...c, available: !c.paid_required || paidEnabled }))
+      combinations
     });
   } catch (e) { next(e); }
 });
