@@ -135,16 +135,25 @@ async function writeClipboardText(value) {
   } catch { return false; }
 }
 
+async function saveBlobDownload(blob,name) {
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=name||"AI-Stoica-file";
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
 async function downloadGeneratedFile(file) {
   const token=localStorage.getItem(TOKEN_KEY)||"";
   const r=await fetch(`${GATEWAY}/api/files/${file.id}`,{headers:token?{Authorization:`Bearer ${token}`}:{}});
   if(!r.ok)throw new Error("Nu am putut descărca fișierul generat.");
-  const blob=await r.blob();
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  a.href=url;a.download=file.name||"AI-Stoica-file";
-  document.body.appendChild(a);a.click();a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),2000);
+  await saveBlobDownload(await r.blob(),file.name||"AI-Stoica-file");
+}
+async function downloadLibraryFile(file) {
+  if(!file?.libraryId)return;
+  const token=localStorage.getItem(TOKEN_KEY)||"";
+  const r=await fetch(`${GATEWAY}/api/library/${file.libraryId}/content`,{headers:token?{Authorization:`Bearer ${token}`}:{}});
+  if(!r.ok)throw new Error("Nu am putut descărca fișierul media.");
+  await saveBlobDownload(await r.blob(),file.name||"AI-Stoica-media");
 }
 async function exportMessageFile(message,format) {
   const d=await api("/api/export",{method:"POST",body:JSON.stringify({format,title:"AI Stoica - răspuns",content:messageText(message)})});
@@ -179,6 +188,13 @@ function standaloneExportRequest(value){
   stripped=stripped.replace(/\b(trimite|da-mi|dami|descarca|descarc|download|exporta|export|salveaza|salveaz|creeaza|creeaz|genereaza|genereaz|fa-mi|fami|fa|in|ca|te|rog|mi|un|o)\b/g," ").replace(/\s+/g," ").trim();
   return stripped.length<18;
 }
+function requestedMediaGeneration(value){
+  const t=normalizeDocumentIntent(value).trim();
+  if(!/(cree|crea|gener|fa-mi|fami|realiz|produc|make|generate|create)/.test(t))return null;
+  if(/\b(video|videoclip|filmule|mp4|clip video|film)\b/.test(t))return "video";
+  if(/\b(poza|fotografie|imagine|image|picture|png|jpe?g)\b/.test(t))return "image";
+  return null;
+}
 
 function groupLabel(ts) {
   const d = new Date(ts || Date.now()), now = new Date();
@@ -198,25 +214,89 @@ function fmtTime(ts) {
 function readDataUrl(file) {
   return new Promise((resolve,reject)=>{ const r=new FileReader(); r.onload=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(file); });
 }
+function mediaKind(mime,name="") {
+  const m=String(mime||"").toLowerCase(),n=String(name||"").toLowerCase();
+  if(m.startsWith("audio/")||/\.(mp3|m4a|aac|wav|ogg|oga|flac|opus|weba)$/i.test(n))return "audio";
+  if(m.startsWith("video/")||/\.(mp4|mov|m4v|webm|avi|mkv|mpeg|mpg)$/i.test(n))return "video";
+  if(m.startsWith("image/"))return "image";
+  if(m.startsWith("text/")||/\.(txt|md|csv|json|js|ts|py|html|css|xml|yaml|yml)$/i.test(n))return "text";
+  return "file";
+}
+async function fetchLibraryBlob(id) {
+  const token=localStorage.getItem(TOKEN_KEY)||"";
+  const r=await fetch(`${GATEWAY}/api/library/${id}/content`,{headers:token?{Authorization:`Bearer ${token}`}:{}});
+  if(!r.ok)throw new Error("Conținutul fișierului nu poate fi citit.");
+  return await r.blob();
+}
+async function extractVideoFrames(blob,count=4) {
+  if(typeof document==="undefined")return [];
+  const url=URL.createObjectURL(blob),video=document.createElement("video");
+  video.muted=true;video.preload="metadata";video.src=url;
+  try{
+    await new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(new Error("Video metadata timeout")),10000);
+      video.onloadedmetadata=()=>{clearTimeout(timer);resolve()};
+      video.onerror=()=>{clearTimeout(timer);reject(new Error("Video invalid"))};
+      video.load();
+    });
+    const duration=Number(video.duration||0);
+    if(!Number.isFinite(duration)||duration<=0||!video.videoWidth||!video.videoHeight)return [];
+    const fractions=count===1?[0.5]:[0.08,0.34,0.62,0.9].slice(0,count);
+    const out=[];
+    for(const fraction of fractions){
+      const target=Math.max(0.01,Math.min(duration-0.01,duration*fraction));
+      await new Promise((resolve,reject)=>{
+        const timer=setTimeout(()=>reject(new Error("Video seek timeout")),8000);
+        const done=()=>{clearTimeout(timer);resolve()};
+        video.onseeked=done;video.onerror=()=>{clearTimeout(timer);reject(new Error("Video seek error"))};
+        video.currentTime=target;
+      });
+      const maxSide=768,scale=Math.min(1,maxSide/Math.max(video.videoWidth,video.videoHeight));
+      const canvas=document.createElement("canvas");
+      canvas.width=Math.max(1,Math.round(video.videoWidth*scale));canvas.height=Math.max(1,Math.round(video.videoHeight*scale));
+      const ctx=canvas.getContext("2d");ctx.drawImage(video,0,0,canvas.width,canvas.height);
+      out.push({type:"image_url",image_url:{url:canvas.toDataURL("image/jpeg",0.72)}});
+    }
+    return out;
+  } finally {URL.revokeObjectURL(url);video.removeAttribute("src");}
+}
 async function fileToLibraryPayload(file) {
-  const textLike = file.type.startsWith("text/") || /\.(txt|md|csv|json|js|ts|py|html|css|xml|yaml|yml)$/i.test(file.name);
-  if (textLike) return { name:file.name, mime:file.type, size:file.size, kind:"text", text:(await file.text()).slice(0,150000) };
-  const dataUrl = await readDataUrl(file);
-  return { name:file.name, mime:file.type, size:file.size, kind:file.type.startsWith("image/")?"image":"file", dataUrl };
+  const kind=mediaKind(file.type,file.name);
+  if(kind==="text") return { name:file.name, mime:file.type, size:file.size, kind:"text", text:(await file.text()).slice(0,150000) };
+  const dataUrl=await readDataUrl(file);
+  return { name:file.name, mime:file.type, size:file.size, kind, dataUrl };
 }
 async function libraryItemToAttachment(item) {
   const d=(await api(`/api/library/${item.id}`)).data;
-  if(d.kind==="image"&&Number(d.size||0)<=20*1024*1024){
-    const token=localStorage.getItem(TOKEN_KEY)||"";
-    const r=await fetch(`${GATEWAY}/api/library/${d.id}/content`,{headers:token?{Authorization:`Bearer ${token}`}:{}});
-    if(r.ok){const blob=await r.blob(),dataUrl=await readDataUrl(blob);return {name:d.name,type:"image",libraryId:d.id,part:{type:"image_url",image_url:{url:dataUrl}}};}
+  const kind=mediaKind(d.mime,d.name)||d.kind;
+  if(kind==="image"&&Number(d.size||0)<=20*1024*1024){
+    const blob=await fetchLibraryBlob(d.id),dataUrl=await readDataUrl(blob);
+    return {name:d.name,type:"image",mime:d.mime,size:d.size,libraryId:d.id,part:{type:"image_url",image_url:{url:dataUrl}}};
   }
-  if(d.kind==="text"&&Number(d.size||0)<=10*1024*1024){
-    const token=localStorage.getItem(TOKEN_KEY)||"";
-    const r=await fetch(`${GATEWAY}/api/library/${d.id}/content`,{headers:token?{Authorization:`Bearer ${token}`}:{}});
-    if(r.ok){const text=(await r.text()).slice(0,250000);return {name:d.name,type:"text",libraryId:d.id,part:{type:"text",text:`Conținutul fișierului ${d.name}:\n${text}`}};}
+  if(kind==="text"&&Number(d.size||0)<=10*1024*1024){
+    const blob=await fetchLibraryBlob(d.id),text=(await blob.text()).slice(0,250000);
+    return {name:d.name,type:"text",mime:d.mime,size:d.size,libraryId:d.id,part:{type:"text",text:`Conținutul fișierului ${d.name}:\n${text}`}};
   }
-  return {name:d.name,type:"stored",libraryId:d.id,part:{type:"text",text:`Fișier atașat: ${d.name} (${formatBytes(d.size)}). Fișierul este stocat în Biblioteca AI Stoica; conținutul integral nu este introdus automat în context dacă depășește limita modelului.`}};
+  if(kind==="audio"||kind==="video"){
+    let transcript="",transcriptionError="";
+    if(Number(d.size||0)<=25*1024*1024){
+      try{const tr=await api(`/api/library/${d.id}/transcribe`,{method:"POST",body:JSON.stringify({language:"ro"})});transcript=String(tr.text||"").trim()}
+      catch(e){transcriptionError=e.message}
+    }else transcriptionError="Fișierul depășește 25 MB pentru transcriere automată.";
+    let frames=[];
+    if(kind==="video"&&Number(d.size||0)<=100*1024*1024){
+      try{frames=await extractVideoFrames(await fetchLibraryBlob(d.id),4)}catch{}
+    }
+    const details=[
+      `Fișier ${kind==="video"?"video":"audio"} atașat: ${d.name} (${formatBytes(d.size)}).`,
+      transcript?`Transcriere audio:\n${transcript}`:"",
+      kind==="video"&&frames.length?`${frames.length} cadre reprezentative din videoclip sunt atașate după această descriere.`:"",
+      !transcript&&transcriptionError?`Transcriere indisponibilă: ${transcriptionError}`:""
+    ].filter(Boolean).join("\n\n");
+    const parts=[{type:"text",text:details},...frames];
+    return {name:d.name,type:kind,mime:d.mime,size:d.size,libraryId:d.id,transcript,part:parts[0],parts};
+  }
+  return {name:d.name,type:"stored",mime:d.mime,size:d.size,libraryId:d.id,part:{type:"text",text:`Fișier atașat: ${d.name} (${formatBytes(d.size)}). Fișierul este stocat în Biblioteca AI Stoica; conținutul integral nu este introdus automat în context dacă depășește limita modelului.`}};
 }
 
 function AuthScreen({ onAuth }) {
@@ -374,6 +454,46 @@ function MessageActions({message,onRegenerate,onRate}) {
   </div>;
 }
 
+function GeneratedAttachment({attachment}) {
+  const [src,setSrc]=useState("");
+  const kind=attachment?.kind||attachment?.type||(String(attachment?.mimeType||"").startsWith("image/")?"image":String(attachment?.mimeType||"").startsWith("video/")?"video":String(attachment?.mimeType||"").startsWith("audio/")?"audio":"file");
+  useEffect(()=>{
+    let active=true,url="";
+    if(!attachment?.id||!["image","video","audio"].includes(kind))return()=>{};
+    (async()=>{try{
+      const token=localStorage.getItem(TOKEN_KEY)||"";
+      const r=await fetch(`${GATEWAY}/api/files/${attachment.id}`,{headers:token?{Authorization:`Bearer ${token}`}:{}});
+      if(!r.ok)throw new Error("Media indisponibilă");
+      const blob=await r.blob();if(!active)return;url=URL.createObjectURL(blob);setSrc(url);
+    }catch{}})();
+    return()=>{active=false;if(url)URL.revokeObjectURL(url)};
+  },[attachment?.id,kind]);
+  if(["image","video","audio"].includes(kind)){
+    return <div className={cx("generatedMedia",kind)}>
+      {src&&(kind==="image"?<img src={src} alt={attachment.name||"Imagine generată de AI Stoica"}/>:kind==="video"?<video controls preload="metadata" src={src}/>:<audio controls preload="metadata" src={src}/>)}
+      <div className="generatedMediaBar"><span><b>{attachment.name}</b><small>{(attachment.mimeType||kind).replace(/^.*\//,"").toUpperCase()} · {formatBytes(attachment.size)}</small></span><button onClick={()=>downloadGeneratedFile(attachment)}><Download size={17}/> Download</button></div>
+    </div>;
+  }
+  return <button className="generatedDownload" onClick={()=>downloadGeneratedFile(attachment)} title={"Descarcă "+attachment.name}><span className="generatedFileIcon"><FileText size={20}/></span><span className="generatedFileMeta"><b>{attachment.name}</b><small>{(attachment.format||attachment.name?.split(".").pop()||"FIȘIER").toUpperCase()} · {formatBytes(attachment.size)}</small></span><span className="generatedDownloadAction"><Download size={18}/><em>Download</em></span></button>;
+}
+
+function MediaAttachment({attachment}) {
+  const [src,setSrc]=useState("");
+  const kind=attachment?.type;
+  useEffect(()=>{
+    let active=true,url="";
+    if(!attachment?.libraryId||!(kind==="audio"||kind==="video"))return()=>{};
+    (async()=>{try{const blob=await fetchLibraryBlob(attachment.libraryId);if(!active)return;url=URL.createObjectURL(blob);setSrc(url)}catch{}})();
+    return()=>{active=false;if(url)URL.revokeObjectURL(url)};
+  },[attachment?.libraryId,kind]);
+  if(!(kind==="audio"||kind==="video"))return <span><Paperclip size={12}/>{attachment?.name}</span>;
+  return <div className={cx("messageMedia",kind)}>
+    <div className="messageMediaHead"><span>{kind==="audio"?<Volume2 size={15}/>:<Play size={15}/>}<b>{attachment.name}</b></span><button title="Download" onClick={()=>downloadLibraryFile(attachment).catch(e=>alert(e.message))}><Download size={15}/></button></div>
+    {src&&(kind==="audio"?<audio controls preload="metadata" src={src}/>:<video controls preload="metadata" src={src}/>)}
+    {attachment.transcript&&<small>Vocalul / pista audio a fost transcrisă pentru AI Stoica.</small>}
+  </div>;
+}
+
 function ConversationView({conversation,busy,onRegenerate,onRate}) {
   const [contextMenu,setContextMenu]=useState(null);
   useEffect(()=>{
@@ -401,11 +521,11 @@ function ConversationView({conversation,busy,onRegenerate,onRate}) {
   if(!conversation||!conversation.messages?.length)return <div className="welcome"><BrandMark/><h1>Cu ce lucrăm astăzi?</h1><p>Întreabă orice. AI Stoica poate folosi memoria, biblioteca, pluginurile și automatizările tale.</p></div>;
   return <div className="messagesColumn">
     {conversation.messages.map((m,i)=>m.role==="user"
-      ?<div key={m.id||i} className="userRow"><div className="userMessageWrap"><div className="userBubble copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}><div>{messageText(m)}</div>{m.attachments?.length>0&&<div className="inlineAttachments">{m.attachments.map((a,j)=><span key={j}><Paperclip size={12}/>{a.name}</span>)}</div>}</div><div className="userMessageActions"><CopyMessageButton message={m}/></div></div></div>
+      ?<div key={m.id||i} className="userRow"><div className="userMessageWrap"><div className="userBubble copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}><div>{messageText(m)}</div>{m.attachments?.length>0&&<div className="inlineAttachments mediaAttachments">{m.attachments.map((a,j)=><MediaAttachment key={a.libraryId||j} attachment={a}/>)}</div>}</div><div className="userMessageActions"><CopyMessageButton message={m}/></div></div></div>
       :m.role==="assistant"
         ?<div key={m.id||i} className="assistantBlock"><div className="assistantMark">S</div><div className="assistantBody copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}>
           {!m.attachmentOnly&&String(m.content||"").trim()&&<ReactMarkdown remarkPlugins={[remarkGfm]}>{String(m.content||"")}</ReactMarkdown>}
-          {m.attachments?.length>0&&<div className="generatedFiles">{m.attachments.map((a,j)=><button className="generatedDownload" key={a.id||j} onClick={()=>downloadGeneratedFile(a)} title={"Descarcă "+a.name}><span className="generatedFileIcon"><FileText size={20}/></span><span className="generatedFileMeta"><b>{a.name}</b><small>{(a.format||a.name?.split(".").pop()||"FIȘIER").toUpperCase()} · {formatBytes(a.size)}</small></span><span className="generatedDownloadAction"><Download size={18}/><em>Download</em></span></button>)}</div>}
+          {m.attachments?.length>0&&<div className="generatedFiles">{m.attachments.map((a,j)=><GeneratedAttachment key={a.id||j} attachment={a}/>)}</div>}
           {!m.streaming&&!m.attachmentOnly&&<MessageActions message={m} onRegenerate={()=>onRegenerate(i)} onRate={v=>onRate(i,v)}/>}
         </div></div>
         :null)}
@@ -508,11 +628,17 @@ function Composer({centered,draft,setDraft,onSend,busy,attachments,setAttachment
       rec.onstop=async()=>{
         setRecording(false);setTranscribing(true);
         try{
-          const blob=new Blob(chunksRef.current,{type:rec.mimeType||"audio/webm"});const audio=await readDataUrl(blob);
-          const d=await api("/api/transcribe",{method:"POST",body:JSON.stringify({audio,mime:blob.type,language:"ro"})});
-          if(d.text)setDraft(v=>(v?v+" ":"")+d.text);
+          const blob=new Blob(chunksRef.current,{type:rec.mimeType||"audio/webm"});
+          const ext=blob.type.includes("ogg")?"ogg":"webm";
+          const stamp=new Date().toISOString().replace(/[:.]/g,"-");
+          const voiceFile=new File([blob],`Vocal_AI_Stoica_${stamp}.${ext}`,{type:blob.type});
+          const item=await uploadFileToLibrary(voiceFile);
+          const attachment=await libraryItemToAttachment(item);
+          setAttachments(v=>[...v,attachment]);
+          if(attachment.transcript)setDraft(v=>(v?v+" ":"")+attachment.transcript);
+          else alert("Vocalul a fost salvat și atașat, dar transcrierea automată nu a reușit.");
         }catch(e){
-          try{await fallbackSpeech()}catch{alert("Microfonul nu a putut fi folosit. Verifică permisiunea de microfon în Windows și setările de voce din AI Stoica.")}
+          alert("Vocalul nu a putut fi salvat sau transcris: "+e.message);
         }finally{setTranscribing(false);stream.getTracks().forEach(t=>t.stop());streamRef.current=null;}
       };
       rec.start();setRecording(true);
@@ -523,8 +649,8 @@ function Composer({centered,draft,setDraft,onSend,busy,attachments,setAttachment
   return <div className={cx("composerDock",centered&&"centered")}>
     {mentionOptions.length>0&&<div className="mentionMenu">{mentionOptions.map((x,i)=><button key={x.type+x.trigger+i} onClick={()=>insertMention(x)}><span className={cx("mentionType",x.type)}>{x.type==="plugin"?<Plug size={14}/>:<CalendarClock size={14}/>}</span><span><b>{x.name}</b><small>{x.type==="plugin"?"Plugin":"Automatizare"} · {x.trigger}</small></span></button>)}</div>}
     <div className="composerCard">
-      {attachments.length>0&&<div className="attachmentTray">{attachments.map((a,i)=><span className={a.type==="unsupported"||a.type==="stored"?"unsupported":""} key={i}><Paperclip size={13}/>{a.name}<button onClick={()=>setAttachments(attachments.filter((_,j)=>j!==i))}><X size={13}/></button></span>)}</div>}
-      <div className="composerLine"><input ref={fileInput} type="file" hidden multiple onChange={filesChosen}/><div className="attachWrap"><button className="composerIcon" onClick={()=>setMenu(!menu)} title="Fișiere și bibliotecă"><Plus size={21}/></button>{menu&&<div className="attachMenu"><button onClick={()=>fileInput.current?.click()}><Upload size={16}/> Încarcă de pe PC</button><button onClick={()=>{setMenu(false);onOpenLibrary()}}><Library size={16}/> Alege din Bibliotecă</button></div>}</div><textarea ref={ta} value={draft} onChange={e=>setDraft(e.target.value)} onPaste={pasteIntoComposer} spellCheck={true} aria-label="Mesaj pentru AI Stoica" placeholder={uploading?"Încarc fișierul…":recording?"Ascult… apasă microfonul pentru oprire":transcribing?"Transcriu vocea…":"Mesaj pentru AI Stoica"} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!mentionOptions.length){e.preventDefault();onSend()}}}/><button className={cx("composerIcon",recording&&"recording")} onClick={mic} title={recording?"Oprește înregistrarea":"Dictare vocală"} disabled={transcribing}><Mic size={20}/></button><button className="sendButton" disabled={busy||recording||transcribing||uploading||(!draft.trim()&&!attachments.some(a=>a.part))} onClick={onSend}><ArrowUp size={20}/></button></div>
+      {attachments.length>0&&<div className="attachmentTray">{attachments.map((a,i)=><span className={a.type==="unsupported"||a.type==="stored"?"unsupported":""} key={i}>{a.type==="audio"?<Volume2 size={13}/>:a.type==="video"?<Play size={13}/>:<Paperclip size={13}/>} {a.name}<button onClick={()=>setAttachments(attachments.filter((_,j)=>j!==i))}><X size={13}/></button></span>)}</div>}
+      <div className="composerLine"><input ref={fileInput} type="file" hidden multiple onChange={filesChosen}/><div className="attachWrap"><button className="composerIcon" onClick={()=>setMenu(!menu)} title="Fișiere și bibliotecă"><Plus size={21}/></button>{menu&&<div className="attachMenu"><button onClick={()=>fileInput.current?.click()}><Upload size={16}/> Încarcă de pe PC</button><button onClick={()=>{setMenu(false);onOpenLibrary()}}><Library size={16}/> Alege din Bibliotecă</button></div>}</div><textarea ref={ta} value={draft} onChange={e=>setDraft(e.target.value)} onPaste={pasteIntoComposer} spellCheck={true} aria-label="Mesaj pentru AI Stoica" placeholder={uploading?"Încarc fișierul…":recording?"Ascult… apasă microfonul pentru oprire":transcribing?"Transcriu vocea…":"Mesaj pentru AI Stoica"} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!mentionOptions.length){e.preventDefault();onSend()}}}/><button className={cx("composerIcon",recording&&"recording")} onClick={mic} title={recording?"Oprește vocalul":"Înregistrează vocal"} disabled={transcribing}><Mic size={20}/></button><button className="sendButton" disabled={busy||recording||transcribing||uploading||(!draft.trim()&&!attachments.some(a=>a.part))} onClick={onSend}><ArrowUp size={20}/></button></div>
     </div><div className="composerHint">{uploading?"Fișierul se salvează în Biblioteca AI Stoica — fără limită software de dimensiune":recording?"Microfon activ — vorbește acum":transcribing?"AI Stoica transcrie înregistrarea…":"AI Stoica poate greși. Verifică informațiile importante."}</div></div>;
 }
 
@@ -546,7 +672,7 @@ function LibraryPanel({onClose,onAttach}) {
   async function attach(item){const a=await libraryItemToAttachment(item);onAttach?.(a);onClose()}
   return <ToolShell title="Bibliotecă" subtitle="Păstrează fișierele tale și refolosește-le în conversații." onClose={onClose}>
     <div className="toolActions"><button className="primary" onClick={()=>input.current?.click()}><Upload size={16}/> Adaugă fișiere</button><input ref={input} type="file" multiple hidden onChange={upload}/><span className="toolNote">Fără limită software de dimensiune. Limita reală este spațiul disponibil pe PC/server și limitele sistemului de fișiere.</span></div>
-    <div className="libraryGrid">{items.length===0?<div className="emptyState"><HardDrive size={30}/>Biblioteca este goală.</div>:items.map(x=><div className="libraryCard" key={x.id}><div className="fileIcon">{x.kind==="image"?<ImageIcon size={22}/>:<FileText size={22}/>}</div><div className="fileMeta"><b>{x.name}</b><span>{formatBytes(x.size)} · {fmtTime(x.createdAt)}</span></div><button className="smallBtn" onClick={()=>attach(x)}>Folosește</button><button className="iconDanger" onClick={()=>remove(x.id)}><Trash2 size={16}/></button></div>)}</div>
+    <div className="libraryGrid">{items.length===0?<div className="emptyState"><HardDrive size={30}/>Biblioteca este goală.</div>:items.map(x=><div className="libraryCard" key={x.id}><div className="fileIcon">{x.kind==="image"?<ImageIcon size={22}/>:x.kind==="audio"?<Volume2 size={22}/>:x.kind==="video"?<Play size={22}/>:<FileText size={22}/>}</div><div className="fileMeta"><b>{x.name}</b><span>{x.kind==="audio"?"Audio":x.kind==="video"?"Video":x.kind==="image"?"Imagine":"Fișier"} · {formatBytes(x.size)} · {fmtTime(x.createdAt)}</span></div><button className="smallBtn" onClick={()=>attach(x)}>Folosește</button><button className="iconDanger" onClick={()=>remove(x.id)}><Trash2 size={16}/></button></div>)}</div>
     {busy&&<div className="toolStatus">Se încarcă fișierul… pentru fișiere mari poate dura.</div>}
   </ToolShell>;
 }
@@ -815,7 +941,7 @@ function PluginsPanel({onClose}) {
 function AdminPanel({onClose}) {
   const permissionLabels={
     chat:"Chat AI",cerebras:"Cerebras",gemini:"Gemini",groq:"Groq",cloudflare:"Cloudflare AI",
-    openrouter:"OpenRouter (poate genera costuri)",image_generation:"Generare imagini",document_generation:"Fișiere: PDF / Word / PowerPoint / Excel / CSV / ZIP / cod",
+    openrouter:"OpenRouter (poate genera costuri)",image_generation:"Generare imagini",video_generation:"Generare videoclipuri",document_generation:"Fișiere: PDF / Word / PowerPoint / Excel / CSV / ZIP / cod",
     file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",
     automations:"Automatizări",plugins:"Pluginuri",github_access:"GitHub",openai:"OpenAI (plătit)",anthropic:"Claude / Anthropic (plătit)"
   };
@@ -997,7 +1123,7 @@ function SettingsModal({onClose,onSaved,user}) {
     </div>
     <div className="settingsPane">
       {tab==="general"&&<><h3>General</h3><div className="toggleRow"><div><b>Pornește AI Stoica cu Windows</b><span>Aplicația pornește automat și poate rămâne în fundal.</span></div><input type="checkbox" checked={!!cfg.startWithWindows} onChange={e=>setCfg({...cfg,startWithWindows:e.target.checked})}/></div><div className="toggleRow"><div><b>Închidere în system tray</b><span>Butonul X ascunde aplicația fără să oprească serviciile.</span></div><input type="checkbox" checked={cfg.closeToTray!==false} onChange={e=>setCfg({...cfg,closeToTray:e.target.checked})}/></div><div className="toggleRow"><div><b>Actualizări automate</b><span>AI Stoica caută versiuni noi la pornire.</span></div><input type="checkbox" checked={cfg.autoUpdate!==false} onChange={e=>setCfg({...cfg,autoUpdate:e.target.checked})}/></div></>}
-      {tab==="ai"&&<><h3>AI & OmniRoute</h3><label>Gateway local AI Stoica<input value={cfg.gatewayUrl||"http://127.0.0.1:8787"} onChange={e=>setCfg({...cfg,gatewayUrl:e.target.value})} placeholder="http://127.0.0.1:8787"/></label><label>AI Stoica Cloud API<input value={cfg.controlApiUrl||""} onChange={e=>setCfg({...cfg,controlApiUrl:e.target.value})} placeholder="https://api.aistoica.ro"/></label><p className="settingsHelp">Control Center, aprobarea conturilor și permisiunile folosesc PostgreSQL-ul central atunci când Cloud API este configurat. Până la activarea domeniului, poți lăsa câmpul gol.</p><label>Base URL OmniRoute<input value={cfg.baseUrl} onChange={e=>setCfg({...cfg,baseUrl:e.target.value})}/></label><label>Cheie API<input type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder={cfg.apiKey?"Cheie salvată — lasă gol pentru a o păstra":"Cheie OmniRoute"}/></label><label>Model / combo implicit<input value={cfg.model} onChange={e=>setCfg({...cfg,model:e.target.value})}/></label><label>Comandă OmniRoute<input value={cfg.omniCommand||"omniroute.cmd"} onChange={e=>setCfg({...cfg,omniCommand:e.target.value})}/></label><div className="toggleRow"><div><b>Pornește OmniRoute automat</b><span>Dacă serviciul cade, AI Stoica încearcă să îl repornească.</span></div><input type="checkbox" checked={!!cfg.autoStartOmniRoute} onChange={e=>setCfg({...cfg,autoStartOmniRoute:e.target.checked})}/></div><div className="statusGrid"><div><span>Gateway local</span><b>{status?.gatewayRunning?"Conectat":"Indisponibil"}</b></div><div><span>OmniRoute</span><b>{status?.omniRunning?"Conectat":"Indisponibil"}</b></div></div></>}
+      {tab==="ai"&&<><h3>AI & OmniRoute</h3><label>Gateway local AI Stoica<input value={cfg.gatewayUrl||"http://127.0.0.1:8787"} onChange={e=>setCfg({...cfg,gatewayUrl:e.target.value})} placeholder="http://127.0.0.1:8787"/></label><label>AI Stoica Cloud API<input value={cfg.controlApiUrl||""} onChange={e=>setCfg({...cfg,controlApiUrl:e.target.value})} placeholder="https://api.aistoica.ro"/></label><p className="settingsHelp">Control Center, aprobarea conturilor și permisiunile folosesc PostgreSQL-ul central atunci când Cloud API este configurat. Până la activarea domeniului, poți lăsa câmpul gol.</p><label>Base URL OmniRoute<input value={cfg.baseUrl} onChange={e=>setCfg({...cfg,baseUrl:e.target.value})}/></label><label>Cheie API<input type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder={cfg.apiKey?"Cheie salvată — lasă gol pentru a o păstra":"Cheie OmniRoute"}/></label><label>Model / combo implicit<input value={cfg.model} onChange={e=>setCfg({...cfg,model:e.target.value})}/></label><label>Model generare imagini <span className="optional">opțional</span><input value={cfg.imageModel||""} onChange={e=>setCfg({...cfg,imageModel:e.target.value})} placeholder="Auto — primul model de imagine disponibil"/></label><label>Model generare video <span className="optional">opțional</span><input value={cfg.videoModel||""} onChange={e=>setCfg({...cfg,videoModel:e.target.value})} placeholder="Auto — model video disponibil"/></label><p className="settingsHelp">Când ceri o poză sau un videoclip, AI Stoica generează fișierul real, îl afișează în chat și îl salvează în Bibliotecă.</p><label>Comandă OmniRoute<input value={cfg.omniCommand||"omniroute.cmd"} onChange={e=>setCfg({...cfg,omniCommand:e.target.value})}/></label><div className="toggleRow"><div><b>Pornește OmniRoute automat</b><span>Dacă serviciul cade, AI Stoica încearcă să îl repornească.</span></div><input type="checkbox" checked={!!cfg.autoStartOmniRoute} onChange={e=>setCfg({...cfg,autoStartOmniRoute:e.target.checked})}/></div><div className="statusGrid"><div><span>Gateway local</span><b>{status?.gatewayRunning?"Conectat":"Indisponibil"}</b></div><div><span>OmniRoute</span><b>{status?.omniRunning?"Conectat":"Indisponibil"}</b></div></div></>}
       {tab==="voice"&&<><h3>Voce și microfon</h3><label>Limba dictării<select value={cfg.speechLanguage||"ro"} onChange={e=>setCfg({...cfg,speechLanguage:e.target.value})}><option value="ro">Română</option><option value="en">English</option><option value="fr">Français</option></select></label><label>Model transcriere<input value={cfg.speechModel||"openai/whisper-1"} onChange={e=>setCfg({...cfg,speechModel:e.target.value})}/></label><button className="secondary testMicBtn" onClick={testMic}><Mic size={16}/> Testează microfonul</button>{micStatus&&<div className="micStatus">{micStatus}</div>}<p className="settingsHelp">La microfon: apeși o dată pentru a începe înregistrarea și încă o dată pentru a o opri. AI Stoica trimite apoi sunetul către transcriere prin OmniRoute.</p></>}
       {tab==="account"&&<><h3>Cont și date</h3><div className="accountSettingsCard"><div className="accountAvatar big">{(user?.name||user?.email||"S")[0].toUpperCase()}</div><div><b>{user?.name||"Cont AI Stoica"}</b><span>{user?.email}</span></div></div><p className="settingsHelp">Conversațiile, memoria, biblioteca, proiectele, pluginurile și automatizările sunt în prezent păstrate local. După mutarea pe AI Stoica Cloud, acestea vor putea fi sincronizate între PC și telefon.</p></>}
     </div></div>
@@ -1143,13 +1269,32 @@ function App() {
       api("/api/memory/capture",{method:"POST",body:JSON.stringify({conversationId:saved.id,userText:messageText(lastUser),assistantText:answer})}).catch(()=>{});
     }catch(e){working={...working,messages:[...messages,{...assistantMessage,content:`Eroare: ${e.message}`,streaming:false}],updatedAt:Date.now()};await saveConversation(working)}finally{setBusy(false)}
   }
+  async function generateMediaAssistant(baseConv,messages,kind,prompt){
+    setBusy(true);
+    try{
+      if(!omni){await window.AIStoica.ensureOmni();await new Promise(r=>setTimeout(r,900))}
+      const endpoint=kind==="video"?"/api/generate/video":"/api/generate/image";
+      const d=await api(endpoint,{method:"POST",body:JSON.stringify({prompt})});
+      const file={...d.data,type:d.data?.kind||kind,kind:d.data?.kind||kind};
+      const assistantMessage={id:uid(),role:"assistant",content:"",attachments:[file],attachmentOnly:true,createdAt:Date.now(),streaming:false};
+      const saved=await saveConversation({...baseConv,messages:[...messages,assistantMessage],updatedAt:Date.now()});
+      api("/api/memory/capture",{method:"POST",body:JSON.stringify({conversationId:saved.id,userText:prompt,assistantText:`${kind==="video"?"Videoclip":"Imagine"} generată: ${file.name}`})}).catch(()=>{});
+    }catch(e){
+      const assistantMessage={id:uid(),role:"assistant",content:`Eroare la generarea ${kind==="video"?"videoclipului":"imaginii"}: ${e.message}`,createdAt:Date.now(),streaming:false};
+      await saveConversation({...baseConv,messages:[...messages,assistantMessage],updatedAt:Date.now()});
+    }finally{setBusy(false)}
+  }
   async function send(){
-    const text=draft.trim(),usable=attachments.filter(a=>a.part);if((!text&&!usable.length)||busy)return;
-    const parts=[...(text?[{type:"text",text}]:[]),...usable.map(a=>a.part)],content=parts.length===1&&parts[0].type==="text"?parts[0].text:parts;
-    const userMsg={id:uid(),role:"user",content,displayText:text||"Fișier atașat",attachments:attachments.map(a=>({name:a.name,type:a.type,libraryId:a.libraryId||null})),createdAt:Date.now()};
+    const text=draft.trim(),usable=attachments.filter(a=>a.part||a.parts?.length);if((!text&&!usable.length)||busy)return;
+    const attachmentParts=usable.flatMap(a=>Array.isArray(a.parts)&&a.parts.length?a.parts:[a.part].filter(Boolean));
+    const parts=[...(text?[{type:"text",text}]:[]),...attachmentParts],content=parts.length===1&&parts[0].type==="text"?parts[0].text:parts;
+    const userMsg={id:uid(),role:"user",content,displayText:text||"Fișier media atașat",attachments:attachments.map(a=>({name:a.name,type:a.type,mime:a.mime||"",size:a.size||0,libraryId:a.libraryId||null,transcript:a.transcript||""})),createdAt:Date.now()};
     let conv=current?{...current}:{title:titleFrom(text||attachments[0]?.name),projectId:selectedProject,assistantId:selectedAssistant,model,messages:[]};
     conv={...conv,title:conv.messages?.length?conv.title:titleFrom(text||attachments[0]?.name),projectId:conv.projectId??selectedProject,assistantId:conv.assistantId??selectedAssistant,model,messages:[...(conv.messages||[]),userMsg],updatedAt:Date.now()};
-    setDraft("");setAttachments([]);const saved=await saveConversation(conv);await streamAssistant(saved,saved.messages);
+    setDraft("");setAttachments([]);const saved=await saveConversation(conv);
+    const mediaIntent=attachments.length===0?requestedMediaGeneration(text):null;
+    if(mediaIntent)await generateMediaAssistant(saved,saved.messages,mediaIntent,text);
+    else await streamAssistant(saved,saved.messages);
   }
   async function regenerate(index){if(busy||!current)return;const msgs=current.messages.slice(0,index),saved=await saveConversation({...current,messages:msgs});await streamAssistant(saved,msgs)}
   async function rate(index,value){if(!current)return;const msgs=current.messages.map((m,i)=>i===index?{...m,rating:m.rating===value?0:value}:m);await saveConversation({...current,messages:msgs})}

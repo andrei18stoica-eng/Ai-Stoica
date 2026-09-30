@@ -28,6 +28,7 @@ const DEFAULT_USER_PERMISSIONS = {
   cloudflare: true,
   openrouter: false,
   image_generation: true,
+  video_generation: false,
   document_generation: true,
   file_upload: true,
   web_search: true,
@@ -202,7 +203,7 @@ app.post("/auth/register", async (req, res, next) => {
       );
       await client.query(
         "INSERT INTO user_permissions(user_id,permissions) VALUES($1,$2::jsonb)",
-        [userId, JSON.stringify(isOwner ? { ...DEFAULT_USER_PERMISSIONS, deep_research:true, automations:true, plugins:true, github_access:true, openai:true, anthropic:true } : DEFAULT_USER_PERMISSIONS)]
+        [userId, JSON.stringify(isOwner ? { ...DEFAULT_USER_PERMISSIONS, video_generation:true, deep_research:true, automations:true, plugins:true, github_access:true, openai:true, anthropic:true } : DEFAULT_USER_PERMISSIONS)]
       );
       await client.query("COMMIT");
     } catch (e) {
@@ -289,7 +290,7 @@ app.get("/api/admin/users", auth, ownerOnly, async (_req, res, next) => {
        LEFT JOIN user_permissions p ON p.user_id=u.id
        ORDER BY u.created_at DESC`
     );
-    res.json({ data: q.rows });
+    res.json({ data: q.rows.map(row=>({...row,permissions:{...DEFAULT_USER_PERMISSIONS,...(row.permissions||{})}})) });
   } catch (e) { next(e); }
 });
 
