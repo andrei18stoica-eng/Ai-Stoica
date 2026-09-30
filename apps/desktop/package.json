@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "private": true,
-  "description": "AI Stoica 0.6.2 - Owner Control Center, Hetzner Cloud auth, plugins and document tools",
+  "description": "AI Stoica 0.6.3 - unified downloadable artifacts, Owner Control Center, Cloud auth and plugins",
   "main": "main.cjs",
   "repository": {
     "type": "git",
@@ -30,7 +30,8 @@
     "@pdf-lib/fontkit": "^1.1.1",
     "docx": "^9.8.0",
     "pdf-lib": "^1.17.1",
-    "pptxgenjs": "^4.0.1"
+    "pptxgenjs": "^4.0.1",
+    "jszip": "^3.10.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
