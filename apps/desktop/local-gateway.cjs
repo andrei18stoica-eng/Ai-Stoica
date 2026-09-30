@@ -839,6 +839,170 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     fs.createReadStream(item.filePath).pipe(res);
   });
 
+  function requireFeaturePermission(req,key,label) {
+    const role=req.cloudUser?.role||req.user?.role||"user";
+    if(role==="owner")return;
+    if(cloudBase()&&req.permissions?.[key]!==true)throw policyFailure(`${label} este dezactivată pentru acest cont.`,403);
+  }
+  function findMediaCandidate(value,kind) {
+    const seen=new Set();
+    function walk(v,key=""){
+      if(v==null)return null;
+      if(typeof v==="string"){
+        const text=v.trim();
+        if(/^data:(image|video)\/[a-z0-9.+-]+;base64,/i.test(text))return {type:"data",value:text};
+        if(/^https?:\/\//i.test(text)){
+          const score=(/url|uri|output|file|image|video|download|result/i.test(key)?2:0)+
+            (kind==="image"&&/\.(png|jpe?g|webp|gif)(?:\?|$)/i.test(text)?2:0)+
+            (kind==="video"&&/\.(mp4|webm|mov|m4v)(?:\?|$)/i.test(text)?2:0);
+          if(score>0)return {type:"url",value:text};
+        }
+        if(kind==="image"&&/^[A-Za-z0-9+/=\r\n]{300,}$/.test(text)&&/b64|base64|image/i.test(key))return {type:"base64",value:text.replace(/\s+/g,"")};
+        return null;
+      }
+      if(typeof v!=="object")return null;
+      if(seen.has(v))return null;seen.add(v);
+      if(kind==="image"&&typeof v.b64_json==="string")return {type:"base64",value:v.b64_json};
+      const preferred=kind==="video"
+        ?["video_url","output_url","download_url","url","uri","video","output","result","data"]
+        :["b64_json","image_url","output_url","url","uri","image","output","result","data"];
+      for(const k of preferred){
+        if(Object.prototype.hasOwnProperty.call(v,k)){const hit=walk(v[k],k);if(hit)return hit;}
+      }
+      if(Array.isArray(v)){for(const x of v){const hit=walk(x,key);if(hit)return hit;}}
+      else {for(const [k,x] of Object.entries(v)){if(preferred.includes(k))continue;const hit=walk(x,k);if(hit)return hit;}}
+      return null;
+    }
+    return walk(value);
+  }
+  function inferMediaMime(bytes,declared,kind){
+    const d=String(declared||"").split(";")[0].trim().toLowerCase();
+    if((kind==="image"&&d.startsWith("image/"))||(kind==="video"&&d.startsWith("video/")))return d;
+    if(bytes?.subarray(0,8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a])))return "image/png";
+    if(bytes?.subarray(0,3).equals(Buffer.from([0xff,0xd8,0xff])))return "image/jpeg";
+    if(bytes?.subarray(0,4).toString("ascii")==="RIFF"&&bytes?.subarray(8,12).toString("ascii")==="WEBP")return "image/webp";
+    if(bytes?.subarray(4,8).toString("ascii")==="ftyp")return "video/mp4";
+    if(bytes?.subarray(0,4).equals(Buffer.from([0x1a,0x45,0xdf,0xa3])))return "video/webm";
+    return kind==="image"?"image/png":"video/mp4";
+  }
+  function mediaExtFromMime(mime,kind){
+    const m=String(mime||"").toLowerCase();
+    if(m.includes("jpeg"))return "jpg";
+    if(m.includes("webp"))return "webp";
+    if(m.includes("gif"))return "gif";
+    if(m.includes("webm"))return "webm";
+    if(m.includes("quicktime"))return "mov";
+    return kind==="image"?"png":"mp4";
+  }
+  async function resolveGeneratedMedia(candidate,kind){
+    if(!candidate)throw new Error(`Furnizorul nu a returnat ${kind==="image"?"o imagine":"un videoclip"} descărcabil.`);
+    if(candidate.type==="base64"){
+      const bytes=Buffer.from(candidate.value,"base64");
+      return {bytes,mime:inferMediaMime(bytes,"",kind)};
+    }
+    if(candidate.type==="data"){
+      const m=candidate.value.match(/^data:([^;]+);base64,(.+)$/s);
+      if(!m)throw new Error("Răspuns media data URL invalid.");
+      const bytes=Buffer.from(m[2],"base64");
+      return {bytes,mime:inferMediaMime(bytes,m[1],kind)};
+    }
+    const r=await fetch(candidate.value,{redirect:"follow",signal:AbortSignal.timeout(kind==="video"?180000:90000)});
+    if(!r.ok)throw new Error(`Descărcarea rezultatului media a eșuat: HTTP ${r.status}`);
+    const bytes=Buffer.from(await r.arrayBuffer());
+    const max=kind==="video"?300*1024*1024:40*1024*1024;
+    if(bytes.length>max)throw new Error(`Rezultatul ${kind==="video"?"video":"imaginii"} depășește limita locală de siguranță.`);
+    return {bytes,mime:inferMediaMime(bytes,r.headers.get("content-type"),kind)};
+  }
+  function saveGeneratedMedia(req,{bytes,mime,kind,prompt,model}){
+    const id=crypto.randomUUID(),ext=mediaExtFromMime(mime,kind);
+    const base=safeGeneratedName((kind==="image"?"Imagine AI Stoica":"Video AI Stoica")+" - "+String(prompt||"").slice(0,55)).replace(/\.[^.]+$/,"");
+    const name=(base||`AI Stoica ${kind}`)+"."+ext,target=path.join(filesDir,id+"."+ext);
+    fs.writeFileSync(target,bytes);
+    const db=store.read(),item={id,userId:req.user.id,name,mime,size:bytes.length,kind,filePath:target,storage:"disk",source:kind==="image"?"ai-image":"ai-video",prompt:String(prompt||"").slice(0,2000),model:String(model||""),createdAt:Date.now()};
+    db.library.push(item);store.write(db);
+    return {id:item.id,name:item.name,mimeType:item.mime,size:item.size,kind:item.kind,source:item.source,model:item.model,createdAt:item.createdAt};
+  }
+  async function discoverImageModel(cfg){
+    if(String(cfg.imageModel||"").trim())return String(cfg.imageModel).trim();
+    try{
+      const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/images/generations`,{headers:cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{},signal:AbortSignal.timeout(5000)});
+      if(r.ok){
+        const data=await r.json(),rows=Array.isArray(data)?data:(Array.isArray(data?.data)?data.data:[]);
+        const id=rows.map(x=>typeof x==="string"?x:x?.id).find(Boolean);
+        if(id)return String(id);
+      }
+    }catch{}
+    return "openai/gpt-image-2";
+  }
+  async function discoverVideoModel(cfg){
+    if(String(cfg.videoModel||"").trim())return String(cfg.videoModel).trim();
+    try{
+      const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/models`,{headers:cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{},signal:AbortSignal.timeout(5000)});
+      if(r.ok){
+        const data=await r.json(),rows=Array.isArray(data)?data:(Array.isArray(data?.data)?data.data:[]);
+        const row=rows.find(x=>{
+          const id=String(typeof x==="string"?x:x?.id||"");
+          const meta=JSON.stringify(x||{});
+          return /video|runway|veo|kling|sora|grok.*video|seedance|hailuo|wan/i.test(id+" "+meta);
+        });
+        if(row)return String(typeof row==="string"?row:row.id);
+      }
+    }catch{}
+    return "runway/gen-3";
+  }
+
+  app.post("/api/generate/image", auth, async (req,res) => {
+    try{
+      requireFeaturePermission(req,"image_generation","Generarea de imagini");
+      const prompt=String(req.body?.prompt||"").trim();
+      if(!prompt)return res.status(400).json({error:"Descrierea imaginii lipsește."});
+      const cfg=getOmniConfig(),model=String(req.body?.model||await discoverImageModel(cfg)).trim();
+      await requireModelAccess(req.cloudToken,model);
+      const upstream=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/images/generations`,{
+        method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},
+        body:JSON.stringify({model,prompt,size:String(req.body?.size||"1024x1024"),n:1,response_format:"b64_json"}),
+        signal:AbortSignal.timeout(180000)
+      });
+      const ctype=upstream.headers.get("content-type")||"";
+      if(!upstream.ok)return res.status(upstream.status).json({error:`Generarea imaginii a eșuat: ${(await upstream.text()).slice(0,1200)}`});
+      let resolved;
+      if(ctype.startsWith("image/")){
+        const bytes=Buffer.from(await upstream.arrayBuffer());resolved={bytes,mime:inferMediaMime(bytes,ctype,"image")};
+      }else{
+        const body=await upstream.json(),candidate=findMediaCandidate(body,"image");
+        resolved=await resolveGeneratedMedia(candidate,"image");
+      }
+      if(!resolved.bytes.length)throw new Error("Imaginea generată este goală.");
+      res.json({data:saveGeneratedMedia(req,{...resolved,kind:"image",prompt,model})});
+    }catch(e){res.status(e.status||502).json({error:e.message})}
+  });
+
+  app.post("/api/generate/video", auth, async (req,res) => {
+    try{
+      requireFeaturePermission(req,"video_generation","Generarea de videoclipuri");
+      const prompt=String(req.body?.prompt||"").trim();
+      if(!prompt)return res.status(400).json({error:"Descrierea videoclipului lipsește."});
+      const cfg=getOmniConfig(),model=String(req.body?.model||await discoverVideoModel(cfg)).trim();
+      await requireModelAccess(req.cloudToken,model);
+      const upstream=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/videos/generations`,{
+        method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},
+        body:JSON.stringify({model,prompt,duration:Math.max(1,Math.min(10,Number(req.body?.duration||6))),aspect_ratio:String(req.body?.aspectRatio||"16:9")}),
+        signal:AbortSignal.timeout(360000)
+      });
+      const ctype=upstream.headers.get("content-type")||"";
+      if(!upstream.ok)return res.status(upstream.status).json({error:`Generarea video a eșuat: ${(await upstream.text()).slice(0,1200)}`});
+      let resolved;
+      if(ctype.startsWith("video/")){
+        const bytes=Buffer.from(await upstream.arrayBuffer());resolved={bytes,mime:inferMediaMime(bytes,ctype,"video")};
+      }else{
+        const body=await upstream.json(),candidate=findMediaCandidate(body,"video");
+        resolved=await resolveGeneratedMedia(candidate,"video");
+      }
+      if(!resolved.bytes.length)throw new Error("Videoclipul generat este gol.");
+      res.json({data:saveGeneratedMedia(req,{...resolved,kind:"video",prompt,model})});
+    }catch(e){res.status(e.status||502).json({error:e.message})}
+  });
+
   app.get("/api/plugins", auth, (req,res) => {const db=store.read();res.json({data:db.plugins.filter(x=>x.userId===req.user.id).map(({apiKey,...x})=>({...x,hasKey:!!apiKey}))});});
   app.post("/api/plugins", auth, (req,res) => {
     const name=String(req.body?.name||"").trim(),url=String(req.body?.url||"").trim();if(!name||!url)return res.status(400).json({error:"Numele și URL-ul sunt obligatorii."});
