@@ -776,7 +776,11 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     out.on("finish",()=>{
       finished=true;
       const db=store.read();
-      const kind=mime.startsWith("image/")?"image":mime.startsWith("audio/")?"audio":mime.startsWith("video/")?"video":mime.startsWith("text/")?"text":"file";
+      const lowerName=String(name||"").toLowerCase();
+      const kind=mime.startsWith("image/")?"image":
+        (mime.startsWith("audio/")||/\.(mp3|m4a|aac|wav|ogg|oga|flac|opus|weba)$/i.test(lowerName))?"audio":
+        (mime.startsWith("video/")||/\.(mp4|mov|m4v|webm|avi|mkv|mpeg|mpg)$/i.test(lowerName))?"video":
+        (mime.startsWith("text/")||/\.(txt|md|csv|json|js|ts|py|html|css|xml|yaml|yml)$/i.test(lowerName))?"text":"file";
       const item={id,userId:req.user.id,name,mime,size:bytes||declared,kind,filePath:target,storage:"disk",createdAt:Date.now()};
       db.library.push(item);store.write(db);
       res.json({data:{...item,filePath:undefined}});
