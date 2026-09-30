@@ -776,7 +776,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     out.on("finish",()=>{
       finished=true;
       const db=store.read();
-      const kind=mime.startsWith("image/")?"image":mime.startsWith("text/")?"text":"file";
+      const kind=mime.startsWith("image/")?"image":mime.startsWith("audio/")?"audio":mime.startsWith("video/")?"video":mime.startsWith("text/")?"text":"file";
       const item={id,userId:req.user.id,name,mime,size:bytes||declared,kind,filePath:target,storage:"disk",createdAt:Date.now()};
       db.library.push(item);store.write(db);
       res.json({data:{...item,filePath:undefined}});
@@ -880,58 +880,92 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
   app.delete("/api/automations/:id", auth, (req,res) => {const db=store.read();db.automations=db.automations.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));store.write(db);res.json({ok:true});});
 
-  app.post("/api/transcribe", auth, async (req, res) => {
-    const cfg = getOmniConfig();
-    const raw = String(req.body?.audio || "");
-    const match = raw.match(/^data:([^;]+);base64,(.+)$/s);
-    if (!match) return res.status(400).json({ error: "Înregistrarea audio nu este validă." });
-    const mime = String(req.body?.mime || match[1] || "audio/webm");
-    const bytes = Buffer.from(match[2], "base64");
-    if (!bytes.length) return res.status(400).json({ error: "Înregistrarea audio este goală." });
-    if (bytes.length > 20 * 1024 * 1024) return res.status(413).json({ error: "Înregistrarea audio este prea mare." });
-
-    const ext = mime.includes("ogg") ? "ogg" : mime.includes("wav") ? "wav" : mime.includes("mp4") || mime.includes("m4a") ? "m4a" : "webm";
-    const candidates = [...new Set([
-      String(req.body?.model || "").trim(),
-      String(cfg.speechModel || "").trim(),
+  function mediaExtension(mime,name="") {
+    const fromName=path.extname(String(name||"")).replace(/^\./,"").toLowerCase();
+    if(fromName&&/^[a-z0-9]{1,8}$/.test(fromName))return fromName;
+    const m=String(mime||"").toLowerCase();
+    if(m.includes("mpeg"))return "mp3";
+    if(m.includes("ogg"))return "ogg";
+    if(m.includes("wav"))return "wav";
+    if(m.includes("webm"))return "webm";
+    if(m.includes("mp4"))return m.startsWith("video/")?"mp4":"m4a";
+    if(m.includes("quicktime"))return "mov";
+    if(m.includes("aac"))return "aac";
+    if(m.includes("flac"))return "flac";
+    return "webm";
+  }
+  async function transcribeMedia(req,{bytes,mime,name,language,model}) {
+    const cfg=getOmniConfig();
+    if(!bytes?.length)throw policyFailure("Fișierul audio/video este gol.",400);
+    if(bytes.length>25*1024*1024)throw policyFailure("Transcrierea automată acceptă maximum 25 MB per fișier. Fișierul rămâne salvat în Bibliotecă.",413);
+    const candidates=[...new Set([
+      String(model||"").trim(),
+      String(cfg.speechModel||"").trim(),
       "openai/whisper-1",
       "groq/whisper-large-v3-turbo",
       "deepgram/nova-3"
     ].filter(Boolean))];
     let permittedCandidates=candidates;
     if(cloudBase()){
+      const policy=await cloudModelPolicy(req.cloudToken,candidates);
+      const allowed=new Set(policy.data.filter(x=>x.allowed).map(x=>String(x.model)));
+      permittedCandidates=candidates.filter(x=>allowed.has(String(x)));
+      if(!permittedCandidates.length)throw policyFailure("Contul nu are acces la niciun model de transcriere disponibil.",403);
+    }
+    const errors=[];
+    const ext=mediaExtension(mime,name);
+    for(const candidate of permittedCandidates){
       try{
-        const policy=await cloudModelPolicy(req.cloudToken,candidates);
-        const allowed=new Set(policy.data.filter(x=>x.allowed).map(x=>String(x.model)));
-        permittedCandidates=candidates.filter(x=>allowed.has(String(x)));
-      }catch(e){return res.status(e.status||503).json({error:e.message})}
-      if(!permittedCandidates.length)return res.status(403).json({error:"Contul nu are acces la niciun model de transcriere disponibil."});
-    }
-    const errors = [];
-    for (const model of permittedCandidates) {
-      try {
-        const form = new FormData();
-        form.append("file", new Blob([bytes], { type: mime }), `recording.${ext}`);
-        form.append("model", model);
-        const language = String(req.body?.language || cfg.speechLanguage || "ro").trim();
-        if (language) form.append("language", language);
-        const r = await fetch(`${String(cfg.baseUrl).replace(/\/+$/, "")}/audio/transcriptions`, {
-          method: "POST",
-          headers: cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {},
-          body: form,
-          signal: AbortSignal.timeout(45000)
+        const form=new FormData();
+        form.append("file",new Blob([bytes],{type:mime||"application/octet-stream"}),String(name||`media.${ext}`));
+        form.append("model",candidate);
+        const lang=String(language||cfg.speechLanguage||"ro").trim();
+        if(lang)form.append("language",lang);
+        const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/audio/transcriptions`,{
+          method:"POST",
+          headers:cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{},
+          body:form,
+          signal:AbortSignal.timeout(60000)
         });
-        const body = await r.text();
-        if (!r.ok) { errors.push(`${model}: HTTP ${r.status}`); continue; }
-        let data; try { data = JSON.parse(body); } catch { data = { text: body }; }
-        const text = String(data?.text || data?.transcript || "").trim();
-        if (text) return res.json({ text, model });
-        errors.push(`${model}: răspuns fără text`);
-      } catch (e) {
-        errors.push(`${model}: ${e.message}`);
-      }
+        const body=await r.text();
+        if(!r.ok){errors.push(`${candidate}: HTTP ${r.status}`);continue;}
+        let data;try{data=JSON.parse(body)}catch{data={text:body}}
+        const text=String(data?.text||data?.transcript||"").trim();
+        if(text)return {text,model:candidate};
+        errors.push(`${candidate}: răspuns fără text`);
+      }catch(e){errors.push(`${candidate}: ${e.message}`)}
     }
-    res.status(502).json({ error: `Nu am putut transcrie vocea prin OmniRoute. Verifică modelul de voce din Setări. ${errors.join(" | ")}` });
+    throw policyFailure(`Nu am putut transcrie fișierul prin OmniRoute. ${errors.join(" | ")}`,502);
+  }
+
+  app.post("/api/transcribe", auth, async (req,res) => {
+    try{
+      const raw=String(req.body?.audio||"");
+      const match=raw.match(/^data:([^;]+);base64,(.+)$/s);
+      if(!match)return res.status(400).json({error:"Înregistrarea audio nu este validă."});
+      const mime=String(req.body?.mime||match[1]||"audio/webm");
+      const bytes=Buffer.from(match[2],"base64");
+      const result=await transcribeMedia(req,{bytes,mime,name:`recording.${mediaExtension(mime)}`,language:req.body?.language,model:req.body?.model});
+      res.json(result);
+    }catch(e){res.status(e.status||502).json({error:e.message})}
+  });
+
+  app.post("/api/library/:id/transcribe", auth, async (req,res) => {
+    try{
+      const db=store.read(),item=db.library.find(x=>x.id===req.params.id&&x.userId===req.user.id);
+      if(!item)return res.status(404).json({error:"Fișierul nu a fost găsit."});
+      const isMedia=item.kind==="audio"||item.kind==="video"||String(item.mime||"").startsWith("audio/")||String(item.mime||"").startsWith("video/");
+      if(!isMedia)return res.status(400).json({error:"Fișierul nu este audio sau video."});
+      let bytes;
+      if(item.filePath&&fs.existsSync(item.filePath))bytes=fs.readFileSync(item.filePath);
+      else if(item.dataUrl){
+        const m=String(item.dataUrl).match(/^data:([^;]+);base64,(.+)$/s);
+        if(m)bytes=Buffer.from(m[2],"base64");
+      }
+      if(!bytes)return res.status(404).json({error:"Conținutul media nu mai este disponibil."});
+      const result=await transcribeMedia(req,{bytes,mime:item.mime,name:item.name,language:req.body?.language,model:req.body?.model});
+      res.json({...result,fileId:item.id,name:item.name});
+    }catch(e){res.status(e.status||502).json({error:e.message})}
   });
 
   async function prepareMessages(rawMessages, assistantId, userId) {
