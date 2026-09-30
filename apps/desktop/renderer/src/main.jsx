@@ -815,7 +815,7 @@ function PluginsPanel({onClose}) {
 function AdminPanel({onClose}) {
   const permissionLabels={
     chat:"Chat AI",cerebras:"Cerebras",gemini:"Gemini",groq:"Groq",cloudflare:"Cloudflare AI",
-    openrouter:"OpenRouter",image_generation:"Generare imagini",document_generation:"Fișiere: PDF / Word / PowerPoint / Excel / CSV / ZIP / cod",
+    openrouter:"OpenRouter (poate genera costuri)",image_generation:"Generare imagini",document_generation:"Fișiere: PDF / Word / PowerPoint / Excel / CSV / ZIP / cod",
     file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",
     automations:"Automatizări",plugins:"Pluginuri",github_access:"GitHub",openai:"OpenAI (plătit)",anthropic:"Claude / Anthropic (plătit)"
   };
