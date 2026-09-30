@@ -37,5 +37,8 @@ expect(!allowed(ctx({role:"owner",paidEnabled:false}),"openai/gpt-5"),"Global pa
 expect(allowed(ctx({role:"owner",paidEnabled:false}),"mystery-model"),"Owner may use unknown non-classified models");
 expect(!allowed(ctx({permissions:{chat:false}}),"groq/llama-3.3-70b-versatile"),"Chat permission must be enforced");
 expect(deniedReason(ctx(),"Ai principal").length>0,"Denied decision should explain the reason");
+const disabledCtx=ctx({permissions:{openai:true,anthropic:true}});
+disabledCtx.combinations=[...combos,{id:"disabled-paid",name:"Disabled Paid",providers:["openai"],paid_required:true,enabled:false}];
+expect(!allowed(disabledCtx,"disabled-paid"),"Disabled combination must stay blocked even when provider permission exists");
 
 console.log("AI_POLICY_TESTS_PASSED");
