@@ -39,7 +39,7 @@ function isManagedPaidAlias(model) {
 function comboForModel(combinations, model) {
   const n = normalizeKey(model);
   return (Array.isArray(combinations) ? combinations : []).find((combo) => {
-    if (!combo || combo.enabled === false) return false;
+    if (!combo) return false;
     return normalizeKey(combo.id) === n || normalizeKey(combo.name) === n;
   }) || null;
 }
