@@ -958,11 +958,20 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       if(!prompt)return res.status(400).json({error:"Descrierea imaginii lipsește."});
       const cfg=getOmniConfig(),model=String(req.body?.model||await discoverImageModel(cfg)).trim();
       await requireModelAccess(req.cloudToken,model);
-      const upstream=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/images/generations`,{
-        method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},
+      const imageUrl=`${String(cfg.baseUrl).replace(/\/+$/,"")}/images/generations`;
+      const imageHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})};
+      let upstream=await fetch(imageUrl,{
+        method:"POST",headers:imageHeaders,
         body:JSON.stringify({model,prompt,size:String(req.body?.size||"1024x1024"),n:1,response_format:"b64_json"}),
         signal:AbortSignal.timeout(180000)
       });
+      if(!upstream.ok&&[400,422].includes(upstream.status)){
+        upstream=await fetch(imageUrl,{
+          method:"POST",headers:imageHeaders,
+          body:JSON.stringify({model,prompt,size:String(req.body?.size||"1024x1024"),n:1}),
+          signal:AbortSignal.timeout(180000)
+        });
+      }
       const ctype=upstream.headers.get("content-type")||"";
       if(!upstream.ok)return res.status(upstream.status).json({error:`Generarea imaginii a eșuat: ${(await upstream.text()).slice(0,1200)}`});
       let resolved;
@@ -984,11 +993,19 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       if(!prompt)return res.status(400).json({error:"Descrierea videoclipului lipsește."});
       const cfg=getOmniConfig(),model=String(req.body?.model||await discoverVideoModel(cfg)).trim();
       await requireModelAccess(req.cloudToken,model);
-      const upstream=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/videos/generations`,{
-        method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},
+      const videoUrl=`${String(cfg.baseUrl).replace(/\/+$/,"")}/videos/generations`;
+      const videoHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})};
+      let upstream=await fetch(videoUrl,{
+        method:"POST",headers:videoHeaders,
         body:JSON.stringify({model,prompt,duration:Math.max(1,Math.min(10,Number(req.body?.duration||6))),aspect_ratio:String(req.body?.aspectRatio||"16:9")}),
         signal:AbortSignal.timeout(360000)
       });
+      if(!upstream.ok&&[400,422].includes(upstream.status)){
+        upstream=await fetch(videoUrl,{
+          method:"POST",headers:videoHeaders,body:JSON.stringify({model,prompt}),
+          signal:AbortSignal.timeout(360000)
+        });
+      }
       const ctype=upstream.headers.get("content-type")||"";
       if(!upstream.ok)return res.status(upstream.status).json({error:`Generarea video a eșuat: ${(await upstream.text()).slice(0,1200)}`});
       let resolved;
