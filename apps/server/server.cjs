@@ -290,7 +290,7 @@ app.get("/api/admin/users", auth, ownerOnly, async (_req, res, next) => {
        LEFT JOIN user_permissions p ON p.user_id=u.id
        ORDER BY u.created_at DESC`
     );
-    res.json({ data: q.rows });
+    res.json({ data: q.rows.map(row=>({...row,permissions:{...DEFAULT_USER_PERMISSIONS,...(row.permissions||{})}})) });
   } catch (e) { next(e); }
 });
 
