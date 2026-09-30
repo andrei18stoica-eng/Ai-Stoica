@@ -350,3 +350,17 @@
   .adminPermissions{grid-template-columns:1fr}
   .adminAuditList>div{grid-template-columns:1fr}
 }
+
+
+/* v0.6.3 — unified downloadable artifacts */
+.generatedFiles{display:grid;gap:9px;margin:4px 0 8px;max-width:610px}
+.generatedDownload{width:100%;display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;text-align:left;border:1px solid #2b3a4e;background:#101722;color:#dce6f3;border-radius:13px;padding:10px 12px;cursor:pointer;transition:.15s ease}
+.generatedDownload:hover{background:#151f2c;border-color:#3b526e;transform:translateY(-1px)}
+.generatedFileIcon{width:38px;height:38px;border-radius:10px;background:#13243a;display:grid;place-items:center;color:#5aa8ff}
+.generatedFileMeta{min-width:0}
+.generatedFileMeta b,.generatedFileMeta small{display:block}
+.generatedFileMeta b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.generatedFileMeta small{font-size:10px;color:#7d8da2;margin-top:3px}
+.generatedDownloadAction{display:flex;align-items:center;gap:6px;color:#78b8ff;font-size:12px;font-weight:700}
+.generatedDownloadAction em{font-style:normal}
+@media(max-width:560px){.generatedDownloadAction em{display:none}.generatedDownload{grid-template-columns:38px 1fr auto}}
