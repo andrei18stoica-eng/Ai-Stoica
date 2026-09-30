@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "private": true,
-  "description": "AI Stoica 0.6.3 - unified downloadable artifacts, Owner Control Center, Cloud auth and plugins",
+  "description": "AI Stoica 0.6.4 - enforced AI permissions, downloadable artifacts, Owner Control Center and Cloud auth",
   "main": "main.cjs",
   "repository": {
     "type": "git",
