@@ -378,3 +378,16 @@
 .messageMedia small{font-size:9px;color:#7f91a7}
 .attachmentTray span{max-width:290px}
 .attachmentTray span>svg{flex:0 0 auto}
+
+
+/* v0.6.5 — generated image/video results */
+.generatedMedia{max-width:680px;border:1px solid #2b3a4e;background:#0d141e;border-radius:14px;overflow:hidden}
+.generatedMedia img,.generatedMedia video{display:block;width:100%;max-height:560px;object-fit:contain;background:#05080c}
+.generatedMedia audio{display:block;width:100%;padding:12px;box-sizing:border-box}
+.generatedMediaBar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:#101824}
+.generatedMediaBar>span{min-width:0}
+.generatedMediaBar b,.generatedMediaBar small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.generatedMediaBar b{font-size:12px;color:#e8eef7}
+.generatedMediaBar small{font-size:9px;color:#7b8ca1;margin-top:3px}
+.generatedMediaBar button{border:1px solid #31516f;background:#14243a;color:#8ec4ff;border-radius:9px;padding:8px 10px;display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:700;font-size:11px}
+.generatedMediaBar button:hover{background:#18304e}
