@@ -36,6 +36,10 @@ jobs:
           node --check preload.cjs
           node --check local-gateway.cjs
 
+      - name: Testeaza generarea de fisiere
+        working-directory: apps/desktop
+        run: node scripts/test-document-export.cjs
+
       - name: Construieste AI Stoica Windows
         working-directory: apps/desktop
         run: npm run build
@@ -43,7 +47,7 @@ jobs:
       - name: Creeaza pachetul ZIP complet
         shell: pwsh
         run: |
-          $version = "0.6.2"
+          $version = "0.6.3"
           $releaseDir = "apps/desktop/release"
           $installer = Join-Path $releaseDir "AI_Stoica_Setup_${version}_x64.exe"
           $portable = Join-Path $releaseDir "win-unpacked"
@@ -64,16 +68,16 @@ jobs:
           Copy-Item $installer -Destination $packageDir
           Copy-Item "$portable\*" -Destination (Join-Path $packageDir "Portable") -Recurse -Force
 
-          "AI STOICA 0.6.2 - WINDOWS" | Out-File -FilePath (Join-Path $packageDir "README_INSTALLARE.txt") -Encoding utf8
+          "AI STOICA 0.6.3 - WINDOWS" | Out-File -FilePath (Join-Path $packageDir "README_INSTALLARE.txt") -Encoding utf8
           "" | Out-File -FilePath (Join-Path $packageDir "README_INSTALLARE.txt") -Append -Encoding utf8
-          "INSTALARE: ruleaza AI_Stoica_Setup_0.6.2_x64.exe." | Out-File -FilePath (Join-Path $packageDir "README_INSTALLARE.txt") -Append -Encoding utf8
+          "INSTALARE: ruleaza AI_Stoica_Setup_0.6.3_x64.exe." | Out-File -FilePath (Join-Path $packageDir "README_INSTALLARE.txt") -Append -Encoding utf8
           "PORTABIL: intra in folderul Portable si ruleaza AI Stoica.exe." | Out-File -FilePath (Join-Path $packageDir "README_INSTALLARE.txt") -Append -Encoding utf8
 
           $installerHash = (Get-FileHash $installer -Algorithm SHA256).Hash
           $portableExe = Join-Path $packageDir "Portable\AI Stoica.exe"
           $portableHash = if (Test-Path $portableExe) { (Get-FileHash $portableExe -Algorithm SHA256).Hash } else { "N/A" }
           "SHA256" | Out-File -FilePath (Join-Path $packageDir "SHA256SUMS.txt") -Encoding utf8
-          "AI_Stoica_Setup_0.6.2_x64.exe  $installerHash" | Out-File -FilePath (Join-Path $packageDir "SHA256SUMS.txt") -Append -Encoding utf8
+          "AI_Stoica_Setup_0.6.3_x64.exe  $installerHash" | Out-File -FilePath (Join-Path $packageDir "SHA256SUMS.txt") -Append -Encoding utf8
           "Portable\AI Stoica.exe        $portableHash" | Out-File -FilePath (Join-Path $packageDir "SHA256SUMS.txt") -Append -Encoding utf8
 
           if (Test-Path $zip) { Remove-Item $zip -Force }
@@ -85,28 +89,28 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v0.6.2"
-          $zip = "AI_Stoica_Windows_0.6.2_COMPLET.zip"
+          $tag = "v0.6.3"
+          $zip = "AI_Stoica_Windows_0.6.3_COMPLET.zip"
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $zip --clobber
           } else {
-            gh release create $tag $zip --title "AI Stoica 0.6.2" --notes "AI Stoica principal pentru Windows."
+            gh release create $tag $zip --title "AI Stoica 0.6.3" --notes "AI Stoica principal pentru Windows."
           }
 
       - name: Incarca ZIP ca Artifact
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: AI-Stoica-Windows-0.6.2-COMPLET
-          path: AI_Stoica_Windows_0.6.2_COMPLET.zip
+          name: AI-Stoica-Windows-0.6.3-COMPLET
+          path: AI_Stoica_Windows_0.6.3_COMPLET.zip
           if-no-files-found: error
           retention-days: 7
 
       - name: Link descarcare
         shell: pwsh
         run: |
-          $url = "https://github.com/andrei18stoica-eng/Ai-Stoica/releases/download/v0.6.2/AI_Stoica_Windows_0.6.2_COMPLET.zip"
+          $url = "https://github.com/andrei18stoica-eng/Ai-Stoica/releases/download/v0.6.3/AI_Stoica_Windows_0.6.3_COMPLET.zip"
           "# AI Stoica Windows ZIP complet este gata" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
           "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           "## [DESCARCA ZIP COMPLET]($url)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
