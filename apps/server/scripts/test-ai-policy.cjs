@@ -9,7 +9,7 @@ const combos=[
   {id:"gpt-claude-gemini",name:"GPT + Claude + Gemini",providers:["openai","anthropic","gemini"],paid_required:true,enabled:true}
 ];
 const defaults={
-  chat:true,cerebras:true,gemini:true,groq:true,cloudflare:true,openrouter:true,
+  chat:true,cerebras:true,gemini:true,groq:true,cloudflare:true,openrouter:false,
   openai:false,anthropic:false
 };
 function ctx({role="user",paidEnabled=true,permissions={}}={}) {
@@ -25,7 +25,7 @@ expect(!allowed(ctx(),"anthropic/claude-sonnet"),"Claude must be blocked by defa
 expect(!allowed(ctx(),"GPT + Claude"),"Paid combination must be blocked by default");
 expect(!allowed(ctx(),"Ai principal"),"Ai principal managed route must be blocked without paid permissions");
 expect(!allowed(ctx(),"AI Stoica"),"AI Stoica managed route must be blocked without paid permissions");
-expect(!allowed(ctx(),"mystery-model"),"Unknown model must fail closed for normal users");
+expect(!allowed(ctx(),"mystery-model"),"Unknown model must fail closed for normal users");\nexpect(!allowed(ctx(),"openrouter/auto"),"OpenRouter auto must be blocked by default because it can incur costs");\nexpect(allowed(ctx({permissions:{openrouter:true}}),"openrouter/meta-llama/llama-3.3"),"OpenRouter requires explicit permission when paid AI is enabled");
 
 expect(allowed(ctx({permissions:{openai:true}}),"openai/gpt-5"),"Explicit OpenAI permission should allow GPT when paid AI is on");
 expect(!allowed(ctx({permissions:{openai:true}}),"Ai principal"),"Ai principal must still require Claude permission");
