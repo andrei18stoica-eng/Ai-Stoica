@@ -986,8 +986,17 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   }
   async function discoverVideoModel(cfg){
     if(String(cfg.videoModel||"").trim())return String(cfg.videoModel).trim();
+    const base=String(cfg.baseUrl).replace(/\/+$/,""),headers=cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{};
     try{
-      const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/models`,{headers:cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{},signal:AbortSignal.timeout(5000)});
+      const r=await fetch(`${base}/videos/generations`,{headers,signal:AbortSignal.timeout(5000)});
+      if(r.ok){
+        const data=await r.json(),rows=Array.isArray(data)?data:(Array.isArray(data?.data)?data.data:[]);
+        const id=rows.map(x=>typeof x==="string"?x:x?.id).find(Boolean);
+        if(id)return String(id);
+      }
+    }catch{}
+    try{
+      const r=await fetch(`${base}/models`,{headers,signal:AbortSignal.timeout(5000)});
       if(r.ok){
         const data=await r.json(),rows=Array.isArray(data)?data:(Array.isArray(data?.data)?data.data:[]);
         const row=rows.find(x=>{
