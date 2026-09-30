@@ -28,7 +28,11 @@ async function main(){
     if(req.url==="/v1/videos/generations"&&req.method==="POST"){
       await readBody(req);
       res.setHeader("content-type","application/json");
-      return res.end(JSON.stringify({data:[{url:`http://127.0.0.1:${omni.address().port}/media/test.mp4`}]}));
+      return res.end(JSON.stringify({id:"job-1",status:"queued"}));
+    }
+    if(req.url==="/v1/videos/job-1"&&req.method==="GET"){
+      res.setHeader("content-type","application/json");
+      return res.end(JSON.stringify({id:"job-1",status:"completed",video:{url:`http://127.0.0.1:${omni.address().port}/media/test.mp4`}}));
     }
     if(req.url==="/media/test.mp4"){
       res.setHeader("content-type","video/mp4");
