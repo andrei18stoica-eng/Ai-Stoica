@@ -190,7 +190,7 @@ function standaloneExportRequest(value){
 }
 function requestedMediaGeneration(value){
   const t=normalizeDocumentIntent(value).trim();
-  if(!/(creeaz|creaz|genereaz|fa-mi|fami|realizeaz|produce|make|generate|create)/.test(t))return null;
+  if(!/(cree|crea|gener|fa-mi|fami|realiz|produc|make|generate|create)/.test(t))return null;
   if(/\b(video|videoclip|filmule|mp4|clip video|film)\b/.test(t))return "video";
   if(/\b(poza|fotografie|imagine|image|picture|png|jpe?g)\b/.test(t))return "image";
   return null;
