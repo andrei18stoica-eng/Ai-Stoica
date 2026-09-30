@@ -7,7 +7,7 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const rateLimit = require("express-rate-limit");
 const { Pool } = require("pg");
-const { evaluateModelAccess, providerAccess } = require("./ai-policy.cjs");
+const { PAID_PROVIDERS, evaluateModelAccess, providerAccess } = require("./ai-policy.cjs");
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -26,7 +26,7 @@ const DEFAULT_USER_PERMISSIONS = {
   gemini: true,
   groq: true,
   cloudflare: true,
-  openrouter: true,
+  openrouter: false,
   image_generation: true,
   document_generation: true,
   file_upload: true,
@@ -66,6 +66,20 @@ async function migrate() {
     "UPDATE users SET role='owner', status='active', approved_at=COALESCE(approved_at,NOW()) WHERE lower(email)=lower($1)",
     [OWNER_EMAIL]
   );
+  const securityFlag = await pool.query("SELECT value FROM system_settings WHERE key='model_policy_v2_applied'");
+  if (securityFlag.rows[0]?.value !== true) {
+    await pool.query(
+      `UPDATE user_permissions p
+       SET permissions=jsonb_set(COALESCE(p.permissions,'{}'::jsonb),'{openrouter}','false'::jsonb,true), updated_at=NOW()
+       FROM users u
+       WHERE p.user_id=u.id AND u.role<>'owner'`
+    );
+    await pool.query(
+      `INSERT INTO system_settings(key,value,updated_at)
+       VALUES('model_policy_v2_applied','true'::jsonb,NOW())
+       ON CONFLICT(key) DO UPDATE SET value='true'::jsonb,updated_at=NOW()`
+    );
+  }
 }
 
 async function audit(actorUserId, action, targetUserId = null, details = {}) {
@@ -439,7 +453,7 @@ app.get("/api/ai/catalog", auth, async (req, res, next) => {
     const providerIds = ["cerebras","gemini","groq","cloudflare","openrouter","openai","anthropic"];
     const providers = providerIds.map(id => ({
       id,
-      tier: ["openai","anthropic"].includes(id) ? "paid" : "free",
+      tier: PAID_PROVIDERS.has(id) ? "paid" : "free",
       enabled: providerAccess(context,id).allowed
     }));
     const combinations = context.combinations
