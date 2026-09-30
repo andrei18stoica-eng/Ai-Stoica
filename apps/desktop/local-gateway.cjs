@@ -11,6 +11,7 @@ const fontkitModule = require("@pdf-lib/fontkit");
 const fontkit = fontkitModule.default || fontkitModule;
 const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = require("docx");
 const PptxGenJS = require("pptxgenjs");
+const JSZip = require("jszip");
 
 function createStore(dataDir) {
   const file = path.join(dataDir, "ai-stoica-data.json");
@@ -287,6 +288,183 @@ async function createPptxBytes(title, content) {
   }
   const out = await pptx.write({ outputType: "arraybuffer" });
   return Buffer.from(out);
+}
+
+function xmlEscape(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;").replace(/'/g,"&apos;");
+}
+function stripOuterFence(content) {
+  const text=String(content||"").trim();
+  const m=text.match(/^\`\`\`[^\n]*\n([\s\S]*?)\n?\`\`\`$/);
+  return m ? m[1] : text;
+}
+function markdownTableRows(content) {
+  const text=String(content||"").replace(/\r/g,"").trim();
+  const raw=stripOuterFence(text);
+  try {
+    const parsed=JSON.parse(raw);
+    if(Array.isArray(parsed) && parsed.length){
+      if(parsed.every(x=>x && typeof x==="object" && !Array.isArray(x))){
+        const keys=[...new Set(parsed.flatMap(x=>Object.keys(x)))];
+        return [keys,...parsed.map(x=>keys.map(k=>x[k]??""))];
+      }
+      if(parsed.every(Array.isArray)) return parsed;
+    }
+  } catch {}
+  const lines=text.split("\n").map(x=>x.trim()).filter(Boolean);
+  const pipeLines=lines.filter(x=>x.includes("|"));
+  if(pipeLines.length>=2){
+    const rows=pipeLines.map(line=>line.replace(/^\|/,"").replace(/\|$/,"").split("|").map(x=>plainMarkdownText(x.trim())));
+    const clean=rows.filter(row=>!row.every(cell=>/^:?-{3,}:?$/.test(String(cell).trim())));
+    if(clean.length>=2) return clean;
+  }
+  const delimited=lines.filter(x=>x.includes("\t")||x.includes(";")||x.includes(","));
+  if(delimited.length>=2){
+    const delimiter=delimited.some(x=>x.includes("\t"))?"\t":delimited.some(x=>x.includes(";"))?";":",";
+    return delimited.map(line=>line.split(delimiter).map(x=>x.trim().replace(/^"|"$/g,"").replace(/""/g,'"')));
+  }
+  const simple=lines.filter(x=>!/^#{1,6}\s/.test(x)).map(x=>[plainMarkdownText(x.replace(/^[-*•]\s+/,""))]);
+  return [["Conținut"],...(simple.length?simple:[[plainMarkdownText(text)]])];
+}
+function excelColumnName(index) {
+  let n=index+1,out="";
+  while(n>0){const r=(n-1)%26;out=String.fromCharCode(65+r)+out;n=Math.floor((n-1)/26);}
+  return out;
+}
+function xlsxCellXml(value,row,col,style=0) {
+  const ref=excelColumnName(col)+(row+1);
+  const raw=value==null?"":value;
+  const text=String(raw).trim();
+  if(typeof raw==="number" || (/^-?(?:0|[1-9]\d*)(?:[.,]\d+)?$/.test(text) && !/^0\d+/.test(text))){
+    const n=Number(text.replace(",","."));
+    if(Number.isFinite(n)) return `<c r="${ref}" s="${style}"><v>${n}</v></c>`;
+  }
+  return `<c r="${ref}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(raw)}</t></is></c>`;
+}
+async function createXlsxBytes(title, content) {
+  const rows=markdownTableRows(content);
+  const zip=new JSZip();
+  const sheetName=safeGeneratedName(title||"Foaie").replace(/[\[\]*?:\\/]/g," ").slice(0,31)||"Foaie1";
+  const maxCols=Math.max(1,...rows.map(r=>r.length));
+  const widths=Array.from({length:maxCols},(_,c)=>Math.min(60,Math.max(10,...rows.map(r=>String(r[c]??"").length+2))));
+  const sheetData=rows.map((row,r)=>`<row r="${r+1}">${Array.from({length:maxCols},(_,c)=>xlsxCellXml(row[c]??"",r,c,r===0?1:0)).join("")}</row>`).join("");
+  const cols=widths.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join("");
+  zip.file("[Content_Types].xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`);
+  zip.folder("_rels").file(".rels",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`);
+  zip.folder("xl").file("workbook.xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${xmlEscape(sheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>`);
+  zip.folder("xl").folder("_rels").file("workbook.xml.rels",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
+  zip.folder("xl").file("styles.xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="11"/><name val="Aptos"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>`);
+  zip.folder("xl").folder("worksheets").file("sheet1.xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cols>${cols}</cols><sheetData>${sheetData}</sheetData></worksheet>`);
+  return await zip.generateAsync({type:"nodebuffer",compression:"DEFLATE",compressionOptions:{level:6}});
+}
+function csvEscape(value) {
+  const s=String(value==null?"":value);
+  return /[",\n\r;]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
+}
+function createCsvBytes(content) {
+  const rows=markdownTableRows(content);
+  return Buffer.from("\ufeff"+rows.map(r=>r.map(csvEscape).join(",")).join("\r\n"),"utf8");
+}
+function createJsonBytes(title, content) {
+  const raw=stripOuterFence(content);
+  try{return Buffer.from(JSON.stringify(JSON.parse(raw),null,2)+"\n","utf8");}
+  catch{return Buffer.from(JSON.stringify({title:String(title||"AI Stoica"),content:String(content||"")},null,2)+"\n","utf8");}
+}
+function createHtmlBytes(title, content) {
+  const raw=stripOuterFence(content);
+  if(/^<!doctype html|^<html[\s>]/i.test(raw)) return Buffer.from(raw,"utf8");
+  const body=parseDocumentBlocks(content).map(b=>{
+    if(b.type==="heading")return `<h${Math.min(4,b.level)}>${xmlEscape(plainMarkdownText(b.text))}</h${Math.min(4,b.level)}>`;
+    if(b.type==="bullet")return `<p>• ${xmlEscape(plainMarkdownText(b.text))}</p>`;
+    if(b.type==="number")return `<p>${b.number}. ${xmlEscape(plainMarkdownText(b.text))}</p>`;
+    if(b.type==="blank")return "";
+    return `<p>${xmlEscape(plainMarkdownText(b.text))}</p>`;
+  }).join("\n");
+  return Buffer.from(`<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${xmlEscape(title||"AI Stoica")}</title></head><body><main>${body}</main></body></html>`,"utf8");
+}
+function createXmlBytes(title, content) {
+  const raw=stripOuterFence(content);
+  if(/^<\?xml\b|^<[A-Za-z_][\w:.-]*(?:\s|>)/.test(raw)) return Buffer.from(raw,"utf8");
+  return Buffer.from(`<?xml version="1.0" encoding="UTF-8"?><document><title>${xmlEscape(title||"AI Stoica")}</title><content>${xmlEscape(content)}</content></document>`,"utf8");
+}
+function rtfEscape(value) {
+  let out="";
+  for(const ch of String(value||"")){
+    const cp=ch.codePointAt(0);
+    if(ch==="\\")out+="\\\\";
+    else if(ch==="{")out+="\\{";
+    else if(ch==="}")out+="\\}";
+    else if(ch==="\n")out+="\\par\n";
+    else if(cp>127){const signed=cp>32767?cp-65536:cp;out+=`\\u${signed}?`;}
+    else out+=ch;
+  }
+  return out;
+}
+function createRtfBytes(title, content) {
+  return Buffer.from(`{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Segoe UI;}}\\fs24\\b ${rtfEscape(title||"AI Stoica")}\\b0\\par\\par ${rtfEscape(plainMarkdownText(content))}}`,"utf8");
+}
+function languageExtension(lang) {
+  const map={javascript:"js",js:"js",typescript:"ts",ts:"ts",jsx:"jsx",tsx:"tsx",python:"py",py:"py",java:"java",c:"c",cpp:"cpp","c++":"cpp",csharp:"cs",cs:"cs",go:"go",rust:"rs",rs:"rs",php:"php",ruby:"rb",rb:"rb",bash:"sh",shell:"sh",sh:"sh",powershell:"ps1",ps1:"ps1",sql:"sql",html:"html",css:"css",json:"json",xml:"xml",yaml:"yaml",yml:"yml",toml:"toml",markdown:"md",md:"md",text:"txt",txt:"txt",svg:"svg",latex:"tex",tex:"tex"};
+  return map[String(lang||"").toLowerCase()]||"txt";
+}
+function safeZipPath(value) {
+  const clean=String(value||"").replace(/\\/g,"/").replace(/^\/+|\.\.(?:\/|$)/g,"").replace(/[^A-Za-z0-9._\/-]+/g,"_");
+  return clean && !clean.endsWith("/") ? clean.slice(0,180) : "";
+}
+async function createZipBytes(title, content) {
+  const zip=new JSZip();
+  zip.file("README.md",String(content||""));
+  const re=/\`\`\`([^\n]*)\n([\s\S]*?)\n?\`\`\`/g;
+  let m,index=1;
+  while((m=re.exec(String(content||"")))){
+    const header=String(m[1]||"").trim();
+    const explicit=(header.match(/(?:file(?:name)?\s*[:=]\s*)?([A-Za-z0-9_.\/-]+\.[A-Za-z0-9]+)$/i)||[])[1];
+    const lang=header.split(/\s+/)[0];
+    const name=safeZipPath(explicit)||`file-${index++}.${languageExtension(lang)}`;
+    if(name!=="README.md")zip.file(name,m[2]);
+  }
+  return await zip.generateAsync({type:"nodebuffer",compression:"DEFLATE",compressionOptions:{level:6}});
+}
+function createIpynbBytes(content) {
+  const raw=stripOuterFence(content);
+  try {
+    const parsed=JSON.parse(raw);
+    if(parsed && Array.isArray(parsed.cells)) return Buffer.from(JSON.stringify(parsed,null,2)+"\n","utf8");
+  } catch {}
+  const notebook={cells:[{cell_type:"markdown",metadata:{},source:String(content||"").split(/(?<=\n)/)}],metadata:{language_info:{name:"python"}},nbformat:4,nbformat_minor:5};
+  return Buffer.from(JSON.stringify(notebook,null,2)+"\n","utf8");
+}
+function createSvgBytes(title, content) {
+  const raw=stripOuterFence(content);
+  if(/^<svg[\s>]/i.test(raw))return Buffer.from(raw,"utf8");
+  const text=plainMarkdownText(content).replace(/\s+/g," ").slice(0,500);
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630"><rect width="1200" height="630" fill="#ffffff"/><text x="60" y="90" font-family="Arial, sans-serif" font-size="42" font-weight="700">${xmlEscape(title||"AI Stoica")}</text><text x="60" y="155" font-family="Arial, sans-serif" font-size="24">${xmlEscape(text)}</text></svg>`,"utf8");
+}
+const PLAIN_TEXT_MIME={
+  md:"text/markdown; charset=utf-8",txt:"text/plain; charset=utf-8",html:"text/html; charset=utf-8",xml:"application/xml; charset=utf-8",rtf:"application/rtf",
+  js:"text/javascript; charset=utf-8",ts:"text/plain; charset=utf-8",jsx:"text/javascript; charset=utf-8",tsx:"text/plain; charset=utf-8",py:"text/x-python; charset=utf-8",
+  java:"text/x-java-source; charset=utf-8",c:"text/x-c; charset=utf-8",cpp:"text/x-c++src; charset=utf-8",cs:"text/plain; charset=utf-8",go:"text/plain; charset=utf-8",
+  rs:"text/plain; charset=utf-8",php:"application/x-httpd-php",rb:"text/plain; charset=utf-8",sh:"text/x-shellscript; charset=utf-8",ps1:"text/plain; charset=utf-8",
+  sql:"application/sql; charset=utf-8",css:"text/css; charset=utf-8",yaml:"application/yaml; charset=utf-8",yml:"application/yaml; charset=utf-8",toml:"text/plain; charset=utf-8",
+  ini:"text/plain; charset=utf-8",tex:"application/x-tex; charset=utf-8"
+};
+const EXPORT_FORMATS=new Set(["pdf","docx","pptx","xlsx","csv","json","md","txt","html","xml","rtf","zip","ipynb","svg",...Object.keys(PLAIN_TEXT_MIME)]);
+async function createExportBytes(format,title,content) {
+  if(format==="pdf")return {bytes:await createPdfBytes(title,content),mime:"application/pdf"};
+  if(format==="docx")return {bytes:await createDocxBytes(title,content),mime:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"};
+  if(format==="pptx")return {bytes:await createPptxBytes(title,content),mime:"application/vnd.openxmlformats-officedocument.presentationml.presentation"};
+  if(format==="xlsx")return {bytes:await createXlsxBytes(title,content),mime:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"};
+  if(format==="csv")return {bytes:createCsvBytes(content),mime:"text/csv; charset=utf-8"};
+  if(format==="json")return {bytes:createJsonBytes(title,content),mime:"application/json; charset=utf-8"};
+  if(format==="html")return {bytes:createHtmlBytes(title,content),mime:PLAIN_TEXT_MIME.html};
+  if(format==="xml")return {bytes:createXmlBytes(title,content),mime:PLAIN_TEXT_MIME.xml};
+  if(format==="rtf")return {bytes:createRtfBytes(title,content),mime:PLAIN_TEXT_MIME.rtf};
+  if(format==="zip")return {bytes:await createZipBytes(title,content),mime:"application/zip"};
+  if(format==="ipynb")return {bytes:createIpynbBytes(content),mime:"application/x-ipynb+json"};
+  if(format==="svg")return {bytes:createSvgBytes(title,content),mime:"image/svg+xml"};
+  return {bytes:Buffer.from(stripOuterFence(content),"utf8"),mime:PLAIN_TEXT_MIME[format]||"text/plain; charset=utf-8"};
 }
 
 function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig }) {
@@ -590,25 +768,22 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   app.post("/api/export", auth, async (req,res) => {
     try {
-      const format=String(req.body?.format||"docx").toLowerCase();
-      const allowed=new Set(["pdf","docx","pptx","md","txt"]);
+      const format=String(req.body?.format||"docx").toLowerCase().replace(/^\./,"");
       const title=String(req.body?.title||"AI Stoica").trim().slice(0,120)||"AI Stoica";
       const content=String(req.body?.content||"");
-      if(!allowed.has(format))return res.status(400).json({error:"Format neacceptat. Folosește PDF, DOCX, PPTX, MD sau TXT."});
+      if(!EXPORT_FORMATS.has(format))return res.status(400).json({error:"Format neacceptat de sistemul de fișiere AI Stoica."});
       if(!content.trim())return res.status(400).json({error:"Nu există conținut de exportat."});
-      if(content.length>100000)return res.status(413).json({error:"Documentul depășește 100.000 de caractere."});
-      let bytes,mime;
-      if(format==="pdf"){bytes=await createPdfBytes(title,content);mime="application/pdf";}
-      else if(format==="docx"){bytes=await createDocxBytes(title,content);mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document";}
-      else if(format==="pptx"){bytes=await createPptxBytes(title,content);mime="application/vnd.openxmlformats-officedocument.presentationml.presentation";}
-      else if(format==="md"){bytes=Buffer.from(content,"utf8");mime="text/markdown; charset=utf-8";}
-      else {bytes=Buffer.from(content,"utf8");mime="text/plain; charset=utf-8";}
-      const id=crypto.randomUUID(),name=safeGeneratedName(title).replace(/\.[^.]+$/,"")+"."+format,target=path.join(filesDir,id+"."+format);
-      fs.writeFileSync(target,bytes);
-      const db=store.read(),item={id,userId:req.user.id,name,mime,size:bytes.length,kind:"file",filePath:target,storage:"disk",source:"ai-export",createdAt:Date.now()};
+      if(content.length>250000)return res.status(413).json({error:"Fișierul depășește limita de 250.000 de caractere pentru un singur export."});
+      const generated=await createExportBytes(format,title,content);
+      const requestedName=String(req.body?.fileName||"").trim();
+      const baseName=safeGeneratedName(requestedName||title).replace(/\.[A-Za-z0-9]+$/,"")||"AI Stoica";
+      const name=baseName+"."+format;
+      const id=crypto.randomUUID(),target=path.join(filesDir,id+"."+format);
+      fs.writeFileSync(target,generated.bytes);
+      const db=store.read(),item={id,userId:req.user.id,name,mime:generated.mime,size:generated.bytes.length,kind:generated.mime.startsWith("image/")?"image":"file",filePath:target,storage:"disk",source:"ai-export",format,createdAt:Date.now()};
       db.library.push(item);store.write(db);
-      res.json({data:{id:item.id,name:item.name,mimeType:item.mime,size:item.size,source:item.source,createdAt:item.createdAt}});
-    } catch(e) { res.status(500).json({error:"Nu am putut genera documentul: "+e.message}); }
+      res.json({data:{id:item.id,name:item.name,mimeType:item.mime,size:item.size,source:item.source,format:item.format,createdAt:item.createdAt}});
+    } catch(e) { res.status(500).json({error:"Nu am putut genera fișierul: "+e.message}); }
   });
 
   app.get("/api/files/:id", auth, (req,res) => {
@@ -705,7 +880,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const db=store.read(),messages=Array.isArray(rawMessages)?rawMessages:[];
     const latest=[...messages].reverse().find(m=>m.role==="user");const latestText=textFromContent(latest?.content);
     const system=[];
-    system.push("Când utilizatorul cere PDF, DOCX sau PPTX, redactează conținutul bine structurat, cu titluri și liste unde este util. Nu afișa pseudo-comenzi precum <invoke generate_pdf>; aplicația creează fișierul real separat.");
+    system.push("Când utilizatorul cere un fișier descărcabil (PDF, DOCX/Word, PPTX/PowerPoint, XLSX/Excel, CSV, JSON, Markdown, TXT, HTML, XML, RTF, ZIP, notebook sau fișier de cod), redactează direct conținutul final care trebuie introdus în acel fișier. Pentru XLSX/CSV folosește preferabil un tabel Markdown cu antete; pentru JSON produce JSON valid; pentru HTML/XML/SVG și cod produce conținut valid, fără explicații în afara lui. Nu afișa pseudo-comenzi de tool: aplicația creează fișierul real și îl atașează separat.");
     const assistant=db.assistants.find(a=>a.id===assistantId&&a.userId===userId);if(assistant?.systemPrompt)system.push(assistant.systemPrompt);
     const user=db.users.find(u=>u.id===userId);
     if(user?.memoryEnabled!==false){
