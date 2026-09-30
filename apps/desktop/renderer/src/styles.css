@@ -391,3 +391,11 @@
 .generatedMediaBar small{font-size:9px;color:#7b8ca1;margin-top:3px}
 .generatedMediaBar button{border:1px solid #31516f;background:#14243a;color:#8ec4ff;border-radius:9px;padding:8px 10px;display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:700;font-size:11px}
 .generatedMediaBar button:hover{background:#18304e}
+
+  
+/* v0.6.6 — direct media upload controls */
+.mediaQuickButtons{display:flex;align-items:center;gap:1px;flex:0 0 auto}
+.mediaQuick{color:#8496ab}
+.mediaQuick:hover{color:#dce9f7}
+@media(max-width:760px){.mediaQuickButtons{gap:0}.mediaQuickButtons .composerIcon{width:34px;height:34px}.composerLine{align-items:flex-end}}
+@media(max-width:520px){.mediaQuickButtons .composerIcon:nth-child(2){display:none}}
