@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "private": true,
-  "description": "AI Stoica 0.6.5 - real AI image/video generation, voice/media support, enforced permissions and downloadable artifacts",
+  "description": "AI Stoica 0.6.6 - direct image video MP3 and voice upload controls, real media generation and enforced permissions",
   "main": "main.cjs",
   "repository": {
     "type": "git",
