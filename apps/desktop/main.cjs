@@ -34,7 +34,9 @@ function defaults() {
     closeToTray: true,
     autoUpdate: true,
     speechModel: "openai/whisper-1",
-    speechLanguage: "ro"
+    speechLanguage: "ro",
+    imageModel: "",
+    videoModel: ""
   };
 }
 function loadConfig() {
@@ -54,7 +56,8 @@ function saveConfig(input) {
     gatewayUrl: cfg.gatewayUrl || "http://127.0.0.1:8787", controlApiUrl: String(cfg.controlApiUrl || "").trim().replace(/\/+$/,""), baseUrl: cfg.baseUrl, model: cfg.model, omniCommand: cfg.omniCommand,
     autoStartOmniRoute: !!cfg.autoStartOmniRoute, startWithWindows: !!cfg.startWithWindows,
     closeToTray: cfg.closeToTray !== false, autoUpdate: cfg.autoUpdate !== false,
-    speechModel: cfg.speechModel || "openai/whisper-1", speechLanguage: cfg.speechLanguage || "ro"
+    speechModel: cfg.speechModel || "openai/whisper-1", speechLanguage: cfg.speechLanguage || "ro",
+    imageModel: String(cfg.imageModel || "").trim(), videoModel: String(cfg.videoModel || "").trim()
   };
   if (cfg.apiKey) {
     if (safeStorage.isEncryptionAvailable()) stored.apiKeyEncrypted = safeStorage.encryptString(cfg.apiKey).toString("base64");
