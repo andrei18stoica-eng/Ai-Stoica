@@ -1,4 +1,4 @@
-const PAID_PROVIDERS = new Set(["openai","anthropic"]);
+const PAID_PROVIDERS = new Set(["openai","anthropic","openrouter"]);
 const KNOWN_PROVIDERS = ["cerebras","gemini","groq","cloudflare","openrouter","openai","anthropic"];
 
 function normalizeKey(value) {
@@ -59,7 +59,7 @@ function providerAccess(context, provider) {
       return { allowed:false, reason:"Serviciile AI plătite sunt oprite global de Owner." };
     }
     if (!isOwner && permissions[provider] !== true) {
-      const label = provider === "openai" ? "OpenAI / GPT" : "Claude / Anthropic";
+      const label = provider === "openai" ? "OpenAI / GPT" : provider === "anthropic" ? "Claude / Anthropic" : "OpenRouter";
       return { allowed:false, reason:`Contul nu are permisiune pentru ${label}.` };
     }
     return { allowed:true, reason:"" };
