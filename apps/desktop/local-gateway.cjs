@@ -879,6 +879,52 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }
     return walk(value);
   }
+
+  function findGenerationJobId(value){
+    if(!value||typeof value!=="object")return "";
+    const keys=["request_id","requestId","job_id","jobId","task_id","taskId","video_id","videoId","id"];
+    for(const key of keys){
+      const v=value?.[key];
+      if(typeof v==="string"&&v.trim())return v.trim();
+    }
+    for(const container of ["data","result","job","task","video"]){
+      const v=value?.[container];
+      if(v&&typeof v==="object"){
+        const id=findGenerationJobId(v);
+        if(id)return id;
+      }
+    }
+    return "";
+  }
+  function generationFailed(value){
+    const status=String(value?.status||value?.state||value?.data?.status||value?.result?.status||"").toLowerCase();
+    return /(fail|error|cancel|reject)/.test(status);
+  }
+  async function pollVideoResult(cfg,initialBody){
+    let candidate=findMediaCandidate(initialBody,"video");
+    if(candidate)return candidate;
+    const jobId=findGenerationJobId(initialBody);
+    if(!jobId)throw new Error("OmniRoute nu a returnat nici fișier video, nici ID de generare.");
+    const base=String(cfg.baseUrl).replace(/\/+$/,"");
+    const headers=cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{};
+    const deadline=Date.now()+5*60*1000;
+    let lastStatus="";
+    while(Date.now()<deadline){
+      await new Promise(r=>setTimeout(r,3000));
+      const r=await fetch(`${base}/videos/${encodeURIComponent(jobId)}`,{headers,signal:AbortSignal.timeout(15000)});
+      const text=await r.text();
+      if(!r.ok){
+        if(r.status===404){lastStatus="HTTP 404";continue;}
+        throw new Error(`Verificarea videoclipului a eșuat: HTTP ${r.status} ${text.slice(0,500)}`);
+      }
+      let body;try{body=JSON.parse(text)}catch{body={url:text}}
+      if(generationFailed(body))throw new Error(`Generarea videoclipului a eșuat: ${text.slice(0,700)}`);
+      candidate=findMediaCandidate(body,"video");
+      if(candidate)return candidate;
+      lastStatus=String(body?.status||body?.state||body?.data?.status||body?.result?.status||"în lucru");
+    }
+    throw new Error(`Generarea videoclipului nu s-a finalizat în 5 minute${lastStatus?` (ultimul status: ${lastStatus})`:""}.`);
+  }
   function inferMediaMime(bytes,declared,kind){
     const d=String(declared||"").split(";")[0].trim().toLowerCase();
     if((kind==="image"&&d.startsWith("image/"))||(kind==="video"&&d.startsWith("video/")))return d;
@@ -1016,7 +1062,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       if(ctype.startsWith("video/")){
         const bytes=Buffer.from(await upstream.arrayBuffer());resolved={bytes,mime:inferMediaMime(bytes,ctype,"video")};
       }else{
-        const body=await upstream.json(),candidate=findMediaCandidate(body,"video");
+        const body=await upstream.json();
+        const candidate=await pollVideoResult(cfg,body);
         resolved=await resolveGeneratedMedia(candidate,"video");
       }
       if(!resolved.bytes.length)throw new Error("Videoclipul generat este gol.");
