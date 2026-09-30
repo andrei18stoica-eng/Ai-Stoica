@@ -815,7 +815,7 @@ function PluginsPanel({onClose}) {
 function AdminPanel({onClose}) {
   const permissionLabels={
     chat:"Chat AI",cerebras:"Cerebras",gemini:"Gemini",groq:"Groq",cloudflare:"Cloudflare AI",
-    openrouter:"OpenRouter",image_generation:"Generare imagini",document_generation:"Fișiere: PDF / Word / PowerPoint / Excel / CSV / ZIP / cod",
+    openrouter:"OpenRouter (poate genera costuri)",image_generation:"Generare imagini",document_generation:"Fișiere: PDF / Word / PowerPoint / Excel / CSV / ZIP / cod",
     file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",
     automations:"Automatizări",plugins:"Pluginuri",github_access:"GitHub",openai:"OpenAI (plătit)",anthropic:"Claude / Anthropic (plătit)"
   };
@@ -1015,7 +1015,7 @@ function App() {
   const initialModels=useMemo(()=>{const cached=cachedModels();return cached.length?cached:["Ai principal"]},[]);
   const [boot,setBoot]=useState(true),[conversations,setConversations]=useState([]),[projects,setProjects]=useState([]),[assistants,setAssistants]=useState([]),[models,setModels]=useState(initialModels);
   const [currentId,setCurrentId]=useState(null),[model,setModel]=useState(()=>localStorage.getItem(MODEL_SELECTED_KEY)||initialModels[0]||"Ai principal"),[selectedProject,setSelectedProject]=useState(null),[selectedAssistant,setSelectedAssistant]=useState(null);
-  const [draft,setDraft]=useState(""),[attachments,setAttachments]=useState([]),[busy,setBusy]=useState(false),[search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[omni,setOmni]=useState(false),[refreshingModels,setRefreshingModels]=useState(false);
+  const [draft,setDraft]=useState(""),[attachments,setAttachments]=useState([]),[busy,setBusy]=useState(false),[search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[omni,setOmni]=useState(false),[refreshingModels,setRefreshingModels]=useState(false),[modelPolicyEnforced,setModelPolicyEnforced]=useState(false);
   const [settings,setSettings]=useState(false),[createType,setCreateType]=useState(null),[toolPanel,setToolPanel]=useState(null),[filesPanel,setFilesPanel]=useState(false),[updateReady,setUpdateReady]=useState(false),[sidebarCollapsed,setSidebarCollapsed]=useState(false);
   const chatRef=useRef(null);
   const current=conversations.find(c=>c.id===currentId)||null;
@@ -1025,15 +1025,20 @@ function App() {
     try{
       const ms=await api("/api/models");
       const live=uniqueModels((ms.data||[]).map(x=>typeof x==="string"?x:x?.id));
-      if(!live.length)return models;
+      const enforced=ms.policyEnforced===true;
+      setModelPolicyEnforced(enforced);
       const previous=cachedModels();
-      // Keep previously discovered models as a fallback so a temporary OmniRoute
-      // response with only one route cannot collapse the selector.
-      const merged=uniqueModels([...live,...previous,model]);
+      const merged=enforced?live:uniqueModels([...live,...previous,model]);
       setModels(merged);
       localStorage.setItem(MODEL_CACHE_KEY,JSON.stringify(merged));
+      if(enforced){
+        const selected=merged.includes(model)?model:(merged[0]||"");
+        setModel(selected);
+        if(selected)localStorage.setItem(MODEL_SELECTED_KEY,selected);else localStorage.removeItem(MODEL_SELECTED_KEY);
+      }
       return merged;
     }catch{
+      if(modelPolicyEnforced)return models;
       const fallback=uniqueModels([...cachedModels(),model]);
       if(fallback.length)setModels(fallback);
       return fallback;
@@ -1041,6 +1046,7 @@ function App() {
   }
   async function chooseModel(next){
     const value=String(next||"").trim();if(!value)return;
+    if(modelPolicyEnforced&&!models.includes(value))return;
     setModel(value);
     localStorage.setItem(MODEL_SELECTED_KEY,value);
     setModels(v=>{const nextModels=uniqueModels([value,...v]);localStorage.setItem(MODEL_CACHE_KEY,JSON.stringify(nextModels));return nextModels});
@@ -1055,14 +1061,18 @@ function App() {
   async function loadData(){
     if(!localStorage.getItem(TOKEN_KEY)){setBoot(false);return}
     try{
-      const [me,cs,ps,as,ms]=await Promise.all([api("/auth/me"),api("/api/conversations"),api("/api/projects"),api("/api/assistants"),api("/api/models").catch(()=>({data:[]}))]);
+      const [me,cs,ps,as,ms]=await Promise.all([api("/auth/me"),api("/api/conversations"),api("/api/projects"),api("/api/assistants"),api("/api/models").catch(()=>({data:[],policyEnforced:true}))]);
       if(me.token)localStorage.setItem(TOKEN_KEY,me.token);setUser(me.user);localStorage.setItem(USER_KEY,JSON.stringify(me.user));setConversations(cs.data||[]);setProjects(ps.data||[]);setAssistants(as.data||[]);
       const ids=uniqueModels((ms.data||[]).map(x=>typeof x==="string"?x:x?.id));
       const prior=cachedModels();
       const remembered=localStorage.getItem(MODEL_SELECTED_KEY)||"";
-      const merged=uniqueModels([...ids,...prior,remembered]);
-      if(merged.length){setModels(merged);localStorage.setItem(MODEL_CACHE_KEY,JSON.stringify(merged))}
-      if(!remembered&&merged.length){const preferred=merged.find(x=>/ai[ _-]*principal/i.test(x))||merged[0];setModel(preferred);localStorage.setItem(MODEL_SELECTED_KEY,preferred)}
+      const enforced=ms.policyEnforced===true;
+      setModelPolicyEnforced(enforced);
+      const merged=enforced?ids:uniqueModels([...ids,...prior,remembered]);
+      setModels(merged);localStorage.setItem(MODEL_CACHE_KEY,JSON.stringify(merged));
+      const preferred=remembered&&merged.includes(remembered)?remembered:(merged.find(x=>/ai[ _-]*principal/i.test(x))||merged[0]||"");
+      setModel(preferred);
+      if(preferred)localStorage.setItem(MODEL_SELECTED_KEY,preferred);else localStorage.removeItem(MODEL_SELECTED_KEY);
       if((as.data||[]).length&&!selectedAssistant)setSelectedAssistant(as.data[0].id);if((cs.data||[]).length&&!currentId)setCurrentId(cs.data[0].id);
     }catch(e){if(/Autentificare|Sesiune|401/i.test(e.message))logout()}finally{setBoot(false)}
   }
@@ -1082,10 +1092,16 @@ function App() {
   useEffect(()=>{setTimeout(()=>chatRef.current?.scrollTo({top:chatRef.current.scrollHeight,behavior:"smooth"}),30)},[current?.messages?.length,busy,current?.messages?.at(-1)?.content]);
   useEffect(()=>{
     if(!current?.model)return;
+    if(modelPolicyEnforced&&!models.includes(current.model)){
+      const fallback=models[0]||"";
+      setModel(fallback);
+      if(fallback)localStorage.setItem(MODEL_SELECTED_KEY,fallback);else localStorage.removeItem(MODEL_SELECTED_KEY);
+      return;
+    }
     setModel(current.model);
     localStorage.setItem(MODEL_SELECTED_KEY,current.model);
-    setModels(v=>uniqueModels([current.model,...v]));
-  },[currentId]);
+    if(!modelPolicyEnforced)setModels(v=>uniqueModels([current.model,...v]));
+  },[currentId,modelPolicyEnforced,models.join("|")]);
 
   function logout(){localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(USER_KEY);setUser(null);setConversations([]);setCurrentId(null)}
   function newConversation(){setCurrentId(null);setDraft("");setAttachments([]);setSidebar(false)}
@@ -1094,10 +1110,13 @@ function App() {
     const lastUser=[...messages].reverse().find(m=>m.role==="user");
     const requestedFormat=requestedDocumentFormat(messageText(lastUser));
     const fileMode=!!requestedFormat;
-    setBusy(true);const assistantMessage={id:uid(),role:"assistant",content:"",attachmentOnly:fileMode,createdAt:Date.now(),streaming:true};let working={...baseConv,messages:[...messages,assistantMessage],updatedAt:Date.now()};setConversations(v=>v.map(x=>x.id===working.id?working:x));
+    const desiredModel=String(baseConv.model||model||"").trim();
+    const effectiveModel=modelPolicyEnforced?(models.includes(desiredModel)?desiredModel:(models.includes(model)?model:(models[0]||""))):desiredModel;
+    setBusy(true);const assistantMessage={id:uid(),role:"assistant",content:"",attachmentOnly:fileMode,createdAt:Date.now(),streaming:true};let working={...baseConv,model:effectiveModel,messages:[...messages,assistantMessage],updatedAt:Date.now()};setConversations(v=>v.map(x=>x.id===working.id?working:x));
     try{
+      if(!effectiveModel)throw new Error("Nu există niciun model AI permis pentru acest cont.");
       if(!omni){await window.AIStoica.ensureOmni();await new Promise(r=>setTimeout(r,1200))}
-      const token=localStorage.getItem(TOKEN_KEY)||"",r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({model:working.model||model,assistantId:working.assistantId,messages})});
+      const token=localStorage.getItem(TOKEN_KEY)||"",r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({model:effectiveModel,assistantId:working.assistantId,messages})});
       if(!r.ok){let e;try{e=await r.json()}catch{e={error:await r.text()}};throw new Error(e?.error||`HTTP ${r.status}`)}
       const reader=r.body.getReader(),dec=new TextDecoder();let buf="",answer="";
       while(true){const {value,done}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const events=buf.split("\n\n");buf=events.pop()||"";for(const ev of events)for(const line of ev.split("\n")){if(!line.startsWith("data:"))continue;const raw=line.slice(5).trim();if(!raw||raw==="[DONE]")continue;try{const j=JSON.parse(raw),delta=j?.choices?.[0]?.delta?.content||j?.choices?.[0]?.message?.content||"";if(delta){answer+=delta;working={...working,messages:[...messages,{...assistantMessage,content:fileMode?"":answer,streaming:true}]};setConversations(v=>v.map(x=>x.id===working.id?working:x))}}catch{}}}

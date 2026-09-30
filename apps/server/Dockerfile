@@ -5,6 +5,7 @@ COPY apps/server/package.json ./package.json
 RUN npm install --omit=dev
 
 COPY apps/server/server.cjs ./server.cjs
+COPY apps/server/ai-policy.cjs ./ai-policy.cjs
 COPY apps/server/migrations ./migrations
 
 ENV NODE_ENV=production

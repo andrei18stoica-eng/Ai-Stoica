@@ -1,10 +1,11 @@
 {
   "name": "ai-stoica-server",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "main": "server.cjs",
   "scripts": {
-    "start": "node server.cjs"
+    "start": "node server.cjs",
+    "test": "node scripts/test-ai-policy.cjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
