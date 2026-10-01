@@ -456,7 +456,7 @@ app.post("/api/ai/access", auth, async (req, res, next) => {
     const raw = Array.isArray(req.body?.models) ? req.body.models : [req.body?.model];
     const models = [...new Set(raw.map(x => String(x || "").trim()).filter(Boolean))];
     if (!models.length) return res.status(400).json({ error:"Modelul sau lista de modele lipsește." });
-    if (models.length > 200) return res.status(413).json({ error:"Prea multe modele într-o singură verificare." });
+    if (models.length > 1000) return res.status(413).json({ error:"Prea multe modele într-o singură verificare (maximum 1000)." });
     const context = await loadAiContext(req.user);
     const data = models.map(model => evaluateModelAccess(context, model));
     res.json({ data, policyEnforced:true, paidAiEnabled:context.paidEnabled });
