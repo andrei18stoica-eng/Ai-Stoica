@@ -59,6 +59,19 @@ async function main(){
     expect(policyCalls>=3,"Model policy should be checked in multiple batches");
     expect(maxBatch<=200,"A policy request exceeded the server safety limit");
 
+    r=await fetch(base+"/api/plugins/direct",{method:"POST",headers,body:JSON.stringify({
+      name:"GitHub",description:"Open GitHub directly",trigger:"@github",appUrl:"https://github.com/"
+    })});
+    const direct=await r.json();
+    expect(r.ok,direct.error||"Direct plugin setup failed");
+    expect(direct.data?.mode==="direct_app","Direct plugin mode missing");
+    expect(direct.data?.oauthConnected===false,"Direct plugin must not require OAuth");
+
+    r=await fetch(base+"/api/plugins/"+direct.data.id+"/test",{method:"POST",headers,body:JSON.stringify({message:"test"})});
+    const directTest=await r.json();
+    expect(r.ok&&directTest.direct===true,"Direct plugin test should succeed without OAuth");
+    expect(directTest.appUrl==="https://github.com/","Direct plugin app URL missing");
+
     r=await fetch(base+"/api/plugins/oauth/start",{method:"POST",headers,body:JSON.stringify({
       name:"GitHub",provider:"github",clientId:"test-client-id",
       authUrl:"https://github.com/login/oauth/authorize",
