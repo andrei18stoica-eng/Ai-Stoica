@@ -75,7 +75,11 @@ async function main(){
     expect(models.policyEnforced===true,"Model response must mark policy enforcement");
     expect(Array.isArray(models.data)&&models.data.length===2,"Normal account should see smart router plus one permitted model");
     expect(models.data[0].id==="Ai principal"&&models.data[0].smartRouter===true,"Smart router alias should be first in selector");
-    expect(models.data[1].id==="groq/llama-3.3-70b-versatile","Paid/unknown models leaked into selector");
+    expect(models.data[1].id==="groq/llama-3.3-70b-versatile","Paid/unknown models leaked into permitted routing list");
+    expect(Array.isArray(models.manualModels)&&models.manualModels.length===3,"Manual selector must preserve the complete OmniRoute model catalog");
+    expect(models.manualModels.some(x=>x.id==="openai/gpt-5"),"OpenAI disappeared from the manual model catalog");
+    expect(models.manualModels.some(x=>x.id==="groq/llama-3.3-70b-versatile"),"Groq disappeared from the manual model catalog");
+    expect(models.manualModels.some(x=>x.id==="mystery-model"),"Legacy/unknown OmniRoute model disappeared from the manual catalog");
 
     r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"Ai principal",messages:[{role:"user",content:"Spune-mi pe scurt ce este un API."}]})});
     expect(r.ok,"Ai principal smart router should work for normal account");
