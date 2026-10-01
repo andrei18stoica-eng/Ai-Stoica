@@ -1210,11 +1210,11 @@ function App() {
     if(!silent)setRefreshingModels(true);
     try{
       const ms=await api("/api/models");
-      const live=uniqueModels((ms.data||[]).map(x=>typeof x==="string"?x:x?.id));
+      const live=uniqueModels((ms.manualModels||ms.data||[]).map(x=>typeof x==="string"?x:x?.id)).filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x));
       const enforced=ms.policyEnforced===true;
       setModelPolicyEnforced(enforced);
-      const previous=cachedModels();
-      const merged=enforced?live:uniqueModels([...live,...previous,model]);
+      const previous=cachedModels().filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x));
+      const merged=uniqueModels([...live,...previous,model]).filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x));
       setModels(merged);
       localStorage.setItem(MODEL_CACHE_KEY,JSON.stringify(merged));
       if(enforced){
@@ -1259,12 +1259,12 @@ function App() {
     try{
       const [me,cs,ps,as,ms]=await Promise.all([api("/auth/me"),api("/api/conversations"),api("/api/projects"),api("/api/assistants"),api("/api/models").catch(()=>({data:[],policyEnforced:true}))]);
       if(me.token)localStorage.setItem(TOKEN_KEY,me.token);setUser(me.user);localStorage.setItem(USER_KEY,JSON.stringify(me.user));setConversations(cs.data||[]);setProjects(ps.data||[]);setAssistants(as.data||[]);
-      const ids=uniqueModels((ms.data||[]).map(x=>typeof x==="string"?x:x?.id));
-      const prior=cachedModels();
+      const ids=uniqueModels((ms.manualModels||ms.data||[]).map(x=>typeof x==="string"?x:x?.id)).filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x));
+      const prior=cachedModels().filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x));
       const remembered=localStorage.getItem(MODEL_SELECTED_KEY)||"";
       const enforced=ms.policyEnforced===true;
       setModelPolicyEnforced(enforced);
-      const merged=enforced?ids:uniqueModels([...ids,...prior,remembered]);
+      const merged=uniqueModels([...ids,...prior,remembered]).filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x));
       setModels(merged);localStorage.setItem(MODEL_CACHE_KEY,JSON.stringify(merged));
       const manualCandidates=merged.filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x));
       const rememberedManual=localStorage.getItem(MANUAL_MODEL_KEY)||remembered;
