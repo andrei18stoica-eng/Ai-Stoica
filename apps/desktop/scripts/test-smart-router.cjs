@@ -49,4 +49,7 @@ expect(r.selectedModel==="openai/gpt-5","Vision should prefer a multimodal-capab
 
 expect(!r.candidates.some(x=>/whisper|runway/i.test(x.id)),"Non-chat media models must not enter the chat router");
 
+const providerRoute=routeQuestion([{id:"groq/openai/gpt-oss-120b"}],[{role:"user",content:"Ce înseamnă fotosinteza?"}],3);
+expect(providerRoute.candidates[0].provider==="groq","Provider namespace must win over model-family name");
+
 console.log("SMART_ROUTER_TESTS_PASSED");
