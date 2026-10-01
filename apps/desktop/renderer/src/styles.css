@@ -415,3 +415,14 @@
 .thinkingCopy b{font-size:11px;color:#a9c3e2;font-weight:650}
 .thinkingCopy small{font-size:9px;color:#5f7084;margin-top:2px}
 @media(max-width:560px){.routeBadge{display:flex;flex-wrap:wrap}.routeBadge em{max-width:210px}.routeBadge small{width:100%;border-left:0;padding-left:19px}.thinking{padding-left:40px!important}}
+
+
+/* v0.6.8 — automatic/manual AI selector */
+.modelSelectCluster{display:flex;align-items:center;gap:7px;min-width:0}
+.modelSelectCluster>.modelPicker{min-width:0}
+.autoRouterToggle{height:36px;border:1px solid #2a3b50;background:#0d1621;color:#8ea0b6;border-radius:10px;padding:0 9px;display:flex;align-items:center;gap:6px;cursor:pointer;font-size:10px;font-weight:700;white-space:nowrap}
+.autoRouterToggle i{font-style:normal;font-size:8px;border:1px solid #36465a;border-radius:999px;padding:2px 5px;color:#7d8ca0}
+.autoRouterToggle.on{background:#10243a;border-color:#2d6595;color:#8fc7ff;box-shadow:0 0 0 1px rgba(76,155,230,.08) inset}
+.autoRouterToggle.on i{border-color:#3477ab;background:#123557;color:#a9d7ff}
+.autoRouterToggle:hover{border-color:#42617f}
+@media(max-width:680px){.autoRouterToggle span{display:none}.autoRouterToggle{padding:0 7px}.modelPickerText small{display:none}}
