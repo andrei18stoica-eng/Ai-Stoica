@@ -27,7 +27,7 @@ function defaults() {
     controlApiUrl: "",
     baseUrl: "http://127.0.0.1:20128/v1",
     apiKey: "",
-    model: "Ai principal",
+    model: "",
     omniCommand: "omniroute.cmd",
     autoStartOmniRoute: true,
     startWithWindows: true,
@@ -46,14 +46,16 @@ function loadConfig() {
     if (raw.apiKeyEncrypted && safeStorage.isEncryptionAvailable()) {
       try { apiKey = safeStorage.decryptString(Buffer.from(raw.apiKeyEncrypted, "base64")); } catch {}
     } else if (typeof raw.apiKey === "string") apiKey = raw.apiKey;
-    return { ...defaults(), ...raw, apiKey };
+    const cfg={ ...defaults(), ...raw, apiKey };
+    if(/^ai[ _-]*(principal|stoica)$/i.test(String(cfg.model||"").trim()))cfg.model="";
+    return cfg;
   } catch { return defaults(); }
 }
 function saveConfig(input) {
   const old = loadConfig();
   const cfg = { ...old, ...input };
   const stored = {
-    gatewayUrl: cfg.gatewayUrl || "http://127.0.0.1:8787", controlApiUrl: String(cfg.controlApiUrl || "").trim().replace(/\/+$/,""), baseUrl: cfg.baseUrl, model: cfg.model, omniCommand: cfg.omniCommand,
+    gatewayUrl: cfg.gatewayUrl || "http://127.0.0.1:8787", controlApiUrl: String(cfg.controlApiUrl || "").trim().replace(/\/+$/,""), baseUrl: cfg.baseUrl, model: /^ai[ _-]*(principal|stoica)$/i.test(String(cfg.model||"").trim())?"":String(cfg.model||"").trim(), omniCommand: cfg.omniCommand,
     autoStartOmniRoute: !!cfg.autoStartOmniRoute, startWithWindows: !!cfg.startWithWindows,
     closeToTray: cfg.closeToTray !== false, autoUpdate: cfg.autoUpdate !== false,
     speechModel: cfg.speechModel || "openai/whisper-1", speechLanguage: cfg.speechLanguage || "ro",
