@@ -1449,8 +1449,11 @@ function App() {
       const saved=await saveConversation({...baseConv,messages:[...messages,assistantMessage],updatedAt:Date.now()});
       api("/api/memory/capture",{method:"POST",body:JSON.stringify({conversationId:saved.id,userText:prompt,assistantText:`${kind==="video"?"Videoclip":"Imagine"} generată: ${file.name}`})}).catch(()=>{});
     }catch(e){
-      const assistantMessage={id:uid(),role:"assistant",content:`Eroare la generarea ${kind==="video"?"videoclipului":"imaginii"}: ${e.message}`,createdAt:Date.now(),streaming:false};
-      await saveConversation({...baseConv,messages:[...messages,assistantMessage],updatedAt:Date.now()});
+      console.warn(`Generarea ${kind} nu a fost disponibilă; continui cu AI-ul ales manual.`,e);
+      setBusy(false);
+      setBusyStage("Generarea media nu este disponibilă; continuă cu AI-ul ales manual…");
+      await streamAssistant(baseConv,messages);
+      return;
     }finally{setBusy(false);setBusyStage("")}
   }
   async function send(){
