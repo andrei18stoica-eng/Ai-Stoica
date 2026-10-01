@@ -12,16 +12,23 @@ function normalizeKey(value) {
 }
 
 function providerSignals(model) {
-  const raw = String(model || "").toLowerCase();
-  const normalized = normalizeKey(raw);
+  const raw = String(model || "").toLowerCase().trim();
   const found = new Set();
+  const first = raw.split("/")[0];
+  const prefixMap = {
+    openai:"openai", anthropic:"anthropic", claude:"anthropic",
+    google:"gemini", gemini:"gemini", cerebras:"cerebras", groq:"groq",
+    cloudflare:"cloudflare", "@cf":"cloudflare", openrouter:"openrouter"
+  };
+  if (prefixMap[first]) return [prefixMap[first]];
 
-  if (/openai|chatgpt|(^|[\s/_.:-])gpt(?:[\s/_.:-]|\d)|(^|[\s/_.:-])o[134](?:[\s/_.:-]|$)/i.test(raw)) found.add("openai");
+  if (/openai|chatgpt/i.test(raw)) found.add("openai");
+  if (!/gpt[-_. ]?oss/i.test(raw) && /(^|[\s_.:-])gpt(?:[\s_.:-]|\d)|(^|[\s_.:-])o[134](?:[\s_.:-]|$)/i.test(raw)) found.add("openai");
   if (/anthropic|claude/i.test(raw)) found.add("anthropic");
-  if (/gemini|(^|[\s/_.:-])google(?:[\s/_.:-]|$)/i.test(raw)) found.add("gemini");
+  if (/gemini|(^|[\s_.:-])google(?:[\s_.:-]|$)/i.test(raw)) found.add("gemini");
   if (/cerebras/i.test(raw)) found.add("cerebras");
-  if (/(^|[\s/_.:-])groq(?:[\s/_.:-]|$)/i.test(raw)) found.add("groq");
-  if (/cloudflare/i.test(raw)) found.add("cloudflare");
+  if (/(^|[\s_.:-])groq(?:[\s_.:-]|$)/i.test(raw)) found.add("groq");
+  if (/cloudflare|@cf\//i.test(raw)) found.add("cloudflare");
   if (/openrouter/i.test(raw)) found.add("openrouter");
 
   return [...found];

@@ -73,24 +73,26 @@ async function main(){
     const models=await r.json();
     expect(r.ok,"Filtered models endpoint failed");
     expect(models.policyEnforced===true,"Model response must mark policy enforcement");
-    expect(Array.isArray(models.data)&&models.data.length===1,"Normal account should see only one permitted model");
-    expect(models.data[0].id==="groq/llama-3.3-70b-versatile","Paid/unknown models leaked into selector");
+    expect(Array.isArray(models.data)&&models.data.length===2,"Normal account should see smart router plus one permitted model");
+    expect(models.data[0].id==="Ai principal"&&models.data[0].smartRouter===true,"Smart router alias should be first in selector");
+    expect(models.data[1].id==="groq/llama-3.3-70b-versatile","Paid/unknown models leaked into selector");
 
-    r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"Ai principal",messages:[{role:"user",content:"test"}]})});
-    expect(r.status===403,"Ai principal must be rejected for normal account");
-    expect(omniChatCalls===0,"Denied Ai principal request reached OmniRoute");
+    r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"Ai principal",messages:[{role:"user",content:"Spune-mi pe scurt ce este un API."}]})});
+    expect(r.ok,"Ai principal smart router should work for normal account");
+    expect(omniChatCalls===1,"Smart router did not dispatch to the permitted Groq model");
+    expect(r.headers.get("x-ai-stoica-model")==="groq/llama-3.3-70b-versatile","Smart router selected an unauthorized model");
 
     r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"openai/gpt-5",messages:[{role:"user",content:"test"}]})});
     expect(r.status===403,"OpenAI model must be rejected for normal account");
-    expect(omniChatCalls===0,"Denied OpenAI request reached OmniRoute");
+    expect(omniChatCalls===1,"Denied OpenAI request reached OmniRoute");
 
     r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"groq/llama-3.3-70b-versatile",messages:[{role:"user",content:"test"}]})});
     expect(r.ok,"Permitted Groq model should work");
-    expect(omniChatCalls===1,"Permitted Groq request did not reach OmniRoute");
+    expect(omniChatCalls===2,"Permitted Groq request did not reach OmniRoute");
 
     r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"mystery-model",messages:[{role:"user",content:"test"}]})});
     expect(r.status===403,"Unknown model must fail closed");
-    expect(omniChatCalls===1,"Unknown denied model reached OmniRoute");
+    expect(omniChatCalls===2,"Unknown denied model reached OmniRoute");
 
     console.log("DESKTOP_AI_ACCESS_ENFORCEMENT_TESTS_PASSED");
   } finally {

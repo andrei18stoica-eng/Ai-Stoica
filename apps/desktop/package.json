@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.6.6",
+  "version": "0.6.7",
   "private": true,
-  "description": "AI Stoica 0.6.6 - direct image video MP3 and voice upload controls, real media generation and enforced permissions",
+  "description": "AI Stoica 0.6.7 - smart task-aware model routing, selected-AI badges, work-stage status and media/file support",
   "main": "main.cjs",
   "repository": {
     "type": "git",
@@ -49,6 +49,7 @@
       "main.cjs",
       "preload.cjs",
       "local-gateway.cjs",
+      "smart-router.cjs",
       "dist/**/*",
       "build/**/*"
     ],
