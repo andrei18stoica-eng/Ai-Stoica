@@ -108,6 +108,39 @@ function messageText(m) {
   if (Array.isArray(m?.content)) return m.content.filter(x => x?.type === "text").map(x => x.text).join("\n");
   return "";
 }
+function inferModelProvider(model,provider="") {
+  const p=String(provider||"").toLowerCase();
+  if(p)return p;
+  const m=String(model||"").toLowerCase();
+  if(/claude|anthropic/.test(m))return "anthropic";
+  if(/openai|gpt|codex|\/o[134](?:\b|[-_.])/i.test(m))return "openai";
+  if(/gemini|google/.test(m))return "gemini";
+  if(/cerebras/.test(m))return "cerebras";
+  if(/groq/.test(m))return "groq";
+  if(/cloudflare|@cf\//.test(m))return "cloudflare";
+  if(/openrouter/.test(m))return "openrouter";
+  if(/runway/.test(m))return "runway";
+  return p||"ai";
+}
+function providerLabel(provider,model="") {
+  const p=inferModelProvider(model,provider);
+  return ({openai:"OpenAI",anthropic:"Anthropic",gemini:"Google Gemini",cerebras:"Cerebras",groq:"Groq",cloudflare:"Cloudflare AI",openrouter:"OpenRouter",runway:"Runway",ai:"AI"})[p]||String(provider||"AI");
+}
+function routeTaskLabel(task) {
+  return ({
+    coding:"Programare",reasoning:"Matematică / logică",legal_analysis:"Analiză juridică",
+    long_context:"Document / context lung",research:"Cercetare",creative:"Creativitate",
+    vision:"Imagine / viziune",fast:"Răspuns rapid",general:"General",manual:"Model ales manual",
+    image_generation:"Generare imagine",video_generation:"Generare video"
+  })[task]||"General";
+}
+function RouteBadge({info}) {
+  if(!info?.model)return null;
+  const provider=providerLabel(info.provider,info.model);
+  return <div className="routeBadge" title={"AI Stoica a folosit "+provider+" · "+info.model}>
+    <Sparkles size={12}/><span><b>{provider}</b><em>{info.model}</em></span><small>{routeTaskLabel(info.task)}</small>
+  </div>;
+}
 
 async function writeClipboardText(value) {
   const text=String(value??"");
@@ -391,7 +424,7 @@ function ModelPicker({model,onSelect,models,onRefresh,refreshing}) {
       <div className="modelPickerList" role="listbox">
         {filtered.map(x=><button key={x} className={cx("modelOption",x===model&&"active")} onClick={()=>{onSelect(x);setOpen(false)}} role="option" aria-selected={x===model}>
           <span className="modelOptionIcon"><Sparkles size={15}/></span>
-          <span className="modelOptionCopy"><b>{x}</b><small>{x===model?"Selectat acum":"Folosește acest AI"}</small></span>
+          <span className="modelOptionCopy"><b>{x}</b><small>{x===model?(x==="Ai principal"?"Selectat · alege automat AI-ul potrivit":"Selectat acum"):(x==="Ai principal"?"Alege automat AI-ul potrivit":"Folosește acest AI")}</small></span>
           {x===model&&<Check size={16}/>}
         </button>)}
         {!filtered.length&&<div className="modelEmpty">Nu am găsit modelul căutat.</div>}
@@ -494,7 +527,7 @@ function MediaAttachment({attachment}) {
   </div>;
 }
 
-function ConversationView({conversation,busy,onRegenerate,onRate}) {
+function ConversationView({conversation,busy,busyStage,onRegenerate,onRate}) {
   const [contextMenu,setContextMenu]=useState(null);
   useEffect(()=>{
     const close=()=>setContextMenu(null);
@@ -524,12 +557,13 @@ function ConversationView({conversation,busy,onRegenerate,onRate}) {
       ?<div key={m.id||i} className="userRow"><div className="userMessageWrap"><div className="userBubble copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}><div>{messageText(m)}</div>{m.attachments?.length>0&&<div className="inlineAttachments mediaAttachments">{m.attachments.map((a,j)=><MediaAttachment key={a.libraryId||j} attachment={a}/>)}</div>}</div><div className="userMessageActions"><CopyMessageButton message={m}/></div></div></div>
       :m.role==="assistant"
         ?<div key={m.id||i} className="assistantBlock"><div className="assistantMark">S</div><div className="assistantBody copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}>
+          {m.routeInfo&&<RouteBadge info={m.routeInfo}/>}
           {!m.attachmentOnly&&String(m.content||"").trim()&&<ReactMarkdown remarkPlugins={[remarkGfm]}>{String(m.content||"")}</ReactMarkdown>}
           {m.attachments?.length>0&&<div className="generatedFiles">{m.attachments.map((a,j)=><GeneratedAttachment key={a.id||j} attachment={a}/>)}</div>}
           {!m.streaming&&!m.attachmentOnly&&<MessageActions message={m} onRegenerate={()=>onRegenerate(i)} onRate={v=>onRate(i,v)}/>}
         </div></div>
         :null)}
-    {busy&&<div className="thinking"><span/><span/><span/></div>}
+    {busy&&<div className="thinking"><div className="thinkingPulse"><span/><span/><span/></div><div className="thinkingCopy"><b>{busyStage||"Gândește și pregătește răspunsul…"}</b><small>AI Stoica afișează etapa de lucru, nu raționamentul intern.</small></div></div>}
     {contextMenu&&<div className="copyContextMenu" style={{left:contextMenu.x,top:contextMenu.y}} onClick={e=>e.stopPropagation()}>
       {contextMenu.codeText&&<button onClick={()=>copyValue(contextMenu.codeText)}><Copy size={15}/><span><b>Copiază codul</b><small>Doar blocul de cod selectat</small></span></button>}
       {contextMenu.selection&&<button onClick={()=>copyValue(contextMenu.selection)}><Copy size={15}/><span><b>Copiază selecția</b><small>Textul pe care l-ai selectat</small></span></button>}
@@ -1155,7 +1189,7 @@ function App() {
   const initialModels=useMemo(()=>{const cached=cachedModels();return cached.length?cached:["Ai principal"]},[]);
   const [boot,setBoot]=useState(true),[conversations,setConversations]=useState([]),[projects,setProjects]=useState([]),[assistants,setAssistants]=useState([]),[models,setModels]=useState(initialModels);
   const [currentId,setCurrentId]=useState(null),[model,setModel]=useState(()=>localStorage.getItem(MODEL_SELECTED_KEY)||initialModels[0]||"Ai principal"),[selectedProject,setSelectedProject]=useState(null),[selectedAssistant,setSelectedAssistant]=useState(null);
-  const [draft,setDraft]=useState(""),[attachments,setAttachments]=useState([]),[busy,setBusy]=useState(false),[search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[omni,setOmni]=useState(false),[refreshingModels,setRefreshingModels]=useState(false),[modelPolicyEnforced,setModelPolicyEnforced]=useState(false);
+  const [draft,setDraft]=useState(""),[attachments,setAttachments]=useState([]),[busy,setBusy]=useState(false),[busyStage,setBusyStage]=useState(""),[search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[omni,setOmni]=useState(false),[refreshingModels,setRefreshingModels]=useState(false),[modelPolicyEnforced,setModelPolicyEnforced]=useState(false);
   const [settings,setSettings]=useState(false),[createType,setCreateType]=useState(null),[toolPanel,setToolPanel]=useState(null),[filesPanel,setFilesPanel]=useState(false),[updateReady,setUpdateReady]=useState(false),[sidebarCollapsed,setSidebarCollapsed]=useState(false);
   const chatRef=useRef(null);
   const current=conversations.find(c=>c.id===currentId)||null;
@@ -1252,16 +1286,32 @@ function App() {
     const fileMode=!!requestedFormat;
     const desiredModel=String(baseConv.model||model||"").trim();
     const effectiveModel=modelPolicyEnforced?(models.includes(desiredModel)?desiredModel:(models.includes(model)?model:(models[0]||""))):desiredModel;
-    setBusy(true);const assistantMessage={id:uid(),role:"assistant",content:"",attachmentOnly:fileMode,createdAt:Date.now(),streaming:true};let working={...baseConv,model:effectiveModel,messages:[...messages,assistantMessage],updatedAt:Date.now()};setConversations(v=>v.map(x=>x.id===working.id?working:x));
+    setBusy(true);setBusyStage("Analizează cererea și identifică tipul sarcinii…");const assistantMessage={id:uid(),role:"assistant",content:"",attachmentOnly:fileMode,createdAt:Date.now(),streaming:true};let working={...baseConv,model:effectiveModel,messages:[...messages,assistantMessage],updatedAt:Date.now()};setConversations(v=>v.map(x=>x.id===working.id?working:x));
     try{
       if(!effectiveModel)throw new Error("Nu există niciun model AI permis pentru acest cont.");
-      if(!omni){await window.AIStoica.ensureOmni();await new Promise(r=>setTimeout(r,1200))}
+      if(!omni){setBusyStage("Pornește și verifică OmniRoute…");await window.AIStoica.ensureOmni();await new Promise(r=>setTimeout(r,1200))}
+      setBusyStage(effectiveModel==="Ai principal"?"Selectează AI-ul cel mai potrivit pentru întrebare…":"Pregătește modelul selectat…");
       const token=localStorage.getItem(TOKEN_KEY)||"",r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({model:effectiveModel,assistantId:working.assistantId,messages})});
       if(!r.ok){let e;try{e=await r.json()}catch{e={error:await r.text()}};throw new Error(e?.error||`HTTP ${r.status}`)}
-      const reader=r.body.getReader(),dec=new TextDecoder();let buf="",answer="";
-      while(true){const {value,done}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const events=buf.split("\n\n");buf=events.pop()||"";for(const ev of events)for(const line of ev.split("\n")){if(!line.startsWith("data:"))continue;const raw=line.slice(5).trim();if(!raw||raw==="[DONE]")continue;try{const j=JSON.parse(raw),delta=j?.choices?.[0]?.delta?.content||j?.choices?.[0]?.message?.content||"";if(delta){answer+=delta;working={...working,messages:[...messages,{...assistantMessage,content:fileMode?"":answer,streaming:true}]};setConversations(v=>v.map(x=>x.id===working.id?working:x))}}catch{}}}
+      const reader=r.body.getReader(),dec=new TextDecoder();let buf="",answer="",routeInfo=null,startedAnswer=false;
+      while(true){const {value,done}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const events=buf.split("\n\n");buf=events.pop()||"";for(const ev of events)for(const line of ev.split("\n")){if(!line.startsWith("data:"))continue;const raw=line.slice(5).trim();if(!raw||raw==="[DONE]")continue;try{
+        const j=JSON.parse(raw);
+        if(j?.ai_stoica_route){
+          routeInfo=j.ai_stoica_route;
+          setBusyStage(`A ales ${providerLabel(routeInfo.provider,routeInfo.model)} · ${routeInfo.model} pentru ${routeTaskLabel(routeInfo.task)}…`);
+          working={...working,messages:[...messages,{...assistantMessage,routeInfo,content:fileMode?"":answer,streaming:true}]};
+          setConversations(v=>v.map(x=>x.id===working.id?working:x));
+          continue;
+        }
+        const delta=j?.choices?.[0]?.delta?.content||j?.choices?.[0]?.message?.content||"";
+        if(delta){
+          if(!startedAnswer){startedAnswer=true;setBusyStage("Gândește și generează răspunsul…")}
+          answer+=delta;working={...working,messages:[...messages,{...assistantMessage,routeInfo,content:fileMode?"":answer,streaming:true}]};setConversations(v=>v.map(x=>x.id===working.id?working:x))
+        }
+      }catch{}}}
       let generatedAttachments=[];
       if(requestedFormat){
+        setBusyStage(`Creează fișierul ${requestedFormat.toUpperCase()} și pregătește Download…`);
         try{
           const previousAssistant=[...messages].reverse().find(m=>m.role==="assistant");
           const previousSource=previousAssistant?.artifactSource||messageText(previousAssistant);
@@ -1279,24 +1329,25 @@ function App() {
         }
       }
       const attachmentOnly=!!requestedFormat&&generatedAttachments.length>0;
-      working={...working,messages:[...messages,{...assistantMessage,content:attachmentOnly?"":(answer||"Nu am primit răspuns."),artifactSource:attachmentOnly?answer:undefined,attachments:generatedAttachments,attachmentOnly,streaming:false}],updatedAt:Date.now()};const saved=await saveConversation(working);
+      working={...working,messages:[...messages,{...assistantMessage,routeInfo,content:attachmentOnly?"":(answer||"Nu am primit răspuns."),artifactSource:attachmentOnly?answer:undefined,attachments:generatedAttachments,attachmentOnly,streaming:false}],updatedAt:Date.now()};const saved=await saveConversation(working);
       api("/api/memory/capture",{method:"POST",body:JSON.stringify({conversationId:saved.id,userText:messageText(lastUser),assistantText:answer})}).catch(()=>{});
-    }catch(e){working={...working,messages:[...messages,{...assistantMessage,content:`Eroare: ${e.message}`,streaming:false}],updatedAt:Date.now()};await saveConversation(working)}finally{setBusy(false)}
+    }catch(e){working={...working,messages:[...messages,{...assistantMessage,content:`Eroare: ${e.message}`,streaming:false}],updatedAt:Date.now()};await saveConversation(working)}finally{setBusy(false);setBusyStage("")}
   }
   async function generateMediaAssistant(baseConv,messages,kind,prompt){
-    setBusy(true);
+    setBusy(true);setBusyStage(kind==="video"?"Creează videoclipul și pregătește fișierul MP4…":"Creează imaginea și pregătește fișierul pentru Download…");
     try{
       if(!omni){await window.AIStoica.ensureOmni();await new Promise(r=>setTimeout(r,900))}
       const endpoint=kind==="video"?"/api/generate/video":"/api/generate/image";
       const d=await api(endpoint,{method:"POST",body:JSON.stringify({prompt})});
       const file={...d.data,type:d.data?.kind||kind,kind:d.data?.kind||kind};
-      const assistantMessage={id:uid(),role:"assistant",content:"",attachments:[file],attachmentOnly:true,createdAt:Date.now(),streaming:false};
+      const routeInfo={task:kind==="video"?"video_generation":"image_generation",model:file.model||"",provider:inferModelProvider(file.model||"")};
+      const assistantMessage={id:uid(),role:"assistant",content:"",attachments:[file],routeInfo,attachmentOnly:true,createdAt:Date.now(),streaming:false};
       const saved=await saveConversation({...baseConv,messages:[...messages,assistantMessage],updatedAt:Date.now()});
       api("/api/memory/capture",{method:"POST",body:JSON.stringify({conversationId:saved.id,userText:prompt,assistantText:`${kind==="video"?"Videoclip":"Imagine"} generată: ${file.name}`})}).catch(()=>{});
     }catch(e){
       const assistantMessage={id:uid(),role:"assistant",content:`Eroare la generarea ${kind==="video"?"videoclipului":"imaginii"}: ${e.message}`,createdAt:Date.now(),streaming:false};
       await saveConversation({...baseConv,messages:[...messages,assistantMessage],updatedAt:Date.now()});
-    }finally{setBusy(false)}
+    }finally{setBusy(false);setBusyStage("")}
   }
   async function send(){
     const text=draft.trim(),usable=attachments.filter(a=>a.part||a.parts?.length);if((!text&&!usable.length)||busy)return;
@@ -1349,7 +1400,7 @@ function App() {
   return <div className={cx("appShell",sidebarCollapsed&&"sidebarCollapsed")}>
     <Sidebar open={sidebar} setOpen={setSidebar} user={user} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} onSelect={id=>{setCurrentId(id);setSidebar(false)}} onDeleteConversation={deleteConversation} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} selectedAssistant={selectedAssistant} setSelectedAssistant={setSelectedAssistant} onNewProject={()=>setCreateType("project")} onNewAssistant={()=>setCreateType("assistant")} onTool={openTool} onExplore={()=>openTool("explore")} onSettings={()=>setSettings(true)} onLogout={logout}/>
     {sidebar&&<div className="mobileScrim" onClick={()=>setSidebar(false)}/>}
-    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} onRegenerate={regenerate} onRate={rate}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
+    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} busyStage={busyStage} onRegenerate={regenerate} onRate={rate}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
     {settings&&<SettingsModal user={user} onClose={()=>setSettings(false)} onSaved={()=>{window.AIStoica.ensureOmni();setTimeout(loadData,1000)}}/>}
     {createType&&<CreateModal type={createType} onClose={()=>setCreateType(null)} onCreate={createItem}/>}
     {toolPanel==="explore"&&<ExplorePanel onClose={()=>setToolPanel(null)} assistants={assistants} models={models} onUseAssistant={useAssistant} onImagePrompt={startImagePrompt} onOpenLibrary={()=>setToolPanel("library")}/>} 
