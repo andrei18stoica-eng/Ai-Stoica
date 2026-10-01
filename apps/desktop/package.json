@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.6.10",
+  "version": "0.6.11",
   "private": true,
-  "description": "AI Stoica 0.6.10 - manual AI selection restored; Owner controls model access",
+  "description": "AI Stoica 0.6.11 - explicit paid AI master switch; per-user paid access remains Owner-controlled",
   "main": "main.cjs",
   "repository": {
     "type": "git",
