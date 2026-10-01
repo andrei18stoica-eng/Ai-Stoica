@@ -62,8 +62,8 @@ function providerAccess(context, provider) {
   }
 
   if (PAID_PROVIDERS.has(provider)) {
-    if (!isOwner && !paidEnabled) {
-      return { allowed:false, reason:"Serviciile AI plătite nu sunt activate de Owner pentru acest cont." };
+    if (!paidEnabled) {
+      return { allowed:false, reason:"Owner a dezactivat explicit serviciile AI plătite din panoul de control." };
     }
     if (!isOwner && permissions[provider] !== true) {
       const label = provider === "openai" ? "OpenAI / GPT" : provider === "anthropic" ? "Claude / Anthropic" : "OpenRouter";
@@ -99,8 +99,8 @@ function evaluateModelAccess(context, model) {
     if (combo.enabled === false) {
       return { model:requested, allowed:false, providers, paidRequired, source:"combination", combinationId:combo.id, reason:"Combinația AI este dezactivată." };
     }
-    if (!isOwner && paidRequired && context?.paidEnabled !== true) {
-      return { model:requested, allowed:false, providers, paidRequired:true, source:"combination", combinationId:combo.id, reason:"Combinația folosește AI plătit, iar accesul nu este activat de Owner pentru acest cont." };
+    if (paidRequired && context?.paidEnabled !== true) {
+      return { model:requested, allowed:false, providers, paidRequired:true, source:"combination", combinationId:combo.id, reason:"Owner a dezactivat explicit serviciile AI plătite din panoul de control." };
     }
     for (const provider of providers) {
       const access = providerAccess(context, provider);
@@ -113,8 +113,8 @@ function evaluateModelAccess(context, model) {
 
   if (isManagedPaidAlias(requested)) {
     const providers = ["openai","anthropic"];
-    if (!isOwner && context?.paidEnabled !== true) {
-      return { model:requested, allowed:false, providers, paidRequired:true, source:"managed_alias", reason:"AI principal / AI Stoica poate include servicii plătite, iar accesul nu este activat de Owner pentru acest cont." };
+    if (context?.paidEnabled !== true) {
+      return { model:requested, allowed:false, providers, paidRequired:true, source:"managed_alias", reason:"Owner a dezactivat explicit serviciile AI plătite din panoul de control." };
     }
     for (const provider of providers) {
       const access = providerAccess(context, provider);
