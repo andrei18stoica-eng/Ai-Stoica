@@ -48,14 +48,15 @@ function classifyTask(messages) {
     return { task: "vision", reasons, text: raw };
   }
 
-  const codeSignals = /(cod|code|program|javascript|typescript|python|java\b|c\+\+|c#|react|node\.?js|sql\b|api\b|bug|eroare|debug|github|docker|linux|powershell|bash|html|css|functie|function|algoritm|repository|commit|script)/;
+  const codeSignals = /(cod|code|program|javascript|typescript|python|java\b|c\+\+|c#|react|node\.?js|sql\b|bug|debug|github|docker|linux|powershell|bash|html|css|functie|function|algoritm|repository|commit|script)/;
+  const apiCoding = /(creeaz|creaz|scrie|implementeaz|integreaz|conecteaz|endpoint|request|fetch|rest|graphql).*\bapi\b|\bapi\b.*(cod|endpoint|integra|request|fetch|autent)/;
   const mathSignals = /(matematic|calcul|ecuat|inecuat|integral|derivat|geometr|algebr|probabilit|statistic|demonstreaz|dovedeste|teorema|radical|fract|logaritm|trigonom|limita|matrice|vector|reasoning|logic|rationament)/;
   const legalSignals = /(juridic|legea|lege |articolul|contract|achizit|hotarare|sentinta|instanta|primarie|consiliul local|ordonanta|cod administrativ|aviz|adresa oficiala|act aditional|procedura|legalitate|contestatie|autoritate|urbanism)/;
   const researchSignals = /(cauta|cautare|research|documenteaza|surse|verifica pe internet|comparatie|compara|analiza comparativa|studiu|investigheaza|ultimele informatii|actualizat|noutati|informatii recente)/;
   const creativeSignals = /(scrie (o |un )?(poveste|poezie|scenariu|discurs|mesaj|urare)|creativ|slogan|nume de brand|campanie|idee de|brainstorm|story|poem|copywriting)/;
   const documentSignals = /(document|pdf|docx|word|contract|raport|proiect|fisier|atasament|capitol|rezumat|sinteza|analizeaza acest|analizeaza documentul)/;
 
-  if (codeSignals.test(t) || /\x60\x60\x60[\s\S]{20,}\x60\x60\x60/.test(raw)) {
+  if (codeSignals.test(t) || apiCoding.test(t) || /\x60\x60\x60[\s\S]{20,}\x60\x60\x60/.test(raw)) {
     reasons.push("cerere de programare/cod");
     return { task: "coding", reasons, text: raw };
   }
@@ -94,13 +95,20 @@ function inferProvider(entry) {
   const explicit = normalize(entry && entry.provider || "");
   if (explicit) return explicit;
   const id = normalize(typeof entry === "string" ? entry : entry && entry.id);
-  if (/claude|anthropic/.test(id)) return "anthropic";
-  if (/openai|gpt|codex|\bo[134]\b/.test(id)) return "openai";
-  if (/gemini|google/.test(id)) return "gemini";
+  const first = id.split("/")[0];
+  const prefixMap = {
+    openai:"openai", anthropic:"anthropic", google:"gemini", gemini:"gemini",
+    cerebras:"cerebras", groq:"groq", cloudflare:"cloudflare",
+    openrouter:"openrouter", "@cf":"cloudflare"
+  };
+  if (prefixMap[first]) return prefixMap[first];
   if (/groq/.test(id)) return "groq";
   if (/cerebras/.test(id)) return "cerebras";
   if (/cloudflare|@cf\//.test(id)) return "cloudflare";
   if (/openrouter/.test(id)) return "openrouter";
+  if (/claude|anthropic/.test(id)) return "anthropic";
+  if (/gemini|google/.test(id)) return "gemini";
+  if (/openai|codex|\bo[134]\b/.test(id) || (!/gpt[-_. ]?oss/.test(id) && /gpt/.test(id))) return "openai";
   return "";
 }
 
