@@ -133,7 +133,7 @@ function scoreModel(entry, task) {
   if (/gpt-4\.1|gpt-4o/.test(id)) score += 78;
   if (/gpt-oss-120b|120b/.test(id)) score += 68;
   if (/70b|72b|large/.test(id)) score += 52;
-  if (/flash|mini|small|instant|turbo/.test(id)) score += 18;
+  if (/(^|[\/_.:-])(flash|mini|small|instant|turbo)(?:[\/_.:-]|$)/.test(id)) score += 18;
 
   const add = (rx, n) => { if (rx.test(id + " " + meta)) score += n; };
 
