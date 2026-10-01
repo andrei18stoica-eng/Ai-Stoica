@@ -969,8 +969,25 @@ function PluginsPanel({onClose}) {
   async function openProviderApp(){
     const url=selected?.appUrl;
     if(!url)return;
-    const r=await window.AIStoica?.openExternal?.(url);
-    if(r&&!r.ok)setResult(`${selected.name}: nu am putut deschide aplicația — ${r.error||"eroare"}`);
+    try{
+      await api("/api/plugins/direct",{method:"POST",body:JSON.stringify({
+        name:selected.name,description:selected.description,trigger:selected.trigger,appUrl:url
+      })});
+      await load();
+      const r=await window.AIStoica?.openExternal?.(url);
+      if(r&&!r.ok)throw new Error(r.error||"Nu am putut deschide aplicația.");
+      setResult(`${selected.name}: conectat pentru deschidere directă, fără OAuth. Autentifică-te normal în aplicația oficială.`);
+      closeSetup();
+    }catch(e){setResult(`${selected.name}: ${e.message}`)}
+  }
+  async function runInstalledPlugin(x){
+    if(x.mode==="direct_app"&&(x.appUrl||x.url)){
+      const r=await window.AIStoica?.openExternal?.(x.appUrl||x.url);
+      if(r&&!r.ok)setResult(`${x.name}: nu am putut deschide aplicația — ${r.error||"eroare"}`);
+      else setResult(`${x.name}: aplicația a fost deschisă.`);
+      return;
+    }
+    await test(x);
   }
 
   const installedNames=new Set(items.map(x=>String(x.name||"").toLowerCase()));
@@ -994,7 +1011,7 @@ function PluginsPanel({onClose}) {
         {!!items.length&&<section className="stoicaInstalled">
           <button className="stoicaSectionTitle" onClick={()=>{}}>Instalate <span>›</span></button>
           <div className="stoicaInstalledIcons">
-            {items.slice(0,8).map(x=><button key={x.id} className="stoicaInstalledIcon" title={x.name} onClick={()=>test(x)}>
+            {items.slice(0,8).map(x=><button key={x.id} className="stoicaInstalledIcon" title={x.name} onClick={()=>runInstalledPlugin(x)}>
               <span>{String(x.name||"P").slice(0,2).toUpperCase()}</span>
             </button>)}
           </div>
@@ -1011,7 +1028,7 @@ function PluginsPanel({onClose}) {
           items.map(x=><div className="stoicaManageRow" key={x.id}>
             <div className="stoicaPluginLogo"><span>{String(x.name||"P").slice(0,2).toUpperCase()}</span></div>
             <div className="stoicaPluginInfo"><b>{x.name}</b><small>{x.description||x.url}</small></div>
-            <button className="smallBtn" onClick={()=>test(x)}>Testează</button>
+            <button className="smallBtn" onClick={()=>runInstalledPlugin(x)}>{x.mode==="direct_app"?"Deschide":"Testează"}</button>
             <button className={cx("claudeToggle",x.enabled&&"on")} onClick={()=>patch(x,{enabled:!x.enabled})}><span/></button>
             <button className="iconDanger" onClick={()=>remove(x.id)}><Trash2 size={16}/></button>
           </div>)}
@@ -1052,17 +1069,17 @@ function PluginsPanel({onClose}) {
             <div><h3>{selected.name}</h3><p>{selected.description}</p></div>
             <button className="iconOnly" onClick={closeSetup}><X size={18}/></button>
           </div>
-          <div className="claudeSetupNotice"><Plug size={16}/><span>Autentificarea în site/aplicație și autorizarea API sunt pași diferiți. AI Stoica nu consideră pluginul conectat până când nu există o conexiune OAuth/API validă.</span></div>
+          <div className="claudeSetupNotice"><Plug size={16}/><span>Poți folosi pluginul fără OAuth pentru deschiderea directă a aplicației. OAuth/API rămâne opțional doar când vrei ca AI Stoica să citească sau să modifice date private din acel serviciu.</span></div>
           {selected.appUrl&&<div className="pluginDirectConnect">
-            <button className="primary" onClick={openProviderApp}><ExternalLink size={16}/> Deschide {selected.name} și autentifică-te</button>
-            <small>Se deschide aplicația oficială în browser. După autentificare, conexiunea AI Stoica se finalizează prin OAuth/API.</small>
+            <button className="primary" onClick={openProviderApp}><ExternalLink size={16}/> Conectează fără OAuth și deschide {selected.name}</button>
+            <small>AI Stoica salvează pluginul ca legătură directă și deschide aplicația oficială. Te autentifici normal în browser/aplicație.</small>
           </div>}
           <div className="claudeSetupForm">
             <label>Nume<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label>
             {selected.oauth&&<>
               <label>OAuth Client ID<input placeholder="Client ID al aplicației AI Stoica" value={form.oauthClientId} onChange={e=>setForm({...form,oauthClientId:e.target.value})}/></label>
               <label>OAuth Client Secret <span className="optional">{selected.oauth.requiresSecret?"necesar":"opțional / PKCE"}</span><input type="password" placeholder="Client Secret" value={form.oauthClientSecret} onChange={e=>setForm({...form,oauthClientSecret:e.target.value})}/></label>
-              <button type="button" className="primary pluginOAuthButton" onClick={connectOAuth}><ExternalLink size={15}/> Conectează contul cu OAuth</button>
+              <button type="button" className="secondary pluginOAuthButton" onClick={connectOAuth}><ExternalLink size={15}/> OAuth avansat pentru acces la date</button>
             </>}
             <label>Endpoint / webhook / API personalizat<input placeholder="https://…" value={form.url} onChange={e=>setForm({...form,url:e.target.value})}/></label>
             <div className="claudeFormRow"><label>Trigger<input placeholder="@gmail" value={form.trigger} onChange={e=>setForm({...form,trigger:e.target.value})}/></label><label>Metodă<select value={form.method} onChange={e=>setForm({...form,method:e.target.value})}><option>POST</option><option>GET</option></select></label></div>
