@@ -12,6 +12,7 @@ const fontkit = fontkitModule.default || fontkitModule;
 const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = require("docx");
 const PptxGenJS = require("pptxgenjs");
 const JSZip = require("jszip");
+const { isSmartAlias, routeQuestion } = require("./smart-router.cjs");
 
 function createStore(dataDir) {
   const file = path.join(dataDir, "ai-stoica-data.json");
@@ -527,6 +528,37 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(!decision?.allowed)throw policyFailure(decision?.reason||"Modelul nu este permis pentru acest cont.",403);
     return decision;
   }
+  async function omniModelEntries(cfg) {
+    const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/, "")}/models`,{
+      headers:cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{},
+      signal:AbortSignal.timeout(9000)
+    });
+    const text=await r.text();
+    if(!r.ok)throw policyFailure(`OmniRoute models HTTP ${r.status}: ${text.slice(0,500)}`,502);
+    let parsed;try{parsed=JSON.parse(text)}catch{throw policyFailure("OmniRoute a returnat o listă de modele invalidă.",502)}
+    return Array.isArray(parsed)?parsed:(Array.isArray(parsed?.data)?parsed.data:[]);
+  }
+  async function allowedOmniEntries(context, entries) {
+    const ids=(Array.isArray(entries)?entries:[]).map(x=>typeof x==="string"?x:x?.id).map(x=>String(x||"").trim()).filter(Boolean);
+    if(!ids.length)return [];
+    if(!cloudBase())return entries;
+    const policy=await cloudModelPolicy(context?.cloudToken,ids);
+    const allowed=new Set(policy.data.filter(x=>x.allowed).map(x=>String(x.model)));
+    return entries.filter(x=>allowed.has(String(typeof x==="string"?x:x?.id)));
+  }
+  async function resolveChatRoute(context, messages, requestedModel) {
+    const cfg=getOmniConfig();
+    const requested=String(requestedModel||cfg.model||"Ai principal").trim();
+    if(!isSmartAlias(requested)){
+      await requireModelAccess(context?.cloudToken,requested);
+      return {task:"manual",reasons:["model ales manual"],selectedModel:requested,candidates:[{id:requested,provider:"",score:0}]};
+    }
+    const entries=await omniModelEntries(cfg);
+    const allowed=await allowedOmniEntries(context,entries);
+    const route=routeQuestion(allowed,messages,6);
+    if(!route.selectedModel)throw policyFailure("AI Stoica nu a găsit niciun model de chat permis și disponibil pentru această întrebare.",503);
+    return route;
+  }
   function ensureShadowUser(remoteUser) {
     if (!remoteUser?.email) return null;
     const db = store.read();
@@ -677,21 +709,33 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.get("/api/models", auth, async (req, res) => {
     const cfg = getOmniConfig();
     try {
-      const r = await fetch(`${String(cfg.baseUrl).replace(/\/+$/, "")}/models`, { headers: cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {} });
-      const text=await r.text();
-      if(!r.ok)return res.status(r.status).type("application/json").send(text);
-      if(!cloudBase())return res.status(200).type("application/json").send(text);
-      let parsed;try{parsed=JSON.parse(text)}catch{return res.status(502).json({error:"OmniRoute a returnat o listă de modele invalidă."})}
-      const entries=Array.isArray(parsed)?parsed:(Array.isArray(parsed?.data)?parsed.data:[]);
-      const ids=entries.map(x=>typeof x==="string"?x:x?.id).map(x=>String(x||"").trim()).filter(Boolean);
-      const policy=await cloudModelPolicy(req.cloudToken,ids);
-      const allowed=new Set(policy.data.filter(x=>x.allowed).map(x=>String(x.model)));
-      const filtered=entries.filter(x=>allowed.has(String(typeof x==="string"?x:x?.id)));
-      const payload=Array.isArray(parsed)?{data:filtered}:{...parsed,data:filtered};
-      payload.policyEnforced=true;
-      payload.deniedCount=Math.max(0,entries.length-filtered.length);
-      res.json(payload);
-    } catch (e) { res.status(e.status||502).json({ error: e.message?.startsWith("Nu mă pot conecta")?e.message:`Nu pot încărca modelele permise: ${e.message}` }); }
+      const entries=await omniModelEntries(cfg);
+      const filtered=await allowedOmniEntries(req,entries);
+      const smartAllowed=!cloudBase()||req.permissions?.chat!==false;
+      const withoutSmart=filtered.filter(x=>!isSmartAlias(typeof x==="string"?x:x?.id));
+      const data=smartAllowed
+        ?[{id:"Ai principal",provider:"ai-stoica",smartRouter:true,description:"Alege automat modelul potrivit pentru fiecare întrebare"},...withoutSmart]
+        :withoutSmart;
+      res.json({
+        data,
+        policyEnforced:!!cloudBase(),
+        smartRouter:true,
+        deniedCount:Math.max(0,entries.length-filtered.length)
+      });
+    } catch (e) { res.status(e.status||502).json({ error:`Nu pot încărca modelele permise: ${e.message}` }); }
+  });
+
+  app.post("/api/router/preview", auth, async (req,res) => {
+    try{
+      const messages=Array.isArray(req.body?.messages)?req.body.messages:[{role:"user",content:String(req.body?.prompt||"")}];
+      const route=await resolveChatRoute(req,messages,"Ai principal");
+      res.json({data:{
+        task:route.task,
+        reasons:route.reasons,
+        selectedModel:route.selectedModel,
+        candidates:route.candidates.map(x=>({id:x.id,provider:x.provider,score:x.score}))
+      }});
+    }catch(e){res.status(e.status||502).json({error:e.message})}
   });
 
   app.get("/api/projects", auth, (req,res) => { const db=store.read(); res.json({data:db.projects.filter(x=>x.userId===req.user.id).sort((a,b)=>b.updatedAt-a.updatedAt)}); });
@@ -1223,21 +1267,56 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     return system.length?[{role:"system",content:system.join("\n\n")},...messages.filter(m=>m.role!=="system")]:messages;
   }
 
+  async function fetchChatCandidate(cfg,model,messages,stream){
+    return await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},
+      body:JSON.stringify({model,messages,stream,temperature:0.4}),
+      signal:AbortSignal.timeout(stream?120000:90000)
+    });
+  }
   app.post("/api/chat", auth, async (req,res) => {
-    const cfg=getOmniConfig(),selectedModel=String(req.body?.model||cfg.model||"Ai principal").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id);if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
-    try{await requireModelAccess(req.cloudToken,selectedModel);const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},body:JSON.stringify({model:selectedModel,messages,stream:false,temperature:0.4})});res.status(r.status).type("application/json").send(await r.text());}
-    catch(e){res.status(e.status||502).json({error:e.status?e.message:`Nu mă pot conecta la OmniRoute: ${e.message}`});}
+    const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"Ai principal").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id);if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
+    try{
+      const route=await resolveChatRoute(req,messages,requestedModel);
+      const errors=[];
+      for(const candidate of route.candidates){
+        try{
+          const r=await fetchChatCandidate(cfg,candidate.id,messages,false);
+          const body=await r.text();
+          if(!r.ok){errors.push(`${candidate.id}: HTTP ${r.status}`);continue;}
+          res.setHeader("X-AI-Stoica-Route",route.task);
+          res.setHeader("X-AI-Stoica-Model",candidate.id);
+          return res.status(200).type(r.headers.get("content-type")||"application/json").send(body);
+        }catch(e){errors.push(`${candidate.id}: ${e.message}`)}
+      }
+      throw policyFailure("Niciun model selectat de AI Stoica nu a putut răspunde. "+errors.join(" | "),502);
+    }catch(e){res.status(e.status||502).json({error:e.message})}
   });
   app.post("/api/chat/stream", auth, async (req,res) => {
-    const cfg=getOmniConfig(),selectedModel=String(req.body?.model||cfg.model||"Ai principal").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id);if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
+    const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"Ai principal").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id);if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
     try{
-      await requireModelAccess(req.cloudToken,selectedModel);
-      const upstream=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},body:JSON.stringify({model:selectedModel,messages,stream:true,temperature:0.4})});
-      if(!upstream.ok)return res.status(upstream.status).type("application/json").send(await upstream.text());
-      const ctype=upstream.headers.get("content-type")||"";res.status(200);res.setHeader("Content-Type","text/event-stream; charset=utf-8");res.setHeader("Cache-Control","no-cache, no-transform");res.setHeader("Connection","keep-alive");
+      const route=await resolveChatRoute(req,messages,requestedModel);
+      const errors=[];let upstream=null,usedModel="";
+      for(const candidate of route.candidates){
+        try{
+          const r=await fetchChatCandidate(cfg,candidate.id,messages,true);
+          if(!r.ok){errors.push(`${candidate.id}: HTTP ${r.status} ${(await r.text()).slice(0,300)}`);continue;}
+          upstream=r;usedModel=candidate.id;break;
+        }catch(e){errors.push(`${candidate.id}: ${e.message}`)}
+      }
+      if(!upstream)throw policyFailure("Niciun model selectat de AI Stoica nu a putut răspunde. "+errors.join(" | "),502);
+      const ctype=upstream.headers.get("content-type")||"";
+      res.status(200);
+      res.setHeader("Content-Type","text/event-stream; charset=utf-8");
+      res.setHeader("Cache-Control","no-cache, no-transform");
+      res.setHeader("Connection","keep-alive");
+      res.setHeader("X-AI-Stoica-Route",route.task);
+      res.setHeader("X-AI-Stoica-Model",usedModel);
+      res.write(`data: ${JSON.stringify({ai_stoica_route:{task:route.task,model:usedModel}})}\n\n`);
       if(!ctype.includes("text/event-stream")){const data=await upstream.json(),text=data?.choices?.[0]?.message?.content||"";res.write(`data: ${JSON.stringify({choices:[{delta:{content:text}}]})}\n\n`);res.write("data: [DONE]\n\n");return res.end();}
       const reader=upstream.body.getReader();while(true){const {value,done}=await reader.read();if(done)break;res.write(Buffer.from(value));}res.end();
-    }catch(e){if(!res.headersSent)res.status(e.status||502).json({error:e.status?e.message:`Nu mă pot conecta la OmniRoute: ${e.message}`});else{res.write(`data: ${JSON.stringify({error:e.message})}\n\n`);res.end();}}
+    }catch(e){if(!res.headersSent)res.status(e.status||502).json({error:e.message});else{res.write(`data: ${JSON.stringify({error:e.message})}\n\n`);res.end();}}
   });
 
   async function runAutomation(item, cloudToken) {
