@@ -60,7 +60,7 @@ async function main(){
       baseUrl:`http://127.0.0.1:${omniPort}/v1`,
       controlApiUrl:`http://127.0.0.1:${cloudPort}`,
       apiKey:"",
-      model:"Ai principal"
+      model:"groq/llama-3.3-70b-versatile"
     })
   });
   const base="http://127.0.0.1:8798";
@@ -73,30 +73,26 @@ async function main(){
     const models=await r.json();
     expect(r.ok,"Filtered models endpoint failed");
     expect(models.policyEnforced===true,"Model response must mark policy enforcement");
-    expect(Array.isArray(models.data)&&models.data.length===2,"Normal account should see smart router plus one permitted model");
-    expect(models.data[0].id==="Ai principal"&&models.data[0].smartRouter===true,"Smart router alias should be first in selector");
-    expect(models.data[1].id==="groq/llama-3.3-70b-versatile","Paid/unknown models leaked into permitted routing list");
-    expect(Array.isArray(models.manualModels)&&models.manualModels.length===3,"Manual selector must preserve the complete OmniRoute model catalog");
-    expect(models.manualModels.some(x=>x.id==="openai/gpt-5"),"OpenAI disappeared from the manual model catalog");
-    expect(models.manualModels.some(x=>x.id==="groq/llama-3.3-70b-versatile"),"Groq disappeared from the manual model catalog");
-    expect(models.manualModels.some(x=>x.id==="mystery-model"),"Legacy/unknown OmniRoute model disappeared from the manual catalog");
+    expect(Array.isArray(models.data)&&models.data.length===1,"Normal account should see only the model permitted by Owner");
+    expect(models.data[0].id==="groq/llama-3.3-70b-versatile","Selector should contain only Owner-permitted models");
+    expect(Array.isArray(models.manualModels)&&models.manualModels.length===1,"Manual selector must expose only Owner-permitted models");
+    expect(models.manualModels[0].id==="groq/llama-3.3-70b-versatile","Groq permitted model missing from manual catalog");
 
     r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"Ai principal",messages:[{role:"user",content:"Spune-mi pe scurt ce este un API."}]})});
-    expect(r.ok,"Ai principal smart router should work for normal account");
-    expect(omniChatCalls===1,"Smart router did not dispatch to the permitted Groq model");
-    expect(r.headers.get("x-ai-stoica-model")==="groq/llama-3.3-70b-versatile","Smart router selected an unauthorized model");
+    expect(r.status===409,"Automatic AI alias must be disabled");
+    expect(omniChatCalls===0,"Disabled automatic AI alias reached OmniRoute");
 
     r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"openai/gpt-5",messages:[{role:"user",content:"test"}]})});
     expect(r.status===403,"OpenAI model must be rejected for normal account");
-    expect(omniChatCalls===1,"Denied OpenAI request reached OmniRoute");
+    expect(omniChatCalls===0,"Denied OpenAI request reached OmniRoute");
 
     r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"groq/llama-3.3-70b-versatile",messages:[{role:"user",content:"test"}]})});
     expect(r.ok,"Permitted Groq model should work");
-    expect(omniChatCalls===2,"Permitted Groq request did not reach OmniRoute");
+    expect(omniChatCalls===1,"Permitted Groq request did not reach OmniRoute");
 
     r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"mystery-model",messages:[{role:"user",content:"test"}]})});
     expect(r.status===403,"Unknown model must fail closed");
-    expect(omniChatCalls===2,"Unknown denied model reached OmniRoute");
+    expect(omniChatCalls===1,"Unknown denied model reached OmniRoute");
 
     console.log("DESKTOP_AI_ACCESS_ENFORCEMENT_TESTS_PASSED");
   } finally {
