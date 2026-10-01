@@ -406,7 +406,7 @@ function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,convers
   </aside>;
 }
 
-function ModelPicker({model,onSelect,models,onRefresh,refreshing,autoRouting,onToggleAuto}) {
+function ModelPicker({model,onSelect,models,onRefresh,refreshing}) {
   const [open,setOpen]=useState(false),[query,setQuery]=useState("");
   const ref=useRef(null);
   useEffect(()=>{
@@ -422,7 +422,7 @@ function ModelPicker({model,onSelect,models,onRefresh,refreshing,autoRouting,onT
     <div className="modelPicker">
       <button className={cx("modelPickerButton",open&&"open")} onClick={()=>setOpen(v=>!v)} aria-haspopup="listbox" aria-expanded={open}>
         <span className="modelPickerDot"/>
-        <span className="modelPickerText"><b>{model||"Alege AI"}</b><small>{autoRouting?"AI manual de rezervă":`${list.length} ${list.length===1?"model disponibil":"modele disponibile"}`}</small></span>
+        <span className="modelPickerText"><b>{model||"Alege AI"}</b><small>{list.length} {list.length===1?"model permis":"modele permise"} · acces stabilit de Owner</small></span>
         <ChevronDown size={15}/>
       </button>
     {open&&<div className="modelPickerMenu">
@@ -436,20 +436,17 @@ function ModelPicker({model,onSelect,models,onRefresh,refreshing,autoRouting,onT
         </button>)}
         {!filtered.length&&<div className="modelEmpty">Nu am găsit modelul căutat.</div>}
       </div>
-      <div className="modelPickerFoot">{refreshing?"Actualizez lista de la OmniRoute…":"Lista este preluată din OmniRoute și păstrată local ca rezervă."}</div>
+      <div className="modelPickerFoot">{refreshing?"Actualizez lista de la OmniRoute…":"Alegi manual AI-ul. Owner-ul stabilește ce modele sunt disponibile pentru cont."}</div>
     </div>}
     </div>
-    <button className={cx("autoRouterToggle",autoRouting&&"on")} onClick={onToggleAuto} title={autoRouting?"Alegere automată activă — apasă pentru mod manual":"Alegere manuală activă — apasă pentru selecție automată"}>
-      <Sparkles size={14}/><span>Auto</span><i>{autoRouting?"ON":"OFF"}</i>
-    </button>
   </div>;
 }
 
-function Header({onMenu,model,onSelectModel,models,onRefreshModels,refreshingModels,autoRouting,onToggleAuto,omni,onShare,current,projects,onDetach,onMoveProject,onFiles,onGitHub,onArchive,onDelete}) {
+function Header({onMenu,model,onSelectModel,models,onRefreshModels,refreshingModels,omni,onShare,current,projects,onDetach,onMoveProject,onFiles,onGitHub,onArchive,onDelete}) {
   const [more,setMore]=useState(false),[moveOpen,setMoveOpen]=useState(false);
   return <header className="topbar">
     <button className="iconOnly menuBtn" onClick={onMenu}><Menu size={20}/></button>
-    <ModelPicker model={model} onSelect={onSelectModel} models={models} onRefresh={onRefreshModels} refreshing={refreshingModels} autoRouting={autoRouting} onToggleAuto={onToggleAuto}/>
+    <ModelPicker model={model} onSelect={onSelectModel} models={models} onRefresh={onRefreshModels} refreshing={refreshingModels}/>
     <div className="topSpacer"/>
     <div className={cx("connection",omni?"ok":"bad")}>{omni?<Wifi size={15}/>:<WifiOff size={15}/>} {omni?"OmniRoute conectat":"OmniRoute se reconectează"}</div>
     <button className="topAction" onClick={onShare}><Share2 size={16}/> Distribuie</button>
@@ -1264,7 +1261,7 @@ function SettingsModal({onClose,onSaved,user}) {
     </div>
     <div className="settingsPane">
       {tab==="general"&&<><h3>General</h3><div className="toggleRow"><div><b>Pornește AI Stoica cu Windows</b><span>Aplicația pornește automat și poate rămâne în fundal.</span></div><input type="checkbox" checked={!!cfg.startWithWindows} onChange={e=>setCfg({...cfg,startWithWindows:e.target.checked})}/></div><div className="toggleRow"><div><b>Închidere în system tray</b><span>Butonul X ascunde aplicația fără să oprească serviciile.</span></div><input type="checkbox" checked={cfg.closeToTray!==false} onChange={e=>setCfg({...cfg,closeToTray:e.target.checked})}/></div><div className="toggleRow"><div><b>Actualizări automate</b><span>AI Stoica caută versiuni noi la pornire.</span></div><input type="checkbox" checked={cfg.autoUpdate!==false} onChange={e=>setCfg({...cfg,autoUpdate:e.target.checked})}/></div></>}
-      {tab==="ai"&&<><h3>AI & OmniRoute</h3><label>Gateway local AI Stoica<input value={cfg.gatewayUrl||"http://127.0.0.1:8787"} onChange={e=>setCfg({...cfg,gatewayUrl:e.target.value})} placeholder="http://127.0.0.1:8787"/></label><label>AI Stoica Cloud API<input value={cfg.controlApiUrl||""} onChange={e=>setCfg({...cfg,controlApiUrl:e.target.value})} placeholder="https://api.aistoica.ro"/></label><p className="settingsHelp">Control Center, aprobarea conturilor și permisiunile folosesc PostgreSQL-ul central atunci când Cloud API este configurat. Până la activarea domeniului, poți lăsa câmpul gol.</p><label>Base URL OmniRoute<input value={cfg.baseUrl} onChange={e=>setCfg({...cfg,baseUrl:e.target.value})}/></label><label>Cheie API<input type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder={cfg.apiKey?"Cheie salvată — lasă gol pentru a o păstra":"Cheie OmniRoute"}/></label><label>Model / combo implicit<input value={cfg.model} onChange={e=>setCfg({...cfg,model:e.target.value})}/></label><label>Model generare imagini <span className="optional">opțional</span><input value={cfg.imageModel||""} onChange={e=>setCfg({...cfg,imageModel:e.target.value})} placeholder="Auto — primul model de imagine disponibil"/></label><label>Model generare video <span className="optional">opțional</span><input value={cfg.videoModel||""} onChange={e=>setCfg({...cfg,videoModel:e.target.value})} placeholder="Auto — model video disponibil"/></label><p className="settingsHelp">Când ceri o poză sau un videoclip, AI Stoica generează fișierul real, îl afișează în chat și îl salvează în Bibliotecă.</p><label>Comandă OmniRoute<input value={cfg.omniCommand||"omniroute.cmd"} onChange={e=>setCfg({...cfg,omniCommand:e.target.value})}/></label><div className="toggleRow"><div><b>Pornește OmniRoute automat</b><span>Dacă serviciul cade, AI Stoica încearcă să îl repornească.</span></div><input type="checkbox" checked={!!cfg.autoStartOmniRoute} onChange={e=>setCfg({...cfg,autoStartOmniRoute:e.target.checked})}/></div><div className="statusGrid"><div><span>Gateway local</span><b>{status?.gatewayRunning?"Conectat":"Indisponibil"}</b></div><div><span>OmniRoute</span><b>{status?.omniRunning?"Conectat":"Indisponibil"}</b></div></div></>}
+      {tab==="ai"&&<><h3>AI & OmniRoute</h3><label>Gateway local AI Stoica<input value={cfg.gatewayUrl||"http://127.0.0.1:8787"} onChange={e=>setCfg({...cfg,gatewayUrl:e.target.value})} placeholder="http://127.0.0.1:8787"/></label><label>AI Stoica Cloud API<input value={cfg.controlApiUrl||""} onChange={e=>setCfg({...cfg,controlApiUrl:e.target.value})} placeholder="https://api.aistoica.ro"/></label><p className="settingsHelp">Control Center, aprobarea conturilor și permisiunile folosesc PostgreSQL-ul central atunci când Cloud API este configurat. Până la activarea domeniului, poți lăsa câmpul gol.</p><label>Base URL OmniRoute<input value={cfg.baseUrl} onChange={e=>setCfg({...cfg,baseUrl:e.target.value})}/></label><label>Cheie API<input type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder={cfg.apiKey?"Cheie salvată — lasă gol pentru a o păstra":"Cheie OmniRoute"}/></label><label>Model implicit pentru conversații noi<input value={cfg.model||""} onChange={e=>setCfg({...cfg,model:e.target.value})} placeholder="Alege din selectorul de sus"/></label><label>Model generare imagini <span className="optional">opțional</span><input value={cfg.imageModel||""} onChange={e=>setCfg({...cfg,imageModel:e.target.value})} placeholder="Auto — primul model de imagine disponibil"/></label><label>Model generare video <span className="optional">opțional</span><input value={cfg.videoModel||""} onChange={e=>setCfg({...cfg,videoModel:e.target.value})} placeholder="Auto — model video disponibil"/></label><p className="settingsHelp">Când ceri o poză sau un videoclip, AI Stoica generează fișierul real, îl afișează în chat și îl salvează în Bibliotecă.</p><label>Comandă OmniRoute<input value={cfg.omniCommand||"omniroute.cmd"} onChange={e=>setCfg({...cfg,omniCommand:e.target.value})}/></label><div className="toggleRow"><div><b>Pornește OmniRoute automat</b><span>Dacă serviciul cade, AI Stoica încearcă să îl repornească.</span></div><input type="checkbox" checked={!!cfg.autoStartOmniRoute} onChange={e=>setCfg({...cfg,autoStartOmniRoute:e.target.checked})}/></div><div className="statusGrid"><div><span>Gateway local</span><b>{status?.gatewayRunning?"Conectat":"Indisponibil"}</b></div><div><span>OmniRoute</span><b>{status?.omniRunning?"Conectat":"Indisponibil"}</b></div></div></>}
       {tab==="voice"&&<><h3>Voce și microfon</h3><label>Limba dictării<select value={cfg.speechLanguage||"ro"} onChange={e=>setCfg({...cfg,speechLanguage:e.target.value})}><option value="ro">Română</option><option value="en">English</option><option value="fr">Français</option></select></label><label>Model transcriere<input value={cfg.speechModel||"openai/whisper-1"} onChange={e=>setCfg({...cfg,speechModel:e.target.value})}/></label><button className="secondary testMicBtn" onClick={testMic}><Mic size={16}/> Testează microfonul</button>{micStatus&&<div className="micStatus">{micStatus}</div>}<p className="settingsHelp">La microfon: apeși o dată pentru a începe înregistrarea și încă o dată pentru a o opri. AI Stoica trimite apoi sunetul către transcriere prin OmniRoute.</p></>}
       {tab==="account"&&<><h3>Cont și date</h3><div className="accountSettingsCard"><div className="accountAvatar big">{(user?.name||user?.email||"S")[0].toUpperCase()}</div><div><b>{user?.name||"Cont AI Stoica"}</b><span>{user?.email}</span></div></div><p className="settingsHelp">Conversațiile, memoria, biblioteca, proiectele, pluginurile și automatizările sunt în prezent păstrate local. După mutarea pe AI Stoica Cloud, acestea vor putea fi sincronizate între PC și telefon.</p></>}
     </div></div>
@@ -1279,10 +1276,10 @@ function CreateModal({type,onClose,onCreate}) {
 
 function App() {
   const [user,setUser]=useState(()=>{try{return JSON.parse(localStorage.getItem(USER_KEY)||"null")}catch{return null}});
-  const initialModels=useMemo(()=>{const cached=cachedModels();return cached.length?cached:["Ai principal"]},[]);
+  const initialModels=useMemo(()=>cachedModels().filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x)),[]);
   const [boot,setBoot]=useState(true),[conversations,setConversations]=useState([]),[projects,setProjects]=useState([]),[assistants,setAssistants]=useState([]),[models,setModels]=useState(initialModels);
   const initialManualModel=useMemo(()=>localStorage.getItem(MANUAL_MODEL_KEY)||localStorage.getItem(MODEL_SELECTED_KEY)||initialModels.find(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x))||"",[initialModels]);
-  const [currentId,setCurrentId]=useState(null),[model,setModel]=useState(initialManualModel),[autoRouting,setAutoRouting]=useState(()=>localStorage.getItem(AUTO_ROUTER_ENABLED_KEY)!=="0"),[selectedProject,setSelectedProject]=useState(null),[selectedAssistant,setSelectedAssistant]=useState(null);
+  const [currentId,setCurrentId]=useState(null),[model,setModel]=useState(initialManualModel),[selectedProject,setSelectedProject]=useState(null),[selectedAssistant,setSelectedAssistant]=useState(null);
   const [draft,setDraft]=useState(""),[attachments,setAttachments]=useState([]),[busy,setBusy]=useState(false),[busyStage,setBusyStage]=useState(""),[search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[omni,setOmni]=useState(false),[refreshingModels,setRefreshingModels]=useState(false),[modelPolicyEnforced,setModelPolicyEnforced]=useState(false);
   const [settings,setSettings]=useState(false),[createType,setCreateType]=useState(null),[toolPanel,setToolPanel]=useState(null),[filesPanel,setFilesPanel]=useState(false),[updateReady,setUpdateReady]=useState(false),[sidebarCollapsed,setSidebarCollapsed]=useState(false);
   const chatRef=useRef(null);
@@ -1315,7 +1312,6 @@ function App() {
   async function chooseModel(next){
     const value=String(next||"").trim();if(!value||/^ai[ _-]*(principal|stoica)$/i.test(value))return;
     if(modelPolicyEnforced&&!models.includes(value))return;
-    setAutoRouting(false);localStorage.setItem(AUTO_ROUTER_ENABLED_KEY,"0");
     setModel(value);
     localStorage.setItem(MANUAL_MODEL_KEY,value);
     localStorage.setItem(MODEL_SELECTED_KEY,value);
@@ -1326,14 +1322,6 @@ function App() {
         if(d?.data)setConversations(v=>v.map(x=>x.id===current.id?d.data:x));
       }).catch(()=>{});
     }
-  }
-
-  function toggleAutoRouting(){
-    setAutoRouting(v=>{
-      const next=!v;
-      localStorage.setItem(AUTO_ROUTER_ENABLED_KEY,next?"1":"0");
-      return next;
-    });
   }
 
   async function loadData(){
@@ -1353,8 +1341,8 @@ function App() {
       const preferred=rememberedManual&&manualCandidates.includes(rememberedManual)?rememberedManual:(manualCandidates[0]||"");
       setModel(preferred);
       if(preferred){localStorage.setItem(MANUAL_MODEL_KEY,preferred);localStorage.setItem(MODEL_SELECTED_KEY,preferred)}else localStorage.removeItem(MODEL_SELECTED_KEY);
-      if(localStorage.getItem(AUTO_ROUTER_ENABLED_KEY)===null)localStorage.setItem(AUTO_ROUTER_ENABLED_KEY,"1");
-      localStorage.setItem(SMART_ROUTER_DEFAULT_KEY,"1");
+      localStorage.setItem(AUTO_ROUTER_ENABLED_KEY,"0");
+      localStorage.setItem(SMART_ROUTER_DEFAULT_KEY,"0");
       if((as.data||[]).length&&!selectedAssistant)setSelectedAssistant(as.data[0].id);if((cs.data||[]).length&&!currentId)setCurrentId(cs.data[0].id);
     }catch(e){if(/Autentificare|Sesiune|401/i.test(e.message))logout()}finally{setBoot(false)}
   }
@@ -1401,12 +1389,12 @@ function App() {
     const fileMode=!!requestedFormat;
     const desiredModel=String(baseConv.model||model||"").trim();
     const manualModel=modelPolicyEnforced?(models.includes(desiredModel)?desiredModel:(models.includes(model)?model:(models.find(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x))||""))):desiredModel;
-    const effectiveModel=autoRouting?"Ai principal":manualModel;
+    const effectiveModel=manualModel;
     setBusy(true);setBusyStage("Analizează cererea și identifică tipul sarcinii…");const assistantMessage={id:uid(),role:"assistant",content:"",attachmentOnly:fileMode,createdAt:Date.now(),streaming:true};let working={...baseConv,model:manualModel||baseConv.model||model,messages:[...messages,assistantMessage],updatedAt:Date.now()};setConversations(v=>v.map(x=>x.id===working.id?working:x));
     try{
       if(!effectiveModel)throw new Error("Nu există niciun model AI permis pentru acest cont.");
       if(!omni){setBusyStage("Pornește și verifică OmniRoute…");await window.AIStoica.ensureOmni();await new Promise(r=>setTimeout(r,1200))}
-      setBusyStage(autoRouting?"Selectează AI-ul cel mai potrivit pentru întrebare…":"Pregătește AI-ul ales manual…");
+      setBusyStage("Pregătește AI-ul ales manual…");
       const token=localStorage.getItem(TOKEN_KEY)||"",r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({model:effectiveModel,assistantId:working.assistantId,messages})});
       if(!r.ok){let e;try{e=await r.json()}catch{e={error:await r.text()}};throw new Error(e?.error||`HTTP ${r.status}`)}
       const reader=r.body.getReader(),dec=new TextDecoder();let buf="",answer="",routeInfo=null,startedAnswer=false;
@@ -1516,7 +1504,7 @@ function App() {
   return <div className={cx("appShell",sidebarCollapsed&&"sidebarCollapsed")}>
     <Sidebar open={sidebar} setOpen={setSidebar} user={user} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} onSelect={id=>{setCurrentId(id);setSidebar(false)}} onDeleteConversation={deleteConversation} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} selectedAssistant={selectedAssistant} setSelectedAssistant={setSelectedAssistant} onNewProject={()=>setCreateType("project")} onNewAssistant={()=>setCreateType("assistant")} onTool={openTool} onExplore={()=>openTool("explore")} onSettings={()=>setSettings(true)} onLogout={logout}/>
     {sidebar&&<div className="mobileScrim" onClick={()=>setSidebar(false)}/>}
-    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} autoRouting={autoRouting} onToggleAuto={toggleAutoRouting} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} busyStage={busyStage} onRegenerate={regenerate} onRate={rate}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
+    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} busyStage={busyStage} onRegenerate={regenerate} onRate={rate}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
     {settings&&<SettingsModal user={user} onClose={()=>setSettings(false)} onSaved={()=>{window.AIStoica.ensureOmni();setTimeout(loadData,1000)}}/>}
     {createType&&<CreateModal type={createType} onClose={()=>setCreateType(null)} onCreate={createItem}/>}
     {toolPanel==="explore"&&<ExplorePanel onClose={()=>setToolPanel(null)} assistants={assistants} models={models} onUseAssistant={useAssistant} onImagePrompt={startImagePrompt} onOpenLibrary={()=>setToolPanel("library")}/>} 
