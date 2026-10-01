@@ -717,19 +717,26 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const cfg = getOmniConfig();
     try {
       const entries=await omniModelEntries(cfg);
-      const filtered=await allowedOmniEntries(req,entries);
+      const manualModels=entries.filter(x=>!isSmartAlias(typeof x==="string"?x:x?.id));
+      let filtered=manualModels,policyError="";
+      if(cloudBase()){
+        try{filtered=await allowedOmniEntries(req,manualModels)}
+        catch(e){filtered=[];policyError=e.message}
+      }
       const smartAllowed=!cloudBase()||req.permissions?.chat!==false;
-      const withoutSmart=filtered.filter(x=>!isSmartAlias(typeof x==="string"?x:x?.id));
       const data=smartAllowed
-        ?[{id:"Ai principal",provider:"ai-stoica",smartRouter:true,description:"Alege automat modelul potrivit pentru fiecare întrebare"},...withoutSmart]
-        :withoutSmart;
+        ?[{id:"Ai principal",provider:"ai-stoica",smartRouter:true,description:"Alege automat modelul potrivit pentru fiecare întrebare"},...filtered]
+        :filtered;
       res.json({
         data,
+        manualModels,
         policyEnforced:!!cloudBase(),
+        policyUnavailable:!!policyError,
+        policyError,
         smartRouter:true,
-        deniedCount:Math.max(0,entries.length-filtered.length)
+        deniedCount:Math.max(0,manualModels.length-filtered.length)
       });
-    } catch (e) { res.status(e.status||502).json({ error:`Nu pot încărca modelele permise: ${e.message}` }); }
+    } catch (e) { res.status(e.status||502).json({ error:`Nu pot încărca lista de modele OmniRoute: ${e.message}` }); }
   });
 
   app.post("/api/router/preview", auth, async (req,res) => {
