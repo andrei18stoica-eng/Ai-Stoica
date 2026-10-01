@@ -54,6 +54,10 @@ jobs:
         working-directory: apps/desktop
         run: node scripts/test-smart-router.cjs
 
+      - name: Testeaza fallback-ul routerului inteligent
+        working-directory: apps/desktop
+        run: node scripts/test-smart-router-integration.cjs
+
       - name: Testeaza generarea media reala
         working-directory: apps/desktop
         run: node scripts/test-media-generation.cjs
