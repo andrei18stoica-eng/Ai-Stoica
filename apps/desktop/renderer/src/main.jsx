@@ -755,7 +755,7 @@ function MemoryPanel({onClose}) {
 }
 
 function PluginsPanel({onClose}) {
-  const blank={name:"",description:"",url:"",method:"POST",trigger:"",apiKey:"",auto:false};
+  const blank={name:"",description:"",url:"",method:"POST",trigger:"",apiKey:"",auto:false,oauthClientId:"",oauthClientSecret:""};
 
   const appLinks={
     "Gmail":"https://mail.google.com/",
@@ -787,15 +787,15 @@ function PluginsPanel({onClose}) {
     "Typeform":"https://admin.typeform.com/"
   };
   const oauthProfiles={
-    "Gmail":{provider:"google",authUrl:"https://accounts.google.com/o/oauth2/v2/auth",tokenUrl:"https://oauth2.googleapis.com/token",scopes:"openid email https://www.googleapis.com/auth/gmail.readonly"},
-    "Google Drive":{provider:"google",authUrl:"https://accounts.google.com/o/oauth2/v2/auth",tokenUrl:"https://oauth2.googleapis.com/token",scopes:"openid email https://www.googleapis.com/auth/drive.readonly"},
-    "Google Calendar":{provider:"google",authUrl:"https://accounts.google.com/o/oauth2/v2/auth",tokenUrl:"https://oauth2.googleapis.com/token",scopes:"openid email https://www.googleapis.com/auth/calendar.readonly"},
-    "GitHub":{provider:"github",authUrl:"https://github.com/login/oauth/authorize",tokenUrl:"https://github.com/login/oauth/access_token",scopes:"read:user repo"},
-    "Outlook Email":{provider:"microsoft",authUrl:"https://login.microsoftonline.com/common/oauth2/v2.0/authorize",tokenUrl:"https://login.microsoftonline.com/common/oauth2/v2.0/token",scopes:"openid profile offline_access Mail.Read"},
-    "Teams":{provider:"microsoft",authUrl:"https://login.microsoftonline.com/common/oauth2/v2.0/authorize",tokenUrl:"https://login.microsoftonline.com/common/oauth2/v2.0/token",scopes:"openid profile offline_access User.Read"},
-    "Slack":{provider:"slack",authUrl:"https://slack.com/oauth/v2/authorize",tokenUrl:"https://slack.com/api/oauth.v2.access",scopes:"channels:read chat:write users:read"},
-    "Notion":{provider:"notion",authUrl:"https://api.notion.com/v1/oauth/authorize",tokenUrl:"https://api.notion.com/v1/oauth/token",scopes:""},
-    "Spotify":{provider:"spotify",authUrl:"https://accounts.spotify.com/authorize",tokenUrl:"https://accounts.spotify.com/api/token",scopes:"user-read-private user-read-email"}
+    "Gmail":{provider:"google",authUrl:"https://accounts.google.com/o/oauth2/v2/auth",tokenUrl:"https://oauth2.googleapis.com/token",scopes:"openid email https://www.googleapis.com/auth/gmail.readonly",apiUrl:"https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10",method:"GET"},
+    "Google Drive":{provider:"google-drive",authUrl:"https://accounts.google.com/o/oauth2/v2/auth",tokenUrl:"https://oauth2.googleapis.com/token",scopes:"openid email https://www.googleapis.com/auth/drive.readonly",apiUrl:"https://www.googleapis.com/drive/v3/files?pageSize=20&fields=files(id,name,mimeType,modifiedTime,webViewLink)",method:"GET"},
+    "Google Calendar":{provider:"google-calendar",authUrl:"https://accounts.google.com/o/oauth2/v2/auth",tokenUrl:"https://oauth2.googleapis.com/token",scopes:"openid email https://www.googleapis.com/auth/calendar.readonly",apiUrl:"https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=20&singleEvents=true&orderBy=startTime",method:"GET"},
+    "GitHub":{provider:"github",authUrl:"https://github.com/login/oauth/authorize",tokenUrl:"https://github.com/login/oauth/access_token",scopes:"read:user repo",apiUrl:"https://api.github.com/user/repos?sort=updated&per_page=20",method:"GET"},
+    "Outlook Email":{provider:"microsoft-mail",authUrl:"https://login.microsoftonline.com/common/oauth2/v2.0/authorize",tokenUrl:"https://login.microsoftonline.com/common/oauth2/v2.0/token",scopes:"openid profile offline_access Mail.Read",apiUrl:"https://graph.microsoft.com/v1.0/me/messages?$top=10",method:"GET"},
+    "Teams":{provider:"microsoft-teams",authUrl:"https://login.microsoftonline.com/common/oauth2/v2.0/authorize",tokenUrl:"https://login.microsoftonline.com/common/oauth2/v2.0/token",scopes:"openid profile offline_access User.Read Team.ReadBasic.All",apiUrl:"https://graph.microsoft.com/v1.0/me/joinedTeams",method:"GET"},
+    "Slack":{provider:"slack",authUrl:"https://slack.com/oauth/v2/authorize",tokenUrl:"https://slack.com/api/oauth.v2.access",scopes:"channels:read users:read",apiUrl:"https://slack.com/api/conversations.list?limit=100",method:"GET",requiresSecret:true},
+    "Notion":{provider:"notion",authUrl:"https://api.notion.com/v1/oauth/authorize",tokenUrl:"https://api.notion.com/v1/oauth/token",scopes:"",apiUrl:"https://api.notion.com/v1/search",method:"POST",requiresSecret:true},
+    "Spotify":{provider:"spotify",authUrl:"https://accounts.spotify.com/authorize",tokenUrl:"https://accounts.spotify.com/api/token",scopes:"user-read-private user-read-email",apiUrl:"https://api.spotify.com/v1/me",method:"GET"}
   };
 
   const catalog=[
@@ -940,6 +940,32 @@ function PluginsPanel({onClose}) {
   async function patch(x,p){await api(`/api/plugins/${x.id}`,{method:"PATCH",body:JSON.stringify(p)});await load()}
   async function test(x){try{const d=await api(`/api/plugins/${x.id}/test`,{method:"POST",body:JSON.stringify({message:"Test conexiune AI Stoica"})});setResult(`${x.name}: ${d.result}`)}catch(e){setResult(`${x.name}: Eroare — ${e.message}`)}}
   async function remove(id){if(confirm("Ștergi această conexiune?")){await api(`/api/plugins/${id}`,{method:"DELETE"});await load()}}
+  async function connectOAuth(){
+    if(!selected?.oauth)return;
+    if(!form.oauthClientId.trim()){setResult(`${selected.name}: lipsește OAuth Client ID.`);return}
+    if(selected.oauth.requiresSecret&&!form.oauthClientSecret.trim()){setResult(`${selected.name}: acest serviciu necesită și OAuth Client Secret.`);return}
+    try{
+      const d=await api("/api/plugins/oauth/start",{method:"POST",body:JSON.stringify({
+        name:form.name||selected.name,description:form.description||selected.description,trigger:form.trigger||selected.trigger,auto:form.auto,
+        clientId:form.oauthClientId.trim(),clientSecret:form.oauthClientSecret.trim(),...selected.oauth
+      })});
+      const opened=await window.AIStoica?.openExternal?.(d.authorizeUrl);
+      if(opened&&!opened.ok)throw new Error(opened.error||"Nu am putut deschide pagina OAuth.");
+      setResult(`${selected.name}: autentificarea OAuth s-a deschis în browser. Finalizează autorizarea; AI Stoica va salva conexiunea automat.`);
+      const started=Date.now();
+      const timer=setInterval(async()=>{
+        try{
+          const fresh=(await api("/api/plugins")).data||[];
+          const connected=fresh.find(x=>String(x.name).toLowerCase()===String(selected.name).toLowerCase()&&x.oauthConnected);
+          if(connected||Date.now()-started>120000){
+            clearInterval(timer);
+            await load();
+            if(connected){setResult(`${selected.name}: conectat cu succes.`);closeSetup()}
+          }
+        }catch{}
+      },2000);
+    }catch(e){setResult(`${selected.name}: Eroare OAuth — ${e.message}`)}
+  }
   function chooseCatalog(x){setSelected({...x,appUrl:appLinks[x.name]||"",oauth:oauthProfiles[x.name]||null});setForm({...blank,name:x.name,description:x.description,trigger:x.trigger})}
   function closeSetup(){setSelected(null);setForm(blank)}
   function iconUrl(x){return x.slug?`https://cdn.simpleicons.org/${x.slug}`:null}
@@ -1036,12 +1062,17 @@ function PluginsPanel({onClose}) {
           </div>}
           <div className="claudeSetupForm">
             <label>Nume<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label>
-            <label>Endpoint / webhook / OAuth callback<input placeholder="https://…" value={form.url} onChange={e=>setForm({...form,url:e.target.value})}/></label>
+            {selected.oauth&&<>
+              <label>OAuth Client ID<input placeholder="Client ID al aplicației AI Stoica" value={form.oauthClientId} onChange={e=>setForm({...form,oauthClientId:e.target.value})}/></label>
+              <label>OAuth Client Secret <span className="optional">{selected.oauth.requiresSecret?"necesar":"opțional / PKCE"}</span><input type="password" placeholder="Client Secret" value={form.oauthClientSecret} onChange={e=>setForm({...form,oauthClientSecret:e.target.value})}/></label>
+              <button type="button" className="primary pluginOAuthButton" onClick={connectOAuth}><ExternalLink size={15}/> Conectează contul cu OAuth</button>
+            </>}
+            <label>Endpoint / webhook / API personalizat<input placeholder="https://…" value={form.url} onChange={e=>setForm({...form,url:e.target.value})}/></label>
             <div className="claudeFormRow"><label>Trigger<input placeholder="@gmail" value={form.trigger} onChange={e=>setForm({...form,trigger:e.target.value})}/></label><label>Metodă<select value={form.method} onChange={e=>setForm({...form,method:e.target.value})}><option>POST</option><option>GET</option></select></label></div>
             <label>API key <span className="optional">opțional</span><input type="password" placeholder="Cheie / token" value={form.apiKey} onChange={e=>setForm({...form,apiKey:e.target.value})}/></label>
             <label className="claudeAutoRow"><span><b>Folosește automat</b><small>Permite pluginului să fie inclus automat când este relevant.</small></span><input type="checkbox" checked={form.auto} onChange={e=>setForm({...form,auto:e.target.checked})}/></label>
           </div>
-          <div className="claudeSetupActions"><button className="secondary" onClick={closeSetup}>Anulează</button><button className="primary" disabled={!form.name.trim()||!form.url.trim()} onClick={add}>Conectează</button></div>
+          <div className="claudeSetupActions"><button className="secondary" onClick={closeSetup}>Anulează</button><button className="primary" disabled={!form.name.trim()||!form.url.trim()} onClick={add}>Conectează API personalizat</button></div>
         </div>
       </div>}
     </div>
