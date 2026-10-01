@@ -1127,7 +1127,10 @@ function AdminPanel({onClose}) {
   }
   async function togglePaid(){
     const next=!paidAi;
-    if(next&&!confirm("Activezi serviciile AI plătite la nivel global? Acest comutator nu cumpără automat credite, dar permite folosirea furnizorilor plătiți dacă există chei și permisiuni."))return;
+    const message=next
+      ?"Activezi comutatorul principal pentru AI plătit? Utilizatorii NU primesc automat acces: fiecare are nevoie în continuare de permisiunile OpenAI / Claude / OpenRouter acordate de Owner."
+      :"Dezactivezi explicit AI-ul plătit la nivel global? Aceasta va bloca modelele plătite pentru toate conturile până când le reactivezi din Control Center.";
+    if(!confirm(message))return;
     try{
       const d=await api("/api/admin/ai",{method:"PATCH",body:JSON.stringify({paidAiEnabled:next})});
       setPaidAi(!!d.paidAiEnabled);
@@ -1141,7 +1144,7 @@ function AdminPanel({onClose}) {
         <div><span>Utilizatori</span><b>{users.length}</b></div>
         <div className={pendingCount?"warn":""}><span>În așteptare</span><b>{pendingCount}</b></div>
         <div><span>Activi</span><b>{activeCount}</b></div>
-        <button className={cx("adminPaidAi",paidAi&&"on")} onClick={togglePaid}><span>AI plătit</span><b>{paidAi?"PORNIT":"OPRIT"}</b></button>
+        <button className={cx("adminPaidAi",paidAi&&"on")} onClick={togglePaid} title="Comutator principal. Accesul individual se acordă separat fiecărui utilizator."><span>AI plătit · MASTER</span><b>{paidAi?"PORNIT":"OPRIT"}</b></button>
       </div>
 
       <div className="adminToolbar">
