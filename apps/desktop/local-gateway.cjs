@@ -12,7 +12,27 @@ const fontkit = fontkitModule.default || fontkitModule;
 const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = require("docx");
 const PptxGenJS = require("pptxgenjs");
 const JSZip = require("jszip");
-const { isSmartAlias, inferProvider } = require("./smart-router.cjs");
+function normalizeModelKey(value){return String(value||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim();}
+function isSmartAlias(value){
+  const n=normalizeModelKey(value).replace(/[^a-z0-9]+/g," ").trim();
+  return n==="ai principal"||n==="ai stoica"||n==="aistoica"||n==="auto"||n==="smart"||n==="smart router";
+}
+function inferProvider(entry){
+  const explicit=normalizeModelKey(entry&&typeof entry==="object"?entry.provider:"");
+  if(explicit)return explicit;
+  const id=normalizeModelKey(typeof entry==="string"?entry:entry&&entry.id);
+  const first=id.split("/")[0];
+  const prefix={openai:"openai",anthropic:"anthropic",google:"gemini",gemini:"gemini",cerebras:"cerebras",groq:"groq",cloudflare:"cloudflare",openrouter:"openrouter","@cf":"cloudflare"};
+  if(prefix[first])return prefix[first];
+  if(/groq/.test(id))return "groq";
+  if(/cerebras/.test(id))return "cerebras";
+  if(/cloudflare|@cf\//.test(id))return "cloudflare";
+  if(/openrouter/.test(id))return "openrouter";
+  if(/claude|anthropic/.test(id))return "anthropic";
+  if(/gemini|google/.test(id))return "gemini";
+  if(/openai|codex|\bo[134]\b/.test(id)||(!/gpt[-_. ]?oss/.test(id)&&/gpt/.test(id)))return "openai";
+  return "";
+}
 
 function createStore(dataDir) {
   const file = path.join(dataDir, "ai-stoica-data.json");
