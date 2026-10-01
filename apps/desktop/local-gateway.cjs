@@ -1064,42 +1064,93 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     db.library.push(item);store.write(db);
     return {id:item.id,name:item.name,mimeType:item.mime,size:item.size,kind:item.kind,source:item.source,model:item.model,createdAt:item.createdAt};
   }
-  async function discoverImageModel(cfg){
-    if(String(cfg.imageModel||"").trim())return String(cfg.imageModel).trim();
-    try{
-      const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/images/generations`,{headers:cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{},signal:AbortSignal.timeout(5000)});
-      if(r.ok){
-        const data=await r.json(),rows=Array.isArray(data)?data:(Array.isArray(data?.data)?data.data:[]);
-        const id=rows.map(x=>typeof x==="string"?x:x?.id).find(Boolean);
-        if(id)return String(id);
-      }
-    }catch{}
-    return "openai/gpt-image-2";
+  function mediaModelRow(entry,kind,forcedKind=false){
+    const id=String(typeof entry==="string"?entry:entry?.id||"").trim();
+    if(!id)return null;
+    const provider=String(typeof entry==="string"?"":entry?.provider||"").trim().toLowerCase();
+    const meta=(id+" "+JSON.stringify(entry||{})).toLowerCase();
+    const matches=forcedKind||(kind==="image"
+      ? /image|imagen|flux|sdxl|stable.?diffusion|dall.?e|gpt.?image|recraft|ideogram|playground|phoenix|kolors/.test(meta)
+      : /video|runway|veo|kling|sora|seedance|hailuo|wan|ltx|minimax|hunyuan/.test(meta));
+    if(!matches)return null;
+    const first=id.toLowerCase().split("/")[0];
+    const alreadyScoped=["openai","anthropic","google","gemini","cerebras","groq","cloudflare","openrouter","@cf"].includes(first);
+    const policyId=provider&&!alreadyScoped?`${provider}/${id}`:id;
+    return {entry,id,provider,policyId};
   }
-  async function discoverVideoModel(cfg){
-    if(String(cfg.videoModel||"").trim())return String(cfg.videoModel).trim();
+  async function mediaCatalog(cfg,kind){
     const base=String(cfg.baseUrl).replace(/\/+$/,""),headers=cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{};
+    const rows=[];
     try{
-      const r=await fetch(`${base}/videos/generations`,{headers,signal:AbortSignal.timeout(5000)});
+      const r=await fetch(`${base}/models`,{headers,signal:AbortSignal.timeout(7000)});
       if(r.ok){
-        const data=await r.json(),rows=Array.isArray(data)?data:(Array.isArray(data?.data)?data.data:[]);
-        const id=rows.map(x=>typeof x==="string"?x:x?.id).find(Boolean);
-        if(id)return String(id);
+        const data=await r.json(),items=Array.isArray(data)?data:(Array.isArray(data?.data)?data.data:[]);
+        for(const entry of items){const row=mediaModelRow(entry,kind,false);if(row)rows.push(row)}
       }
     }catch{}
     try{
-      const r=await fetch(`${base}/models`,{headers,signal:AbortSignal.timeout(5000)});
+      const endpoint=kind==="image"?"/images/generations":"/videos/generations";
+      const r=await fetch(base+endpoint,{headers,signal:AbortSignal.timeout(5000)});
       if(r.ok){
-        const data=await r.json(),rows=Array.isArray(data)?data:(Array.isArray(data?.data)?data.data:[]);
-        const row=rows.find(x=>{
-          const id=String(typeof x==="string"?x:x?.id||"");
-          const meta=JSON.stringify(x||{});
-          return /video|runway|veo|kling|sora|grok.*video|seedance|hailuo|wan/i.test(id+" "+meta);
-        });
-        if(row)return String(typeof row==="string"?row:row.id);
+        const data=await r.json(),items=Array.isArray(data)?data:(Array.isArray(data?.data)?data.data:[]);
+        for(const entry of items){const row=mediaModelRow(entry,kind,true);if(row)rows.push(row)}
       }
     }catch{}
-    return "runway/gen-3";
+    const seen=new Set();
+    return rows.filter(row=>{const k=row.id.toLowerCase();if(seen.has(k))return false;seen.add(k);return true});
+  }
+  function localPaidHint(row){
+    const p=String(row?.provider||inferProvider(row?.policyId||row?.id)||"").toLowerCase();
+    return ["openai","anthropic","openrouter","runway"].includes(p)||/^(openai|anthropic|openrouter|runway)\//i.test(String(row?.policyId||row?.id||""));
+  }
+  async function discoverPermittedMediaModel(req,cfg,kind,explicitModel=""){
+    const explicit=String(explicitModel||"").trim();
+    if(explicit){
+      await requireModelAccess(req.cloudToken,explicit);
+      return explicit;
+    }
+
+    const configured=String(kind==="image"?cfg.imageModel||"":cfg.videoModel||"").trim();
+    if(configured){
+      try{
+        await requireModelAccess(req.cloudToken,configured);
+        return configured;
+      }catch(e){
+        // A configured paid/denied media model must not block a free model that Owner permits.
+      }
+    }
+
+    const rows=await mediaCatalog(cfg,kind);
+    if(!rows.length)throw policyFailure(
+      kind==="image"
+        ?"Nu există momentan niciun model de imagine disponibil în OmniRoute."
+        :"Nu există momentan niciun model video disponibil în OmniRoute.",
+      503
+    );
+
+    if(!cloudBase()){
+      rows.sort((a,b)=>Number(localPaidHint(a))-Number(localPaidHint(b)));
+      return rows[0].id;
+    }
+
+    const policy=await cloudModelPolicy(req.cloudToken,rows.map(x=>x.policyId));
+    const decisions=new Map(policy.data.map(x=>[String(x.model),x]));
+    const allowed=rows
+      .map(row=>({row,decision:decisions.get(row.policyId)}))
+      .filter(x=>x.decision?.allowed)
+      .sort((a,b)=>{
+        const ap=Number(a.decision?.paidRequired===true||localPaidHint(a.row));
+        const bp=Number(b.decision?.paidRequired===true||localPaidHint(b.row));
+        return ap-bp;
+      });
+
+    if(!allowed.length)throw policyFailure(
+      kind==="image"
+        ?"Generarea de imagini este permisă, dar nu există momentan un model de imagine gratuit sau autorizat pentru acest cont."
+        :"Generarea video este permisă, dar nu există momentan un model video gratuit sau autorizat pentru acest cont.",
+      403
+    );
+    return allowed[0].row.id;
   }
 
   app.post("/api/generate/image", auth, async (req,res) => {
@@ -1107,8 +1158,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       requireFeaturePermission(req,"image_generation","Generarea de imagini");
       const prompt=String(req.body?.prompt||"").trim();
       if(!prompt)return res.status(400).json({error:"Descrierea imaginii lipsește."});
-      const cfg=getOmniConfig(),model=String(req.body?.model||await discoverImageModel(cfg)).trim();
-      await requireModelAccess(req.cloudToken,model);
+      const cfg=getOmniConfig(),model=await discoverPermittedMediaModel(req,cfg,"image",req.body?.model);
       const imageUrl=`${String(cfg.baseUrl).replace(/\/+$/,"")}/images/generations`;
       const imageHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})};
       let upstream=await fetch(imageUrl,{
@@ -1142,8 +1192,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       requireFeaturePermission(req,"video_generation","Generarea de videoclipuri");
       const prompt=String(req.body?.prompt||"").trim();
       if(!prompt)return res.status(400).json({error:"Descrierea videoclipului lipsește."});
-      const cfg=getOmniConfig(),model=String(req.body?.model||await discoverVideoModel(cfg)).trim();
-      await requireModelAccess(req.cloudToken,model);
+      const cfg=getOmniConfig(),model=await discoverPermittedMediaModel(req,cfg,"video",req.body?.model);
       const videoUrl=`${String(cfg.baseUrl).replace(/\/+$/,"")}/videos/generations`;
       const videoHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})};
       let upstream=await fetch(videoUrl,{
