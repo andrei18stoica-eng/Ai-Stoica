@@ -92,13 +92,37 @@ function addMemory(db, userId, text, source = "conversation", extra = {}) {
 }
 function pluginHeaders(plugin) {
   const out = { "Content-Type": "application/json" };
-  if (plugin.apiKey) {
+  if (plugin.accessToken) out.Authorization = `Bearer ${plugin.accessToken}`;
+  else if (plugin.apiKey) {
     if ((plugin.authType || "bearer") === "header") out[plugin.headerName || "X-API-Key"] = plugin.apiKey;
     else out.Authorization = `Bearer ${plugin.apiKey}`;
   }
+  if(plugin.oauthProvider==="github"){out.Accept="application/vnd.github+json";out["User-Agent"]="AI-Stoica";}
+  if(plugin.oauthProvider==="notion")out["Notion-Version"]="2022-06-28";
   return out;
 }
+async function callOAuthPlugin(plugin, message) {
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
+  try{
+    let url=plugin.url,method=(plugin.method||"GET").toUpperCase(),body;
+    const provider=String(plugin.oauthProvider||"");
+    const headers=pluginHeaders(plugin);
+    if(provider==="google"){
+      const u=new URL(url);if(message)u.searchParams.set("q",String(message).slice(0,250));url=u.toString();
+    }else if(provider==="google-calendar"){
+      const u=new URL(url);u.searchParams.set("timeMin",new Date().toISOString());if(message)u.searchParams.set("q",String(message).slice(0,250));url=u.toString();
+    }else if(provider==="notion"){
+      method="POST";body=JSON.stringify({page_size:20,...(message?{query:String(message).slice(0,100)}:{})});
+    }
+    const r=await fetch(url,{method,headers,body,signal:controller.signal});
+    const text=await r.text();
+    if(r.status===401)throw new Error("Conexiunea OAuth a expirat sau a fost revocată. Reconectează pluginul.");
+    if(!r.ok)throw new Error(`HTTP ${r.status}: ${text.slice(0,500)}`);
+    try{return JSON.stringify(JSON.parse(text))}catch{return text}
+  }finally{clearTimeout(timer)}
+}
 async function callPlugin(plugin, message) {
+  if(plugin.oauthConnected&&plugin.accessToken)return callOAuthPlugin(plugin,message);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12000);
   try {
@@ -474,6 +498,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   const filesDir = path.join(dataDir, "library-files");
   fs.mkdirSync(filesDir, { recursive: true });
   const app = express();
+  const oauthPending = new Map();
   app.use(helmet({ crossOriginResourcePolicy: false }));
   app.use(cors({ origin: true, credentials: false }));
   app.use(express.json({ limit: "64mb" }));
@@ -1144,17 +1169,93 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }catch(e){res.status(e.status||502).json({error:e.message})}
   });
 
-  app.get("/api/plugins", auth, (req,res) => {const db=store.read();res.json({data:db.plugins.filter(x=>x.userId===req.user.id).map(({apiKey,...x})=>({...x,hasKey:!!apiKey}))});});
+  function publicPlugin(item){
+    const {apiKey,accessToken,refreshToken,oauthClientSecret,...safe}=item||{};
+    return {...safe,hasKey:!!apiKey,oauthConnected:!!item?.oauthConnected};
+  }
+
+  app.post("/api/plugins/oauth/start", auth, (req,res) => {
+    try{
+      const name=String(req.body?.name||"").trim(),provider=String(req.body?.provider||"").trim();
+      const clientId=String(req.body?.clientId||"").trim(),clientSecret=String(req.body?.clientSecret||"").trim();
+      const authUrl=String(req.body?.authUrl||"").trim(),tokenUrl=String(req.body?.tokenUrl||"").trim(),apiUrl=String(req.body?.apiUrl||"").trim();
+      if(!name||!provider||!clientId||!authUrl||!tokenUrl||!apiUrl)return res.status(400).json({error:"Configurația OAuth este incompletă."});
+      for(const candidate of [authUrl,tokenUrl,apiUrl]){const u=new URL(candidate);if(u.protocol!=="https:")throw new Error("OAuth/API trebuie să folosească HTTPS.");}
+      const state=crypto.randomBytes(24).toString("hex");
+      const verifier=crypto.randomBytes(48).toString("base64url");
+      const challenge=crypto.createHash("sha256").update(verifier).digest("base64url");
+      const redirectUri=`http://127.0.0.1:${port}/api/plugins/oauth/callback`;
+      const u=new URL(authUrl);
+      u.searchParams.set("response_type","code");
+      u.searchParams.set("client_id",clientId);
+      u.searchParams.set("redirect_uri",redirectUri);
+      u.searchParams.set("state",state);
+      const scopes=String(req.body?.scopes||"").trim();if(scopes)u.searchParams.set("scope",scopes);
+      u.searchParams.set("code_challenge",challenge);u.searchParams.set("code_challenge_method","S256");
+      if(provider.startsWith("google")){u.searchParams.set("access_type","offline");u.searchParams.set("prompt","consent");}
+      if(provider==="notion")u.searchParams.set("owner","user");
+      oauthPending.set(state,{
+        userId:req.user.id,name,description:String(req.body?.description||""),trigger:String(req.body?.trigger||`@${name.toLowerCase().replace(/\s+/g,"-")}`),
+        auto:!!req.body?.auto,provider,clientId,clientSecret,authUrl,tokenUrl,apiUrl,method:String(req.body?.method||"GET").toUpperCase(),
+        scopes,redirectUri,verifier,createdAt:Date.now()
+      });
+      for(const [key,p] of oauthPending)if(Date.now()-p.createdAt>10*60*1000)oauthPending.delete(key);
+      res.json({authorizeUrl:u.toString(),state,redirectUri});
+    }catch(e){res.status(400).json({error:e.message})}
+  });
+
+  app.get("/api/plugins/oauth/callback", async (req,res) => {
+    const state=String(req.query?.state||""),code=String(req.query?.code||""),oauthError=String(req.query?.error||"");
+    const pending=oauthPending.get(state);oauthPending.delete(state);
+    const finish=(ok,message)=>res.status(ok?200:400).type("html").send(`<!doctype html><html><head><meta charset="utf-8"><title>AI Stoica OAuth</title></head><body style="font-family:Segoe UI,Arial;background:#0b1018;color:#eef4ff;padding:40px"><h2>${ok?"AI Stoica — conectat":"AI Stoica — conexiune eșuată"}</h2><p>${String(message).replace(/[<>&]/g,x=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[x]))}</p><p>Poți închide această fereastră și reveni în AI Stoica.</p></body></html>`);
+    if(!pending)return finish(false,"Sesiunea OAuth a expirat. Reîncearcă din AI Stoica.");
+    if(oauthError)return finish(false,`Providerul a refuzat autorizarea: ${oauthError}`);
+    if(!code)return finish(false,"Providerul nu a returnat codul de autorizare.");
+    try{
+      let tokenResponse;
+      if(pending.provider==="notion"){
+        tokenResponse=await fetch(pending.tokenUrl,{
+          method:"POST",
+          headers:{"Content-Type":"application/json","Authorization":"Basic "+Buffer.from(`${pending.clientId}:${pending.clientSecret}`).toString("base64")},
+          body:JSON.stringify({grant_type:"authorization_code",code,redirect_uri:pending.redirectUri}),
+          signal:AbortSignal.timeout(15000)
+        });
+      }else{
+        const form=new URLSearchParams({grant_type:"authorization_code",code,redirect_uri:pending.redirectUri,client_id:pending.clientId,code_verifier:pending.verifier});
+        if(pending.clientSecret)form.set("client_secret",pending.clientSecret);
+        tokenResponse=await fetch(pending.tokenUrl,{
+          method:"POST",
+          headers:{"Content-Type":"application/x-www-form-urlencoded","Accept":"application/json"},
+          body:form,signal:AbortSignal.timeout(15000)
+        });
+      }
+      const text=await tokenResponse.text();let token={};try{token=JSON.parse(text)}catch{}
+      const accessToken=String(token.access_token||token?.authed_user?.access_token||"");
+      if(!tokenResponse.ok||!accessToken)throw new Error(token.error_description||token.error||text.slice(0,500)||`Token HTTP ${tokenResponse.status}`);
+      const db=store.read();
+      db.plugins=db.plugins.filter(x=>!(x.userId===pending.userId&&String(x.name).toLowerCase()===pending.name.toLowerCase()));
+      const item={
+        id:crypto.randomUUID(),userId:pending.userId,name:pending.name,description:pending.description,url:pending.apiUrl,method:pending.method,
+        trigger:pending.trigger,auto:pending.auto,enabled:true,oauthConnected:true,oauthProvider:pending.provider,
+        oauthClientId:pending.clientId,oauthClientSecret:pending.clientSecret,oauthTokenUrl:pending.tokenUrl,oauthScopes:pending.scopes,
+        accessToken,refreshToken:String(token.refresh_token||""),tokenExpiresAt:token.expires_in?Date.now()+Number(token.expires_in)*1000:null,createdAt:Date.now()
+      };
+      db.plugins.push(item);store.write(db);
+      return finish(true,`${pending.name} a fost autorizat și legat de AI Stoica.`);
+    }catch(e){return finish(false,`Nu am putut finaliza OAuth: ${e.message}`)}
+  });
+
+  app.get("/api/plugins", auth, (req,res) => {const db=store.read();res.json({data:db.plugins.filter(x=>x.userId===req.user.id).map(publicPlugin)});});
   app.post("/api/plugins", auth, (req,res) => {
     const name=String(req.body?.name||"").trim(),url=String(req.body?.url||"").trim();if(!name||!url)return res.status(400).json({error:"Numele și URL-ul sunt obligatorii."});
     try{new URL(url)}catch{return res.status(400).json({error:"URL-ul pluginului nu este valid."})}
     const db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,name,description:String(req.body?.description||""),url,method:String(req.body?.method||"POST").toUpperCase(),trigger:String(req.body?.trigger||`@${name.toLowerCase().replace(/\s+/g,"-")}`),auto:!!req.body?.auto,enabled:true,authType:String(req.body?.authType||"bearer"),headerName:String(req.body?.headerName||"X-API-Key"),apiKey:String(req.body?.apiKey||""),createdAt:Date.now()};
-    db.plugins.push(item);store.write(db);res.json({data:{...item,apiKey:undefined,hasKey:!!item.apiKey}});
+    db.plugins.push(item);store.write(db);res.json({data:publicPlugin(item)});
   });
   app.patch("/api/plugins/:id", auth, (req,res) => {
     const db=store.read(),item=db.plugins.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Pluginul nu a fost găsit."});
     for(const k of ["name","description","url","method","trigger","auto","enabled","authType","headerName"])if(Object.prototype.hasOwnProperty.call(req.body||{},k))item[k]=req.body[k];
-    if(req.body?.apiKey)item.apiKey=String(req.body.apiKey);store.write(db);res.json({data:{...item,apiKey:undefined,hasKey:!!item.apiKey}});
+    if(req.body?.apiKey)item.apiKey=String(req.body.apiKey);store.write(db);res.json({data:publicPlugin(item)});
   });
   app.post("/api/plugins/:id/test", auth, async (req,res) => {
     const db=store.read(),item=db.plugins.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Pluginul nu a fost găsit."});
