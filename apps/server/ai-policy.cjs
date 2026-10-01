@@ -34,13 +34,11 @@ function providerSignals(model) {
   return [...found];
 }
 
-function isSmartAlias(model) {
+function isManagedPaidAlias(model) {
   const n = normalizeKey(model);
   return n === "ai principal" ||
     n === "ai stoica" ||
     n === "aistoica" ||
-    n === "auto" ||
-    n === "smart router" ||
     n.startsWith("ai principal ") ||
     n.startsWith("ai stoica ");
 }
@@ -113,15 +111,18 @@ function evaluateModelAccess(context, model) {
     return { model:requested, allowed:true, providers, paidRequired, source:"combination", combinationId:combo.id, reason:"" };
   }
 
-  if (isSmartAlias(requested)) {
-    return {
-      model:requested,
-      allowed:true,
-      providers:[],
-      paidRequired:false,
-      source:"smart_router",
-      reason:""
-    };
+  if (isManagedPaidAlias(requested)) {
+    const providers = ["openai","anthropic"];
+    if (context?.paidEnabled !== true) {
+      return { model:requested, allowed:false, providers, paidRequired:true, source:"managed_alias", reason:"AI principal / AI Stoica poate include servicii plătite, iar AI plătit este oprit global." };
+    }
+    for (const provider of providers) {
+      const access = providerAccess(context, provider);
+      if (!access.allowed) {
+        return { model:requested, allowed:false, providers, paidRequired:true, source:"managed_alias", reason:access.reason };
+      }
+    }
+    return { model:requested, allowed:true, providers, paidRequired:true, source:"managed_alias", reason:"" };
   }
 
   const providers = providerSignals(requested);
@@ -153,7 +154,6 @@ module.exports = {
   PAID_PROVIDERS,
   KNOWN_PROVIDERS,
   normalizeKey,
-  isSmartAlias,
   providerSignals,
   providerAccess,
   evaluateModelAccess
