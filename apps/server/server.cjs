@@ -67,6 +67,21 @@ async function migrate() {
     "UPDATE users SET role='owner', status='active', approved_at=COALESCE(approved_at,NOW()) WHERE lower(email)=lower($1)",
     [OWNER_EMAIL]
   );
+
+  // Older installations initialized paid_ai_enabled=false even when Owner never disabled it.
+  // Upgrade only that untouched default. An explicit Owner choice is preserved via audit_log.
+  const [paidSetting, paidChoice] = await Promise.all([
+    pool.query("SELECT value FROM system_settings WHERE key='paid_ai_enabled'"),
+    pool.query("SELECT 1 FROM audit_log WHERE action='admin.paid_ai' LIMIT 1")
+  ]);
+  if (paidSetting.rows[0]?.value === false && paidChoice.rowCount === 0) {
+    await pool.query(
+      `INSERT INTO system_settings(key,value,updated_at)
+       VALUES('paid_ai_enabled','true'::jsonb,NOW())
+       ON CONFLICT(key) DO UPDATE SET value='true'::jsonb,updated_at=NOW()`
+    );
+  }
+
   const securityFlag = await pool.query("SELECT value FROM system_settings WHERE key='model_policy_v2_applied'");
   if (securityFlag.rows[0]?.value !== true) {
     await pool.query(
