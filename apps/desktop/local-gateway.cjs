@@ -539,12 +539,19 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     return Array.isArray(parsed)?parsed:(Array.isArray(parsed?.data)?parsed.data:[]);
   }
   async function allowedOmniEntries(context, entries) {
-    const ids=(Array.isArray(entries)?entries:[]).map(x=>typeof x==="string"?x:x?.id).map(x=>String(x||"").trim()).filter(Boolean);
-    if(!ids.length)return [];
-    if(!cloudBase())return entries;
-    const policy=await cloudModelPolicy(context?.cloudToken,ids);
+    const rows=(Array.isArray(entries)?entries:[]).map(entry=>{
+      const id=String(typeof entry==="string"?entry:entry?.id||"").trim();
+      const provider=String(typeof entry==="string"?"":entry?.provider||"").trim().toLowerCase();
+      const first=id.toLowerCase().split("/")[0];
+      const alreadyScoped=["openai","anthropic","google","gemini","cerebras","groq","cloudflare","openrouter","@cf"].includes(first);
+      const policyId=provider&&!alreadyScoped?`${provider}/${id}`:id;
+      return {entry,id,policyId};
+    }).filter(x=>x.id);
+    if(!rows.length)return [];
+    if(!cloudBase())return rows.map(x=>x.entry);
+    const policy=await cloudModelPolicy(context?.cloudToken,rows.map(x=>x.policyId));
     const allowed=new Set(policy.data.filter(x=>x.allowed).map(x=>String(x.model)));
-    return entries.filter(x=>allowed.has(String(typeof x==="string"?x:x?.id)));
+    return rows.filter(x=>allowed.has(x.policyId)).map(x=>x.entry);
   }
   async function resolveChatRoute(context, messages, requestedModel) {
     const cfg=getOmniConfig();
