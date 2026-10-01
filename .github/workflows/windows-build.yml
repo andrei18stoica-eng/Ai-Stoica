@@ -46,6 +46,10 @@ jobs:
         working-directory: apps/desktop
         run: node scripts/test-smart-router.cjs
 
+      - name: Test smart router fallback
+        working-directory: apps/desktop
+        run: node scripts/test-smart-router-integration.cjs
+
       - name: Test real image and video generation
         working-directory: apps/desktop
         run: node scripts/test-media-generation.cjs
