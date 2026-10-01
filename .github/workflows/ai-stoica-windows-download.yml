@@ -48,6 +48,10 @@ jobs:
         working-directory: apps/desktop
         run: node scripts/test-smart-router-integration.cjs
 
+      - name: Testeaza regresiile de infrastructura
+        working-directory: apps/desktop
+        run: node scripts/test-infrastructure-regressions.cjs
+
       - name: Testeaza generarea imagini si video
         working-directory: apps/desktop
         run: node scripts/test-media-generation.cjs
