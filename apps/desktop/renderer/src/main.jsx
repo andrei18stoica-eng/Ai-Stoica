@@ -757,6 +757,47 @@ function MemoryPanel({onClose}) {
 function PluginsPanel({onClose}) {
   const blank={name:"",description:"",url:"",method:"POST",trigger:"",apiKey:"",auto:false};
 
+  const appLinks={
+    "Gmail":"https://mail.google.com/",
+    "Google Drive":"https://drive.google.com/",
+    "GitHub":"https://github.com/login",
+    "Outlook Email":"https://outlook.office.com/mail/",
+    "Adobe":"https://account.adobe.com/",
+    "Figma":"https://www.figma.com/login",
+    "Canva":"https://www.canva.com/login/",
+    "Shopify":"https://admin.shopify.com/",
+    "Atlassian Rovo":"https://id.atlassian.com/login",
+    "monday.com":"https://auth.monday.com/",
+    "Notion":"https://www.notion.so/login",
+    "Google Calendar":"https://calendar.google.com/",
+    "Slack":"https://slack.com/signin",
+    "Teams":"https://teams.microsoft.com/",
+    "Zoom":"https://zoom.us/signin",
+    "Hostinger Mail":"https://mail.hostinger.com/",
+    "Higgsfield":"https://higgsfield.ai/",
+    "Runway":"https://app.runwayml.com/",
+    "Supabase":"https://supabase.com/dashboard",
+    "Render":"https://dashboard.render.com/",
+    "Vercel":"https://vercel.com/login",
+    "Railway":"https://railway.com/login",
+    "Spotify":"https://open.spotify.com/",
+    "HubSpot":"https://app.hubspot.com/login",
+    "PostHog":"https://app.posthog.com/",
+    "Amplitude":"https://app.amplitude.com/",
+    "Typeform":"https://admin.typeform.com/"
+  };
+  const oauthProfiles={
+    "Gmail":{provider:"google",authUrl:"https://accounts.google.com/o/oauth2/v2/auth",tokenUrl:"https://oauth2.googleapis.com/token",scopes:"openid email https://www.googleapis.com/auth/gmail.readonly"},
+    "Google Drive":{provider:"google",authUrl:"https://accounts.google.com/o/oauth2/v2/auth",tokenUrl:"https://oauth2.googleapis.com/token",scopes:"openid email https://www.googleapis.com/auth/drive.readonly"},
+    "Google Calendar":{provider:"google",authUrl:"https://accounts.google.com/o/oauth2/v2/auth",tokenUrl:"https://oauth2.googleapis.com/token",scopes:"openid email https://www.googleapis.com/auth/calendar.readonly"},
+    "GitHub":{provider:"github",authUrl:"https://github.com/login/oauth/authorize",tokenUrl:"https://github.com/login/oauth/access_token",scopes:"read:user repo"},
+    "Outlook Email":{provider:"microsoft",authUrl:"https://login.microsoftonline.com/common/oauth2/v2.0/authorize",tokenUrl:"https://login.microsoftonline.com/common/oauth2/v2.0/token",scopes:"openid profile offline_access Mail.Read"},
+    "Teams":{provider:"microsoft",authUrl:"https://login.microsoftonline.com/common/oauth2/v2.0/authorize",tokenUrl:"https://login.microsoftonline.com/common/oauth2/v2.0/token",scopes:"openid profile offline_access User.Read"},
+    "Slack":{provider:"slack",authUrl:"https://slack.com/oauth/v2/authorize",tokenUrl:"https://slack.com/api/oauth.v2.access",scopes:"channels:read chat:write users:read"},
+    "Notion":{provider:"notion",authUrl:"https://api.notion.com/v1/oauth/authorize",tokenUrl:"https://api.notion.com/v1/oauth/token",scopes:""},
+    "Spotify":{provider:"spotify",authUrl:"https://accounts.spotify.com/authorize",tokenUrl:"https://accounts.spotify.com/api/token",scopes:"user-read-private user-read-email"}
+  };
+
   const catalog=[
     // Populare
     {name:"Gmail",description:"Read and manage Gmail",trigger:"@gmail",group:"Populare",mark:"M",slug:"gmail"},
@@ -899,9 +940,15 @@ function PluginsPanel({onClose}) {
   async function patch(x,p){await api(`/api/plugins/${x.id}`,{method:"PATCH",body:JSON.stringify(p)});await load()}
   async function test(x){try{const d=await api(`/api/plugins/${x.id}/test`,{method:"POST",body:JSON.stringify({message:"Test conexiune AI Stoica"})});setResult(`${x.name}: ${d.result}`)}catch(e){setResult(`${x.name}: Eroare — ${e.message}`)}}
   async function remove(id){if(confirm("Ștergi această conexiune?")){await api(`/api/plugins/${id}`,{method:"DELETE"});await load()}}
-  function chooseCatalog(x){setSelected(x);setForm({...blank,name:x.name,description:x.description,trigger:x.trigger})}
+  function chooseCatalog(x){setSelected({...x,appUrl:appLinks[x.name]||"",oauth:oauthProfiles[x.name]||null});setForm({...blank,name:x.name,description:x.description,trigger:x.trigger})}
   function closeSetup(){setSelected(null);setForm(blank)}
   function iconUrl(x){return x.slug?`https://cdn.simpleicons.org/${x.slug}`:null}
+  async function openProviderApp(){
+    const url=selected?.appUrl;
+    if(!url)return;
+    const r=await window.AIStoica?.openExternal?.(url);
+    if(r&&!r.ok)setResult(`${selected.name}: nu am putut deschide aplicația — ${r.error||"eroare"}`);
+  }
 
   const installedNames=new Set(items.map(x=>String(x.name||"").toLowerCase()));
   const normalized=query.trim().toLowerCase();
@@ -982,7 +1029,11 @@ function PluginsPanel({onClose}) {
             <div><h3>{selected.name}</h3><p>{selected.description}</p></div>
             <button className="iconOnly" onClick={closeSetup}><X size={18}/></button>
           </div>
-          <div className="claudeSetupNotice"><Plug size={16}/><span>Pluginul devine funcțional numai după autorizarea serviciului sau configurarea unui endpoint/API valid. Afișarea lui în catalog nu oferă automat acces la contul tău.</span></div>
+          <div className="claudeSetupNotice"><Plug size={16}/><span>Autentificarea în site/aplicație și autorizarea API sunt pași diferiți. AI Stoica nu consideră pluginul conectat până când nu există o conexiune OAuth/API validă.</span></div>
+          {selected.appUrl&&<div className="pluginDirectConnect">
+            <button className="primary" onClick={openProviderApp}><ExternalLink size={16}/> Deschide {selected.name} și autentifică-te</button>
+            <small>Se deschide aplicația oficială în browser. După autentificare, conexiunea AI Stoica se finalizează prin OAuth/API.</small>
+          </div>}
           <div className="claudeSetupForm">
             <label>Nume<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label>
             <label>Endpoint / webhook / OAuth callback<input placeholder="https://…" value={form.url} onChange={e=>setForm({...form,url:e.target.value})}/></label>
