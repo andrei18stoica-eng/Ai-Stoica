@@ -399,3 +399,19 @@
 .mediaQuick:hover{color:#dce9f7}
 @media(max-width:760px){.mediaQuickButtons{gap:0}.mediaQuickButtons .composerIcon{width:34px;height:34px}.composerLine{align-items:flex-end}}
 @media(max-width:520px){.mediaQuickButtons .composerIcon:nth-child(2){display:none}}
+
+
+/* v0.6.7 — smart router transparency */
+.routeBadge{display:inline-flex;align-items:center;gap:7px;max-width:100%;margin:0 0 12px;padding:5px 8px;border:1px solid #2b405b;background:#0d1825;border-radius:9px;color:#9ecbff;font-size:10px;line-height:1.25}
+.routeBadge>span{display:flex;align-items:center;gap:6px;min-width:0}
+.routeBadge b{color:#dbeaff;font-size:10px}
+.routeBadge em{font-style:normal;color:#8da0b8;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.routeBadge small{color:#6f8299;border-left:1px solid #2d3b4d;padding-left:7px;white-space:nowrap}
+.thinking{display:flex!important;align-items:center;gap:10px!important;padding-left:44px!important;color:#8ea0b6}
+.thinkingPulse{display:flex;gap:4px;flex:0 0 auto}
+.thinkingPulse span{width:6px;height:6px;background:#5e8fc7;border-radius:50%;animation:pulse 1s infinite}
+.thinkingPulse span:nth-child(2){animation-delay:.15s}.thinkingPulse span:nth-child(3){animation-delay:.3s}
+.thinkingCopy b,.thinkingCopy small{display:block}
+.thinkingCopy b{font-size:11px;color:#a9c3e2;font-weight:650}
+.thinkingCopy small{font-size:9px;color:#5f7084;margin-top:2px}
+@media(max-width:560px){.routeBadge{display:flex;flex-wrap:wrap}.routeBadge em{max-width:210px}.routeBadge small{width:100%;border-left:0;padding-left:19px}.thinking{padding-left:40px!important}}
