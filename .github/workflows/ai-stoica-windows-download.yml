@@ -48,6 +48,10 @@ jobs:
         working-directory: apps/desktop
         run: node scripts/test-smart-router-integration.cjs
 
+      - name: Testeaza regresiile de infrastructura
+        working-directory: apps/desktop
+        run: node scripts/test-infrastructure-regressions.cjs
+
       - name: Testeaza generarea imagini si video
         working-directory: apps/desktop
         run: node scripts/test-media-generation.cjs
@@ -61,8 +65,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v0.6.8"
-          $installer = "apps/desktop/release/AI_Stoica_Setup_0.6.8_x64.exe"
+          $tag = "v0.6.9"
+          $installer = "apps/desktop/release/AI_Stoica_Setup_0.6.9_x64.exe"
           if (!(Test-Path $installer)) {
             Write-Error "Installerul AI Stoica nu a fost gasit: $installer"
             exit 1
@@ -72,28 +76,28 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $installer --clobber
           } else {
-            gh release create $tag $installer --title "AI Stoica 0.6.8" --notes "AI Stoica principal pentru Windows."
+            gh release create $tag $installer --title "AI Stoica 0.6.9" --notes "AI Stoica principal pentru Windows."
           }
 
       - name: Incarca installerul ca Artifact
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: AI-Stoica-Windows-0.6.8
-          path: apps/desktop/release/AI_Stoica_Setup_0.6.8_x64.exe
+          name: AI-Stoica-Windows-0.6.9
+          path: apps/desktop/release/AI_Stoica_Setup_0.6.9_x64.exe
           if-no-files-found: error
           retention-days: 7
 
       - name: DESCARCA AI STOICA WINDOWS
         shell: pwsh
         run: |
-          $url = "https://github.com/andrei18stoica-eng/Ai-Stoica/releases/download/v0.6.8/AI_Stoica_Setup_0.6.8_x64.exe"
+          $url = "https://github.com/andrei18stoica-eng/Ai-Stoica/releases/download/v0.6.9/AI_Stoica_Setup_0.6.9_x64.exe"
           @"
           # ✅ AI Stoica pentru Windows este gata
 
           ## [⬇️ DESCARCĂ AI STOICA WINDOWS (.EXE)]($url)
 
-          Fișier: `AI_Stoica_Setup_0.6.8_x64.exe`
+          Fișier: `AI_Stoica_Setup_0.6.9_x64.exe`
 
           Dacă browserul întreabă dacă vrei să păstrezi fișierul, alege **Keep / Păstrează**.
           "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8

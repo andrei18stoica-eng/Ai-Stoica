@@ -426,3 +426,9 @@
 .autoRouterToggle.on i{border-color:#3477ab;background:#123557;color:#a9d7ff}
 .autoRouterToggle:hover{border-color:#42617f}
 @media(max-width:680px){.autoRouterToggle span{display:none}.autoRouterToggle{padding:0 7px}.modelPickerText small{display:none}}
+
+
+/* v0.6.9 — direct plugin sign-in */
+.pluginDirectConnect{display:grid;gap:7px;margin:10px 0 12px;padding:10px;border:1px solid #26394e;background:#0c1622;border-radius:11px}
+.pluginDirectConnect .primary{justify-content:center;display:flex;align-items:center;gap:7px}
+.pluginDirectConnect small{font-size:9px;color:#71839a;line-height:1.45}
