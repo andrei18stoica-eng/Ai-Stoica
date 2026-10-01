@@ -42,6 +42,10 @@ jobs:
         working-directory: apps/desktop
         run: node scripts/test-ai-access-enforcement.cjs
 
+      - name: Test smart question router
+        working-directory: apps/desktop
+        run: node scripts/test-smart-router.cjs
+
       - name: Test real image and video generation
         working-directory: apps/desktop
         run: node scripts/test-media-generation.cjs
@@ -56,11 +60,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v0.6.6"
-          $installer = "apps/desktop/release/AI_Stoica_Setup_0.6.6_x64.exe"
+          $tag = "v0.6.7"
+          $installer = "apps/desktop/release/AI_Stoica_Setup_0.6.7_x64.exe"
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $installer --clobber
           } else {
-            gh release create $tag $installer --title "AI Stoica 0.6.6" --notes "Versiunea principală AI Stoica 0.6.6 pentru Windows: Owner Control Center, Hetzner Cloud, pluginuri, fișiere și documente."
+            gh release create $tag $installer --title "AI Stoica 0.6.7" --notes "Versiunea principală AI Stoica 0.6.7 pentru Windows: Owner Control Center, Hetzner Cloud, pluginuri, fișiere și documente."
           }
