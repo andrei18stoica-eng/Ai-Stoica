@@ -12,7 +12,7 @@ const fontkit = fontkitModule.default || fontkitModule;
 const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = require("docx");
 const PptxGenJS = require("pptxgenjs");
 const JSZip = require("jszip");
-const { isSmartAlias, routeQuestion } = require("./smart-router.cjs");
+const { isSmartAlias, inferProvider, routeQuestion } = require("./smart-router.cjs");
 
 function createStore(dataDir) {
   const file = path.join(dataDir, "ai-stoica-data.json");
@@ -551,7 +551,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const requested=String(requestedModel||cfg.model||"Ai principal").trim();
     if(!isSmartAlias(requested)){
       await requireModelAccess(context?.cloudToken,requested);
-      return {task:"manual",reasons:["model ales manual"],selectedModel:requested,candidates:[{id:requested,provider:"",score:0}]};
+      return {task:"manual",reasons:["model ales manual"],selectedModel:requested,candidates:[{id:requested,provider:inferProvider(requested),score:0}]};
     }
     const entries=await omniModelEntries(cfg);
     const allowed=await allowedOmniEntries(context,entries);
@@ -1313,7 +1313,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       res.setHeader("Connection","keep-alive");
       res.setHeader("X-AI-Stoica-Route",route.task);
       res.setHeader("X-AI-Stoica-Model",usedModel);
-      res.write(`data: ${JSON.stringify({ai_stoica_route:{task:route.task,model:usedModel}})}\n\n`);
+      const usedCandidate=route.candidates.find(x=>x.id===usedModel)||{};
+      res.write(`data: ${JSON.stringify({ai_stoica_route:{task:route.task,model:usedModel,provider:usedCandidate.provider||inferProvider(usedModel),reasons:route.reasons||[]}})}\n\n`);
       if(!ctype.includes("text/event-stream")){const data=await upstream.json(),text=data?.choices?.[0]?.message?.content||"";res.write(`data: ${JSON.stringify({choices:[{delta:{content:text}}]})}\n\n`);res.write("data: [DONE]\n\n");return res.end();}
       const reader=upstream.body.getReader();while(true){const {value,done}=await reader.read();if(done)break;res.write(Buffer.from(value));}res.end();
     }catch(e){if(!res.headersSent)res.status(e.status||502).json({error:e.message});else{res.write(`data: ${JSON.stringify({error:e.message})}\n\n`);res.end();}}
