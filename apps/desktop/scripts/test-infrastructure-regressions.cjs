@@ -45,7 +45,7 @@ async function main(){
       baseUrl:"http://127.0.0.1:"+omniPort+"/v1",
       controlApiUrl:"http://127.0.0.1:"+cloudPort,
       apiKey:"",
-      model:"Ai principal"
+      model:"groq/model-001"
     })
   });
   const base="http://127.0.0.1:8802",headers={authorization:"Bearer owner-token","content-type":"application/json"};
@@ -54,8 +54,8 @@ async function main(){
     let r=await fetch(base+"/api/models",{headers:{authorization:"Bearer owner-token"}});
     const catalog=await r.json();
     expect(r.ok,catalog.error||"Large model catalog failed");
-    expect(catalog.manualModels?.length===325,"Complete manual catalog was not preserved");
-    expect(catalog.data?.length===326,"Smart router + complete permitted catalog expected");
+    expect(catalog.manualModels?.length===325,"Complete Owner-permitted manual catalog was not preserved");
+    expect(catalog.data?.length===325,"Complete manual permitted catalog expected");
     expect(policyCalls>=3,"Model policy should be checked in multiple batches");
     expect(maxBatch<=200,"A policy request exceeded the server safety limit");
 
