@@ -20,6 +20,8 @@ function deniedReason(context, model){const r=evaluateModelAccess(context,model)
 
 expect(allowed(ctx(),"groq/llama-3.3-70b-versatile"),"Groq free model should be allowed");
 expect(allowed(ctx(),"Free Mix"),"Free Mix should be allowed");
+expect(allowed(ctx(),"cerebras/gpt-oss-120b"),"Cerebras GPT-OSS should remain a free-provider model");
+expect(allowed(ctx(),"groq/openai/gpt-oss-120b"),"Groq-hosted GPT-OSS must use Groq permission, not OpenAI permission");
 expect(!allowed(ctx(),"openai/gpt-5"),"OpenAI must be blocked by default");
 expect(!allowed(ctx(),"anthropic/claude-sonnet"),"Claude must be blocked by default");
 expect(!allowed(ctx(),"GPT + Claude"),"Paid combination must be blocked by default");
