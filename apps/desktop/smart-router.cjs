@@ -54,7 +54,7 @@ function classifyTask(messages) {
   const legalSignals = /(juridic|legea|lege |articolul|contract|achizit|hotarare|sentinta|instanta|primarie|consiliul local|ordonanta|cod administrativ|aviz|adresa oficiala|act aditional|procedura|legalitate|contestatie|autoritate|urbanism)/;
   const researchSignals = /(cauta|cautare|research|documenteaza|surse|verifica pe internet|comparatie|compara|analiza comparativa|studiu|investigheaza|ultimele informatii|actualizat|noutati|informatii recente)/;
   const creativeSignals = /(scrie (o |un )?(poveste|poezie|scenariu|discurs|mesaj|urare)|creativ|slogan|nume de brand|campanie|idee de|brainstorm|story|poem|copywriting)/;
-  const documentSignals = /(document|pdf|docx|word|contract|raport|proiect|fisier|atasament|capitol|rezumat|sinteza|analizeaza acest|analizeaza documentul)/;
+  const documentSignals = /(document|pdf|docx|word|contract|raport|proiect|fisier|atasament|capitol|rezumat|\bsinteza\b|analizeaza acest|analizeaza documentul)/;
 
   if (codeSignals.test(t) || apiCoding.test(t) || /\x60\x60\x60[\s\S]{20,}\x60\x60\x60/.test(raw)) {
     reasons.push("cerere de programare/cod");
