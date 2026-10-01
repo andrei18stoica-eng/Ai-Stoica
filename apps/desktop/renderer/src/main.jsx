@@ -112,14 +112,17 @@ function inferModelProvider(model,provider="") {
   const p=String(provider||"").toLowerCase();
   if(p)return p;
   const m=String(model||"").toLowerCase();
-  if(/claude|anthropic/.test(m))return "anthropic";
-  if(/openai|gpt|codex|\/o[134](?:\b|[-_.])/i.test(m))return "openai";
-  if(/gemini|google/.test(m))return "gemini";
-  if(/cerebras/.test(m))return "cerebras";
+  const first=m.split("/")[0];
+  const prefixMap={openai:"openai",anthropic:"anthropic",google:"gemini",gemini:"gemini",cerebras:"cerebras",groq:"groq",cloudflare:"cloudflare",openrouter:"openrouter",runway:"runway","@cf":"cloudflare"};
+  if(prefixMap[first])return prefixMap[first];
   if(/groq/.test(m))return "groq";
+  if(/cerebras/.test(m))return "cerebras";
   if(/cloudflare|@cf\//.test(m))return "cloudflare";
   if(/openrouter/.test(m))return "openrouter";
   if(/runway/.test(m))return "runway";
+  if(/claude|anthropic/.test(m))return "anthropic";
+  if(/gemini|google/.test(m))return "gemini";
+  if(/openai|codex|\/o[134](?:\b|[-_.])/i.test(m)||(!/gpt[-_. ]?oss/.test(m)&&/gpt/.test(m)))return "openai";
   return p||"ai";
 }
 function providerLabel(provider,model="") {
