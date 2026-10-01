@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.6.7",
+  "version": "0.6.8",
   "private": true,
-  "description": "AI Stoica 0.6.7 - smart task-aware model routing, selected-AI badges, work-stage status and media/file support",
+  "description": "AI Stoica 0.6.8 - optional automatic question-aware model routing, manual AI selector, answer model badges and work-stage status",
   "main": "main.cjs",
   "repository": {
     "type": "git",
