@@ -142,6 +142,14 @@ async function callOAuthPlugin(plugin, message) {
   }finally{clearTimeout(timer)}
 }
 async function callPlugin(plugin, message) {
+  if(plugin.mode==="direct_app"){
+    return JSON.stringify({
+      mode:"direct_app",
+      name:plugin.name,
+      appUrl:plugin.appUrl||plugin.url,
+      message:"Plugin configurat pentru deschidere directă. Nu este necesar OAuth pentru lansarea aplicației."
+    });
+  }
   if(plugin.oauthConnected&&plugin.accessToken)return callOAuthPlugin(plugin,message);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12000);
@@ -1298,6 +1306,26 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
 
   app.get("/api/plugins", auth, (req,res) => {const db=store.read();res.json({data:db.plugins.filter(x=>x.userId===req.user.id).map(publicPlugin)});});
+
+  app.post("/api/plugins/direct", auth, (req,res) => {
+    const name=String(req.body?.name||"").trim(),appUrl=String(req.body?.appUrl||"").trim();
+    if(!name||!appUrl)return res.status(400).json({error:"Numele și adresa aplicației sunt obligatorii."});
+    try{
+      const u=new URL(appUrl);
+      if(!["https:","http:"].includes(u.protocol))throw new Error("protocol");
+    }catch{return res.status(400).json({error:"Adresa aplicației nu este validă."})}
+    const db=store.read();
+    db.plugins=db.plugins.filter(x=>!(x.userId===req.user.id&&String(x.name||"").toLowerCase()===name.toLowerCase()));
+    const item={
+      id:crypto.randomUUID(),userId:req.user.id,name,
+      description:String(req.body?.description||"Deschidere directă în aplicația oficială"),
+      url:appUrl,appUrl,method:"OPEN",mode:"direct_app",
+      trigger:String(req.body?.trigger||`@${name.toLowerCase().replace(/\s+/g,"-")}`),
+      auto:false,enabled:true,oauthConnected:false,createdAt:Date.now()
+    };
+    db.plugins.push(item);store.write(db);res.json({data:publicPlugin(item)});
+  });
+
   app.post("/api/plugins", auth, (req,res) => {
     const name=String(req.body?.name||"").trim(),url=String(req.body?.url||"").trim();if(!name||!url)return res.status(400).json({error:"Numele și URL-ul sunt obligatorii."});
     try{new URL(url)}catch{return res.status(400).json({error:"URL-ul pluginului nu este valid."})}
@@ -1311,6 +1339,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
   app.post("/api/plugins/:id/test", auth, async (req,res) => {
     const db=store.read(),item=db.plugins.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Pluginul nu a fost găsit."});
+    if(item.mode==="direct_app")return res.json({ok:true,direct:true,appUrl:item.appUrl||item.url,result:"Conexiune directă pregătită. Aplicația se deschide fără OAuth."});
     try{const result=await callPlugin(item,String(req.body?.message||"Test AI Stoica"));res.json({ok:true,result:String(result).slice(0,5000)});}catch(e){res.status(502).json({error:e.message});}
   });
   app.delete("/api/plugins/:id", auth, (req,res) => {const db=store.read();db.plugins=db.plugins.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));store.write(db);res.json({ok:true});});
