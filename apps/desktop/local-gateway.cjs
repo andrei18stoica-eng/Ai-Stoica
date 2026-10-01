@@ -12,7 +12,7 @@ const fontkit = fontkitModule.default || fontkitModule;
 const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = require("docx");
 const PptxGenJS = require("pptxgenjs");
 const JSZip = require("jszip");
-const { isSmartAlias, inferProvider, routeQuestion } = require("./smart-router.cjs");
+const { isSmartAlias, inferProvider } = require("./smart-router.cjs");
 
 function createStore(dataDir) {
   const file = path.join(dataDir, "ai-stoica-data.json");
@@ -586,16 +586,11 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   }
   async function resolveChatRoute(context, messages, requestedModel) {
     const cfg=getOmniConfig();
-    const requested=String(requestedModel||cfg.model||"Ai principal").trim();
-    if(!isSmartAlias(requested)){
-      await requireModelAccess(context?.cloudToken,requested);
-      return {task:"manual",reasons:["model ales manual"],selectedModel:requested,candidates:[{id:requested,provider:inferProvider(requested),score:0}]};
-    }
-    const entries=await omniModelEntries(cfg);
-    const allowed=await allowedOmniEntries(context,entries);
-    const route=routeQuestion(allowed,messages,6);
-    if(!route.selectedModel)throw policyFailure("AI Stoica nu a găsit niciun model de chat permis și disponibil pentru această întrebare.",503);
-    return route;
+    const requested=String(requestedModel||cfg.model||"").trim();
+    if(!requested)throw policyFailure("Alege manual un model AI înainte de a trimite mesajul.",400);
+    if(isSmartAlias(requested))throw policyFailure("Selectarea automată a AI-ului este dezactivată. Alege manual modelul dorit.",409);
+    await requireModelAccess(context?.cloudToken,requested);
+    return {task:"manual",reasons:["model ales manual"],selectedModel:requested,candidates:[{id:requested,provider:inferProvider(requested),score:0}]};
   }
   function ensureShadowUser(remoteUser) {
     if (!remoteUser?.email) return null;
@@ -754,33 +749,21 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         try{filtered=await allowedOmniEntries(req,manualModels)}
         catch(e){filtered=[];policyError=e.message}
       }
-      const smartAllowed=!cloudBase()||req.permissions?.chat!==false;
-      const data=smartAllowed
-        ?[{id:"Ai principal",provider:"ai-stoica",smartRouter:true,description:"Alege automat modelul potrivit pentru fiecare întrebare"},...filtered]
-        :filtered;
       res.json({
-        data,
-        manualModels,
+        data:filtered,
+        manualModels:filtered,
         policyEnforced:!!cloudBase(),
         policyUnavailable:!!policyError,
         policyError,
-        smartRouter:true,
+        automaticRouting:false,
+        ownerControlled:true,
         deniedCount:Math.max(0,manualModels.length-filtered.length)
       });
     } catch (e) { res.status(e.status||502).json({ error:`Nu pot încărca lista de modele OmniRoute: ${e.message}` }); }
   });
 
-  app.post("/api/router/preview", auth, async (req,res) => {
-    try{
-      const messages=Array.isArray(req.body?.messages)?req.body.messages:[{role:"user",content:String(req.body?.prompt||"")}];
-      const route=await resolveChatRoute(req,messages,"Ai principal");
-      res.json({data:{
-        task:route.task,
-        reasons:route.reasons,
-        selectedModel:route.selectedModel,
-        candidates:route.candidates.map(x=>({id:x.id,provider:x.provider,score:x.score}))
-      }});
-    }catch(e){res.status(e.status||502).json({error:e.message})}
+  app.post("/api/router/preview", auth, (_req,res) => {
+    res.status(410).json({error:"Selectarea automată a AI-ului este dezactivată. Fiecare utilizator alege manual dintre modelele permise de Owner."});
   });
 
   app.get("/api/projects", auth, (req,res) => { const db=store.read(); res.json({data:db.projects.filter(x=>x.userId===req.user.id).sort((a,b)=>b.updatedAt-a.updatedAt)}); });
@@ -1397,7 +1380,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     });
   }
   app.post("/api/chat", auth, async (req,res) => {
-    const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"Ai principal").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id);if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
+    const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id);if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
     try{
       const route=await resolveChatRoute(req,messages,requestedModel);
       const errors=[];
@@ -1415,7 +1398,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }catch(e){res.status(e.status||502).json({error:e.message})}
   });
   app.post("/api/chat/stream", auth, async (req,res) => {
-    const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"Ai principal").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id);if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
+    const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id);if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
     try{
       const route=await resolveChatRoute(req,messages,requestedModel);
       const errors=[];let upstream=null,usedModel="";
@@ -1443,7 +1426,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   async function runAutomation(item, cloudToken) {
     const cfg=getOmniConfig(),db=store.read(),user=db.users.find(u=>u.id===item.userId);if(!user)throw new Error("Contul automatizării nu mai există.");
-    const selectedModel=String(item.model||cfg.model||"Ai principal").trim();
+    const selectedModel=String(item.model||cfg.model||"").trim();
+    if(!selectedModel||isSmartAlias(selectedModel))throw policyFailure("Automatizarea nu are un model AI manual valid. Selectează un model permis de Owner.",400);
     await requireModelAccess(cloudToken,selectedModel);
     const messages=await prepareMessages([{role:"user",content:item.prompt}],null,item.userId);
     const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},body:JSON.stringify({model:selectedModel,messages,stream:false,temperature:0.35})});
