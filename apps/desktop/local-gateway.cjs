@@ -506,21 +506,27 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const unique=[...new Set((models||[]).map(x=>String(x||"").trim()).filter(Boolean))];
     if (!cloudBase()) return { policyEnforced:false, data:unique.map(model=>({model,allowed:true})) };
     if (!token) throw policyFailure("Nu pot verifica permisiunile AI. Reautentifică-te prin AI Stoica Cloud.",503);
-    let remote;
-    try {
-      remote=await cloudFetch("/api/ai/access",{
-        method:"POST",
-        headers:{Authorization:`Bearer ${token}`},
-        body:{models:unique},
-        timeout:9000
-      });
-    } catch(e) {
-      throw policyFailure(`AI Stoica Cloud nu poate verifica permisiunile AI: ${e.message}`,503);
+    const chunks=[];for(let i=0;i<unique.length;i+=150)chunks.push(unique.slice(i,i+150));
+    const all=[];let paidAiEnabled=null;
+    for(const chunk of chunks){
+      let remote;
+      try {
+        remote=await cloudFetch("/api/ai/access",{
+          method:"POST",
+          headers:{Authorization:`Bearer ${token}`},
+          body:{models:chunk},
+          timeout:9000
+        });
+      } catch(e) {
+        throw policyFailure(`AI Stoica Cloud nu poate verifica permisiunile AI: ${e.message}`,503);
+      }
+      const text=await remote.text();let data={};try{data=JSON.parse(text||"{}")}catch{}
+      if(!remote.ok)throw policyFailure(data?.error||text||"Verificarea permisiunilor AI a eșuat.",remote.status||503);
+      if(!Array.isArray(data?.data))throw policyFailure("Răspuns invalid de la politica AI Stoica Cloud.",502);
+      all.push(...data.data);
+      if(typeof data.paidAiEnabled==="boolean")paidAiEnabled=data.paidAiEnabled;
     }
-    const text=await remote.text();let data={};try{data=JSON.parse(text||"{}")}catch{}
-    if(!remote.ok)throw policyFailure(data?.error||text||"Verificarea permisiunilor AI a eșuat.",remote.status||503);
-    if(!Array.isArray(data?.data))throw policyFailure("Răspuns invalid de la politica AI Stoica Cloud.",502);
-    return data;
+    return {policyEnforced:true,data:all,...(paidAiEnabled===null?{}:{paidAiEnabled})};
   }
   async function requireModelAccess(token, model) {
     const policy=await cloudModelPolicy(token,[model]);
