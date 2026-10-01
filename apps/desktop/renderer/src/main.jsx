@@ -1292,13 +1292,20 @@ function App() {
   useEffect(()=>{setTimeout(()=>chatRef.current?.scrollTo({top:chatRef.current.scrollHeight,behavior:"smooth"}),30)},[current?.messages?.length,busy,current?.messages?.at(-1)?.content]);
   useEffect(()=>{
     if(!current?.model)return;
+    const isSmart=/^ai[ _-]*(principal|stoica)$/i.test(current.model);
+    if(isSmart){
+      const fallback=localStorage.getItem(MANUAL_MODEL_KEY)||models.find(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x))||"";
+      if(fallback){setModel(fallback);localStorage.setItem(MODEL_SELECTED_KEY,fallback)}
+      return;
+    }
     if(modelPolicyEnforced&&!models.includes(current.model)){
-      const fallback=models[0]||"";
+      const fallback=models.find(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x))||"";
       setModel(fallback);
-      if(fallback)localStorage.setItem(MODEL_SELECTED_KEY,fallback);else localStorage.removeItem(MODEL_SELECTED_KEY);
+      if(fallback){localStorage.setItem(MANUAL_MODEL_KEY,fallback);localStorage.setItem(MODEL_SELECTED_KEY,fallback)}else localStorage.removeItem(MODEL_SELECTED_KEY);
       return;
     }
     setModel(current.model);
+    localStorage.setItem(MANUAL_MODEL_KEY,current.model);
     localStorage.setItem(MODEL_SELECTED_KEY,current.model);
     if(!modelPolicyEnforced)setModels(v=>uniqueModels([current.model,...v]));
   },[currentId,modelPolicyEnforced,models.join("|")]);
@@ -1313,7 +1320,7 @@ function App() {
     const desiredModel=String(baseConv.model||model||"").trim();
     const manualModel=modelPolicyEnforced?(models.includes(desiredModel)?desiredModel:(models.includes(model)?model:(models.find(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x))||""))):desiredModel;
     const effectiveModel=autoRouting?"Ai principal":manualModel;
-    setBusy(true);setBusyStage("Analizează cererea și identifică tipul sarcinii…");const assistantMessage={id:uid(),role:"assistant",content:"",attachmentOnly:fileMode,createdAt:Date.now(),streaming:true};let working={...baseConv,model:effectiveModel,messages:[...messages,assistantMessage],updatedAt:Date.now()};setConversations(v=>v.map(x=>x.id===working.id?working:x));
+    setBusy(true);setBusyStage("Analizează cererea și identifică tipul sarcinii…");const assistantMessage={id:uid(),role:"assistant",content:"",attachmentOnly:fileMode,createdAt:Date.now(),streaming:true};let working={...baseConv,model:manualModel||baseConv.model||model,messages:[...messages,assistantMessage],updatedAt:Date.now()};setConversations(v=>v.map(x=>x.id===working.id?working:x));
     try{
       if(!effectiveModel)throw new Error("Nu există niciun model AI permis pentru acest cont.");
       if(!omni){setBusyStage("Pornește și verifică OmniRoute…");await window.AIStoica.ensureOmni();await new Promise(r=>setTimeout(r,1200))}
