@@ -24,6 +24,7 @@ const TOKEN_KEY = "aiStoicaAuthTokenV3";
 const USER_KEY = "aiStoicaUserV3";
 const MODEL_CACHE_KEY = "aiStoicaModelsV1";
 const MODEL_SELECTED_KEY = "aiStoicaSelectedModelV1";
+const SMART_ROUTER_DEFAULT_KEY = "aiStoicaSmartRouterDefaultV1";
 
 function cachedModels() {
   try {
@@ -1247,8 +1248,13 @@ function App() {
       setModelPolicyEnforced(enforced);
       const merged=enforced?ids:uniqueModels([...ids,...prior,remembered]);
       setModels(merged);localStorage.setItem(MODEL_CACHE_KEY,JSON.stringify(merged));
-      const preferred=remembered&&merged.includes(remembered)?remembered:(merged.find(x=>/ai[ _-]*principal/i.test(x))||merged[0]||"");
+      const smartModel=merged.find(x=>/^ai[ _-]*principal$/i.test(x))||"";
+      const smartDefaultApplied=localStorage.getItem(SMART_ROUTER_DEFAULT_KEY)==="1";
+      const preferred=!smartDefaultApplied&&smartModel
+        ? smartModel
+        : (remembered&&merged.includes(remembered)?remembered:(smartModel||merged[0]||""));
       setModel(preferred);
+      if(!smartDefaultApplied&&smartModel)localStorage.setItem(SMART_ROUTER_DEFAULT_KEY,"1");
       if(preferred)localStorage.setItem(MODEL_SELECTED_KEY,preferred);else localStorage.removeItem(MODEL_SELECTED_KEY);
       if((as.data||[]).length&&!selectedAssistant)setSelectedAssistant(as.data[0].id);if((cs.data||[]).length&&!currentId)setCurrentId(cs.data[0].id);
     }catch(e){if(/Autentificare|Sesiune|401/i.test(e.message))logout()}finally{setBoot(false)}
