@@ -40,16 +40,17 @@ async function api(path,token,options={}){
   if(options.body && !(options.body instanceof Blob) && !headers["Content-Type"])headers["Content-Type"]="application/json";
   const r=await fetch(`${GATEWAY}${path}`,{...options,headers});
   const d=await r.json().catch(()=>({error:`HTTP ${r.status}`}));
-  if(!r.ok)throw new Error(d?.error||`HTTP ${r.status}`);
+  if(!r.ok){const err=new Error(d?.error||`HTTP ${r.status}`);err.status=r.status;throw err}
   return d;
 }
 
 function Auth({onAuth}){
-  const[mode,setMode]=useState("login"),[name,setName]=useState(""),[email,setEmail]=useState(""),[password,setPassword]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState("");
+  const[mode,setMode]=useState("login"),[name,setName]=useState(""),[email,setEmail]=useState(""),[password,setPassword]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
   async function submit(){
-    setBusy(true);setError("");
+    setBusy(true);setError("");setNotice("");
     try{
       const d=await api(mode==="login"?"/auth/login":"/auth/register","",{method:"POST",body:JSON.stringify({name,email,password})});
+      if(!d?.token){setNotice(d?.message||"Contul a fost creat și așteaptă aprobarea Owner-ului.");setMode("login");setPassword("");return}
       await AsyncStorage.setItem(TOKEN_KEY,d.token);onAuth(d.token,d.user);
     }catch(e){setError(e.message)}finally{setBusy(false)}
   }
@@ -66,6 +67,7 @@ function Auth({onAuth}){
         <TextInput style={s.input} autoCapitalize="none" keyboardType="email-address" placeholder="Email" placeholderTextColor="#627086" value={email} onChangeText={setEmail}/>
         <TextInput style={s.input} secureTextEntry placeholder="Parolă" placeholderTextColor="#627086" value={password} onChangeText={setPassword}/>
         {!!error&&<Text style={s.err}>{error}</Text>}
+        {!!notice&&<Text style={s.notice}>{notice}</Text>}
         <TouchableOpacity style={s.primary} onPress={submit} disabled={busy}><Text style={s.primaryText}>{busy?"Se conectează…":mode==="login"?"Intră":"Creează cont"}</Text></TouchableOpacity>
       </View>
     </ScrollView>
@@ -76,16 +78,28 @@ export default function Home(){
   const[token,setToken]=useState(null),[user,setUser]=useState(null),[loading,setLoading]=useState(true);
   const[convs,setConvs]=useState([]),[currentId,setCurrentId]=useState(null),[text,setText]=useState(""),[busy,setBusy]=useState(false),[menu,setMenu]=useState(false);
   const[pendingFiles,setPendingFiles]=useState([]),[uploading,setUploading]=useState(false);
+  const[adminOpen,setAdminOpen]=useState(false),[accounts,setAccounts]=useState([]);
+  const isOwner=user?.role==="owner";
   const[githubOpen,setGithubOpen]=useState(false),[ghPath,setGhPath]=useState(""),[ghInstruction,setGhInstruction]=useState(""),[ghBusy,setGhBusy]=useState(false);
   const current=useMemo(()=>convs.find(c=>c.id===currentId)||null,[convs,currentId]);
 
   useEffect(()=>{AsyncStorage.getItem(TOKEN_KEY).then(async t=>{
-    if(t){try{const me=await api("/auth/me",t);const nt=me.token||t;await AsyncStorage.setItem(TOKEN_KEY,nt);setToken(nt);setUser(me.user)}catch{await AsyncStorage.removeItem(TOKEN_KEY)}}
+    if(t){try{const me=await api("/auth/me",t);const nt=me.token||t;await AsyncStorage.setItem(TOKEN_KEY,nt);setToken(nt);setUser(me.user)}
+      catch(e){
+        // Only a refused session logs out; no internet keeps the user signed in.
+        if(e.status===401||e.status===403)await AsyncStorage.removeItem(TOKEN_KEY);
+        else{setToken(t);Alert.alert("AI Stoica","Serverul nu răspunde momentan. Verifică internetul.")}
+      }}
     setLoading(false);
   })},[]);
   useEffect(()=>{if(token)reload()},[token]);
 
-  async function reload(){const d=await api("/api/conversations",token);setConvs(d.data||[]);if(!currentId&&d.data?.length)setCurrentId(d.data[0].id)}
+  async function reload(){
+    try{const d=await api("/api/conversations",token);setConvs(d.data||[]);if(!currentId&&d.data?.length)setCurrentId(d.data[0].id)}
+    catch(e){if(e.status===401||e.status===403)logout();else Alert.alert("AI Stoica",e.message)}
+  }
+  async function loadAccounts(){try{const d=await api("/api/admin/users",token);setAccounts(d.data||[])}catch(e){Alert.alert("Conturi",e.message)}}
+  async function setAccountStatus(a,status){try{await api(`/api/admin/users/${a.id}/status`,token,{method:"PATCH",body:JSON.stringify({status})});await loadAccounts()}catch(e){Alert.alert("Conturi",e.message)}}
   async function authDone(t,u){setToken(t);setUser(u)}
   async function logout(){await AsyncStorage.removeItem(TOKEN_KEY);setToken(null);setUser(null);setConvs([]);setCurrentId(null)}
   async function ensureConversation(title="Conversație nouă"){
@@ -167,7 +181,7 @@ export default function Home(){
       }
       const final=[...messages,{id:`a${Date.now()}`,role:"assistant",content:String(ans),attachments:generatedAttachments,createdAt:Date.now(),provider:d.provider,model:d.model}];
       await saveMessages(c,final);
-    }catch(e){Alert.alert("AI Stoica",e.message);setPendingFiles(files)}finally{setBusy(false)}
+    }catch(e){Alert.alert("AI Stoica",e.message);setPendingFiles(files);setText(v=>v||p)}finally{setBusy(false)}
   }
 
   async function exportMessage(m,format){
@@ -224,7 +238,7 @@ export default function Home(){
     <View style={s.header}>
       <TouchableOpacity onPress={()=>setMenu(true)}><Text style={s.menu}>☰</Text></TouchableOpacity>
       <View><Text style={s.headerTitle}>AI Stoica</Text><Text style={s.headerSub}>{DEFAULT_MODEL}</Text></View>
-      <TouchableOpacity style={s.ghTop} onPress={()=>setGithubOpen(true)}><Text style={s.ghTopText}>GitHub</Text></TouchableOpacity>
+      {isOwner?<TouchableOpacity style={s.ghTop} onPress={()=>setGithubOpen(true)}><Text style={s.ghTopText}>GitHub</Text></TouchableOpacity>:<View style={s.headerSpacer}/>}
       <TouchableOpacity style={s.newBtn} onPress={()=>{setCurrentId(null);setPendingFiles([])}}><Text style={s.newBtnText}>Nou</Text></TouchableOpacity>
     </View>
 
@@ -260,11 +274,28 @@ export default function Home(){
       <TouchableOpacity style={s.scrim} onPress={()=>setMenu(false)}>
         <View style={s.drawer}>
           <Text style={s.drawerTitle}>Conversații</Text>
-          <TouchableOpacity style={s.githubMenu} onPress={()=>{setMenu(false);setGithubOpen(true)}}><Text style={s.githubMenuText}>⌘ GitHub Solve</Text></TouchableOpacity>
+          {isOwner&&<TouchableOpacity style={s.githubMenu} onPress={()=>{setMenu(false);setGithubOpen(true)}}><Text style={s.githubMenuText}>⌘ GitHub Solve</Text></TouchableOpacity>}
+          {isOwner&&<TouchableOpacity style={s.githubMenu} onPress={()=>{setMenu(false);setAdminOpen(true);loadAccounts()}}><Text style={s.githubMenuText}>Conturi și cereri de acces</Text></TouchableOpacity>}
           <ScrollView>{convs.map(c=><TouchableOpacity key={c.id} style={s.drawerItem} onPress={()=>{setCurrentId(c.id);setMenu(false)}}><Text numberOfLines={1} style={s.drawerText}>{c.title}</Text></TouchableOpacity>)}</ScrollView>
           <View style={s.account}><Text style={s.accountName}>{user?.name}</Text><Text style={s.accountEmail}>{user?.email}</Text><TouchableOpacity onPress={logout}><Text style={s.logout}>Deconectare</Text></TouchableOpacity></View>
         </View>
       </TouchableOpacity>
+    </Modal>
+
+    <Modal visible={adminOpen} transparent animationType="slide">
+      <View style={s.modalScrim}><View style={s.ghModal}>
+        <Text style={s.ghTitle}>Conturi</Text>
+        <Text style={s.ghHelp}>Conturile noi așteaptă aprobarea ta înainte să poată folosi AI Stoica.</Text>
+        <ScrollView style={s.accountList}>{accounts.filter(a=>a.role!=="owner").map(a=><View key={a.id} style={s.accountRow}>
+          <Text style={s.accountRowName}>{a.name} · {a.email}</Text>
+          <Text style={s.accountRowStatus}>{({pending:"În așteptare",active:"Activ",rejected:"Respins",suspended:"Suspendat",blocked:"Blocat"})[a.status]||a.status}</Text>
+          <View style={s.ghButtons}>
+            {a.status!=="active"&&<TouchableOpacity style={s.primarySmall} onPress={()=>setAccountStatus(a,"active")}><Text style={s.primaryText}>Aprobă</Text></TouchableOpacity>}
+            {a.status!=="blocked"&&<TouchableOpacity style={s.cancelBtn} onPress={()=>setAccountStatus(a,a.status==="pending"?"rejected":"blocked")}><Text style={s.cancelText}>{a.status==="pending"?"Respinge":"Blochează"}</Text></TouchableOpacity>}
+          </View>
+        </View>)}{!accounts.some(a=>a.role!=="owner")&&<Text style={s.ghHelp}>Nu există alte conturi.</Text>}</ScrollView>
+        <View style={s.ghButtons}><TouchableOpacity style={s.cancelBtn} onPress={()=>setAdminOpen(false)}><Text style={s.cancelText}>Închide</Text></TouchableOpacity></View>
+      </View></View>
     </Modal>
 
     <Modal visible={githubOpen} transparent animationType="slide">
@@ -292,7 +323,8 @@ const s=StyleSheet.create({
   tabs:{flexDirection:"row",backgroundColor:"#080c12",borderRadius:10,padding:3,marginBottom:15},tab:{flex:1,padding:9,borderRadius:8,alignItems:"center"},tabOn:{backgroundColor:"#151e2a"},tabText:{color:"#cdd7e4"},
   input:{backgroundColor:"#080d14",borderColor:"#26354a",borderWidth:1,borderRadius:10,color:"white",padding:12,marginVertical:6},
   primary:{backgroundColor:"#197ce2",padding:13,borderRadius:10,alignItems:"center",marginTop:8},primarySmall:{backgroundColor:"#197ce2",paddingHorizontal:20,paddingVertical:12,borderRadius:10,alignItems:"center"},
-  primaryText:{color:"white",fontWeight:"700"},err:{color:"#ff93a1",marginTop:5},
+  primaryText:{color:"white",fontWeight:"700"},err:{color:"#ff93a1",marginTop:5},notice:{color:"#8fd7ae",marginTop:5},
+  headerSpacer:{marginLeft:"auto"},accountList:{maxHeight:380},accountRow:{borderBottomColor:"#1e2938",borderBottomWidth:1,paddingVertical:10},accountRowName:{color:"#e7edf6",fontSize:14},accountRowStatus:{color:"#77879c",fontSize:12,marginTop:3},
   header:{height:68,borderBottomWidth:1,borderBottomColor:"#1e2938",flexDirection:"row",alignItems:"center",paddingHorizontal:14,gap:10},menu:{color:"#d8e2ef",fontSize:25},
   headerTitle:{color:"#fff",fontWeight:"700",fontSize:16},headerSub:{color:"#617087",fontSize:9,marginTop:2},ghTop:{marginLeft:"auto",borderColor:"#30517a",borderWidth:1,borderRadius:10,paddingHorizontal:10,paddingVertical:8},ghTopText:{color:"#7fbaff",fontWeight:"700"},
   newBtn:{borderColor:"#2a384d",borderWidth:1,borderRadius:10,paddingHorizontal:10,paddingVertical:8},newBtnText:{color:"#dce6f2"},

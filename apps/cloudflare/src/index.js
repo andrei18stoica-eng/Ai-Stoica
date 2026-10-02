@@ -51,7 +51,7 @@ async function authenticate(request, env) {
   if (!raw.startsWith("Bearer ")) return null;
   const tokenHash = await sha256(raw.slice(7));
   const row = await env.DB.prepare(
-    `SELECT u.id,u.email,u.name,u.created_at
+    `SELECT u.id,u.email,u.name,u.created_at,u.role,u.status,s.token_hash
      FROM sessions s JOIN users u ON u.id=s.user_id
      WHERE s.token_hash=? AND s.expires_at>?`
   ).bind(tokenHash, now()).first();
@@ -59,7 +59,34 @@ async function authenticate(request, env) {
 }
 
 function publicUser(u) {
-  return { id: u.id, email: u.email, name: u.name, createdAt: u.created_at };
+  return { id: u.id, email: u.email, name: u.name, createdAt: u.created_at, role: u.role || "user", status: u.status || "active" };
+}
+function isOwnerEmail(env, email) {
+  const owner = normalizeEmail(env.OWNER_EMAIL || env.GITHUB_ALLOWED_EMAIL || "");
+  return !!owner && normalizeEmail(email) === owner;
+}
+function clientIp(request) {
+  return String(request.headers.get("cf-connecting-ip") || "unknown").slice(0, 80);
+}
+// Password guessing protection: 20 failed attempts per IP every 15 minutes.
+async function authBlocked(env, request) {
+  try {
+    const row = await env.DB.prepare("SELECT failures,window_start FROM auth_attempts WHERE key=?").bind("ip:" + clientIp(request)).first();
+    if (!row) return false;
+    if (now() - row.window_start > 15 * 60000) return false;
+    return row.failures >= Number(env.AUTH_ATTEMPTS_PER_15_MIN || 20);
+  } catch { return false; }
+}
+async function recordAuthFailure(env, request) {
+  try {
+    const key = "ip:" + clientIp(request), t = now();
+    const row = await env.DB.prepare("SELECT failures,window_start FROM auth_attempts WHERE key=?").bind(key).first();
+    if (!row || t - row.window_start > 15 * 60000) {
+      await env.DB.prepare("INSERT INTO auth_attempts(key,failures,window_start) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET failures=1,window_start=excluded.window_start").bind(key, t).run();
+    } else {
+      await env.DB.prepare("UPDATE auth_attempts SET failures=failures+1 WHERE key=?").bind(key).run();
+    }
+  } catch {}
 }
 
 async function bodyJson(request) {
@@ -517,29 +544,44 @@ async function handleAuthRegister(request, env) {
   const email = normalizeEmail(b.email), password = String(b.password || ""), name = String(b.name || "").trim();
   if (!/^\S+@\S+\.\S+$/.test(email)) return json({ error:"Email invalid." },400);
   if (password.length < 8) return json({ error:"Parola trebuie să aibă minimum 8 caractere." },400);
+  if (await authBlocked(env, request)) return json({ error:"Prea multe încercări. Așteaptă 15 minute și încearcă din nou." },429);
   const exists = await env.DB.prepare("SELECT id FROM users WHERE email=?").bind(email).first();
-  if (exists) return json({ error:"Contul există deja." },409);
+  if (exists) { await recordAuthFailure(env, request); return json({ error:"Contul există deja." },409); }
   const salt = randomHex(16), passwordHash = await hashPassword(password, salt);
-  const user = { id:uuid(), email, name:name || email.split("@")[0], created_at:now() };
+  // New accounts wait for the Owner's approval, so strangers cannot use the AI keys of this server.
+  // OPEN_REGISTRATION="true" restores instant access for everyone.
+  const owner = isOwnerEmail(env, email);
+  const active = owner || String(env.OPEN_REGISTRATION || "").toLowerCase() === "true";
+  const user = { id:uuid(), email, name:name || email.split("@")[0], created_at:now(), role: owner ? "owner" : "user", status: active ? "active" : "pending" };
   await env.DB.prepare(
-    "INSERT INTO users(id,email,name,password_hash,password_salt,created_at) VALUES(?,?,?,?,?,?)"
-  ).bind(user.id,user.email,user.name,passwordHash,salt,user.created_at).run();
+    "INSERT INTO users(id,email,name,password_hash,password_salt,created_at,role,status,approved_at) VALUES(?,?,?,?,?,?,?,?,?)"
+  ).bind(user.id,user.email,user.name,passwordHash,salt,user.created_at,user.role,user.status,active ? user.created_at : null).run();
+  if (!active) return json({ ok:true, status:"pending", message:"Cont creat. Accesul așteaptă aprobarea Owner-ului." },202);
   const token = await createSession(env,user.id);
   return json({ token, user:publicUser(user) });
 }
 
 async function handleAuthLogin(request, env) {
   const b=await bodyJson(request), email=normalizeEmail(b.email), password=String(b.password||"");
+  if(await authBlocked(env,request)) return json({error:"Prea multe încercări. Așteaptă 15 minute și încearcă din nou."},429);
   const u=await env.DB.prepare("SELECT * FROM users WHERE email=?").bind(email).first();
-  if(!u) return json({error:"Email sau parolă incorectă."},401);
+  if(!u){await recordAuthFailure(env,request);return json({error:"Email sau parolă incorectă."},401);}
   const hash=await hashPassword(password,u.password_salt);
-  if(hash!==u.password_hash) return json({error:"Email sau parolă incorectă."},401);
+  if(hash!==u.password_hash){await recordAuthFailure(env,request);return json({error:"Email sau parolă incorectă."},401);}
+  if(isOwnerEmail(env,u.email)&&(u.role!=="owner"||u.status!=="active")){
+    await env.DB.prepare("UPDATE users SET role='owner',status='active',approved_at=COALESCE(approved_at,?) WHERE id=?").bind(now(),u.id).run();
+    u.role="owner";u.status="active";
+  }
+  if(u.status!=="active") return json({error:u.status==="pending"?"Contul așteaptă aprobarea Owner-ului.":"Contul nu este activ.",status:u.status},403);
+  await env.DB.prepare("DELETE FROM sessions WHERE user_id=? AND expires_at<=?").bind(u.id,now()).run();
+  await env.DB.prepare("UPDATE users SET last_login_at=? WHERE id=?").bind(now(),u.id).run();
   const token=await createSession(env,u.id);
   return json({token,user:publicUser(u)});
 }
 
 async function requireUser(request, env) {
   const user=await authenticate(request,env);
+  if(user&&isOwnerEmail(env,user.email))user.role="owner";
   return user;
 }
 
@@ -570,16 +612,38 @@ async function router(request, env) {
 
   const user=await requireUser(request,env);
   if(!user) return json({error:"Autentificare necesară."},401);
+  if(user.status&&user.status!=="active"&&user.role!=="owner") return json({error:user.status==="pending"?"Contul așteaptă aprobarea Owner-ului.":"Contul nu este activ.",status:user.status},403);
+
+  // Owner: approve / reject accounts.
+  if(p==="/api/admin/users" && request.method==="GET"){
+    if(user.role!=="owner") return json({error:"Acces rezervat Owner."},403);
+    const r=await env.DB.prepare("SELECT id,email,name,role,status,created_at,approved_at,last_login_at FROM users ORDER BY created_at DESC LIMIT 500").all();
+    return json({data:(r.results||[]).map(u=>({...publicUser(u),approvedAt:u.approved_at,lastLoginAt:u.last_login_at}))});
+  }
+  const adminStatus=p.match(/^\/api\/admin\/users\/([^/]+)\/status$/);
+  if(adminStatus && request.method==="PATCH"){
+    if(user.role!=="owner") return json({error:"Acces rezervat Owner."},403);
+    const b=await bodyJson(request),status=String(b.status||"");
+    if(!["pending","active","rejected","suspended","blocked"].includes(status)) return json({error:"Status invalid."},400);
+    const target=await env.DB.prepare("SELECT id,email FROM users WHERE id=?").bind(adminStatus[1]).first();
+    if(!target) return json({error:"Utilizator inexistent."},404);
+    if(isOwnerEmail(env,target.email)) return json({error:"Contul Owner nu poate fi modificat."},400);
+    await env.DB.prepare("UPDATE users SET status=?,approved_at=CASE WHEN ?='active' THEN COALESCE(approved_at,?) ELSE approved_at END,approved_by=CASE WHEN ?='active' THEN ? ELSE approved_by END WHERE id=?").bind(status,status,now(),status,user.id,target.id).run();
+    if(status!=="active") await env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(target.id).run();
+    return json({ok:true,status});
+  }
 
   if(p.startsWith("/api/github/")){
     const allowed=normalizeEmail(env.GITHUB_ALLOWED_EMAIL||"");
-    if(!allowed || normalizeEmail(user.email)!==allowed){
+    if(!(user.role==="owner"||(allowed && normalizeEmail(user.email)===allowed))){
       return json({error:"Funcțiile GitHub nu sunt autorizate pentru acest cont."},403);
     }
   }
 
   if(p==="/auth/me" && request.method==="GET"){
-    const token=await createSession(env,user.id);
+    // Renew the current session instead of creating a new one every time the app opens.
+    await env.DB.prepare("UPDATE sessions SET expires_at=? WHERE token_hash=?").bind(now()+30*86400000,user.token_hash).run();
+    const token=(request.headers.get("authorization")||"").slice(7);
     return json({token,user:publicUser(user)});
   }
 

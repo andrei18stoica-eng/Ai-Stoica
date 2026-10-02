@@ -33,6 +33,12 @@ curl http://127.0.0.1:8787/health
 `OWNER_EMAIL` is promoted to `owner + active`.
 All other new accounts are created as `user + pending`.
 
+Recommended: set `OWNER_INITIAL_PASSWORD` (10+ characters) in `.env`. On first start the server creates
+the Owner account itself and the public registration form refuses the Owner e-mail, so nobody else can
+claim it. You can remove the variable after the first start.
+
+Sign-in and sign-up are limited to `AUTH_ATTEMPTS_PER_15_MIN` failed attempts per IP (default 20).
+
 ## AI policy
 
 The database starts with paid AI disabled.

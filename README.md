@@ -1,4 +1,39 @@
-# AI Stoica 0.4.1 — Stoica Enterprises AI
+# AI Stoica 0.7.10 — Stoica Enterprises AI
+
+Asistent AI pentru Windows (plus aplicație mobilă) cu chat, proiecte, asistenți, memorie, bibliotecă de fișiere, pluginuri, automatizări, generare de imagini și video, export PDF/Word/PowerPoint/Excel și panou de Owner.
+
+## Noutăți 0.7.10
+
+- **Funcționează fără server Cloud:** contul de pe PC folosește direct cheile gratuite configurate (Gemini, Groq, Cerebras, Cloudflare etc.), chiar dacă OmniRoute nu rulează. Rularea de cod și accesul SSH rămân doar pentru Owner.
+- **Ghid la prima pornire:** cheie Gemini gratuită în 3 pași.
+- **Setări → API-uri AI → „Testează cheile”:** verifică fiecare API și spune clar ce nu merge (cheie greșită, model inexistent, limită atinsă).
+- **Biblioteca este citită de AI:** textul din Word, PowerPoint, Excel, PDF (cu text, nu scanat), OpenDocument și fișiere text/cod este extras automat la încărcare.
+- **Memorie mai inteligentă:** înțelege formele cuvintelor românești și, când există o cheie Gemini sau Cloudflare, caută după sens.
+- **Date mai sigure:** salvările simultane nu se mai suprascriu, fiecare salvare păstrează o copie `ai-stoica-data.json.bak`, iar un fișier deteriorat nu mai șterge datele.
+- **Securitate:** sesiunile locale expiră după 30 de zile (se reînnoiesc la fiecare deschidere); serviciul local acceptă cereri doar de la fereastra AI Stoica.
+- **Stop oprește și AI-ul:** cererea către provider este anulată, nu mai consumă tokeni în fundal.
+- **Conturi normale:** nu mai sunt deconectate când serverul Cloud nu răspunde câteva secunde; nu pot modifica cheile API ale PC-ului când Cloud este activ.
+- **Automatizări:** trec pe API-urile gratuite când OmniRoute este oprit; o automatizare „o singură dată” care eșuează se oprește după 3 încercări.
+- Toate erorile butoanelor sunt afișate pe ecran.
+
+## Structura aplicației Windows (`apps/desktop`)
+
+| Fișier | Rol |
+|---|---|
+| `main.cjs` | fereastra Electron, tray, setări, actualizări |
+| `local-gateway.cjs` | serviciul local: conturi, chat, imagini, video, pluginuri, automatizări |
+| `lib/store.cjs` | baza de date locală (cache comun, backup, protecție la corupere) |
+| `lib/memory.cjs` | memorie: ce se reține și căutarea relevantă |
+| `lib/extract.cjs` | citirea textului din fișierele din Bibliotecă |
+| `lib/documents.cjs` | export PDF, Word, PowerPoint, Excel, CSV, JSON, HTML etc. |
+| `renderer/src/main.jsx` | interfața |
+| `scripts/test-*.cjs` | teste rulate automat de GitHub la fiecare modificare |
+
+Notă: `package-lock.json` lipsește încă. Pentru build-uri identice, generează-l o dată în `apps/desktop` (instalarea pachetelor cu npm) și urcă fișierul rezultat.
+
+---
+
+## Istoric: 0.4.1
 
 Versiunea 0.4.1 reproiectează AI Stoica după conceptul de interfață definit pentru aplicație: bară laterală cu proiecte/asistenți/istoric, antet cu model și distribuire, conversație centrată, composer cu fișiere + microfon, răspunsuri Markdown și streaming, design negru profesional și cont cu email.
 
@@ -30,8 +65,8 @@ Pentru sincronizare reală între dispozitive, Gateway-ul trebuie să fie dispon
 2. Verifică existența `.github/workflows/windows-build.yml`.
 3. Intră la **Actions → Build AI Stoica Windows**.
 4. Workflow-ul pornește automat după push pe `main`; sau folosește **Run workflow**.
-5. La final descarcă artifact-ul **AI-Stoica-Windows-v0.4.1**.
-6. Rulează `AI_Stoica_Setup_0.4.1_x64.exe`.
+5. La final descarcă artifact-ul Windows din pagina workflow-ului.
+6. Rulează `AI_Stoica_Setup_<versiune>_x64.exe`.
 
 ## Prima pornire
 

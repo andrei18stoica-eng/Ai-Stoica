@@ -8,6 +8,25 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Every button action that fails shows its error instead of failing silently.
+      (function () {
+        var lastMessage = "", lastAt = 0;
+        window.addEventListener("unhandledrejection", function (event) {
+          var err = event.reason;
+          if (err && err.name === "AbortError") return;
+          var message = String((err && err.message) || err || "Eroare necunoscută.");
+          if (/failed to fetch|networkerror|load failed/i.test(message)) {
+            message = "Nu pot contacta serviciul local AI Stoica. Închide complet aplicația din system tray și pornește-o din nou.";
+          }
+          var now = Date.now();
+          if (message === lastMessage && now - lastAt < 3000) return;
+          lastMessage = message; lastAt = now;
+          console.error("AI Stoica action failed", err);
+          setTimeout(function () { alert("AI Stoica: " + message); }, 0);
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

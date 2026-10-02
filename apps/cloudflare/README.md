@@ -61,6 +61,27 @@ npx wrangler secret put GROQ_API_KEY
 npx wrangler secret put GEMINI_API_KEY
 ```
 
+## Conturi și aprobare (de la 0.7.10)
+
+Conturile noi așteaptă aprobarea Owner-ului, ca persoane străine să nu poată folosi cheile AI ale serverului.
+
+1. Aplică migrațiile (obligatoriu înainte de deploy):
+
+```bash
+npx wrangler d1 migrations apply ai-stoica --remote
+```
+
+2. Setează e-mailul Owner-ului (în Cloudflare → Worker → Settings → Variables, sau ca secret):
+
+```bash
+npx wrangler secret put OWNER_EMAIL
+```
+
+Owner-ul aprobă sau respinge conturile din aplicația de telefon: meniu → „Conturi și cereri de acces”.
+Conturile care existau deja rămân active. Dacă vrei acces instant pentru oricine, setează `OPEN_REGISTRATION=true`.
+
+Autentificarea este limitată la 20 de încercări greșite per IP la 15 minute (`AUTH_ATTEMPTS_PER_15_MIN`).
+
 ## Telefon
 
 În build-ul Expo setează:

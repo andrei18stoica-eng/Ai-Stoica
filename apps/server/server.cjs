@@ -14,6 +14,9 @@ const HOST = process.env.HOST || "0.0.0.0";
 const OWNER_EMAIL = String(process.env.OWNER_EMAIL || "").trim().toLowerCase();
 const SESSION_TTL_DAYS = Math.max(1, Number(process.env.SESSION_TTL_DAYS || 30));
 const DATABASE_URL = process.env.DATABASE_URL;
+// Optional but recommended: when set, the Owner account is created by the server itself at startup
+// and nobody can claim the Owner e-mail through the public registration form.
+const OWNER_INITIAL_PASSWORD = String(process.env.OWNER_INITIAL_PASSWORD || "");
 
 if (!DATABASE_URL) throw new Error("DATABASE_URL is required");
 if (!OWNER_EMAIL) throw new Error("OWNER_EMAIL is required");
@@ -60,9 +63,31 @@ function sha256(v) { return crypto.createHash("sha256").update(String(v)).digest
 function id() { return crypto.randomUUID(); }
 function clientIp(req) { return String(req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim(); }
 
+async function ensureOwnerAccount() {
+  if (!OWNER_INITIAL_PASSWORD) {
+    console.warn("[AI Stoica] OWNER_INITIAL_PASSWORD is not set: until the Owner registers, anyone who knows OWNER_EMAIL could register it.");
+    return;
+  }
+  if (OWNER_INITIAL_PASSWORD.length < 10) throw new Error("OWNER_INITIAL_PASSWORD must have at least 10 characters");
+  const existing = await pool.query("SELECT id FROM users WHERE lower(email)=lower($1)", [OWNER_EMAIL]);
+  if (existing.rowCount) return;
+  const userId = id();
+  await pool.query(
+    `INSERT INTO users(id,email,name,password_hash,role,status,approved_at) VALUES($1,$2,$3,$4,'owner','active',NOW())`,
+    [userId, OWNER_EMAIL, OWNER_EMAIL.split("@")[0], await bcrypt.hash(OWNER_INITIAL_PASSWORD, 12)]
+  );
+  await pool.query(
+    "INSERT INTO user_permissions(user_id,permissions) VALUES($1,$2::jsonb) ON CONFLICT(user_id) DO NOTHING",
+    [userId, JSON.stringify({ ...DEFAULT_USER_PERMISSIONS, video_generation:true, deep_research:true, automations:true, plugins:true, github_access:true, openai:true, anthropic:true })]
+  );
+  await audit(userId, "owner.bootstrap", userId, {});
+  console.log("[AI Stoica] Owner account created from OWNER_INITIAL_PASSWORD. You can remove the variable now.");
+}
+
 async function migrate() {
   const sql = fs.readFileSync(path.join(__dirname, "migrations", "001_initial.sql"), "utf8");
   await pool.query(sql);
+  await ensureOwnerAccount();
   await pool.query(
     "UPDATE users SET role='owner', status='active', approved_at=COALESCE(approved_at,NOW()) WHERE lower(email)=lower($1)",
     [OWNER_EMAIL]
@@ -185,6 +210,15 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "4mb" }));
 app.use(rateLimit({ windowMs: 60_000, limit: Number(process.env.RATE_LIMIT_PER_MINUTE || 120), standardHeaders: "draft-8", legacyHeaders: false }));
+// Password guessing protection: at most 20 failed sign-in / sign-up attempts per IP every 15 minutes.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: Number(process.env.AUTH_ATTEMPTS_PER_15_MIN || 20),
+  skipSuccessfulRequests: true,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "Prea multe încercări. Așteaptă 15 minute și încearcă din nou." }
+});
 
 app.get("/health", async (_req, res, next) => {
   try {
@@ -193,7 +227,7 @@ app.get("/health", async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
-app.post("/auth/register", async (req, res, next) => {
+app.post("/auth/register", authLimiter, async (req, res, next) => {
   try {
     const email = normalizeEmail(req.body?.email);
     const password = String(req.body?.password || "");
@@ -204,6 +238,9 @@ app.post("/auth/register", async (req, res, next) => {
     const existing = await pool.query("SELECT id FROM users WHERE email=$1", [email]);
     if (existing.rowCount) return res.status(409).json({ error: "Contul există deja." });
 
+    if (email === OWNER_EMAIL && OWNER_INITIAL_PASSWORD) {
+      return res.status(403).json({ error: "Contul Owner este creat de server. Autentifică-te cu parola configurată." });
+    }
     const userId = id();
     const isOwner = email === OWNER_EMAIL;
     const passwordHash = await bcrypt.hash(password, 12);
@@ -250,7 +287,7 @@ app.post("/auth/register", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-app.post("/auth/login", async (req, res, next) => {
+app.post("/auth/login", authLimiter, async (req, res, next) => {
   try {
     const email = normalizeEmail(req.body?.email);
     const password = String(req.body?.password || "");
@@ -498,6 +535,7 @@ app.use((err, _req, res, _next) => {
 (async () => {
   await migrate();
   await pool.query("DELETE FROM sessions WHERE expires_at<=NOW()");
+  setInterval(() => { pool.query("DELETE FROM sessions WHERE expires_at<=NOW()").catch(() => {}); }, 60 * 60 * 1000).unref();
   app.listen(PORT, HOST, () => console.log(`AI Stoica Server listening on ${HOST}:${PORT}`));
 })().catch(err => {
   console.error("AI Stoica Server failed to start:", err);

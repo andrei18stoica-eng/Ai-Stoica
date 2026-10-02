@@ -11,7 +11,9 @@ function getOmniConfig() {
     apiKey: process.env.OMNIROUTE_API_KEY || "",
     model: process.env.AI_STOICA_MODEL || "Ai principal",
     speechModel: process.env.AI_STOICA_SPEECH_MODEL || "openai/whisper-1",
-    speechLanguage: process.env.AI_STOICA_SPEECH_LANGUAGE || "ro"
+    speechLanguage: process.env.AI_STOICA_SPEECH_LANGUAGE || "ro",
+    // Public server: only the first account can sign up unless AI_STOICA_OPEN_REGISTRATION=true.
+    allowRegistration: String(process.env.AI_STOICA_OPEN_REGISTRATION || "").toLowerCase() === "true"
   };
 }
 

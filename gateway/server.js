@@ -19,7 +19,18 @@ const dataFile = path.join(dataDir, "ai-stoica-data.json");
 const omniBase = (process.env.OMNIROUTE_BASE_URL || "http://127.0.0.1:20128/v1").replace(/\/+$/, "");
 const omniKey = process.env.OMNIROUTE_API_KEY || "";
 const defaultModel = process.env.OMNIROUTE_MODEL || "Ai principal";
-const jwtSecret = process.env.JWT_SECRET || crypto.createHash("sha256").update(`ai-stoica-${dataDir}`).digest("hex");
+// The session signing key must be secret: use JWT_SECRET, or a random key kept in the data folder.
+// (Older versions derived it from the folder path, which anyone could guess.)
+function loadJwtSecret(){
+  if(process.env.JWT_SECRET)return process.env.JWT_SECRET;
+  const file=path.join(dataDir,"jwt-secret.txt");
+  try{const v=fs.readFileSync(file,"utf8").trim();if(v)return v}catch{}
+  fs.mkdirSync(dataDir,{recursive:true});
+  const v=crypto.randomBytes(48).toString("hex");
+  fs.writeFileSync(file,v,{mode:0o600});
+  return v;
+}
+const jwtSecret = loadJwtSecret();
 
 function readDb(){try{return {...{users:[],conversations:[],projects:[],assistants:[]},...JSON.parse(fs.readFileSync(dataFile,"utf8"))}}catch{return {users:[],conversations:[],projects:[],assistants:[]}}}
 function writeDb(db){fs.mkdirSync(dataDir,{recursive:true});const tmp=`${dataFile}.tmp`;fs.writeFileSync(tmp,JSON.stringify(db,null,2));fs.renameSync(tmp,dataFile)}

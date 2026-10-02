@@ -1,24 +1,15 @@
-# AI Stoica v0.4.1 — verificare finală
+# AI Stoica v0.7.10 — verificare
 
-Pachet repository-ready pentru GitHub.
+Verificări automate (rulate de GitHub Actions → „AI Stoica Desktop Check” la fiecare modificare):
 
-Include:
-- Windows Electron + installer NSIS;
-- interfață neagră profesională după conceptul AI Stoica;
-- logo-ul aprobat Stoica Enterprises AI;
-- cont cu email și parolă;
-- proiecte, asistenți și istoric grupat;
-- răspunsuri Markdown și streaming;
-- fișiere / imagini compatibile cu modelele multimodale;
-- dictare vocală unde Chromium/Windows o permite;
-- OmniRoute `Ai principal` cu watchdog și repornire automată;
-- rulare în system tray și pornire automată cu Windows;
-- aplicație mobilă Expo pentru iPhone/iPad/Android;
-- workflow Windows GitHub Actions;
-- workflow EAS iOS / Expo OTA;
-- Gateway separat pentru sincronizare viitoare între dispozitive.
+- sintaxă pentru toate fișierele aplicației Windows;
+- baza de date locală, memoria și citirea documentelor (`scripts/test-modules.cjs`);
+- permisiuni AI pentru conturi normale (`test-ai-access-enforcement.cjs`);
+- generare imagini/video și protecția „Doar gratuit” (`test-media-generation.cjs`);
+- regresii infrastructură, pluginuri directe (`test-infrastructure-regressions.cjs`);
+- unelte Owner și fallback Cerebras → Groq (`test-owner-tools.cjs`);
+- mod local fără Cloud, test chei, blocarea site-urilor străine, citirea fișierelor încărcate, expirarea sesiunilor, păstrarea sesiunii la căderea Cloud (`test-local-mode.cjs`);
+- export PDF, Word, PowerPoint, Excel și celelalte formate (`test-document-export.cjs`);
+- build interfață (Vite).
 
-Notă: contul desktop este local pe PC până când Gateway-ul este publicat pe HTTPS. Pentru App Store și sincronizare reală între dispozitive, Gateway-ul trebuie găzduit permanent pe un server HTTPS.
-
-- Corecție OmniRoute: comanda de server folosită automat este `omniroute.cmd serve` (nu `launch`).
-- Logo-ul Stoica Enterprises AI este inclus în interfața desktop, mobile și iconițele aplicației.
+De verificat manual pe Windows după instalare: pornirea din tray, microfonul, notificările automatizărilor și actualizarea automată (necesită Releases publice pe GitHub).

@@ -372,6 +372,52 @@ function createTray() {
   tray.on("double-click", () => { mainWindow.show(); mainWindow.focus(); });
 }
 
+// IPC handlers are registered before the window loads, so the interface never calls a handler that does not exist yet.
+function registerIpcHandlers() {
+  ipcMain.handle("config:get", () => publicConfig(loadConfig()));
+  ipcMain.handle("config:set", async (_e, input) => {
+    const current=loadConfig(),next={...(input||{})};
+    for(const name of ["apiKey","openAiApiKey","openRouterApiKey","cerebrasApiKey","groqApiKey","geminiApiKey","mistralApiKey","nvidiaApiKey","cohereApiKey","pollinationsApiKey","cloudflareApiToken","hfToken","togetherApiKey","stabilityApiKey","replicateApiToken","falApiKey","githubToken"]){
+      if(!next[name]||next[name]==="••••••••")next[name]=current[name]||"";
+    }
+    const cfg2=saveConfig(next);ensureOmniRoute().catch(()=>{});return {ok:true,config:publicConfig(cfg2)};
+  });
+  ipcMain.handle("system:status", () => systemStatus());
+  ipcMain.handle("system:ensure-omni", () => ensureOmniRoute());
+  ipcMain.handle("system:set-startup", (_e, enabled) => { const cfg2 = saveConfig({ startWithWindows: !!enabled }); return { ok: true, enabled: cfg2.startWithWindows }; });
+  ipcMain.handle("clipboard:write-text", (_e, value) => {
+    try {
+      clipboard.writeText(String(value ?? ""));
+      return { ok: true };
+    } catch (e) { return { ok: false, error: e.message }; }
+  });
+  ipcMain.handle("clipboard:read-text", () => {
+    try { return { ok: true, text: clipboard.readText() }; }
+    catch (e) { return { ok: false, text: "", error: e.message }; }
+  });
+  ipcMain.handle("system:open-external", async (_e, rawUrl) => {
+    try {
+      const url = new URL(String(rawUrl || ""));
+      if (!["http:", "https:"].includes(url.protocol)) return { ok: false, error: "Protocol nepermis." };
+      await shell.openExternal(url.toString());
+      return { ok: true };
+    } catch (e) { return { ok: false, error: e.message }; }
+  });
+  ipcMain.handle("external:open", async (_e, rawUrl) => {
+    try {
+      const url = new URL(String(rawUrl || ""));
+      if (!["http:", "https:"].includes(url.protocol)) throw new Error("Protocol nepermis.");
+      await shell.openExternal(url.toString());
+      return { ok: true };
+    } catch (e) { return { ok: false, error: e.message }; }
+  });
+  ipcMain.handle("update:check", async () => {
+    try { const result = await autoUpdater.checkForUpdates(); return { ok: true, version: result?.updateInfo?.version || null }; }
+    catch (e) { return { ok: false, error: e.message }; }
+  });
+  ipcMain.on("update:install", () => autoUpdater.quitAndInstall());
+}
+
 app.on("second-instance", () => {
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -381,6 +427,8 @@ app.on("second-instance", () => {
 });
 
 app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) return;
+  registerIpcHandlers();
   if (process.platform === "win32") app.setAppUserModelId("ro.stoica.aistoica");
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === "media");
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(permission === "media"));
@@ -417,51 +465,15 @@ app.whenReady().then(async () => {
   watchdog = setInterval(() => ensureOmniRoute().catch(() => {}), 30000);
 
   autoUpdater.autoDownload = true;
+  autoUpdater.on("error", (e) => {
+    try {
+      fs.appendFileSync(path.join(app.getPath("userData"), "ai-stoica-errors.log"),
+        `[${new Date().toISOString()}] Update error: ${e?.message || e}\n`);
+    } catch {}
+  });
   if (cfg.autoUpdate !== false) autoUpdater.checkForUpdatesAndNotify().catch(() => {});
   autoUpdater.on("update-downloaded", () => mainWindow?.webContents.send("update-ready"));
 
-  ipcMain.handle("config:get", () => publicConfig(loadConfig()));
-  ipcMain.handle("config:set", async (_e, input) => {
-    const current=loadConfig(),next={...(input||{})};
-    for(const name of ["apiKey","openAiApiKey","openRouterApiKey","cerebrasApiKey","groqApiKey","geminiApiKey","mistralApiKey","nvidiaApiKey","cohereApiKey","pollinationsApiKey","cloudflareApiToken","hfToken","togetherApiKey","stabilityApiKey","replicateApiToken","falApiKey","githubToken"]){
-      if(!next[name]||next[name]==="••••••••")next[name]=current[name]||"";
-    }
-    const cfg2=saveConfig(next);await ensureOmniRoute();return {ok:true,config:publicConfig(cfg2)};
-  });
-  ipcMain.handle("system:status", () => systemStatus());
-  ipcMain.handle("system:ensure-omni", () => ensureOmniRoute());
-  ipcMain.handle("system:set-startup", (_e, enabled) => { const cfg2 = saveConfig({ startWithWindows: !!enabled }); return { ok: true, enabled: cfg2.startWithWindows }; });
-  ipcMain.handle("clipboard:write-text", (_e, value) => {
-    try {
-      clipboard.writeText(String(value ?? ""));
-      return { ok: true };
-    } catch (e) { return { ok: false, error: e.message }; }
-  });
-  ipcMain.handle("clipboard:read-text", () => {
-    try { return { ok: true, text: clipboard.readText() }; }
-    catch (e) { return { ok: false, text: "", error: e.message }; }
-  });
-  ipcMain.handle("system:open-external", async (_e, rawUrl) => {
-    try {
-      const url = new URL(String(rawUrl || ""));
-      if (!["http:", "https:"].includes(url.protocol)) return { ok: false, error: "Protocol nepermis." };
-      await shell.openExternal(url.toString());
-      return { ok: true };
-    } catch (e) { return { ok: false, error: e.message }; }
-  });
-  ipcMain.handle("external:open", async (_e, rawUrl) => {
-    try {
-      const url = new URL(String(rawUrl || ""));
-      if (!["http:", "https:"].includes(url.protocol)) throw new Error("Protocol nepermis.");
-      await shell.openExternal(url.toString());
-      return { ok: true };
-    } catch (e) { return { ok: false, error: e.message }; }
-  });
-  ipcMain.handle("update:check", async () => {
-    try { const result = await autoUpdater.checkForUpdates(); return { ok: true, version: result?.updateInfo?.version || null }; }
-    catch (e) { return { ok: false, error: e.message }; }
-  });
-  ipcMain.on("update:install", () => autoUpdater.quitAndInstall());
 });
 
 app.on("before-quit", () => { isQuitting = true; if (watchdog) clearInterval(watchdog); });
