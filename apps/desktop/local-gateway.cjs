@@ -67,54 +67,59 @@ function pluginHeaders(plugin) {
   if(plugin.oauthProvider==="notion")out["Notion-Version"]="2022-06-28";
   return out;
 }
+async function refreshOAuthAccess(plugin) {
+  if(!plugin?.refreshToken||!plugin?.oauthTokenUrl)return false;
+  const form=new URLSearchParams({grant_type:"refresh_token",refresh_token:String(plugin.refreshToken),client_id:String(plugin.oauthClientId||"")});
+  if(plugin.oauthClientSecret)form.set("client_secret",String(plugin.oauthClientSecret));
+  const r=await fetch(plugin.oauthTokenUrl,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded","Accept":"application/json"},body:form,signal:AbortSignal.timeout(15000)});
+  const text=await r.text();let token={};try{token=JSON.parse(text||"{}")}catch{}
+  const accessToken=String(token.access_token||"");
+  if(!r.ok||!accessToken)throw new Error(token.error_description||token.error||text.slice(0,500)||`Refresh token HTTP ${r.status}`);
+  plugin.accessToken=accessToken;
+  if(token.refresh_token)plugin.refreshToken=String(token.refresh_token);
+  plugin.tokenExpiresAt=token.expires_in?Date.now()+Number(token.expires_in)*1000:null;
+  plugin._oauthTokenUpdated=true;
+  return true;
+}
 async function callOAuthPlugin(plugin, message) {
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
-  try{
-    let url=plugin.url,method=(plugin.method||"GET").toUpperCase(),body;
-    const provider=String(plugin.oauthProvider||"");
-    const headers=pluginHeaders(plugin);
-    if(provider==="google"){
-      const u=new URL(url);if(message)u.searchParams.set("q",String(message).slice(0,250));url=u.toString();
-    }else if(provider==="google-calendar"){
-      const u=new URL(url);u.searchParams.set("timeMin",new Date().toISOString());if(message)u.searchParams.set("q",String(message).slice(0,250));url=u.toString();
-    }else if(provider==="notion"){
-      method="POST";body=JSON.stringify({page_size:20,...(message?{query:String(message).slice(0,100)}:{})});
-    }
-    const r=await fetch(url,{method,headers,body,signal:controller.signal});
-    const text=await r.text();
-    if(r.status===401)throw new Error("Conexiunea OAuth a expirat sau a fost revocată. Reconectează pluginul.");
-    if(!r.ok)throw new Error(`HTTP ${r.status}: ${text.slice(0,500)}`);
-    try{return JSON.stringify(JSON.parse(text))}catch{return text}
-  }finally{clearTimeout(timer)}
+  const provider=String(plugin.oauthProvider||"");
+  if(plugin.refreshToken&&(!plugin.accessToken||(plugin.tokenExpiresAt&&plugin.tokenExpiresAt<=Date.now()+60000)))await refreshOAuthAccess(plugin);
+  const perform=async()=>{
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
+    try{
+      let url=plugin.url,method=(plugin.method||"GET").toUpperCase(),body;
+      const headers=pluginHeaders(plugin);
+      if(provider==="google"){const u=new URL(url);if(message)u.searchParams.set("q",String(message).slice(0,250));url=u.toString();}
+      else if(provider==="google-calendar"){const u=new URL(url);u.searchParams.set("timeMin",new Date().toISOString());if(message)u.searchParams.set("q",String(message).slice(0,250));url=u.toString();}
+      else if(provider==="notion"){method="POST";body=JSON.stringify({page_size:20,...(message?{query:String(message).slice(0,100)}:{})});}
+      const r=await fetch(url,{method,headers,body,signal:controller.signal});
+      return {r,text:await r.text()};
+    }finally{clearTimeout(timer)}
+  };
+  let result=await perform();
+  if(result.r.status===401&&plugin.refreshToken){await refreshOAuthAccess(plugin);result=await perform();}
+  if(result.r.status===401)throw new Error("Conexiunea OAuth a expirat sau a fost revocată. Reconectează pluginul.");
+  if(!result.r.ok)throw new Error(`HTTP ${result.r.status}: ${result.text.slice(0,500)}`);
+  try{return JSON.stringify(JSON.parse(result.text))}catch{return result.text}
 }
 async function callPlugin(plugin, message) {
-  if(plugin.mode==="direct_app"){
-    return JSON.stringify({
-      mode:"direct_app",
-      name:plugin.name,
-      appUrl:plugin.appUrl||plugin.url,
-      message:"Plugin configurat pentru deschidere directă. Nu este necesar OAuth pentru lansarea aplicației."
-    });
-  }
-  if(plugin.oauthConnected&&plugin.accessToken)return callOAuthPlugin(plugin,message);
+  if(plugin.mode==="direct_app"){return JSON.stringify({mode:"direct_app",name:plugin.name,appUrl:plugin.appUrl||plugin.url,message:"Plugin configurat pentru deschidere directă. Nu este necesar OAuth pentru lansarea aplicației."});}
+  if(plugin.oauthConnected&&(plugin.accessToken||plugin.refreshToken))return callOAuthPlugin(plugin,message);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12000);
   try {
     const method = (plugin.method || "POST").toUpperCase();
     let url = plugin.url;
     const init = { method, headers: pluginHeaders(plugin), signal: controller.signal };
-    if (method === "GET") {
-      const u = new URL(url); u.searchParams.set("q", message); url = u.toString();
-    } else {
-      init.body = JSON.stringify({ message, source: "AI Stoica", plugin: plugin.name });
-    }
+    if (method === "GET") { const u = new URL(url); u.searchParams.set("q", message); url = u.toString(); }
+    else init.body = JSON.stringify({ message, source: "AI Stoica", plugin: plugin.name });
     const r = await fetch(url, init);
     const body = await r.text();
     if (!r.ok) throw new Error(`HTTP ${r.status}: ${body.slice(0,300)}`);
     try { return JSON.stringify(JSON.parse(body)); } catch { return body; }
   } finally { clearTimeout(timer); }
 }
-async function pluginContext(db, userId, latestText) {
+async function pluginContext(db, userId, latestText, persist) {
   const enabled = db.plugins.filter((p) => p.userId === userId && p.enabled !== false && p.url);
   const out = [];
   for (const p of enabled) {
@@ -122,41 +127,38 @@ async function pluginContext(db, userId, latestText) {
     if (!p.auto && !String(latestText || "").toLowerCase().includes(trigger)) continue;
     try {
       const result = await callPlugin(p, latestText);
+      if(p._oauthTokenUpdated){delete p._oauthTokenUpdated;persist?.();}
       out.push(`Plugin ${p.name}: ${String(result).slice(0,12000)}`);
     } catch (e) {
+      if(p._oauthTokenUpdated){delete p._oauthTokenUpdated;persist?.();}
       out.push(`Plugin ${p.name} a eșuat: ${e.message}`);
     }
   }
   return out;
 }
-function nextRun(automation, from = Date.now()) {
-  const d = new Date(from);
-  const freq = automation.frequency || "daily";
-  if (freq === "once") return Number(automation.runAt || 0) || null;
-  if (freq === "hourly" || freq === "interval") {
-    const hours=Math.max(1,Math.min(168,Number(automation.intervalHours||1)));
-    return from + hours * 60 * 60 * 1000;
-  }
-  const [hh, mm] = String(automation.time || "09:00").split(":").map(Number);
-  const next = new Date(d); next.setSeconds(0,0); next.setHours(hh || 0, mm || 0, 0, 0);
-  if (next.getTime() <= from) next.setDate(next.getDate() + 1);
-  if (freq === "weekly") {
-    const target = Number.isInteger(Number(automation.weekday)) ? Number(automation.weekday) : 1;
-    while (next.getDay() !== target || next.getTime() <= from) next.setDate(next.getDate() + 1);
-  }
-  if (freq === "selected_days") {
-    const days = Array.isArray(automation.days) ? automation.days.map(Number) : [];
-    if (!days.length) return null;
-    while (!days.includes(next.getDay()) || next.getTime() <= from) next.setDate(next.getDate() + 1);
-  }
-  if(freq==="monthly"){
-    const day=Math.max(1,Math.min(28,Number(automation.monthday||1)));
-    next.setDate(day);
-    if(next.getTime()<=from){next.setMonth(next.getMonth()+1);next.setDate(day)}
-  }
-  return next.getTime();
+function validateAutomationSchedule(automation) {
+  const freq=String(automation?.frequency||"daily");
+  if(!["once","hourly","interval","daily","weekly","selected_days","monthly"].includes(freq))return "Frecvența automatizării nu este validă.";
+  if(["daily","weekly","selected_days","monthly"].includes(freq)&&!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(automation?.time||"")))return "Ora automatizării trebuie să fie în format HH:MM.";
+  if(freq==="weekly"){const weekday=Number(automation?.weekday);if(!Number.isInteger(weekday)||weekday<0||weekday>6)return "Ziua săptămânii trebuie să fie între 0 și 6.";}
+  if(freq==="selected_days"){if(!Array.isArray(automation?.days)||!automation.days.length)return "Selectează cel puțin o zi.";if(automation.days.some(x=>!Number.isInteger(Number(x))||Number(x)<0||Number(x)>6))return "Zilele selectate trebuie să fie între 0 și 6.";}
+  if(freq==="once"&&(!Number.isFinite(Number(automation?.runAt))||Number(automation.runAt)<=0))return "Data pentru rularea unică nu este validă.";
+  if(freq==="interval"){const hours=Number(automation?.intervalHours);if(!Number.isFinite(hours)||hours<1||hours>168)return "Intervalul trebuie să fie între 1 și 168 de ore.";}
+  if(freq==="monthly"){const day=Number(automation?.monthday);if(!Number.isInteger(day)||day<1||day>28)return "Ziua lunii trebuie să fie între 1 și 28.";}
+  return "";
 }
-
+function nextRun(automation, from = Date.now()) {
+  if(validateAutomationSchedule(automation))return null;
+  const d=new Date(from),freq=automation.frequency||"daily";
+  if(freq==="once"){const when=Number(automation.runAt||0);return when>from?when:null;}
+  if(freq==="hourly"||freq==="interval"){const hours=Math.max(1,Math.min(168,Number(automation.intervalHours||1)));return from+hours*60*60*1000;}
+  const [hh,mm]=String(automation.time||"09:00").split(":").map(Number);
+  const next=new Date(d);next.setSeconds(0,0);next.setHours(hh,mm,0,0);if(next.getTime()<=from)next.setDate(next.getDate()+1);
+  if(freq==="weekly"){const target=Number(automation.weekday);for(let i=0;i<8&&next.getDay()!==target;i++)next.setDate(next.getDate()+1);if(next.getDay()!==target)return null;}
+  if(freq==="selected_days"){const days=[...new Set(automation.days.map(Number))];for(let i=0;i<8&&!days.includes(next.getDay());i++)next.setDate(next.getDate()+1);if(!days.includes(next.getDay()))return null;}
+  if(freq==="monthly"){const day=Number(automation.monthday);next.setDate(day);if(next.getTime()<=from){next.setMonth(next.getMonth()+1);next.setDate(day)}}
+  return Number.isFinite(next.getTime())?next.getTime():null;
+}
 
 function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig, onAutomationResult }) {
   const store = createStore(dataDir);
@@ -266,9 +268,10 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     return [...new Set(matches.map(x=>x.replace(/[),.;]+$/,"")).filter(publicWebUrl))].slice(0,3);
   }
   function shouldUseLiveWeb(text){
-    const t=String(text||"").toLowerCase();
-    return /\b(azi|acum|actual|actuale|recent|recentă|recente|ultim|ultima|latest|news|știri|stiri|internet|online|caută|cauta|verifică|verifica|preț|pret|vreme|scor|program|orar|versiune|release|documentație|documentatie|api|model nou|2026)\b/.test(t);
+    const t=normalizeMemoryText(text);
+    return /\b(azi|acum|actual|actuale|recent|recenta|recente|ultim|ultima|latest|news|stiri|internet|online|cauta|verifica|pret|vreme|scor|program|orar|versiune|release|documentatie|api|model nou|2026)\b/.test(t);
   }
+  function isDeepResearchRequest(text){return /\b(deep research|cercetare aprofundata|cercetare detaliata|documentare aprofundata)\b/i.test(normalizeMemoryText(text));}
   function libraryContext(db,userId,query){
     const words=[...new Set(normalizeMemoryText(query).split(/\s+/).filter(x=>x.length>=4))].slice(0,35);
     const rows=db.library.filter(x=>x.userId===userId).map(item=>{
@@ -2080,15 +2083,6 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       if(shouldUseLiveWeb(latestText)){try{const deep=/deep research|cercetare aprofundată|cercetare aprofundata/i.test(latestText);const rows=await liveWebSearch(latestText,deep?8:5);if(rows.length)system.push("WEB LIVE — rezultate obținute acum. Folosește-le pentru informațiile actuale și indică sursele prin link; nu inventa surse:\n"+rows.map((x,i)=>(i+1)+". "+x.title+"\nURL: "+x.url+"\nExtras: "+String(x.excerpt||"").slice(0,2600)).join("\n\n"))}catch{}}
     }
     if(cfg.githubAutoContext!==false&&options.githubAllowed!==false){try{const gc=await githubCodeContext(cfg,latestText);if(gc)system.push("GITHUB LIVE — fragmente relevante din repository-ul configurat:\n"+gc)}catch{}}
-    if(options.owner&&/\b(rulează|ruleaza|execută|executa|testează|testeaza|run|execute|test)\b/i.test(latestText)){
-      const fence=String(latestText||"").match(/```(javascript|js|node|python|py|python3)\s*\n([\s\S]*?)```/i);
-      if(fence){
-        try{
-          const rr=await executeCode(fence[1],fence[2]);
-          system.push("RULARE COD REALĂ — executată local la cererea explicită a Owner-ului:\nLimbaj: "+rr.language+"\nExit code: "+rr.code+"\nTimeout: "+(rr.timedOut?"DA":"NU")+"\nSTDOUT:\n"+(rr.stdout||"(gol)")+"\nSTDERR:\n"+(rr.stderr||"(gol)"));
-        }catch(e){system.push("RULARE COD REALĂ — a eșuat: "+e.message)}
-      }
-    }
     if(options.owner&&cfg.serverHost&&/\b(server|ssh|hetzner|deploy|deployment|producție|productie|nginx|ubuntu)\b/i.test(latestText)){
       try{const s=await sshRun(cfg,"uname -a; uptime; pwd",12000);if(s.stdout)system.push("SERVER LIVE — verificare read-only efectuată acum:\n"+s.stdout.slice(0,8000))}catch(e){system.push("SERVER LIVE — conexiunea de verificare nu a reușit: "+e.message)}
     }
