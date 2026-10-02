@@ -72,10 +72,11 @@ jobs:
               bad = archive.testzip()
               if bad:
                   raise SystemExit(f"Bad ZIP member: {bad}")
-              archive.extractall(".")
+              for member in archive.infolist():
+                  if member.filename.startswith(".github/workflows/"):
+                      continue
+                  archive.extract(member, ".")
           PY
-
-          rm -f .github/workflows/ai-stoica-import-0.7.10.yml
 
       - name: Commit AI Stoica 0.7.10 to main
         shell: bash
@@ -83,5 +84,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Release AI Stoica 0.7.10"
+          git commit -m "Release AI Stoica 0.7.10 application"
           git push origin HEAD:main
