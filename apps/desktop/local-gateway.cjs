@@ -1160,7 +1160,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   async function directOpenRouterVideo(cfg,prompt,duration,aspectRatio){
     const key=String(cfg.openRouterApiKey||"").trim();if(!key)return null;
-    const model=String(cfg.openRouterVideoModel||"bytedance/seedance-2.5").trim();
+    const defaultModel=cfg.videoMode==="quality"?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast";
+    const model=String(cfg.openRouterVideoModel||defaultModel).trim();
     const headers={"Content-Type":"application/json",Authorization:`Bearer ${key}`,"X-Title":"AI Stoica"};
     const submit=await fetch("https://openrouter.ai/api/v1/videos",{
       method:"POST",headers,
