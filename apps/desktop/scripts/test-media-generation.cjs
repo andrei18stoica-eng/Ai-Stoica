@@ -118,6 +118,18 @@ async function main(){
     if(target==="https://gemini.test/video.mp4"){
       return new Response(mp4,{status:200,headers:{"content-type":"video/mp4"}});
     }
+    if(target==="https://queue.fal.run/fal-ai/ltx-video"){
+      return new Response(JSON.stringify({status:"IN_QUEUE",status_url:"https://fal.test/status",response_url:"https://fal.test/response"}),{status:200,headers:{"content-type":"application/json"}});
+    }
+    if(target==="https://fal.test/status"){
+      return new Response(JSON.stringify({status:"COMPLETED"}),{status:200,headers:{"content-type":"application/json"}});
+    }
+    if(target==="https://fal.test/response"){
+      return new Response(JSON.stringify({video:{url:"https://fal.test/video.mp4"}}),{status:200,headers:{"content-type":"application/json"}});
+    }
+    if(target==="https://fal.test/video.mp4"){
+      return new Response(mp4,{status:200,headers:{"content-type":"video/mp4"}});
+    }
     return realFetch(url,init);
   };
   try{
@@ -197,6 +209,23 @@ async function main(){
     delete omniConfig.geminiApiKey;
     delete omniConfig.videoProviderOrder;
     delete omniConfig.geminiVideoModel;
+
+    omniConfig.falApiKey="test-fal-key";
+    omniConfig.videoCostPolicy="allow_paid";
+    omniConfig.videoMode="fast";
+    omniConfig.videoProviderOrder="fal";
+    omniConfig.falVideoModel="fal-ai/ltx-video";
+    r=await fetch(base+"/api/generate/video",{method:"POST",headers:ownerHeaders,body:JSON.stringify({prompt:"Direct fal LTX queue test",duration:4,aspectRatio:"16:9"})});
+    const falVideo=await r.json();expect(r.ok,falVideo.error||"fal.ai direct video failed");
+    expect(falVideo.data?.kind==="video","fal.ai video kind missing");
+    expect(falVideo.data?.provider==="fal-video-direct","fal.ai provider metadata missing");
+    expect(falVideo.data?.model==="fal-ai/ltx-video","fal.ai LTX model metadata missing");
+    r=await fetch(base+"/api/files/"+falVideo.data.id,{headers:{authorization:"Bearer owner-token"}});
+    const falBytes=Buffer.from(await r.arrayBuffer());
+    expect(r.ok&&falBytes.subarray(4,8).toString("ascii")==="ftyp","fal.ai LTX output is not MP4-like");
+    delete omniConfig.falApiKey;
+    delete omniConfig.videoProviderOrder;
+    delete omniConfig.falVideoModel;
 
     r=await fetch(base+"/api/generate/video",{method:"POST",headers:ownerHeaders,body:JSON.stringify({prompt:"Owner free video while paid AI is globally off"})});
     const ownerVideo=await r.json();expect(r.ok,ownerVideo.error||"Owner video generation failed while paid AI was off");
