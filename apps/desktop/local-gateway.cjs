@@ -1100,6 +1100,37 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }catch(e){res.status(502).json({error:e.message})}
   });
 
+  app.post("/api/github/solve", auth, ownerOnlyLocal, async (req,res) => {
+    try{
+      const filePath=String(req.body?.path||"").trim();if(!filePath)return res.status(400).json({error:"Calea fișierului GitHub lipsește."});
+      const file=await githubReadFile(getOmniConfig(),filePath,req.body?.branch);
+      const solved=await generateGithubProposal(req,file,req.body?.instruction);
+      res.json({data:{path:file.path,sha:file.sha,branch:file.branch,proposal:solved.proposal,model:solved.model}});
+    }catch(e){res.status(e.status||502).json({error:e.message})}
+  });
+
+  app.post("/api/github/apply", auth, ownerOnlyLocal, async (req,res) => {
+    try{
+      const filePath=String(req.body?.path||"").trim(),content=String(req.body?.content||"");
+      if(!filePath||!content)return res.status(400).json({error:"Calea și conținutul sunt obligatorii."});
+      const current=await githubReadFile(getOmniConfig(),filePath,req.body?.branch);
+      if(req.body?.sha&&String(req.body.sha)!==String(current.sha))return res.status(409).json({error:"Fișierul s-a modificat între timp în GitHub. Rulează din nou GitHub Solve."});
+      const backupId=saveGithubBackup(current);
+      const result=await githubWriteFile(getOmniConfig(),{filePath:current.path,content,sha:current.sha,branch:current.branch,message:req.body?.message});
+      res.json({data:{commit:result?.commit?.sha||"",contentSha:result?.content?.sha||"",backupId,path:current.path,branch:current.branch}});
+    }catch(e){res.status(e.status||502).json({error:e.message})}
+  });
+
+  app.post("/api/github/rollback/:backupId", auth, ownerOnlyLocal, async (req,res) => {
+    try{
+      const backupPath=path.join(dataDir,"github-backups",String(req.params.backupId||"")+".json");
+      if(!fs.existsSync(backupPath))return res.status(404).json({error:"Backup GitHub inexistent."});
+      const backup=JSON.parse(fs.readFileSync(backupPath,"utf8"));
+      const current=await githubReadFile(getOmniConfig(),backup.path,backup.branch);
+      const result=await githubWriteFile(getOmniConfig(),{filePath:backup.path,content:backup.content,sha:current.sha,branch:backup.branch,message:"AI Stoica: rollback "+backup.path});
+      res.json({data:{commit:result?.commit?.sha||"",path:backup.path,branch:backup.branch}});
+    }catch(e){res.status(e.status||502).json({error:e.message})}
+  });
   app.get("/api/projects", auth, (req,res) => { const db=store.read(); res.json({data:db.projects.filter(x=>x.userId===req.user.id).sort((a,b)=>b.updatedAt-a.updatedAt)}); });
   app.post("/api/projects", auth, (req,res) => {
     const name=String(req.body?.name||"").trim(); if(!name)return res.status(400).json({error:"Numele proiectului este obligatoriu."});
