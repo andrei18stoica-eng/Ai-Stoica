@@ -703,6 +703,57 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }
     return out.trim();
   }
+  async function githubReadFile(cfg,filePath,branch){
+    const repo=String(cfg.githubRepo||"").trim(),token=String(cfg.githubToken||"").trim();
+    if(!repo)throw new Error("Configurează GitHub repository în Setări.");
+    if(!token)throw new Error("Configurează GitHub token în Setări pentru repository-ul privat.");
+    const headers={Authorization:"Bearer "+token,Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","User-Agent":"AI-Stoica"};
+    const ref=String(branch||cfg.githubBranch||"main").trim()||"main";
+    const encodedPath=String(filePath||"").split("/").map(encodeURIComponent).join("/");
+    const url="https://api.github.com/repos/"+repo+"/contents/"+encodedPath+"?ref="+encodeURIComponent(ref);
+    const r=await fetch(url,{headers,signal:AbortSignal.timeout(12000)});
+    const text=await r.text();let data={};try{data=JSON.parse(text)}catch{}
+    if(!r.ok)throw new Error("GitHub HTTP "+r.status+": "+String(data?.message||text).slice(0,500));
+    if(data.type!=="file"||!data.content)throw new Error("Calea GitHub nu indică un fișier text.");
+    return {repo,branch:ref,path:data.path||filePath,sha:data.sha,content:Buffer.from(String(data.content).replace(/\n/g,""),"base64").toString("utf8")};
+  }
+  async function githubWriteFile(cfg,args){
+    const repo=String(cfg.githubRepo||"").trim(),token=String(cfg.githubToken||"").trim();
+    if(!repo||!token)throw new Error("GitHub repository/token nu sunt configurate.");
+    const headers={Authorization:"Bearer "+token,Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","User-Agent":"AI-Stoica","Content-Type":"application/json"};
+    const ref=String(args.branch||cfg.githubBranch||"main").trim()||"main";
+    const encodedPath=String(args.filePath||"").split("/").map(encodeURIComponent).join("/");
+    const url="https://api.github.com/repos/"+repo+"/contents/"+encodedPath;
+    const body={message:String(args.message||("AI Stoica: update "+args.filePath)),content:Buffer.from(String(args.content||""),"utf8").toString("base64"),branch:ref};
+    if(args.sha)body.sha=args.sha;
+    const r=await fetch(url,{method:"PUT",headers,body:JSON.stringify(body),signal:AbortSignal.timeout(20000)});
+    const text=await r.text();let data={};try{data=JSON.parse(text)}catch{}
+    if(!r.ok)throw new Error("GitHub HTTP "+r.status+": "+String(data?.message||text).slice(0,700));
+    return data;
+  }
+  function saveGithubBackup(file){
+    const dir=path.join(dataDir,"github-backups");fs.mkdirSync(dir,{recursive:true});
+    const id=crypto.randomUUID();
+    fs.writeFileSync(path.join(dir,id+".json"),JSON.stringify({id,repo:file.repo,path:file.path,branch:file.branch,sha:file.sha,content:file.content,createdAt:Date.now()},null,2),"utf8");
+    return id;
+  }
+  async function generateGithubProposal(req,file,instruction){
+    const cfg=getOmniConfig();
+    const model=String(req.body?.model||cfg.model||"").trim();
+    if(!model)throw new Error("Alege un model AI înainte de GitHub Solve.");
+    await requireModelAccess(req.cloudToken,model);
+    const messages=[
+      {role:"system",content:"Ești motorul GitHub Solve din AI Stoica. Primești un singur fișier și o instrucțiune. Returnează EXCLUSIV conținutul complet al fișierului corectat, fără markdown fences, fără explicații și fără omisiuni."},
+      {role:"user",content:"Fișier: "+file.path+"\nInstrucțiune: "+String(instruction||"Analizează și corectează problema.")+"\n\nCONȚINUT ACTUAL:\n"+file.content.slice(0,120000)}
+    ];
+    const r=await fetchChatCandidate(cfg,model,messages,false);
+    const text=await r.text();let data={};try{data=JSON.parse(text)}catch{}
+    if(!r.ok)throw new Error("Model AI HTTP "+r.status+": "+text.slice(0,500));
+    let proposal=String(data?.choices?.[0]?.message?.content||"").trim();
+    proposal=proposal.replace(/^```[a-z0-9_+.-]*\s*/i,"").replace(/\s*```$/,"");
+    if(!proposal)throw new Error("Modelul nu a returnat o propunere de cod.");
+    return {proposal,model};
+  }
   function spawnCapture(command,args,{cwd,timeout=15000,env={}}={}){
     return new Promise((resolve,reject)=>{
       let stdout="",stderr="",timedOut=false,settled=false;
