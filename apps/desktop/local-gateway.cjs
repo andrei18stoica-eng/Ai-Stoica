@@ -915,7 +915,10 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   async function resolveChatRoute(context, messages, requestedModel) {
     const cfg=getOmniConfig();
     const requested=String(requestedModel||cfg.model||"").trim();
-    if(!requested)throw policyFailure("Alege manual un model AI înainte de a trimite mesajul.",400);
+    if(!requested){
+      if(ownerRequest(context)&&cfg.directChatEnabled!==false)return {task:"direct-fallback",reasons:["OmniRoute fără model selectat; folosesc API-urile directe configurate"],selectedModel:"",candidates:[]};
+      throw policyFailure("Alege manual un model AI înainte de a trimite mesajul.",400);
+    }
     if(isSmartAlias(requested))throw policyFailure("Selectarea automată a AI-ului este dezactivată. Alege manual modelul dorit.",409);
     await requireModelAccess(context?.cloudToken,requested);
     return {task:"manual",reasons:["model ales manual"],selectedModel:requested,candidates:[{id:requested,provider:inferProvider(requested),score:0}]};
