@@ -36,12 +36,13 @@ function defaults() {
     speechModel: "openai/whisper-1",
     speechLanguage: "ro",
     imageModel: "",
-    videoModel: "",
+    videoMode: "fast",
+    videoModel: "bytedance/seedance-2.0-fast",
     openAiApiKey: "",
     openRouterApiKey: "",
     pollinationsApiKey: "",
     openRouterImageModel: "google/gemini-3.1-flash-image",
-    openRouterVideoModel: "bytedance/seedance-2.5",
+    openRouterVideoModel: "bytedance/seedance-2.0-fast",
     pollinationsImageModel: "black-forest-labs/flux.1-schnell",
     pollinationsVideoModel: "google/veo-3.1-fast"
   };
@@ -62,6 +63,12 @@ function loadConfig() {
     const pollinationsApiKey=secret("pollinationsApiKey");
     const cfg={ ...defaults(), ...raw, apiKey, openAiApiKey, openRouterApiKey, pollinationsApiKey };
     if(/^ai[ _-]*(principal|stoica)$/i.test(String(cfg.model||"").trim()))cfg.model="";
+    // Migrare 0.6.14: instalațiile vechi pornesc implicit pe profilul Video Rapid.
+    if(!raw.videoMode){
+      cfg.videoMode="fast";
+      cfg.videoModel="bytedance/seedance-2.0-fast";
+      cfg.openRouterVideoModel="bytedance/seedance-2.0-fast";
+    }
     return cfg;
   } catch { return defaults(); }
 }
@@ -73,9 +80,11 @@ function saveConfig(input) {
     autoStartOmniRoute: !!cfg.autoStartOmniRoute, startWithWindows: !!cfg.startWithWindows,
     closeToTray: cfg.closeToTray !== false, autoUpdate: cfg.autoUpdate !== false,
     speechModel: cfg.speechModel || "openai/whisper-1", speechLanguage: cfg.speechLanguage || "ro",
-    imageModel: String(cfg.imageModel || "").trim(), videoModel: String(cfg.videoModel || "").trim(),
+    imageModel: String(cfg.imageModel || "").trim(),
+    videoMode: cfg.videoMode==="quality"?"quality":"fast",
+    videoModel: String(cfg.videoModel || (cfg.videoMode==="quality"?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast")).trim(),
     openRouterImageModel: String(cfg.openRouterImageModel || "google/gemini-3.1-flash-image").trim(),
-    openRouterVideoModel: String(cfg.openRouterVideoModel || "bytedance/seedance-2.5").trim(),
+    openRouterVideoModel: String(cfg.openRouterVideoModel || (cfg.videoMode==="quality"?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast")).trim(),
     pollinationsImageModel: String(cfg.pollinationsImageModel || "black-forest-labs/flux.1-schnell").trim(),
     pollinationsVideoModel: String(cfg.pollinationsVideoModel || "google/veo-3.1-fast").trim()
   };
