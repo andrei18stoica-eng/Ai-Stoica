@@ -788,7 +788,7 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
   <button onClick={()=>{setMenu(false);onToolPrompt?.("Caută pe internet informații actuale despre ")}}><Globe2 size={16}/> Căutare web</button>
   {(user?.role==="owner"||permissions?.deep_research===true)&&<button onClick={()=>{setMenu(false);onToolPrompt?.("Fă deep research, verifică mai multe surse și explică-mi complet: ")}}><Search size={16}/> Deep Research</button>}
   {(user?.role==="owner"||permissions?.image_generation===true)&&<button onClick={()=>{setMenu(false);onGenerateMedia?.("image")}}><ImageIcon size={16}/> Generează imagine</button>}
-  {(user?.role==="owner"||permissions?.video_generation===true)&&<button onClick={()=>{setMenu(false);onGenerateMedia?.("video")}}><Play size={16}/> Generează video</button>
+  {(user?.role==="owner"||permissions?.video_generation===true)&&<button onClick={()=>{setMenu(false);onGenerateMedia?.("video")}}><Play size={16}/> Generează video</button>}
   <div className="menuDivider"/><button onClick={()=>fileInput.current?.click()}><Upload size={16}/> Încarcă orice fișier</button><button onClick={()=>{setMenu(false);onOpenLibrary()}}><Library size={16}/> Alege din Bibliotecă</button>
 </div>}</div>
         <div className="mediaQuickButtons">
