@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { SafeAreaView, View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Modal, Alert } from "react-native";
+import { SafeAreaView, View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Modal, Alert, KeyboardAvoidingView, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { StatusBar } from "expo-status-bar";
 import * as DocumentPicker from "expo-document-picker";
@@ -8,7 +8,8 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 
 const GATEWAY=(process.env.EXPO_PUBLIC_GATEWAY_URL||"").replace(/\/+$/,"");
-const DEFAULT_MODEL=process.env.EXPO_PUBLIC_DEFAULT_MODEL||"AI Stoica Performance Max";
+const DEFAULT_MODEL=process.env.EXPO_PUBLIC_DEFAULT_MODEL||"";
+const smartAlias=v=>/^ai[ _-]*(principal|stoica)$/i.test(String(v||"").trim());
 const TOKEN_KEY="aiStoicaMobileTokenV4";
 
 function normalizeIntent(value){
@@ -16,9 +17,13 @@ function normalizeIntent(value){
 }
 function requestedDocumentFormat(value){
   const t=normalizeIntent(value).trim();
+  if(!t)return null;
+  const informational=/^(cum|ce|care|cand|de ce|unde|pot|se poate|exista|explica|spune-mi|vreau sa stiu)\b/;
+  const output=/\b(trimite-mi|da-mi|dami|descarca|exporta|salveaza|creeaza-mi|creaza-mi|genereaza-mi|fa-mi|fami|fa un|fa o)\b/;
   const simple=/^(in\s+)?(pdf|docx|pptx|word|powerpoint)(\s+te\s+rog)?[.!]?$/;
-  const asks=/(trimite|da-mi|dami|descarc|export|salveaz|fisier|document|format|creeaz|genereaz|fa-mi|fami)/;
-  if(!simple.test(t)&&!asks.test(t))return null;
+  if(simple.test(t)){if(/pptx|powerpoint/.test(t))return "pptx";if(/docx|word/.test(t))return "docx";return "pdf";}
+  if(informational.test(t)&&!output.test(t))return null;
+  if(!output.test(t))return null;
   if(/\bpptx\b|powerpoint|prezentare/.test(t))return "pptx";
   if(/\bdocx\b|\bword\b/.test(t))return "docx";
   if(/\bpdf\b/.test(t))return "pdf";
@@ -40,7 +45,7 @@ async function api(path,token,options={}){
   if(options.body && !(options.body instanceof Blob) && !headers["Content-Type"])headers["Content-Type"]="application/json";
   const r=await fetch(`${GATEWAY}${path}`,{...options,headers});
   const d=await r.json().catch(()=>({error:`HTTP ${r.status}`}));
-  if(!r.ok){const err=new Error(d?.error||`HTTP ${r.status}`);err.status=r.status;throw err}
+  if(!r.ok){const base=String(d?.error||`HTTP ${r.status}`);const next=r.status===401?"Autentifică-te din nou.":r.status===403?"Verifică permisiunile contului.":r.status===413?"Folosește un fișier mai mic.":r.status>=500?"Verifică serverul și internetul.":"Încearcă din nou.";const err=new Error(`${base}\n\nPas următor: ${next}`);err.status=r.status;throw err}
   return d;
 }
 
@@ -76,7 +81,7 @@ function Auth({onAuth}){
 
 export default function Home(){
   const[token,setToken]=useState(null),[user,setUser]=useState(null),[loading,setLoading]=useState(true);
-  const[convs,setConvs]=useState([]),[currentId,setCurrentId]=useState(null),[text,setText]=useState(""),[busy,setBusy]=useState(false),[menu,setMenu]=useState(false);
+  const[convs,setConvs]=useState([]),[currentId,setCurrentId]=useState(null),[text,setText]=useState(""),[busy,setBusy]=useState(false),[menu,setMenu]=useState(false),[model,setModel]=useState(DEFAULT_MODEL),[nextBefore,setNextBefore]=useState(null);
   const[pendingFiles,setPendingFiles]=useState([]),[uploading,setUploading]=useState(false);
   const[adminOpen,setAdminOpen]=useState(false),[accounts,setAccounts]=useState([]);
   const isOwner=user?.role==="owner";
@@ -92,23 +97,38 @@ export default function Home(){
       }}
     setLoading(false);
   })},[]);
-  useEffect(()=>{if(token)reload()},[token]);
+  useEffect(()=>{if(token){reload();ensureModel().catch(e=>Alert.alert("Model AI",e.message))}},[token]);
 
+  async function ensureModel(){
+    if(model&&!smartAlias(model))return model;
+    const d=await api("/api/models",token);
+    const ids=(d.manualModels||d.data||[]).map(x=>typeof x==="string"?x:x?.id).map(x=>String(x||"").trim()).filter(x=>x&&!smartAlias(x));
+    const chosen=ids.includes(DEFAULT_MODEL)?DEFAULT_MODEL:(ids[0]||"");
+    if(!chosen)throw new Error("Nu există niciun model AI permis pentru acest cont.");
+    setModel(chosen);return chosen;
+  }
   async function reload(){
-    try{const d=await api("/api/conversations",token);setConvs(d.data||[]);if(!currentId&&d.data?.length)setCurrentId(d.data[0].id)}
+    try{const d=await api("/api/conversations?limit=40",token);setConvs(d.data||[]);setNextBefore(d.nextBefore||null);if(!currentId&&d.data?.length)setCurrentId(d.data[0].id)}
     catch(e){if(e.status===401||e.status===403)logout();else Alert.alert("AI Stoica",e.message)}
+  }
+  async function loadOlder(){
+    if(!nextBefore)return;
+    try{const d=await api(`/api/conversations?limit=40&before=${encodeURIComponent(nextBefore)}`,token);setConvs(v=>[...v,...(d.data||[]).filter(x=>!v.some(y=>y.id===x.id))]);setNextBefore(d.nextBefore||null)}
+    catch(e){Alert.alert("Conversații",e.message)}
   }
   async function loadAccounts(){try{const d=await api("/api/admin/users",token);setAccounts(d.data||[])}catch(e){Alert.alert("Conturi",e.message)}}
   async function setAccountStatus(a,status){try{await api(`/api/admin/users/${a.id}/status`,token,{method:"PATCH",body:JSON.stringify({status})});await loadAccounts()}catch(e){Alert.alert("Conturi",e.message)}}
   async function authDone(t,u){setToken(t);setUser(u)}
-  async function logout(){await AsyncStorage.removeItem(TOKEN_KEY);setToken(null);setUser(null);setConvs([]);setCurrentId(null)}
+  async function logout(){await AsyncStorage.removeItem(TOKEN_KEY);setToken(null);setUser(null);setConvs([]);setCurrentId(null);setModel(DEFAULT_MODEL);setNextBefore(null);setText("");setPendingFiles([])}
   async function ensureConversation(title="Conversație nouă"){
     if(current)return current;
-    const d=await api("/api/conversations",token,{method:"POST",body:JSON.stringify({title:title.slice(0,48),model:DEFAULT_MODEL,messages:[]})});
+    const activeModel=await ensureModel();
+    const d=await api("/api/conversations",token,{method:"POST",body:JSON.stringify({title:title.slice(0,48),model:activeModel,messages:[]})});
     setConvs(v=>[d.data,...v]);setCurrentId(d.data.id);return d.data;
   }
   async function saveMessages(c,messages){
-    const saved=await api(`/api/conversations/${c.id}`,token,{method:"PUT",body:JSON.stringify({messages,model:DEFAULT_MODEL})});
+    const activeModel=await ensureModel();
+    const saved=await api(`/api/conversations/${c.id}`,token,{method:"PUT",body:JSON.stringify({messages,model:activeModel})});
     setConvs(v=>v.map(x=>x.id===c.id?saved.data:x));
     return saved.data;
   }
@@ -143,6 +163,7 @@ export default function Home(){
       const safe=(file.name||"fisier").replace(/[^a-zA-Z0-9._-]/g,"_");
       const dest=(FileSystem.cacheDirectory||FileSystem.documentDirectory)+safe;
       const r=await FileSystem.downloadAsync(`${GATEWAY}/api/files/${file.id}`,dest,{headers:{Authorization:`Bearer ${token}`}});
+      if(r.status<200||r.status>=300){let body="";try{body=(await FileSystem.readAsStringAsync(r.uri)).slice(0,1000)}catch{}try{await FileSystem.deleteAsync(r.uri,{idempotent:true})}catch{}throw new Error(body||`Descărcarea a eșuat cu HTTP ${r.status}.`)}
       const ok=await Sharing.isAvailableAsync();
       if(ok)await Sharing.shareAsync(r.uri,{mimeType:file.mimeType||undefined,dialogTitle:file.name||"AI Stoica"});
       else Alert.alert("Fișier salvat",r.uri);
@@ -153,13 +174,14 @@ export default function Home(){
     const p=text.trim();
     if((!p&&!pendingFiles.length)||busy)return;
     setBusy(true);
-    const files=pendingFiles;setPendingFiles([]);setText("");
+    const files=pendingFiles;setPendingFiles([]);setText("");let activeConversation=null,beforeMessages=[];
     try{
-      let c=await ensureConversation(p||files[0]?.name||"Fișiere");
+      let c=await ensureConversation(p||files[0]?.name||"Fișiere");activeConversation=c;beforeMessages=[...(c.messages||[])];
       const msg={id:String(Date.now()),role:"user",content:p||"Analizează și rezolvă fișierele atașate.",attachments:files,createdAt:Date.now()};
       const messages=[...(c.messages||[]),msg];
       setConvs(v=>v.map(x=>x.id===c.id?{...x,messages}:x));
-      const d=await api("/api/chat",token,{method:"POST",body:JSON.stringify({model:DEFAULT_MODEL,messages})});
+      const activeModel=await ensureModel();
+      const d=await api("/api/chat",token,{method:"POST",body:JSON.stringify({model:activeModel,messages})});
       const ans=d?.choices?.[0]?.message?.content||"Nu am primit răspuns.";
       let generatedAttachments=[];
       const requestedFormat=requestedDocumentFormat(p);
@@ -181,7 +203,7 @@ export default function Home(){
       }
       const final=[...messages,{id:`a${Date.now()}`,role:"assistant",content:String(ans),attachments:generatedAttachments,createdAt:Date.now(),provider:d.provider,model:d.model}];
       await saveMessages(c,final);
-    }catch(e){Alert.alert("AI Stoica",e.message);setPendingFiles(files);setText(v=>v||p)}finally{setBusy(false)}
+    }catch(e){Alert.alert("AI Stoica",e.message);if(activeConversation)setConvs(v=>v.map(x=>x.id===activeConversation.id?{...x,messages:beforeMessages}:x));setPendingFiles(files);setText(v=>v||p)}finally{setBusy(false)}
   }
 
   async function exportMessage(m,format){
@@ -234,10 +256,10 @@ export default function Home(){
   if(loading)return <SafeAreaView style={s.safeCenter}><ActivityIndicator color="#278cff"/></SafeAreaView>;
   if(!token)return <Auth onAuth={authDone}/>;
 
-  return <SafeAreaView style={s.safe}><StatusBar style="light"/>
+  return <SafeAreaView style={s.safe}><StatusBar style="light"/><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==="ios"?"padding":undefined} keyboardVerticalOffset={0}>
     <View style={s.header}>
       <TouchableOpacity onPress={()=>setMenu(true)}><Text style={s.menu}>☰</Text></TouchableOpacity>
-      <View><Text style={s.headerTitle}>AI Stoica</Text><Text style={s.headerSub}>{DEFAULT_MODEL}</Text></View>
+      <View><Text style={s.headerTitle}>AI Stoica</Text><Text style={s.headerSub}>{model||"Model AI"}</Text></View>
       {isOwner?<TouchableOpacity style={s.ghTop} onPress={()=>setGithubOpen(true)}><Text style={s.ghTopText}>GitHub</Text></TouchableOpacity>:<View style={s.headerSpacer}/>}
       <TouchableOpacity style={s.newBtn} onPress={()=>{setCurrentId(null);setPendingFiles([])}}><Text style={s.newBtnText}>Nou</Text></TouchableOpacity>
     </View>
@@ -276,7 +298,7 @@ export default function Home(){
           <Text style={s.drawerTitle}>Conversații</Text>
           {isOwner&&<TouchableOpacity style={s.githubMenu} onPress={()=>{setMenu(false);setGithubOpen(true)}}><Text style={s.githubMenuText}>⌘ GitHub Solve</Text></TouchableOpacity>}
           {isOwner&&<TouchableOpacity style={s.githubMenu} onPress={()=>{setMenu(false);setAdminOpen(true);loadAccounts()}}><Text style={s.githubMenuText}>Conturi și cereri de acces</Text></TouchableOpacity>}
-          <ScrollView>{convs.map(c=><TouchableOpacity key={c.id} style={s.drawerItem} onPress={()=>{setCurrentId(c.id);setMenu(false)}}><Text numberOfLines={1} style={s.drawerText}>{c.title}</Text></TouchableOpacity>)}</ScrollView>
+          <ScrollView>{convs.map(c=><TouchableOpacity key={c.id} style={s.drawerItem} onPress={()=>{setCurrentId(c.id);setMenu(false)}}><Text numberOfLines={1} style={s.drawerText}>{c.title}</Text></TouchableOpacity>)}{nextBefore&&<TouchableOpacity style={s.githubMenu} onPress={loadOlder}><Text style={s.githubMenuText}>Încarcă conversații mai vechi</Text></TouchableOpacity>}</ScrollView>
           <View style={s.account}><Text style={s.accountName}>{user?.name}</Text><Text style={s.accountEmail}>{user?.email}</Text><TouchableOpacity onPress={logout}><Text style={s.logout}>Deconectare</Text></TouchableOpacity></View>
         </View>
       </TouchableOpacity>
@@ -310,7 +332,7 @@ export default function Home(){
         </View>
       </View></View>
     </Modal>
-  </SafeAreaView>;
+  </KeyboardAvoidingView></SafeAreaView>;
 }
 
 const s=StyleSheet.create({

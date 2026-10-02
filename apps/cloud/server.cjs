@@ -9,7 +9,7 @@ function getOmniConfig() {
   return {
     baseUrl: String(process.env.OMNIROUTE_BASE_URL || "http://omniroute:20128/v1").replace(/\/+$/, ""),
     apiKey: process.env.OMNIROUTE_API_KEY || "",
-    model: process.env.AI_STOICA_MODEL || "Ai principal",
+    model: process.env.AI_STOICA_MODEL || "cerebras/gpt-oss-120b",
     speechModel: process.env.AI_STOICA_SPEECH_MODEL || "openai/whisper-1",
     speechLanguage: process.env.AI_STOICA_SPEECH_LANGUAGE || "ro",
     // Public server: only the first account can sign up unless AI_STOICA_OPEN_REGISTRATION=true.
