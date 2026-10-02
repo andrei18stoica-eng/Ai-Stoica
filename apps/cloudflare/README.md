@@ -92,3 +92,23 @@ EXPO_PUBLIC_DEFAULT_MODEL=AI Stoica Performance Max
 ```
 
 Același backend poate fi folosit de iPhone, iPad, Android și Windows.
+
+## Securizare cont Owner
+
+Înainte de primul deploy/configurare a conturilor, setează **ambele** secrete:
+
+```bash
+npx wrangler secret put OWNER_EMAIL
+npx wrangler secret put OWNER_INITIAL_PASSWORD
+```
+
+`OWNER_INITIAL_PASSWORD` trebuie să fie chiar parola cu care se creează și se autentifică Owner-ul. Worker-ul nu mai acordă rolul Owner doar pentru că cineva cunoaște adresa `OWNER_EMAIL`.
+
+Ordinea recomandată pentru producție:
+
+```bash
+npx wrangler d1 migrations apply ai-stoica --remote
+npx wrangler deploy
+```
+
+După deploy, creează contul cu `OWNER_EMAIL` și parola din `OWNER_INITIAL_PASSWORD`.

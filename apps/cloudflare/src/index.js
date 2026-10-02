@@ -179,25 +179,23 @@ async function fileToText(env, userId, fileId) {
 async function expandAttachmentMessages(env, userId, messages) {
   const src = Array.isArray(messages) ? messages : [];
   const out = [];
-  for (const m of src) {
+  let latestUserIndex=-1;
+  for(let i=src.length-1;i>=0;i--){if(src[i]?.role==="user"){latestUserIndex=i;break}}
+  for (let index=0;index<src.length;index++) {
+    const m=src[index];
     if (!m || !["user","assistant","system"].includes(m.role)) continue;
     let content = "";
     if (typeof m.content === "string") content = m.content;
-    else if (Array.isArray(m.content)) {
-      content = m.content.filter(x=>x?.type==="text").map(x=>String(x.text||"")).join("\n");
-    } else content = String(m.content ?? "");
-    const attachments = Array.isArray(m.attachments) ? m.attachments.slice(0, 6) : [];
-    if (attachments.length) {
-      for (const a of attachments) {
-        const fileId=a?.id||a?.libraryId;
-        if (!fileId) continue;
-        const row = await ownedFile(env, userId, fileId);
-        if (!row) continue;
-        const extracted = await fileToText(env, userId, fileId);
-        content += "\n\n===== FIȘIER ATAȘAT: " + row.name + " =====\n" + extracted + "\n===== SFÂRȘIT FIȘIER =====";
-      }
+    else if (Array.isArray(m.content)) content = m.content.filter(x=>x?.type==="text").map(x=>String(x.text||"")).join("\n");
+    else content = String(m.content ?? "");
+    const attachments = index===latestUserIndex && Array.isArray(m.attachments) ? m.attachments.slice(0, 6) : [];
+    for (const a of attachments) {
+      const fileId=a?.id||a?.libraryId;if(!fileId)continue;
+      const row=await ownedFile(env,userId,fileId);if(!row)continue;
+      const extracted=await fileToText(env,userId,fileId);
+      content += "\n\n===== FIȘIER ATAȘAT: " + row.name + " =====\n" + extracted + "\n===== SFÂRȘIT FIȘIER =====";
     }
-    if (content.trim()) out.push({ role: m.role, content });
+    if (content.trim()) out.push({ role:m.role, content });
   }
   return out;
 }
@@ -551,6 +549,7 @@ async function handleAuthRegister(request, env) {
   // New accounts wait for the Owner's approval, so strangers cannot use the AI keys of this server.
   // OPEN_REGISTRATION="true" restores instant access for everyone.
   const owner = isOwnerEmail(env, email);
+  if(owner){const bootstrap=String(env.OWNER_INITIAL_PASSWORD||"");if(!bootstrap)return json({error:"Contul Owner nu poate fi creat până când secretul OWNER_INITIAL_PASSWORD este configurat."},503);if(password!==bootstrap){await recordAuthFailure(env,request);return json({error:"Parola Owner nu corespunde secretului de bootstrap."},403)}}
   const active = owner || String(env.OPEN_REGISTRATION || "").toLowerCase() === "true";
   const user = { id:uuid(), email, name:name || email.split("@")[0], created_at:now(), role: owner ? "owner" : "user", status: active ? "active" : "pending" };
   await env.DB.prepare(
@@ -568,10 +567,7 @@ async function handleAuthLogin(request, env) {
   if(!u){await recordAuthFailure(env,request);return json({error:"Email sau parolă incorectă."},401);}
   const hash=await hashPassword(password,u.password_salt);
   if(hash!==u.password_hash){await recordAuthFailure(env,request);return json({error:"Email sau parolă incorectă."},401);}
-  if(isOwnerEmail(env,u.email)&&(u.role!=="owner"||u.status!=="active")){
-    await env.DB.prepare("UPDATE users SET role='owner',status='active',approved_at=COALESCE(approved_at,?) WHERE id=?").bind(now(),u.id).run();
-    u.role="owner";u.status="active";
-  }
+  if(isOwnerEmail(env,u.email)){const bootstrap=String(env.OWNER_INITIAL_PASSWORD||"");if(!bootstrap||password!==bootstrap){await recordAuthFailure(env,request);return json({error:"Autentificarea Owner necesită parola configurată în OWNER_INITIAL_PASSWORD."},403)}if(u.role!=="owner"||u.status!=="active")return json({error:"Contul cu emailul Owner există, dar nu are rol Owner. Verifică baza D1 înainte de a continua."},403)}
   if(u.status!=="active") return json({error:u.status==="pending"?"Contul așteaptă aprobarea Owner-ului.":"Contul nu este activ.",status:u.status},403);
   await env.DB.prepare("DELETE FROM sessions WHERE user_id=? AND expires_at<=?").bind(u.id,now()).run();
   await env.DB.prepare("UPDATE users SET last_login_at=? WHERE id=?").bind(now(),u.id).run();
@@ -580,9 +576,7 @@ async function handleAuthLogin(request, env) {
 }
 
 async function requireUser(request, env) {
-  const user=await authenticate(request,env);
-  if(user&&isOwnerEmail(env,user.email))user.role="owner";
-  return user;
+  return await authenticate(request,env);
 }
 
 async function router(request, env) {
@@ -847,6 +841,7 @@ async function router(request, env) {
       customMetadata:{userId:user.id,fileId:id,source:"upload"}
     });
     const size=Number(obj?.size||declared||0);
+    if(size>maxBytes){await env.FILES.delete(key);return json({error:"Fișierul depășește limita reală de "+(env.AI_STOICA_FILE_MAX_MB||25)+" MB."},413);}
     await env.DB.prepare(
       "INSERT INTO files(id,user_id,name,mime_type,size,r2_key,source,created_at) VALUES(?,?,?,?,?,?,?,?)"
     ).bind(id,user.id,name,mime,size,key,"upload",createdAt).run();
