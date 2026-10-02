@@ -1072,25 +1072,35 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   app.get("/api/models", auth, async (req, res) => {
     const cfg = getOmniConfig();
-    try {
-      const entries=await omniModelEntries(cfg);
-      const manualModels=entries.filter(x=>!isSmartAlias(typeof x==="string"?x:x?.id));
-      let filtered=manualModels,policyError="";
-      if(cloudBase()){
-        try{filtered=await allowedOmniEntries(req,manualModels)}
-        catch(e){filtered=[];policyError=e.message}
-      }
-      res.json({
-        data:filtered,
-        manualModels:filtered,
-        policyEnforced:!!cloudBase(),
-        policyUnavailable:!!policyError,
-        policyError,
-        automaticRouting:false,
-        ownerControlled:true,
-        deniedCount:Math.max(0,manualModels.length-filtered.length)
-      });
-    } catch (e) { res.status(e.status||502).json({ error:`Nu pot încărca lista de modele OmniRoute: ${e.message}` }); }
+    let entries=[],omniError="";
+    try{entries=await omniModelEntries(cfg)}catch(e){omniError=e.message}
+    const manualModels=entries.filter(x=>!isSmartAlias(typeof x==="string"?x:x?.id));
+    let filtered=manualModels,policyError="";
+    if(cloudBase()){
+      try{filtered=await allowedOmniEntries(req,manualModels)}
+      catch(e){filtered=[];policyError=e.message}
+    }
+    if(ownerRequest(req)&&cfg.directChatEnabled!==false){
+      try{
+        const direct=await directChatCandidates(cfg,"");
+        const directEntries=[...new Map(direct.map(x=>[x.provider+"/"+x.model,{id:x.provider+"/"+x.model,provider:x.provider,source:"direct-api"}])).values()];
+        const seen=new Set(filtered.map(x=>String(typeof x==="string"?x:x?.id||"").toLowerCase()));
+        for(const x of directEntries)if(!seen.has(x.id.toLowerCase())){filtered.push(x);seen.add(x.id.toLowerCase())}
+      }catch(e){policyError=policyError||("API direct: "+e.message)}
+    }
+    if(!filtered.length&&omniError)return res.status(502).json({error:"Nu pot încărca modele OmniRoute și nu există API-uri directe configurate: "+omniError});
+    res.json({
+      data:filtered,
+      manualModels:filtered,
+      policyEnforced:!!cloudBase(),
+      policyUnavailable:!!policyError,
+      policyError,
+      omniUnavailable:!!omniError,
+      omniError,
+      automaticRouting:false,
+      ownerControlled:true,
+      deniedCount:Math.max(0,manualModels.length-filtered.filter(x=>x?.source!=="direct-api").length)
+    });
   });
 
   app.post("/api/router/preview", auth, (_req,res) => {
