@@ -1393,7 +1393,7 @@ function ConversationFilesPanel({conversation,onClose}) {
 }
 
 function SettingsModal({onClose,onSaved,user}) {
-  const [cfg,setCfg]=useState(null),[key,setKey]=useState(""),[openAiKey,setOpenAiKey]=useState(""),[openRouterKey,setOpenRouterKey]=useState(""),[pollinationsKey,setPollinationsKey]=useState(""),[stabilityKey,setStabilityKey]=useState(""),[replicateKey,setReplicateKey]=useState(""),[falKey,setFalKey]=useState(""),[githubKey,setGithubKey]=useState(""),[tab,setTab]=useState("general"),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState(""),[toolStatus,setToolStatus]=useState("");
+  const [cfg,setCfg]=useState(null),[key,setKey]=useState(""),[openAiKey,setOpenAiKey]=useState(""),[openRouterKey,setOpenRouterKey]=useState(""),[pollinationsKey,setPollinationsKey]=useState(""),[cloudflareToken,setCloudflareToken]=useState(""),[hfKey,setHfKey]=useState(""),[togetherKey,setTogetherKey]=useState(""),[stabilityKey,setStabilityKey]=useState(""),[replicateKey,setReplicateKey]=useState(""),[falKey,setFalKey]=useState(""),[githubKey,setGithubKey]=useState(""),[tab,setTab]=useState("general"),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState(""),[toolStatus,setToolStatus]=useState("");
   useEffect(()=>{Promise.all([window.AIStoica.getConfig(),window.AIStoica.systemStatus()]).then(([c,s])=>{setCfg(c);setStatus(s)})},[]);
   if(!cfg)return null;
   async function save(){await window.AIStoica.setConfig({
@@ -1402,6 +1402,9 @@ function SettingsModal({onClose,onSaved,user}) {
     openAiApiKey:openAiKey||cfg.openAiApiKey,
     openRouterApiKey:openRouterKey||cfg.openRouterApiKey,
     pollinationsApiKey:pollinationsKey||cfg.pollinationsApiKey,
+    cloudflareApiToken:cloudflareToken||cfg.cloudflareApiToken,
+    hfToken:hfKey||cfg.hfToken,
+    togetherApiKey:togetherKey||cfg.togetherApiKey,
     stabilityApiKey:stabilityKey||cfg.stabilityApiKey,
     replicateApiToken:replicateKey||cfg.replicateApiToken,
     falApiKey:falKey||cfg.falApiKey,
@@ -1423,8 +1426,18 @@ function SettingsModal({onClose,onSaved,user}) {
         <p className="settingsHelp">Poți conecta simultan mai multe servicii. AI Stoica încearcă providerii în ordine și trece automat la următorul dacă unul eșuează. Cheile sunt criptate local.</p>
         <label>Mod rutare imagini<select value={cfg.imageProviderMode||"auto"} onChange={e=>setCfg({...cfg,imageProviderMode:e.target.value})}><option value="auto">Auto — ordinea mea de fallback</option><option value="fast">⚡ Rapid</option><option value="quality">✨ Calitate</option><option value="free">🛡️ Doar gratuit</option></select></label>
         <label>Protecție costuri<select value={cfg.imageCostPolicy||"free_only"} onChange={e=>setCfg({...cfg,imageCostPolicy:e.target.value})}><option value="free_only">Nu permite costuri directe</option><option value="allow_paid">Permite provideri cu plată</option></select></label>
-        <p className="settingsHelp">{(cfg.imageCostPolicy||"free_only")==="free_only"?"Protecție activă: OpenAI, Stability, fal.ai, Replicate și providerii cu cost necunoscut nu sunt apelați direct. La OpenRouter, AI Stoica verifică prețul endpointului înainte de apel.":"Atenție: providerii configurați pot consuma credit conform tarifelor lor."}</p>
-        <label>Ordine fallback<input value={cfg.imageProviderOrder||"openrouter,pollinations,fal,replicate,stability,openai"} onChange={e=>setCfg({...cfg,imageProviderOrder:e.target.value})} placeholder="openrouter,pollinations,fal,replicate,stability,openai"/></label>
+        <p className="settingsHelp">{(cfg.imageCostPolicy||"free_only")==="free_only"?"Protecție activă: AI Stoica încearcă direct Cloudflare și Pollinations. Hugging Face, Together, OpenAI, Stability, fal.ai și Replicate sunt blocate automat dacă ar putea consuma credit plătit. La OpenRouter, AI Stoica verifică prețul endpointului înainte de apel.":"Atenție: providerii configurați pot consuma credit conform tarifelor lor."}</p>
+        <label>Ordine fallback<input value={cfg.imageProviderOrder||"cloudflare,pollinations,huggingface,together,openrouter,fal,replicate,stability,openai"} onChange={e=>setCfg({...cfg,imageProviderOrder:e.target.value})} placeholder="cloudflare,pollinations,huggingface,together,openrouter,fal,replicate,stability,openai"/></label>
+
+        <div className="providerGroup"><b>Cloudflare Workers AI</b><small>FLUX.1 Schnell · provider prioritar în modul gratuit.</small></div>
+        <label>Cloudflare Account ID<input value={cfg.cloudflareAccountId||""} onChange={e=>setCfg({...cfg,cloudflareAccountId:e.target.value})} placeholder="Account ID"/></label>
+        <label>Cloudflare API Token<input type="password" value={cloudflareToken} onChange={e=>setCloudflareToken(e.target.value)} placeholder={cfg.cloudflareApiToken?"Token salvat — lasă gol pentru a-l păstra":"API Token"}/></label>
+
+        <div className="providerGroup"><b>Hugging Face</b><small>FLUX.1 Schnell prin HF Inference Router. Folosit doar când politica de cost îl permite.</small></div>
+        <label>Hugging Face token<input type="password" value={hfKey} onChange={e=>setHfKey(e.target.value)} placeholder={cfg.hfToken?"Token salvat — lasă gol pentru a-l păstra":"hf_..."}/></label>
+
+        <div className="providerGroup"><b>Together AI</b><small>FLUX.1 Schnell prin API Images. Creditele promoționale pot fi limitate.</small></div>
+        <label>Together API key<input type="password" value={togetherKey} onChange={e=>setTogetherKey(e.target.value)} placeholder={cfg.togetherApiKey?"Cheie salvată — lasă gol pentru a o păstra":"API key"}/></label>
 
         <div className="providerGroup"><b>OpenRouter</b><small>Acces la mai multe modele de imagine printr-o singură cheie.</small></div>
         <label>OpenRouter API key<input type="password" value={openRouterKey} onChange={e=>setOpenRouterKey(e.target.value)} placeholder={cfg.openRouterApiKey?"Cheie salvată — lasă gol pentru a o păstra":"sk-or-..."}/></label>
