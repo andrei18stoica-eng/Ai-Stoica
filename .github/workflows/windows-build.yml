@@ -56,6 +56,10 @@ jobs:
         working-directory: apps/desktop
         run: node scripts/test-media-generation.cjs
 
+      - name: Testeaza uneltele Owner
+        working-directory: apps/desktop
+        run: node scripts/test-owner-tools.cjs
+
       - name: Build AI Stoica Windows
         working-directory: apps/desktop
         run: npm run build
