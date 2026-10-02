@@ -378,12 +378,34 @@ function AuthScreen({ onAuth }) {
 function BrandMark({small=false}) { return <div className={cx("brandMark",small&&"small")}><img src="./stoica-enterprises-ai.png" alt="S"/></div>; }
 
 function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,conversations,currentId,onSelect,onDeleteConversation,onNew,selectedProject,setSelectedProject,selectedAssistant,setSelectedAssistant,onNewProject,onNewAssistant,onTool,onExplore,onSettings,onLogout}) {
-  const filtered=conversations.filter(c=>!c.archived&&(!search||(c.title||"").toLowerCase().includes(search.toLowerCase())));
+  const searchQuery=String(search||"").trim().toLowerCase();
+  const visibleConversations=conversations.filter(c=>!c.archived);
+  const searchResults=useMemo(()=>{
+    if(!searchQuery)return [];
+    return visibleConversations.map(c=>{
+      const title=String(c.title||"Conversație");
+      const titleHit=title.toLowerCase().includes(searchQuery);
+      let snippet="",matchedAt=0;
+      for(const m of c.messages||[]){
+        const text=messageText(m);
+        const idx=text.toLowerCase().indexOf(searchQuery);
+        if(idx>=0){
+          matchedAt=Number(m.createdAt||c.updatedAt||0);
+          const from=Math.max(0,idx-70),to=Math.min(text.length,idx+searchQuery.length+110);
+          snippet=(from>0?"…":"")+text.slice(from,to).replace(/\s+/g," ").trim()+(to<text.length?"…":"");
+          break;
+        }
+      }
+      if(!titleHit&&!snippet)return null;
+      return {conversation:c,titleHit,snippet,matchedAt};
+    }).filter(Boolean).sort((a,b)=>(b.matchedAt||b.conversation.updatedAt||0)-(a.matchedAt||a.conversation.updatedAt||0));
+  },[visibleConversations,searchQuery]);
+  const filtered=visibleConversations;
   const groups=useMemo(()=>{const out={};filtered.forEach(c=>{const g=groupLabel(c.updatedAt);(out[g]||=[]).push(c)});return out},[filtered]);
   return <aside className={cx("sidebar",open&&"open")}>
     <div className="sideTop"><div className="brandLine"><BrandMark small/><div><b>AI Stoica</b><span>Enterprises AI</span></div></div><button className="iconOnly mobileClose" onClick={()=>setOpen(false)}><X size={20}/></button></div>
     <button className="newChat" onClick={onNew}><SquarePen size={17}/> Conversație nouă</button>
-    <div className="searchBox"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Caută conversații"/></div>
+    <div className="searchBox"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Caută în conversații"/>{search&&<button className="searchClear" onClick={()=>setSearch("")} title="Șterge căutarea"><X size={14}/></button>}</div>
     <div className="sideScroll">
       <div className="sideSection"><div className="sectionHead"><span>Instrumente</span></div>
         <button className="sideItem exploreItem" onClick={()=>onTool("explore")}><Compass size={16}/> Explorează</button>
@@ -400,8 +422,19 @@ function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,convers
       <div className="sideSection"><div className="sectionHead"><span>Asistenți</span><button onClick={onNewAssistant}><Plus size={15}/></button></div>
         {assistants.map(a=><button key={a.id} className={cx("sideItem",selectedAssistant===a.id&&"active")} onClick={()=>setSelectedAssistant(a.id)}><Bot size={16}/>{a.name}</button>)}
       </div>
-      <div className="sideSection historySection"><div className="sectionHead"><span>Conversații</span></div>
-        {Object.entries(groups).map(([g,items])=><div key={g} className="historyGroup"><div className="historyLabel">{g}</div>{items.filter(c=>!selectedProject||c.projectId===selectedProject).map(c=><div className={cx("historyRow",currentId===c.id&&"active")} key={c.id}><button className="historyItem" onClick={()=>onSelect(c.id)} title={c.title}>{c.title||"Conversație"}</button><button className="historyDelete" title="Șterge conversația" onClick={e=>{e.stopPropagation();onDeleteConversation(c.id)}}><Trash2 size={14}/></button></div>)}</div>)}
+      <div className="sideSection historySection">
+        <div className="sectionHead"><span>{searchQuery?"Rezultate căutare":"Conversații"}</span>{searchQuery&&<small>{searchResults.length}</small>}</div>
+        {searchQuery?<>
+          {currentId&&<button className="currentConversationReturn" onClick={()=>{onSelect(currentId);setSearch("")}}><RotateCcw size={15}/><span><b>Conversația curentă</b><small>Revino la conversația în care erai</small></span></button>}
+          <div className="conversationSearchResults">
+            {searchResults.map(({conversation:c,snippet})=><button key={c.id} className={cx("conversationSearchResult",currentId===c.id&&"current")} onClick={()=>{onSelect(c.id);setSearch("")}}>
+              <div className="conversationSearchHead"><b>{c.title||"Conversație"}</b>{currentId===c.id&&<span>Curentă</span>}</div>
+              {snippet&&<p>{snippet}</p>}
+              <small><Search size={12}/> Deschide conversația</small>
+            </button>)}
+            {!searchResults.length&&<div className="searchNoResults"><Search size={18}/><span>Nu am găsit textul în conversațiile tale.</span></div>}
+          </div>
+        </>:Object.entries(groups).map(([g,items])=><div key={g} className="historyGroup"><div className="historyLabel">{g}</div>{items.filter(c=>!selectedProject||c.projectId===selectedProject).map(c=><div className={cx("historyRow",currentId===c.id&&"active")} key={c.id}><button className="historyItem" onClick={()=>onSelect(c.id)} title={c.title}>{c.title||"Conversație"}</button><button className="historyDelete" title="Șterge conversația" onClick={e=>{e.stopPropagation();onDeleteConversation(c.id)}}><Trash2 size={14}/></button></div>)}</div>)}
       </div>
     </div>
     <div className="accountArea"><div className="accountBadge"><div className="accountAvatar">{(user?.name||user?.email||"S")[0].toUpperCase()}</div><div className="accountText"><b>{user?.name||"Cont Stoica"}</b><span>{user?.email}</span></div></div><div className="accountButtons"><button onClick={onSettings}><Settings size={17}/> Setări</button><button onClick={onLogout}><LogOut size={17}/> Deconectare</button></div></div>
