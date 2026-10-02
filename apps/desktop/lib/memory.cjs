@@ -143,7 +143,8 @@ function createEmbeddingIndex(dataDir) {
     if (!dirty) return;
     try {
       const keys = Object.keys(cache);
-      if (keys.length > 20000) for (const k of keys.slice(0, keys.length - 20000)) delete cache[k];
+      const maxEntries = 5000;
+      if (keys.length > maxEntries) for (const k of keys.slice(0, keys.length - maxEntries)) delete cache[k];
       fs.writeFileSync(`${file}.tmp`, JSON.stringify(cache), "utf8");
       fs.renameSync(`${file}.tmp`, file);
       dirty = false;
@@ -164,7 +165,7 @@ function createEmbeddingIndex(dataDir) {
     const rows = Array.isArray(data?.data) ? data.data : [];
     return rows.sort((a, b) => (a.index || 0) - (b.index || 0)).map((x) => x.embedding);
   }
-  async function vectorsFor(provider, texts) {
+  async function vectorsFor(provider, texts, { cacheWrites=true } = {}) {
     const store = load();
     const out = new Array(texts.length);
     const missing = [];
@@ -176,7 +177,10 @@ function createEmbeddingIndex(dataDir) {
       const batch = missing.slice(start, start + 64);
       const vectors = await embed(provider, batch.map((i) => String(texts[i]).slice(0, 4000)));
       batch.forEach((idx, j) => {
-        if (Array.isArray(vectors[j])) { out[idx] = vectors[j]; store[keyFor(provider, texts[idx])] = vectors[j]; dirty = true; }
+        if (Array.isArray(vectors[j])) {
+          out[idx] = vectors[j];
+          if(cacheWrites){ store[keyFor(provider, texts[idx])] = vectors[j]; dirty = true; }
+        }
       });
     }
     save();
@@ -190,7 +194,7 @@ function createEmbeddingIndex(dataDir) {
     const mine = db.memories.filter((m) => m.userId === userId);
     if (!provider || !String(query || "").trim() || !mine.length || Date.now() < disabledUntil || cfg?.semanticMemoryEnabled === false) return keyword;
     try {
-      const [queryVector] = await vectorsFor(provider, [String(query).slice(0, 4000)]);
+      const [queryVector] = await vectorsFor(provider, [String(query).slice(0, 4000)], {cacheWrites:false});
       const vectors = await vectorsFor(provider, mine.map((m) => m.text));
       const words = tokenize(query);
       const scored = mine.map((m, i) => {

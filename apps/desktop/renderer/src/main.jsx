@@ -27,6 +27,9 @@ const MODEL_SELECTED_KEY = "aiStoicaSelectedModelV1";
 const SMART_ROUTER_DEFAULT_KEY = "aiStoicaSmartRouterDefaultV1";
 const AUTO_ROUTER_ENABLED_KEY = "aiStoicaAutoRouterEnabledV1";
 const MANUAL_MODEL_KEY = "aiStoicaManualModelV1";
+const SPEECH_LANGUAGE_KEY = "aiStoicaSpeechLanguageV1";
+function currentSpeechLanguage(){const v=localStorage.getItem(SPEECH_LANGUAGE_KEY)||"ro";return ({ro:"ro-RO",en:"en-US",fr:"fr-FR"})[v]||v||"ro-RO";}
+function friendlyError(message,status=0){const base=String(message||`HTTP ${status}`);if(/Pas următor:/i.test(base))return base;let next="Încearcă din nou.";if(status===401)next="Autentifică-te din nou.";else if(status===403)next="Verifică permisiunile contului în Control Center.";else if(status===413)next="Micșorează fișierul sau încarcă-l în Bibliotecă.";else if(status>=500)next="Verifică serverul/conexiunea și încearcă din nou.";return `${base}\n\nPas următor: ${next}`;}
 
 function cachedModels() {
   try {
@@ -51,7 +54,7 @@ async function api(path, options = {}) {
   const text = await r.text();
   let data;
   try { data = text ? JSON.parse(text) : {}; } catch { data = { error: text || `HTTP ${r.status}` }; }
-  if (!r.ok) throw new Error(data?.error?.message || data?.error || `HTTP ${r.status}`);
+  if (!r.ok) throw new Error(friendlyError(data?.error?.message || data?.error || `HTTP ${r.status}`,r.status));
   return data;
 }
 
@@ -70,7 +73,7 @@ async function uploadFileToLibrary(file) {
   });
   const text=await r.text();let data;
   try{data=text?JSON.parse(text):{}}catch{data={error:text||`HTTP ${r.status}`}}
-  if(!r.ok)throw new Error(data?.error||`HTTP ${r.status}`);
+  if(!r.ok)throw new Error(friendlyError(data?.error||`HTTP ${r.status}`,r.status));
   return data.data;
 }
 function formatBytes(n){
@@ -205,19 +208,17 @@ function normalizeDocumentIntent(value){
 const DOWNLOAD_FORMATS=["pdf","docx","pptx","xlsx","csv","json","md","txt","html","xml","rtf","zip","ipynb","svg","js","ts","jsx","tsx","py","java","c","cpp","cs","go","rs","php","rb","sh","ps1","sql","css","yaml","yml","toml","ini","tex"];
 function requestedDocumentFormat(value){
   const t=normalizeDocumentIntent(value).trim();
-  const asks=/(trimite|da-mi|dami|descarc|download|export|salveaz|fisier|document|format|creeaz|genereaz|fa-mi|fami|fa\s+un|make|create|save)/;
+  if(!t)return null;
+  const informational=/^(cum|ce|care|cand|de ce|unde|pot|se poate|exista|explica|spune-mi|vreau sa stiu)\b/;
+  const outputVerb=/\b(trimite-mi|da-mi|dami|descarca|download|exporta|salveaza|creeaza-mi|creaza-mi|genereaza-mi|fa-mi|fami|make me|create me|save as|export as)\b/;
   const explicit=t.match(/\.(pdf|docx|pptx|xlsx|csv|json|md|txt|html|xml|rtf|zip|ipynb|svg|js|ts|jsx|tsx|py|java|c|cpp|cs|go|rs|php|rb|sh|ps1|sql|css|yaml|yml|toml|ini|tex)\b/);
-  if(explicit&&asks.test(t))return explicit[1];
-  const candidates=[
-    ["pptx",/\bpptx\b|powerpoint|prezentare/],["docx",/\bdocx\b|\bword\b/],["xlsx",/\bxlsx\b|\bexcel\b|foaie de calcul|spreadsheet/],
-    ["pdf",/\bpdf\b/],["csv",/\bcsv\b/],["json",/\bjson\b/],["html",/\bhtml\b/],["xml",/\bxml\b/],["rtf",/\brtf\b/],
-    ["zip",/\bzip\b|arhiva/],["ipynb",/\bipynb\b|jupyter|notebook/],["svg",/\bsvg\b/],["md",/\bmarkdown\b|\bmd\b/],["txt",/\btxt\b|text simplu/],
-    ["py",/\bpython\b/],["js",/\bjavascript\b/],["ts",/\btypescript\b/],["ps1",/\bpowershell\b/],["sql",/\bsql\b/],["yaml",/\byaml\b/],["tex",/\blatex\b/]
-  ];
-  const found=candidates.find(([,re])=>re.test(t));
+  const candidates=[["pptx",/\bpptx\b|powerpoint|prezentare/],["docx",/\bdocx\b|\bword\b/],["xlsx",/\bxlsx\b|\bexcel\b|foaie de calcul|spreadsheet/],["pdf",/\bpdf\b/],["csv",/\bcsv\b/],["json",/\bjson\b/],["html",/\bhtml\b/],["xml",/\bxml\b/],["rtf",/\brtf\b/],["zip",/\bzip\b|arhiva/],["ipynb",/\bipynb\b|jupyter|notebook/],["svg",/\bsvg\b/],["md",/\bmarkdown\b|\bmd\b/],["txt",/\btxt\b|text simplu/],["py",/\bpython\b/],["js",/\bjavascript\b/],["ts",/\btypescript\b/],["ps1",/\bpowershell\b/],["sql",/\bsql\b/],["yaml",/\byaml\b/],["tex",/\blatex\b/]];
+  const found=explicit?.[1]||candidates.find(([,re])=>re.test(t))?.[0]||null;
   if(!found)return null;
-  const simple=new RegExp("^\\s*(in\\s+)?("+found[0]+"|word|powerpoint|excel|markdown|python|javascript|typescript|jupyter|notebook)(\\s+te\\s+rog)?[.!]?\\s*$");
-  return (simple.test(t)||asks.test(t))?found[0]:null;
+  const standalone=new RegExp("^\\s*(in\\s+)?("+found+"|word|powerpoint|excel|markdown|python|javascript|typescript|jupyter|notebook)(\\s+te\\s+rog)?[.!]?\\s*$");
+  if(standalone.test(t))return found;
+  if(informational.test(t)&&!outputVerb.test(t))return null;
+  return outputVerb.test(t)?found:null;
 }
 function standaloneExportRequest(value){
   const t=normalizeDocumentIntent(value).replace(/[^a-z0-9.\s-]/g," ").replace(/\s+/g," ").trim();
@@ -227,15 +228,7 @@ function standaloneExportRequest(value){
   stripped=stripped.replace(/\b(trimite|da-mi|dami|descarca|descarc|download|exporta|export|salveaza|salveaz|creeaza|creeaz|genereaza|genereaz|fa-mi|fami|fa|in|ca|te|rog|mi|un|o)\b/g," ").replace(/\s+/g," ").trim();
   return stripped.length<18;
 }
-function requestedMediaGeneration(value){
-  const t=normalizeDocumentIntent(value).trim();
-  const createVerb=/(cree|crea|gener|fa-mi|fami|realiz|produc|make|generate|create|desen|draw|render)/.test(t);
-  if(!createVerb)return null;
-  if(/\b(video|videoclip|filmule|mp4|clip video|film|animatie|animat)\b/.test(t))return "video";
-  if(/\b(poza|foto|fotografie|imagine|image|picture|png|jpe?g|portret|logo|poster|banner|avatar|sticker|wallpaper|coperta|desen|ilustratie|iconita)\b/.test(t))return "image";
-  if(/\b(deseneaza|draw|render)\b/.test(t))return "image";
-  return null;
-}
+function requestedMediaGeneration(){return null;}
 
 function groupLabel(ts) {
   const d = new Date(ts || Date.now()), now = new Date();
@@ -321,7 +314,7 @@ async function libraryItemToAttachment(item) {
   if(kind==="audio"||kind==="video"){
     let transcript="",transcriptionError="";
     if(Number(d.size||0)<=25*1024*1024){
-      try{const tr=await api(`/api/library/${d.id}/transcribe`,{method:"POST",body:JSON.stringify({language:"ro"})});transcript=String(tr.text||"").trim()}
+      try{const tr=await api(`/api/library/${d.id}/transcribe`,{method:"POST",body:JSON.stringify({language:(localStorage.getItem(SPEECH_LANGUAGE_KEY)||"ro")})});transcript=String(tr.text||"").trim()}
       catch(e){transcriptionError=e.message}
     }else transcriptionError="Fișierul depășește 25 MB pentru transcriere automată.";
     let frames=[];
@@ -383,9 +376,10 @@ function AuthScreen({ onAuth }) {
 
 function BrandMark({small=false}) { return <div className={cx("brandMark",small&&"small")}><img src="./stoica-enterprises-ai.png" alt="S"/></div>; }
 
-function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,conversations,currentId,onSelect,onDeleteConversation,onNew,selectedProject,setSelectedProject,selectedAssistant,setSelectedAssistant,onNewProject,onNewAssistant,onTool,onExplore,onSettings,onLogout}) {
+function Sidebar({open,setOpen,user,permissions,search,setSearch,projects,assistants,conversations,currentId,onSelect,onDeleteConversation,onRestoreConversation,onNew,selectedProject,setSelectedProject,selectedAssistant,setSelectedAssistant,onNewProject,onNewAssistant,onRenameProject,onDeleteProject,onRenameAssistant,onDeleteAssistant,onTool,onExplore,onSettings,onLogout}) {
+  const [showArchived,setShowArchived]=useState(false);
   const searchQuery=String(search||"").trim().toLowerCase();
-  const visibleConversations=conversations.filter(c=>!c.archived);
+  const visibleConversations=conversations.filter(c=>showArchived?!!c.archived:!c.archived);
   const searchResults=useMemo(()=>{
     if(!searchQuery)return [];
     return visibleConversations.map(c=>{
@@ -415,21 +409,21 @@ function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,convers
     <div className="sideScroll">
       <div className="sideSection"><div className="sectionHead"><span>Instrumente</span></div>
         <button className="sideItem exploreItem" onClick={()=>onTool("explore")}><Compass size={16}/> Explorează</button>
-        <button className="sideItem toolItem" onClick={()=>onTool("automations")}><CalendarClock size={16}/> Automatizări</button>
-        <button className="sideItem toolItem" onClick={()=>onTool("plugins")}><Plug size={16}/> Pluginuri</button>
+        {(user?.role==="owner"||permissions?.automations===true)&&<button className="sideItem toolItem" onClick={()=>onTool("automations")}><CalendarClock size={16}/> Automatizări</button>}
+        {(user?.role==="owner"||permissions?.plugins===true)&&<button className="sideItem toolItem" onClick={()=>onTool("plugins")}><Plug size={16}/> Pluginuri</button>}
         <button className="sideItem toolItem" onClick={()=>onTool("library")}><Library size={16}/> Bibliotecă</button>
         <button className="sideItem toolItem" onClick={()=>onTool("memory")}><Brain size={16}/> Memorie</button>
         {user?.role==="owner"&&<button className="sideItem ownerItem" onClick={()=>onTool("admin")}><ShieldCheck size={16}/> Control Center</button>}
       </div>
       <div className="sideSection"><div className="sectionHead"><span>Proiecte</span><button onClick={onNewProject}><Plus size={15}/></button></div>
         <button className={cx("sideItem",selectedProject===null&&"active")} onClick={()=>setSelectedProject(null)}><Folder size={16}/> Toate conversațiile</button>
-        {projects.map(p=><button key={p.id} className={cx("sideItem",selectedProject===p.id&&"active")} onClick={()=>setSelectedProject(p.id)}><Folder size={16}/>{p.name}</button>)}
+        {projects.map(p=><div className="historyRow" key={p.id}><button className={cx("sideItem",selectedProject===p.id&&"active")} onClick={()=>setSelectedProject(p.id)}><Folder size={16}/>{p.name}</button><button className="historyDelete" title="Redenumește proiectul" onClick={()=>onRenameProject(p)}><MoreHorizontal size={14}/></button><button className="historyDelete" title="Șterge proiectul" onClick={()=>onDeleteProject(p)}><Trash2 size={14}/></button></div>)}
       </div>
       <div className="sideSection"><div className="sectionHead"><span>Asistenți</span><button onClick={onNewAssistant}><Plus size={15}/></button></div>
-        {assistants.map(a=><button key={a.id} className={cx("sideItem",selectedAssistant===a.id&&"active")} onClick={()=>setSelectedAssistant(a.id)}><Bot size={16}/>{a.name}</button>)}
+        {assistants.map(a=><div className="historyRow" key={a.id}><button className={cx("sideItem",selectedAssistant===a.id&&"active")} onClick={()=>setSelectedAssistant(a.id)}><Bot size={16}/>{a.name}</button>{!a.builtIn&&<><button className="historyDelete" title="Redenumește asistentul" onClick={()=>onRenameAssistant(a)}><MoreHorizontal size={14}/></button><button className="historyDelete" title="Șterge asistentul" onClick={()=>onDeleteAssistant(a)}><Trash2 size={14}/></button></>}</div>)}
       </div>
       <div className="sideSection historySection">
-        <div className="sectionHead"><span>{searchQuery?"Rezultate căutare":"Conversații"}</span>{searchQuery&&<small>{searchResults.length}</small>}</div>
+        <div className="sectionHead"><span>{searchQuery?"Rezultate căutare":showArchived?"Arhivate":"Conversații"}</span><button title={showArchived?"Vezi conversațiile active":"Vezi conversațiile arhivate"} onClick={()=>{setShowArchived(v=>!v);setSearch("")}}>{showArchived?<RotateCcw size={14}/>:<Archive size={14}/>}</button>{searchQuery&&<small>{searchResults.length}</small>}</div>
         {searchQuery?<>
           {currentId&&<button className="currentConversationReturn" onClick={()=>{onSelect(currentId);setSearch("")}}><RotateCcw size={15}/><span><b>Conversația curentă</b><small>Revino la conversația în care erai</small></span></button>}
           <div className="conversationSearchResults">
@@ -440,7 +434,7 @@ function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,convers
             </button>)}
             {!searchResults.length&&<div className="searchNoResults"><Search size={18}/><span>Nu am găsit textul în conversațiile tale.</span></div>}
           </div>
-        </>:Object.entries(groups).map(([g,items])=><div key={g} className="historyGroup"><div className="historyLabel">{g}</div>{items.filter(c=>!selectedProject||c.projectId===selectedProject).map(c=><div className={cx("historyRow",currentId===c.id&&"active")} key={c.id}><button className="historyItem" onClick={()=>onSelect(c.id)} title={c.title}>{c.title||"Conversație"}</button><button className="historyDelete" title="Șterge conversația" onClick={e=>{e.stopPropagation();onDeleteConversation(c.id)}}><Trash2 size={14}/></button></div>)}</div>)}
+        </>:Object.entries(groups).map(([g,items])=><div key={g} className="historyGroup"><div className="historyLabel">{g}</div>{items.filter(c=>!selectedProject||c.projectId===selectedProject).map(c=><div className={cx("historyRow",currentId===c.id&&"active")} key={c.id}><button className="historyItem" onClick={()=>onSelect(c.id)} title={c.title}>{c.title||"Conversație"}</button>{showArchived&&<button className="historyDelete" title="Restaurează conversația" onClick={e=>{e.stopPropagation();onRestoreConversation(c.id)}}><RotateCcw size={14}/></button>}<button className="historyDelete" title="Șterge conversația" onClick={e=>{e.stopPropagation();onDeleteConversation(c.id)}}><Trash2 size={14}/></button></div>)}</div>)}
       </div>
     </div>
     <div className="accountArea"><div className="accountBadge"><div className="accountAvatar">{(user?.name||user?.email||"S")[0].toUpperCase()}</div><div className="accountText"><b>{user?.name||"Cont Stoica"}</b><span>{user?.email}</span></div></div><div className="accountButtons"><button onClick={onSettings}><Settings size={17}/> Setări</button><button onClick={onLogout}><LogOut size={17}/> Deconectare</button></div></div>
@@ -531,7 +525,7 @@ function MessageActions({message,onRegenerate,onRate}) {
     try{
       window.speechSynthesis.cancel();
       if(speaking){setSpeaking(false);return;}
-      const u=new SpeechSynthesisUtterance(text);u.lang="ro-RO";u.rate=1;u.onend=()=>setSpeaking(false);u.onerror=()=>setSpeaking(false);setSpeaking(true);window.speechSynthesis.speak(u);
+      const u=new SpeechSynthesisUtterance(text);u.lang=currentSpeechLanguage();u.rate=1;u.onend=()=>setSpeaking(false);u.onerror=()=>setSpeaking(false);setSpeaking(true);window.speechSynthesis.speak(u);
     }catch{setSpeaking(false)}
   }
   async function exp(format){try{await exportMessageFile(message,format)}catch(e){alert("Export: "+e.message)}}
@@ -672,7 +666,7 @@ function ConversationView({conversation,busy,busyStage,busySteps,onRegenerate,on
   </div>;
 }
 
-function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAttachments,onOpenLibrary,onToolPrompt,responseMode,setResponseMode}) {
+function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAttachments,onOpenLibrary,onToolPrompt,onGenerateMedia,permissions,user,responseMode,setResponseMode}) {
   const ta=useRef(null),fileInput=useRef(null),imageInput=useRef(null),videoInput=useRef(null),audioInput=useRef(null),recorderRef=useRef(null),streamRef=useRef(null),chunksRef=useRef([]);
   const [menu,setMenu]=useState(false),[recording,setRecording]=useState(false),[transcribing,setTranscribing]=useState(false),[uploading,setUploading]=useState(false),[mentions,setMentions]=useState([]);
   useEffect(()=>{if(ta.current){ta.current.style.height="0px";ta.current.style.height=Math.min(ta.current.scrollHeight,190)+"px"}},[draft]);
@@ -704,6 +698,7 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
   const mentionOptions=mentionMatch?mentions.filter(x=>x.name.toLowerCase().includes(mentionQuery)||x.trigger.toLowerCase().includes("@"+mentionQuery)).slice(0,8):[];
   function insertMention(x){setDraft(v=>v.replace(/@([^\s@]*)$/,(x.trigger||"@"+x.name)+" "));setTimeout(()=>ta.current?.focus(),0)}
   async function addComposerFiles(files){
+    if(user?.role!=="owner"&&permissions?.file_upload!==true){alert("Încărcarea de fișiere este dezactivată pentru acest cont.\n\nPas următor: cere Owner-ului să activeze permisiunea din Control Center.");return}
     if(!files?.length)return;
     setUploading(true);
     try{
@@ -744,7 +739,7 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
   async function fallbackSpeech(){
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
     if(!SR)throw new Error("Recunoașterea vocală nu este disponibilă.");
-    const r=new SR();r.lang="ro-RO";r.interimResults=false;
+    const r=new SR();r.lang=currentSpeechLanguage();r.interimResults=false;
     r.onresult=e=>setDraft(v=>(v?v+" ":"")+e.results[0][0].transcript);
     r.onerror=e=>alert("Microfon: "+(e.error||"eroare de recunoaștere"));
     r.start();
@@ -791,13 +786,15 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
         <input ref={audioInput} type="file" hidden multiple accept="audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/flac,audio/opus,.mp3,.m4a,.aac,.wav,.ogg,.flac,.opus" onChange={filesChosen}/>
         <div className="attachWrap"><button className="composerIcon" onClick={()=>setMenu(!menu)} title="Fișiere și unelte"><Plus size={21}/></button>{menu&&<div className="attachMenu">
   <button onClick={()=>{setMenu(false);onToolPrompt?.("Caută pe internet informații actuale despre ")}}><Globe2 size={16}/> Căutare web</button>
-  <button onClick={()=>{setMenu(false);onToolPrompt?.("Fă deep research, verifică mai multe surse și explică-mi complet: ")}}><Search size={16}/> Deep Research</button>
-  <button onClick={()=>{setMenu(false);onToolPrompt?.("Creează o imagine cu ")}}><ImageIcon size={16}/> Creează imagine</button>
+  {(user?.role==="owner"||permissions?.deep_research===true)&&<button onClick={()=>{setMenu(false);onToolPrompt?.("Fă deep research, verifică mai multe surse și explică-mi complet: ")}}><Search size={16}/> Deep Research</button>}
+  {(user?.role==="owner"||permissions?.image_generation===true)&&<button onClick={()=>{setMenu(false);onGenerateMedia?.("image")}}><ImageIcon size={16}/> Generează imagine</button>}
+  {(user?.role==="owner"||permissions?.video_generation===true)&&<button onClick={()=>{setMenu(false);onGenerateMedia?.("video")}}><Play size={16}/> Generează video</button>}
   <div className="menuDivider"/><button onClick={()=>fileInput.current?.click()}><Upload size={16}/> Încarcă orice fișier</button><button onClick={()=>{setMenu(false);onOpenLibrary()}}><Library size={16}/> Alege din Bibliotecă</button>
 </div>}</div>
         <div className="mediaQuickButtons">
-          <button className="composerIcon mediaQuick" onClick={()=>imageInput.current?.click()} title="Încarcă imagine"><ImageIcon size={19}/></button>
-          <button className="composerIcon mediaQuick" onClick={()=>videoInput.current?.click()} title="Încarcă video MP4 / MOV / WebM"><Play size={19}/></button>
+          <button className="composerIcon mediaQuick" onClick={()=>imageInput.current?.click()} title="Încarcă imagine"><Upload size={17}/><ImageIcon size={14}/></button>
+          {(user?.role==="owner"||permissions?.image_generation===true)&&<button className="composerIcon mediaQuick" onClick={()=>onGenerateMedia?.("image")} title="Generează imagine"><ImageIcon size={19}/></button>}
+          {(user?.role==="owner"||permissions?.video_generation===true)&&<button className="composerIcon mediaQuick" onClick={()=>onGenerateMedia?.("video")} title="Generează video"><Play size={19}/></button>}
           <button className="composerIcon mediaQuick" onClick={()=>audioInput.current?.click()} title="Încarcă audio MP3 / M4A / WAV / OGG"><Volume2 size={19}/></button>
         </div>
         <textarea ref={ta} value={draft} onChange={e=>setDraft(e.target.value)} onPaste={pasteIntoComposer} spellCheck={true} aria-label="Mesaj pentru AI Stoica" placeholder={uploading?"Încarc fișierul…":recording?"Ascult… apasă microfonul pentru oprire":transcribing?"Transcriu vocea…":"Mesaj pentru AI Stoica"} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!mentionOptions.length&&!busy){e.preventDefault();onSend()}}}/>
@@ -809,8 +806,10 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
     </div><div className="composerModeRow"><button className={cx("modeChip",responseMode==="rapid"&&"active")} onClick={()=>setResponseMode?.("rapid")}><Sparkles size={13}/> Rapid</button><button className={cx("modeChip",responseMode==="thinking"&&"active")} onClick={()=>setResponseMode?.("thinking")}><Brain size={13}/> Gândire</button></div><div className="composerHint">{uploading?"Fișierul se salvează în Biblioteca AI Stoica — fără limită software de dimensiune":recording?"Microfon activ — vorbește acum":transcribing?"AI Stoica transcrie înregistrarea…":"AI Stoica poate greși. Verifică informațiile importante."}</div></div>;
 }
 
+function useEscapeClose(onClose){useEffect(()=>{const h=e=>{if(e.key==="Escape")onClose?.()};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h)},[onClose])}
 function ToolShell({title,subtitle,onClose,children}) {
-  return <div className="modalBackdrop"><div className="toolModal"><div className="toolHead"><div><h2>{title}</h2><p>{subtitle}</p></div><button className="iconOnly" onClick={onClose}><X size={20}/></button></div>{children}</div></div>;
+  useEscapeClose(onClose);
+  return <div className="modalBackdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose?.()}}><div className="toolModal"><div className="toolHead"><div><h2>{title}</h2><p>{subtitle}</p></div><button className="iconOnly" onClick={onClose}><X size={20}/></button></div>{children}</div></div>;
 }
 
 function LibraryPanel({onClose,onAttach}) {
@@ -1415,6 +1414,7 @@ function ProviderTestBox() {
   </div>;
 }
 function FirstRunGuide({onDone,onOpenSettings}) {
+  useEscapeClose(()=>onDone(false));
   const [key,setKey]=useState(""),[status,setStatus]=useState(""),[busy,setBusy]=useState(false);
   async function openKeys(){try{await window.AIStoica.openExternal("https://aistudio.google.com/apikey")}catch{}}
   async function saveAndTest(){
@@ -1428,7 +1428,7 @@ function FirstRunGuide({onDone,onOpenSettings}) {
       else setStatus("Cheia nu a funcționat: "+(gem?.error||"verifică dacă ai copiat-o complet."));
     }catch(e){setStatus(e.message)}finally{setBusy(false)}
   }
-  return <div className="modalBackdrop"><div className="modal firstRun">
+  return <div className="modalBackdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onDone(false)}}><div className="modal firstRun">
     <div className="modalHead"><div><h2>Bun venit în AI Stoica</h2><p>3 pași, gratuit, fără card. Durează un minut.</p></div><button className="iconOnly" onClick={()=>onDone(false)} aria-label="Închide"><X size={20}/></button></div>
     <ol className="firstRunSteps">
       <li><b>Creează o cheie Gemini gratuită</b><span>Se deschide pagina Google. Apasă „Create API key” și copiaz-o.</span><button className="secondary" onClick={openKeys}>Deschide pagina Google</button></li>
@@ -1440,10 +1440,11 @@ function FirstRunGuide({onDone,onOpenSettings}) {
   </div></div>;
 }
 function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true}) {
+  useEscapeClose(onClose);
   const [cfg,setCfg]=useState(null),[key,setKey]=useState(""),[openAiKey,setOpenAiKey]=useState(""),[openRouterKey,setOpenRouterKey]=useState(""),[cerebrasKey,setCerebrasKey]=useState(""),[groqKey,setGroqKey]=useState(""),[geminiKey,setGeminiKey]=useState(""),[mistralKey,setMistralKey]=useState(""),[nvidiaKey,setNvidiaKey]=useState(""),[cohereKey,setCohereKey]=useState(""),[pollinationsKey,setPollinationsKey]=useState(""),[cloudflareToken,setCloudflareToken]=useState(""),[hfKey,setHfKey]=useState(""),[togetherKey,setTogetherKey]=useState(""),[stabilityKey,setStabilityKey]=useState(""),[replicateKey,setReplicateKey]=useState(""),[falKey,setFalKey]=useState(""),[githubKey,setGithubKey]=useState(""),[tab,setTab]=useState("general"),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState(""),[toolStatus,setToolStatus]=useState("");
   useEffect(()=>{Promise.all([window.AIStoica.getConfig(),window.AIStoica.systemStatus()]).then(([c,s])=>{setCfg(c);setStatus(s)})},[]);
   if(!cfg)return null;
-  async function save(){await window.AIStoica.setConfig({
+  async function save(){localStorage.setItem(SPEECH_LANGUAGE_KEY,cfg.speechLanguage||"ro");await window.AIStoica.setConfig({
     ...cfg,
     apiKey:key||cfg.apiKey,
     openAiApiKey:openAiKey||cfg.openAiApiKey,
@@ -1465,7 +1466,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true}) {
   });onSaved?.();onClose()}
   async function testMic(){setMicStatus("Se verifică…");try{const s=await navigator.mediaDevices.getUserMedia({audio:true});s.getTracks().forEach(t=>t.stop());setMicStatus("Microfon disponibil și permis ✓")}catch{setMicStatus("Microfon indisponibil sau fără permisiune")}}
   async function testServer(){setToolStatus("Testez conexiunea SSH…");try{const d=await api("/api/tools/server/check",{method:"POST",body:JSON.stringify({serverHost:cfg.serverHost,serverPort:cfg.serverPort,serverUser:cfg.serverUser,serverKeyPath:cfg.serverKeyPath})});setToolStatus(d?.output||"Server conectat ✓")}catch(e){setToolStatus("Server: "+e.message)}}
-  return <div className="modalBackdrop"><div className="settingsModal"><div className="modalHead"><div><h2>Setări AI Stoica</h2><p>Controlează aplicația, vocea, OmniRoute și actualizările.</p></div><button className="iconOnly" onClick={onClose}><X size={20}/></button></div>
+  return <div className="modalBackdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose?.()}}><div className="settingsModal"><div className="modalHead"><div><h2>Setări AI Stoica</h2><p>Controlează aplicația, vocea, OmniRoute și actualizările.</p></div><button className="iconOnly" onClick={onClose}><X size={20}/></button></div>
     <div className="settingsBody"><div className="settingsNav">
       <button className={tab==="general"?"active":""} onClick={()=>setTab("general")}><SlidersHorizontal size={17}/> General</button>
       {machineSettingsAllowed&&<button className={tab==="ai"?"active":""} onClick={()=>setTab("ai")}><Bot size={17}/> AI & OmniRoute</button>}
@@ -1626,8 +1627,9 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true}) {
 }
 
 function CreateModal({type,onClose,onCreate}) {
+  useEscapeClose(onClose);
   const [name,setName]=useState(""),[prompt,setPrompt]=useState(""),[instructions,setInstructions]=useState("");
-  return <div className="modalBackdrop"><div className="modal smallModal"><div className="modalHead"><h2>{type==="project"?"Proiect nou":"Asistent personalizat"}</h2><button className="iconOnly" onClick={onClose}><X size={20}/></button></div><label>Nume<input autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder={type==="project"?"Ex. Proiecte Primărie":"Ex. Profesor de matematică"}/></label>{type==="assistant"&&<label>Instrucțiuni pentru asistent<textarea className="promptArea" value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="Cum vrei să lucreze acest asistent?"/></label>}{type==="project"&&<label>Instrucțiuni comune proiectului <span className="optional">opțional</span><textarea className="promptArea" value={instructions} onChange={e=>setInstructions(e.target.value)} placeholder="Ex. Folosește documentele proiectului, păstrează ton administrativ și reține deciziile importante."/></label>}<div className="modalActions"><button className="secondary" onClick={onClose}>Anulează</button><button className="primary" disabled={!name.trim()} onClick={()=>onCreate({name:name.trim(),systemPrompt:prompt.trim(),instructions:instructions.trim()})}>Creează</button></div></div></div>;
+  return <div className="modalBackdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose?.()}}><div className="modal smallModal"><div className="modalHead"><h2>{type==="project"?"Proiect nou":"Asistent personalizat"}</h2><button className="iconOnly" onClick={onClose}><X size={20}/></button></div><label>Nume<input autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder={type==="project"?"Ex. Proiecte Primărie":"Ex. Profesor de matematică"}/></label>{type==="assistant"&&<label>Instrucțiuni pentru asistent<textarea className="promptArea" value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="Cum vrei să lucreze acest asistent?"/></label>}{type==="project"&&<label>Instrucțiuni comune proiectului <span className="optional">opțional</span><textarea className="promptArea" value={instructions} onChange={e=>setInstructions(e.target.value)} placeholder="Ex. Folosește documentele proiectului, păstrează ton administrativ și reține deciziile importante."/></label>}<div className="modalActions"><button className="secondary" onClick={onClose}>Anulează</button><button className="primary" disabled={!name.trim()} onClick={()=>onCreate({name:name.trim(),systemPrompt:prompt.trim(),instructions:instructions.trim()})}>Creează</button></div></div></div>;
 }
 
 function App() {
@@ -1637,7 +1639,7 @@ function App() {
   const initialManualModel=useMemo(()=>localStorage.getItem(MANUAL_MODEL_KEY)||localStorage.getItem(MODEL_SELECTED_KEY)||initialModels.find(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x))||"",[initialModels]);
   const [currentId,setCurrentId]=useState(null),[model,setModel]=useState(initialManualModel),[selectedProject,setSelectedProject]=useState(null),[selectedAssistant,setSelectedAssistant]=useState(null);
   const [draft,setDraft]=useState(""),[attachments,setAttachments]=useState([]),[responseMode,setResponseMode]=useState(()=>localStorage.getItem("ai-stoica-response-mode")||"rapid"),[busy,setBusy]=useState(false),[busyStage,setBusyStage]=useState(""),[busySteps,setBusySteps]=useState([]),[search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[omni,setOmni]=useState(false),[refreshingModels,setRefreshingModels]=useState(false),[modelPolicyEnforced,setModelPolicyEnforced]=useState(false),[showJumpBottom,setShowJumpBottom]=useState(false);
-  const [settings,setSettings]=useState(false),[createType,setCreateType]=useState(null),[toolPanel,setToolPanel]=useState(null),[filesPanel,setFilesPanel]=useState(false),[updateReady,setUpdateReady]=useState(false),[sidebarCollapsed,setSidebarCollapsed]=useState(false),[lastGithubBackup,setLastGithubBackup]=useState(()=>{try{return JSON.parse(localStorage.getItem("ai-stoica-last-github-backup")||"null")}catch{return null}});
+  const [settings,setSettings]=useState(false),[createType,setCreateType]=useState(null),[toolPanel,setToolPanel]=useState(null),[filesPanel,setFilesPanel]=useState(false),[updateReady,setUpdateReady]=useState(false),[sidebarCollapsed,setSidebarCollapsed]=useState(false),[permissions,setPermissions]=useState({}),[lastGithubBackup,setLastGithubBackup]=useState(()=>{try{return JSON.parse(localStorage.getItem("ai-stoica-last-github-backup")||"null")}catch{return null}});
   const chatRef=useRef(null);
   const stickToBottomRef=useRef(true);
   const activeGenerationRef=useRef(null);
@@ -1655,8 +1657,8 @@ function App() {
       const live=uniqueModels((ms.manualModels||ms.data||[]).map(x=>typeof x==="string"?x:x?.id)).filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x));
       const enforced=ms.policyEnforced===true;
       setModelPolicyEnforced(enforced);
-      const previous=cachedModels().filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x));
-      const merged=uniqueModels([...live,...previous,model]).filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x));
+      const previous=enforced?[]:cachedModels().filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x));
+      const merged=(enforced?uniqueModels(live):uniqueModels([...live,...previous,model])).filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x));
       setModels(merged);
       localStorage.setItem(MODEL_CACHE_KEY,JSON.stringify(merged));
       if(enforced){
@@ -1691,13 +1693,13 @@ function App() {
     if(!localStorage.getItem(TOKEN_KEY)){setBoot(false);return}
     try{
       const [me,cs,ps,as,ms]=await Promise.all([api("/auth/me"),api("/api/conversations"),api("/api/projects"),api("/api/assistants"),api("/api/models").catch(()=>({data:[],policyEnforced:true}))]);
-      if(me.token)localStorage.setItem(TOKEN_KEY,me.token);setUser(me.user);localStorage.setItem(USER_KEY,JSON.stringify(me.user));setConversations(cs.data||[]);setProjects(ps.data||[]);setAssistants(as.data||[]);
+      if(me.token)localStorage.setItem(TOKEN_KEY,me.token);setUser(me.user);setPermissions(me.permissions||{});localStorage.setItem(USER_KEY,JSON.stringify(me.user));setConversations(cs.data||[]);setProjects(ps.data||[]);setAssistants(as.data||[]);
       const ids=uniqueModels((ms.manualModels||ms.data||[]).map(x=>typeof x==="string"?x:x?.id)).filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x));
-      const prior=cachedModels().filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x));
       const remembered=localStorage.getItem(MODEL_SELECTED_KEY)||"";
       const enforced=ms.policyEnforced===true;
+      const prior=enforced?[]:cachedModels().filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x));
       setModelPolicyEnforced(enforced);
-      const merged=uniqueModels([...ids,...prior,remembered]).filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x));
+      const merged=(enforced?uniqueModels(ids):uniqueModels([...ids,...prior,remembered])).filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x));
       setModels(merged);localStorage.setItem(MODEL_CACHE_KEY,JSON.stringify(merged));
       const manualCandidates=merged.filter(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x));
       const rememberedManual=localStorage.getItem(MANUAL_MODEL_KEY)||remembered;
@@ -1714,7 +1716,7 @@ function App() {
     (async()=>{
       try{
         const cfg=await window.AIStoica?.getConfig?.();
-        if(cfg?.gatewayUrl)setGatewayUrl(cfg.gatewayUrl);
+        if(cfg?.gatewayUrl)setGatewayUrl(cfg.gatewayUrl);if(cfg?.speechLanguage)localStorage.setItem(SPEECH_LANGUAGE_KEY,cfg.speechLanguage);
       }catch{}
       if(active)await loadData();
     })();
@@ -1772,8 +1774,9 @@ function App() {
     if(!modelPolicyEnforced)setModels(v=>uniqueModels([current.model,...v]));
   },[currentId,modelPolicyEnforced,models.join("|")]);
 
-  function logout(){activeGenerationRef.current?.abort?.();localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(USER_KEY);setUser(null);setConversations([]);setCurrentId(null)}
-  function newConversation(){activeGenerationRef.current?.abort?.();setBusy(false);setBusyStage("");setCurrentId(null);setDraft("");setAttachments([]);setSidebar(false)}
+  function logout(){activeGenerationRef.current?.abort?.();for(const k of [TOKEN_KEY,USER_KEY,MODEL_CACHE_KEY,MODEL_SELECTED_KEY,MANUAL_MODEL_KEY])localStorage.removeItem(k);setUser(null);setPermissions({});setConversations([]);setProjects([]);setAssistants([]);setModels([]);setModel("");setCurrentId(null);setSelectedProject(null);setSelectedAssistant(null);setDraft("");setAttachments([]);setBusy(false);setBusyStage("");setToolPanel(null)}
+  function selectConversation(id){try{activeGenerationRef.current?.abort?.()}catch{}setBusy(false);setBusyStage("");setBusySteps([]);setCurrentId(id);setSidebar(false)}
+  function newConversation(){activeGenerationRef.current?.abort?.();setBusy(false);setBusyStage("");setBusySteps([]);setCurrentId(null);setDraft("");setAttachments([]);setSidebar(false)}
   function startGeneration(){
     try{activeGenerationRef.current?.abort?.()}catch{}
     const controller=new AbortController();
@@ -1792,12 +1795,11 @@ function App() {
   async function streamAssistant(baseConv,messages){
     const lastUser=[...messages].reverse().find(m=>m.role==="user");
     const requestedFormat=requestedDocumentFormat(messageText(lastUser));
-    const fileMode=!!requestedFormat;
     const desiredModel=String(baseConv.model||model||"").trim();
     const manualModel=modelPolicyEnforced?(models.includes(desiredModel)?desiredModel:(models.includes(model)?model:(models.find(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x))||""))):desiredModel;
     const effectiveModel=manualModel;
     const controller=startGeneration();let answer="",routeInfo=null,startedAnswer=false;
-    setBusySteps([]);setBusy(true);setBusyStage("Analizează cererea și identifică tipul sarcinii…");const assistantMessage={id:uid(),role:"assistant",content:"",attachmentOnly:fileMode,createdAt:Date.now(),streaming:true};let working={...baseConv,model:manualModel||baseConv.model||model,messages:[...messages,assistantMessage],updatedAt:Date.now()};setConversations(v=>v.map(x=>x.id===working.id?working:x));
+    setBusySteps([]);setBusy(true);setBusyStage("Analizează cererea și identifică tipul sarcinii…");const assistantMessage={id:uid(),role:"assistant",content:"",attachmentOnly:false,createdAt:Date.now(),streaming:true};let working={...baseConv,model:manualModel||baseConv.model||model,messages:[...messages,assistantMessage],updatedAt:Date.now()};setConversations(v=>v.map(x=>x.id===working.id?working:x));
     try{
       if(!effectiveModel&&user?.role!=="owner"&&cloudConfigured)throw new Error("Nu există niciun model AI permis pentru acest cont.");
       // OmniRoute is started in the background; when it is not available the free direct APIs answer, so the message is not delayed.
@@ -1815,14 +1817,14 @@ function App() {
         if(j?.ai_stoica_route){
           routeInfo=j.ai_stoica_route;
           setBusyStage(`A ales ${providerLabel(routeInfo.provider,routeInfo.model)} · ${routeInfo.model} pentru ${routeTaskLabel(routeInfo.task)}…`);
-          working={...working,messages:[...messages,{...assistantMessage,routeInfo,content:fileMode?"":answer,streaming:true}]};
+          working={...working,messages:[...messages,{...assistantMessage,routeInfo,content:answer,streaming:true}]};
           setConversations(v=>v.map(x=>x.id===working.id?working:x));
           continue;
         }
         const delta=j?.choices?.[0]?.delta?.content||j?.choices?.[0]?.message?.content||"";
         if(delta){
           if(!startedAnswer){startedAnswer=true;setBusyStage("Gândește și generează răspunsul…")}
-          answer+=delta;working={...working,messages:[...messages,{...assistantMessage,routeInfo,content:fileMode?"":answer,streaming:true}]};setConversations(v=>v.map(x=>x.id===working.id?working:x))
+          answer+=delta;working={...working,messages:[...messages,{...assistantMessage,routeInfo,content:answer,streaming:true}]};setConversations(v=>v.map(x=>x.id===working.id?working:x))
         }
       }catch{}}}
       if(streamError&&!answer)throw new Error(streamError);
@@ -1846,12 +1848,11 @@ function App() {
           exportProblem=`\n\n_Fișierul ${requestedFormat.toUpperCase()} nu a putut fi creat: ${exportError.message}. Poți încerca din nou din butoanele de sub răspuns._`;
         }
       }
-      const attachmentOnly=!!requestedFormat&&generatedAttachments.length>0;
-      working={...working,messages:[...messages,{...assistantMessage,routeInfo,content:attachmentOnly?"":((answer||"Nu am primit răspuns.")+exportProblem),artifactSource:attachmentOnly?answer:undefined,attachments:generatedAttachments,attachmentOnly,streaming:false}],updatedAt:Date.now()};const saved=await saveConversation(working);
+      working={...working,messages:[...messages,{...assistantMessage,routeInfo,content:(answer||"Nu am primit răspuns.")+exportProblem,artifactSource:answer||undefined,attachments:generatedAttachments,attachmentOnly:false,streaming:false}],updatedAt:Date.now()};const saved=await saveConversation(working);
       api("/api/memory/capture",{method:"POST",body:JSON.stringify({conversationId:saved.id,userText:messageText(lastUser),assistantText:answer})}).catch(()=>{});
     }catch(e){
       if(controller.signal.aborted||e?.name==="AbortError"){
-        working={...working,messages:[...messages,{...assistantMessage,routeInfo,content:fileMode?"":answer,streaming:false,stopped:true}],updatedAt:Date.now()};
+        working={...working,messages:[...messages,{...assistantMessage,routeInfo,content:answer,streaming:false,stopped:true}],updatedAt:Date.now()};
         await saveConversation(working);
       }else{
         working={...working,messages:[...messages,{...assistantMessage,content:`Eroare: ${e.message}`,streaming:false}],updatedAt:Date.now()};await saveConversation(working);
@@ -1885,18 +1886,26 @@ function App() {
   async function send(){
     const text=draft.trim(),usable=attachments.filter(a=>a.part||a.parts?.length);if((!text&&!usable.length)||busy)return;
     const attachmentParts=usable.flatMap(a=>Array.isArray(a.parts)&&a.parts.length?a.parts:[a.part].filter(Boolean));
-    const parts=[...(text?[{type:"text",text}]:[]),...attachmentParts],content=parts.length===1&&parts[0].type==="text"?parts[0].text:parts;
-    const userMsg={id:uid(),role:"user",content,displayText:text||"Fișier media atașat",attachments:attachments.map(a=>({name:a.name,type:a.type,mime:a.mime||"",size:a.size||0,libraryId:a.libraryId||null,transcript:a.transcript||""})),createdAt:Date.now()};
+    const parts=[...(text?[{type:"text",text}]:[]),...attachmentParts],runtimeContent=parts.length===1&&parts[0].type==="text"?parts[0].text:parts;
+    const attachmentMeta=attachments.map(a=>({name:a.name,type:a.type,mime:a.mime||"",size:a.size||0,libraryId:a.libraryId||null,transcript:a.transcript||""}));
+    const runtimeUserMsg={id:uid(),role:"user",content:runtimeContent,displayText:text||"Fișier media atașat",attachments:attachmentMeta,createdAt:Date.now()};
+    const storedUserMsg={...runtimeUserMsg,content:text||"Fișier media atașat"};
     let conv=current?{...current}:{title:titleFrom(text||attachments[0]?.name),projectId:selectedProject,assistantId:selectedAssistant,model,messages:[]};
-    conv={...conv,title:conv.messages?.length?conv.title:titleFrom(text||attachments[0]?.name),projectId:conv.projectId??selectedProject,assistantId:conv.assistantId??selectedAssistant,model,messages:[...(conv.messages||[]),userMsg],updatedAt:Date.now()};
-    const previousDraft=draft,previousAttachments=attachments;
-    setDraft("");setAttachments([]);
-    let saved;
-    try{saved=await saveConversation(conv)}
-    catch(e){setDraft(previousDraft);setAttachments(previousAttachments);throw e}
-    const mediaIntent=attachments.length===0?requestedMediaGeneration(text):null;
-    if(mediaIntent)await generateMediaAssistant(saved,saved.messages,mediaIntent,text);
-    else await streamAssistant(saved,saved.messages);
+    conv={...conv,title:conv.messages?.length?conv.title:titleFrom(text||attachments[0]?.name),projectId:conv.projectId??selectedProject,assistantId:conv.assistantId??selectedAssistant,model,messages:[...(conv.messages||[]),storedUserMsg],updatedAt:Date.now()};
+    const previousDraft=draft,previousAttachments=attachments;setDraft("");setAttachments([]);
+    let saved;try{saved=await saveConversation(conv)}catch(e){setDraft(previousDraft);setAttachments(previousAttachments);throw e}
+    const runtimeMessages=[...(saved.messages||[]).slice(0,-1),runtimeUserMsg];
+    await streamAssistant(saved,runtimeMessages);
+  }
+  async function generateExplicitMedia(kind){
+    if(busy)return;
+    const prompt=draft.trim();if(!prompt){alert(kind==="video"?"Scrie descrierea videoclipului în caseta de mesaj.":"Scrie descrierea imaginii în caseta de mesaj.");return}
+    if(user?.role!=="owner"&&permissions?.[kind==="video"?"video_generation":"image_generation"]!==true){alert(`Generarea ${kind==="video"?"video":"de imagini"} este dezactivată pentru acest cont.\n\nPas următor: cere Owner-ului să activeze permisiunea.`);return}
+    const userText=`Generează ${kind==="video"?"un videoclip":"o imagine"}: ${prompt}`;
+    const userMsg={id:uid(),role:"user",content:userText,displayText:userText,attachments:[],createdAt:Date.now()};
+    let conv=current?{...current}:{title:titleFrom(userText),projectId:selectedProject,assistantId:selectedAssistant,model,messages:[]};
+    conv={...conv,title:conv.messages?.length?conv.title:titleFrom(userText),projectId:conv.projectId??selectedProject,assistantId:conv.assistantId??selectedAssistant,model,messages:[...(conv.messages||[]),userMsg],updatedAt:Date.now()};
+    setDraft("");const saved=await saveConversation(conv);await generateMediaAssistant(saved,saved.messages,kind,prompt);
   }
   async function regenerate(index){if(busy||!current)return;const msgs=current.messages.slice(0,index),saved=await saveConversation({...current,messages:msgs});await streamAssistant(saved,msgs)}
   async function rate(index,value){if(!current)return;const msgs=current.messages.map((m,i)=>i===index?{...m,rating:m.rating===value?0:value}:m);await saveConversation({...current,messages:msgs})}
@@ -1941,28 +1950,33 @@ function App() {
   function attachFromLibrary(a){setAttachments(v=>[...v,a])}
   async function moveCurrent(projectId){if(!current)return;const saved=await saveConversation({...current,projectId});setSelectedProject(projectId);return saved}
   async function archiveCurrent(){if(!current)return;await saveConversation({...current,archived:true});setCurrentId(null)}
+  async function restoreConversation(id){const conv=conversations.find(x=>x.id===id);if(!conv)return;await saveConversation({...conv,archived:false})}
+  async function renameProject(p){const name=prompt("Noul nume al proiectului:",p.name||"");if(!name?.trim())return;const d=await api(`/api/projects/${p.id}`,{method:"PATCH",body:JSON.stringify({name:name.trim()})});setProjects(v=>v.map(x=>x.id===p.id?d.data:x))}
+  async function deleteProject(p){if(!confirm(`Ștergi proiectul „${p.name}”? Conversațiile rămân, dar sunt scoase din proiect.`))return;await api(`/api/projects/${p.id}`,{method:"DELETE"});setProjects(v=>v.filter(x=>x.id!==p.id));setConversations(v=>v.map(c=>c.projectId===p.id?{...c,projectId:null}:c));if(selectedProject===p.id)setSelectedProject(null)}
+  async function renameAssistant(a){const name=prompt("Noul nume al asistentului:",a.name||"");if(!name?.trim())return;const d=await api(`/api/assistants/${a.id}`,{method:"PATCH",body:JSON.stringify({name:name.trim()})});setAssistants(v=>v.map(x=>x.id===a.id?d.data:x))}
+  async function deleteAssistant(a){if(!confirm(`Ștergi asistentul „${a.name}”?`))return;await api(`/api/assistants/${a.id}`,{method:"DELETE"});setAssistants(v=>v.filter(x=>x.id!==a.id));setConversations(v=>v.map(c=>c.assistantId===a.id?{...c,assistantId:null}:c));if(selectedAssistant===a.id)setSelectedAssistant(assistants.find(x=>x.builtIn)?.id||null)}
   async function deleteConversation(id){const conv=conversations.find(x=>x.id===id);if(!conv)return;if(!confirm(`Ștergi definitiv conversația „${conv.title||"Conversație"}”?`))return;await api(`/api/conversations/${id}`,{method:"DELETE"});setConversations(v=>v.filter(x=>x.id!==id));if(currentId===id)setCurrentId(null)}
   async function deleteCurrent(){if(current)await deleteConversation(current.id)}
   function toggleMenu(){if(window.innerWidth<=900)setSidebar(v=>!v);else setSidebarCollapsed(v=>!v)}
-  function useAssistant(id){setSelectedAssistant(id);setCurrentId(null);setDraft("");setToolPanel(null)}
+  function useAssistant(id){try{activeGenerationRef.current?.abort?.()}catch{}setBusy(false);setBusyStage("");setSelectedAssistant(id);setCurrentId(null);setDraft("");setToolPanel(null)}
   function startImagePrompt(){setCurrentId(null);setDraft("Creează o imagine cu ");setToolPanel(null)}
 
   if(boot)return <div className="loadingScreen"><BrandMark/><span>Se pornește AI Stoica…</span></div>;
   if(!user)return <AuthScreen onAuth={setUser}/>;
   const hasMessages=!!current?.messages?.length;
   return <div className={cx("appShell",sidebarCollapsed&&"sidebarCollapsed")}>
-    <Sidebar open={sidebar} setOpen={setSidebar} user={user} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} onSelect={id=>{setCurrentId(id);setSidebar(false)}} onDeleteConversation={deleteConversation} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} selectedAssistant={selectedAssistant} setSelectedAssistant={setSelectedAssistant} onNewProject={()=>setCreateType("project")} onNewAssistant={()=>setCreateType("assistant")} onTool={openTool} onExplore={()=>openTool("explore")} onSettings={()=>setSettings(true)} onLogout={logout}/>
+    <Sidebar open={sidebar} setOpen={setSidebar} user={user} permissions={permissions} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} onSelect={selectConversation} onDeleteConversation={deleteConversation} onRestoreConversation={restoreConversation} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} selectedAssistant={selectedAssistant} setSelectedAssistant={setSelectedAssistant} onNewProject={()=>setCreateType("project")} onNewAssistant={()=>setCreateType("assistant")} onRenameProject={renameProject} onDeleteProject={deleteProject} onRenameAssistant={renameAssistant} onDeleteAssistant={deleteAssistant} onTool={openTool} onExplore={()=>openTool("explore")} onSettings={()=>setSettings(true)} onLogout={logout}/>
     {sidebar&&<div className="mobileScrim" onClick={()=>setSidebar(false)}/>}
-    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onGitHubRollback={githubRollback} hasGitHubBackup={!!lastGithubBackup} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef} onScroll={updateChatScrollState}><ConversationView conversation={current} busy={busy} busyStage={busyStage} busySteps={busySteps} onRegenerate={regenerate} onRate={rate} canRunCode={user?.role==="owner"} onCodeResult={text=>setDraft(v=>(v?v+"\n\n":"")+text)}/></div>{showJumpBottom&&hasMessages&&<button className="jumpToLatest" onClick={()=>jumpToLatest({smooth:true})} title="Mergi la ultimul mesaj" aria-label="Mergi la ultimul mesaj"><ChevronDown size={19}/><span>Ultimul mesaj</span></button>}<Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} onStop={stopGeneration} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")} onToolPrompt={text=>{setDraft(text);setTimeout(()=>document.querySelector(".composerLine textarea")?.focus(),0)}} responseMode={responseMode} setResponseMode={m=>{setResponseMode(m);localStorage.setItem("ai-stoica-response-mode",m)}}/></main>
+    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onGitHubRollback={githubRollback} hasGitHubBackup={!!lastGithubBackup} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef} onScroll={updateChatScrollState}><ConversationView conversation={current} busy={busy} busyStage={busyStage} busySteps={busySteps} onRegenerate={regenerate} onRate={rate} canRunCode={user?.role==="owner"} onCodeResult={text=>setDraft(v=>(v?v+"\n\n":"")+text)}/></div>{showJumpBottom&&hasMessages&&<button className="jumpToLatest" onClick={()=>jumpToLatest({smooth:true})} title="Mergi la ultimul mesaj" aria-label="Mergi la ultimul mesaj"><ChevronDown size={19}/><span>Ultimul mesaj</span></button>}<Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} onStop={stopGeneration} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")} onToolPrompt={text=>{setDraft(text);setTimeout(()=>document.querySelector(".composerLine textarea")?.focus(),0)}} onGenerateMedia={generateExplicitMedia} permissions={permissions} user={user} responseMode={responseMode} setResponseMode={m=>{setResponseMode(m);localStorage.setItem("ai-stoica-response-mode",m)}}/></main>
     {settings&&<SettingsModal user={user} machineSettingsAllowed={user?.role==="owner"||!cloudConfigured} onClose={()=>setSettings(false)} onSaved={()=>{window.AIStoica.ensureOmni();setTimeout(loadData,1000)}}/>}
     {createType&&<CreateModal type={createType} onClose={()=>setCreateType(null)} onCreate={createItem}/>}
     {toolPanel==="explore"&&<ExplorePanel onClose={()=>setToolPanel(null)} assistants={assistants} models={models} onUseAssistant={useAssistant} onImagePrompt={startImagePrompt} onOpenLibrary={()=>setToolPanel("library")}/>} 
     {toolPanel==="library"&&<LibraryPanel onClose={()=>setToolPanel(null)} onAttach={attachFromLibrary}/>} 
     {toolPanel==="memory"&&<MemoryPanel onClose={()=>setToolPanel(null)}/>}
     {toolPanel==="admin"&&user?.role==="owner"&&<AdminPanel onClose={()=>setToolPanel(null)}/>}
-    {toolPanel==="plugins"&&<PluginsPanel onClose={()=>setToolPanel(null)}/>} 
+    {toolPanel==="plugins"&&(user?.role==="owner"||permissions?.plugins===true)&&<PluginsPanel onClose={()=>setToolPanel(null)}/>} 
     {filesPanel&&<ConversationFilesPanel conversation={current} onClose={()=>setFilesPanel(false)}/>}
-    {toolPanel==="automations"&&<AutomationsPanel onClose={()=>setToolPanel(null)} model={model}/>}
+    {toolPanel==="automations"&&(user?.role==="owner"||permissions?.automations===true)&&<AutomationsPanel onClose={()=>setToolPanel(null)} model={model}/>}
     {showFirstRun&&<FirstRunGuide onOpenSettings={()=>{finishFirstRun();setSettings(true)}} onDone={(ok)=>{finishFirstRun();if(ok)refreshModels()}}/>}
   </div>;
 }

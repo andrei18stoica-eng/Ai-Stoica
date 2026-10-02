@@ -31,7 +31,8 @@
     "docx": "^9.8.0",
     "pdf-lib": "^1.17.1",
     "pptxgenjs": "^4.0.1",
-    "jszip": "^3.10.1"
+    "jszip": "^3.10.1",
+    "mdb-reader": "^3.2.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
