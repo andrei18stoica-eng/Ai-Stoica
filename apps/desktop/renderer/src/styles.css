@@ -468,3 +468,10 @@
   .memorySummary{grid-template-columns:1fr 1fr 1fr}
 }
 \n\n/* v0.6.15 — keep composer writable while generating + visible Stop control */\n.stopButton{background:#f1f1f1;color:#111;cursor:pointer}\n.stopButton:hover{background:#fff}\n.stopButton svg{width:15px;height:15px}\n.composerLine textarea:not(:disabled){pointer-events:auto;user-select:text}\n
+
+/* AI Stoica 0.7.1 — ChatGPT-inspired response modes and tool composer */
+.composerModeRow{display:flex;gap:6px;align-items:center;padding:4px 10px 0}
+.modeChip{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(255,255,255,.10);background:transparent;color:var(--muted,#9aa4b2);border-radius:999px;padding:5px 9px;font-size:11px;cursor:pointer}
+.modeChip:hover{background:rgba(255,255,255,.05);color:var(--text,#eef4ff)}
+.modeChip.active{background:rgba(255,255,255,.10);color:var(--text,#eef4ff);border-color:rgba(255,255,255,.18)}
+.attachMenu .menuDivider{height:1px;background:rgba(255,255,255,.08);margin:5px 0}
