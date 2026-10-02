@@ -1422,7 +1422,7 @@ function SettingsModal({onClose,onSaved,user}) {
     <div className="settingsBody"><div className="settingsNav">
       <button className={tab==="general"?"active":""} onClick={()=>setTab("general")}><SlidersHorizontal size={17}/> General</button>
       <button className={tab==="ai"?"active":""} onClick={()=>setTab("ai")}><Bot size={17}/> AI & OmniRoute</button>
-      <button className={tab==="chatapis"?"active":""} onClick={()=>setTab("chatapis")}><PlugZap size={17}/> API-uri AI</button>
+      <button className={tab==="chatapis"?"active":""} onClick={()=>setTab("chatapis")}><Plug size={17}/> API-uri AI</button>
       <button className={tab==="images"?"active":""} onClick={()=>setTab("images")}><ImageIcon size={17}/> Poze</button>
       <button className={tab==="voice"?"active":""} onClick={()=>setTab("voice")}><Volume2 size={17}/> Voce și microfon</button>
       <button className={tab==="account"?"active":""} onClick={()=>setTab("account")}><User size={17}/> Cont și date</button>
@@ -1444,7 +1444,7 @@ function SettingsModal({onClose,onSaved,user}) {
         <button type="button" className="secondary testMicBtn" onClick={testServer}>Testează serverul</button>{toolStatus&&<div className="micStatus">{toolStatus}</div>}
       </details>
       <p className="settingsHelp">Când ceri o poză sau un videoclip, AI Stoica trebuie să returneze fișierul real în chat cu buton Download. Nu mai înlocuiește o generare eșuată cu SVG sau cu un răspuns text.</p><label>Comandă OmniRoute<input value={cfg.omniCommand||"omniroute.cmd"} onChange={e=>setCfg({...cfg,omniCommand:e.target.value})}/></label><div className="toggleRow"><div><b>Pornește OmniRoute automat</b><span>Dacă serviciul cade, AI Stoica încearcă să îl repornească.</span></div><input type="checkbox" checked={!!cfg.autoStartOmniRoute} onChange={e=>setCfg({...cfg,autoStartOmniRoute:e.target.checked})}/></div><div className="statusGrid"><div><span>Gateway local</span><b>{status?.gatewayRunning?"Conectat":"Indisponibil"}</b></div><div><span>OmniRoute</span><b>{status?.omniRunning?"Conectat":"Indisponibil"}</b></div></div></>}
-      {tab==="chatapis"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><PlugZap size={22}/></div><div><h3>API-uri AI</h3><p>Fallback direct pentru chat când OmniRoute nu răspunde.</p></div></div>
+      {tab==="chatapis"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><Plug size={22}/></div><div><h3>API-uri AI</h3><p>Fallback direct pentru chat când OmniRoute nu răspunde.</p></div></div>
         <div className="toggleRow"><div><b>Fallback direct pe API-uri</b><span>Owner-ul poate continua conversația direct prin providerii configurați dacă OmniRoute e indisponibil.</span></div><input type="checkbox" checked={cfg.directChatEnabled!==false} onChange={e=>setCfg({...cfg,directChatEnabled:e.target.checked})}/></div>
         <label>Protecție costuri<select value={cfg.directChatCostPolicy||"free_only"} onChange={e=>setCfg({...cfg,directChatCostPolicy:e.target.value})}><option value="free_only">Doar provideri fără cost direct</option><option value="allow_paid">Permite și OpenAI</option></select></label>
         <label>Ordine fallback<input value={cfg.directChatProviderOrder||"cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai"} onChange={e=>setCfg({...cfg,directChatProviderOrder:e.target.value})}/></label>
@@ -1717,7 +1717,7 @@ function App() {
     const controller=startGeneration();let answer="",routeInfo=null,startedAnswer=false;
     setBusySteps([]);setBusy(true);setBusyStage("Analizează cererea și identifică tipul sarcinii…");const assistantMessage={id:uid(),role:"assistant",content:"",attachmentOnly:fileMode,createdAt:Date.now(),streaming:true};let working={...baseConv,model:manualModel||baseConv.model||model,messages:[...messages,assistantMessage],updatedAt:Date.now()};setConversations(v=>v.map(x=>x.id===working.id?working:x));
     try{
-      if(!effectiveModel)throw new Error("Nu există niciun model AI permis pentru acest cont.");
+      if(!effectiveModel&&user?.role!=="owner")throw new Error("Nu există niciun model AI permis pentru acest cont.");
       if(!omni){setBusyStage("Pornește și verifică OmniRoute…");await window.AIStoica.ensureOmni();await new Promise(r=>setTimeout(r,1200))}
       if(controller.signal.aborted)throw new DOMException("Oprit de utilizator","AbortError");
       setBusyStage("Verifică memoria, fișierele și contextul relevant…");
