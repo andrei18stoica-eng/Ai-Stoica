@@ -1,4 +1,5 @@
 name: Validate desktop audit fixes
+# retry after JSX fix
 on:
   push:
     branches:
