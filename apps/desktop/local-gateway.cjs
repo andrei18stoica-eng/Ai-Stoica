@@ -99,13 +99,40 @@ function memoryMatches(db, userId, query, limit = 10) {
     .slice(0, limit)
     .map((x) => x.m);
 }
+function normalizeMemoryText(value){
+  return String(value||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim();
+}
+function memoryCategory(text){
+  const t=normalizeMemoryText(text);
+  if(/prefer|imi place|nu vreau|vreau sa fie|stil|format/.test(t))return "preferință";
+  if(/proiect|lucrez|aplicatie|site|firma|primarie|scoala/.test(t))return "proiect";
+  if(/am decis|decizie|ramane|aleg|folosim|vom folosi/.test(t))return "decizie";
+  return "detaliu";
+}
+function durableMemoryCandidate(userText){
+  const clean=String(userText||"").trim();
+  if(clean.length<12)return "";
+  const t=normalizeMemoryText(clean);
+  const explicit=/tine minte|retine|remember|sa nu uiti/.test(t);
+  const durable=/\b(prefer|vreau|nu vreau|folosesc|am decis|lucrez|proiect|obiectiv|format|program|domeniu|server|model|masina|liceu|clasa|firma|primarie)\b/.test(t);
+  if(!explicit&&!durable)return "";
+  return clean.slice(0,1800);
+}
 function addMemory(db, userId, text, source = "conversation", extra = {}) {
   const clean = String(text || "").trim();
   if (!clean) return null;
+  const normalized=normalizeMemoryText(clean);
+  const existing=db.memories.find(m=>m.userId===userId&&normalizeMemoryText(m.text)===normalized);
+  if(existing){
+    existing.updatedAt=Date.now();
+    if(extra.pinned)existing.pinned=true;
+    return existing;
+  }
   const item = {
     id: crypto.randomUUID(), userId, text: clean.slice(0, 12000), source,
+    category:extra.category||memoryCategory(clean),
     pinned: !!extra.pinned, conversationId: extra.conversationId || null,
-    createdAt: Date.now()
+    createdAt: Date.now(),updatedAt:Date.now()
   };
   db.memories.push(item);
   return item;
@@ -832,17 +859,26 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
   app.post("/api/memory/capture", auth, (req,res) => {
     const db=store.read(),user=db.users.find(u=>u.id===req.user.id);if(user?.memoryEnabled===false)return res.json({ok:true,stored:false});
-    const userText=String(req.body?.userText||"").trim(),assistantText=String(req.body?.assistantText||"").trim();
-    const text=[userText&&`Utilizator: ${userText}`,assistantText&&`AI Stoica: ${assistantText}`].filter(Boolean).join("\n");
-    const item=addMemory(db,req.user.id,text,"conversation",{conversationId:req.body?.conversationId||null});if(item)store.write(db);res.json({ok:true,stored:!!item,data:item});
+    const userText=String(req.body?.userText||"").trim();
+    const candidate=durableMemoryCandidate(userText);
+    if(!candidate)return res.json({ok:true,stored:false});
+    const item=addMemory(db,req.user.id,candidate,"automatic",{conversationId:req.body?.conversationId||null,category:memoryCategory(candidate)});
+    if(item)store.write(db);res.json({ok:true,stored:!!item,data:item});
+  });
+  app.get("/api/memory/summary", auth, (req,res) => {
+    const db=store.read(),all=db.memories.filter(m=>m.userId===req.user.id);
+    const pinned=all.filter(m=>m.pinned);
+    const recent=[...all].sort((a,b)=>(b.updatedAt||b.createdAt)-(a.updatedAt||a.createdAt)).slice(0,12);
+    const categories={};for(const m of all)categories[m.category||"detaliu"]=(categories[m.category||"detaliu"]||0)+1;
+    res.json({data:{count:all.length,pinned:pinned.length,categories,recent:recent.map(m=>({id:m.id,text:m.text,category:m.category||"detaliu",pinned:!!m.pinned,updatedAt:m.updatedAt||m.createdAt}))}});
   });
   app.post("/api/memory/import-history", auth, (req,res) => {
     const db=store.read();let count=0;
     for(const c of db.conversations.filter(x=>x.userId===req.user.id)){
       for(let i=0;i<c.messages.length;i+=2){
         const u=c.messages[i],a=c.messages[i+1];if(u?.role!=="user")continue;
-        const text=[`Utilizator: ${textFromContent(u.content)}`,a?.role==="assistant"?`AI Stoica: ${textFromContent(a.content)}`:""].filter(Boolean).join("\n").trim();
-        if(text){addMemory(db,req.user.id,text,"history",{conversationId:c.id});count++;}
+        const candidate=durableMemoryCandidate(textFromContent(u.content));
+        if(candidate){addMemory(db,req.user.id,candidate,"history",{conversationId:c.id,category:memoryCategory(candidate)});count++;}
       }
     }
     store.write(db);res.json({ok:true,count});
