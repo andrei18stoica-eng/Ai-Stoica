@@ -40,6 +40,12 @@ function defaults() {
     videoModel: "bytedance/seedance-2.0-fast",
     openAiApiKey: "",
     openRouterApiKey: "",
+    cerebrasApiKey: "",
+    groqApiKey: "",
+    geminiApiKey: "",
+    mistralApiKey: "",
+    nvidiaApiKey: "",
+    cohereApiKey: "",
     pollinationsApiKey: "",
     cloudflareAccountId: "",
     cloudflareApiToken: "",
@@ -48,6 +54,20 @@ function defaults() {
     stabilityApiKey: "",
     replicateApiToken: "",
     falApiKey: "",
+    directChatEnabled: true,
+    directChatCostPolicy: "free_only",
+    directChatProviderOrder: "cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai",
+    cerebrasModel: "gpt-oss-120b",
+    groqModel: "llama-3.3-70b-versatile",
+    geminiModels: "gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite",
+    mistralModel: "mistral-small-latest",
+    nvidiaModel: "meta/llama-3.3-70b-instruct",
+    githubModelsModel: "openai/gpt-4.1-mini",
+    openRouterChatModel: "AUTO_FREE",
+    cloudflareChatModel: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    cohereModel: "command-a-03-2025",
+    huggingFaceChatModel: "meta-llama/Llama-3.3-70B-Instruct",
+    openAiChatModels: "gpt-5-mini,gpt-5-nano",
     imageProviderMode: "auto",
     imageCostPolicy: "free_only",
     imageProviderOrder: "cloudflare,pollinations,huggingface,together,openrouter,fal,replicate,stability,openai",
@@ -84,6 +104,12 @@ function loadConfig() {
     const apiKey=secret("apiKey");
     const openAiApiKey=secret("openAiApiKey");
     const openRouterApiKey=secret("openRouterApiKey");
+    const cerebrasApiKey=secret("cerebrasApiKey");
+    const groqApiKey=secret("groqApiKey");
+    const geminiApiKey=secret("geminiApiKey");
+    const mistralApiKey=secret("mistralApiKey");
+    const nvidiaApiKey=secret("nvidiaApiKey");
+    const cohereApiKey=secret("cohereApiKey");
     const pollinationsApiKey=secret("pollinationsApiKey");
     const cloudflareApiToken=secret("cloudflareApiToken");
     const hfToken=secret("hfToken");
@@ -92,7 +118,7 @@ function loadConfig() {
     const replicateApiToken=secret("replicateApiToken");
     const falApiKey=secret("falApiKey");
     const githubToken=secret("githubToken");
-    const cfg={ ...defaults(), ...raw, apiKey, openAiApiKey, openRouterApiKey, pollinationsApiKey, cloudflareApiToken, hfToken, togetherApiKey, stabilityApiKey, replicateApiToken, falApiKey, githubToken };
+    const cfg={ ...defaults(), ...raw, apiKey, openAiApiKey, openRouterApiKey, cerebrasApiKey, groqApiKey, geminiApiKey, mistralApiKey, nvidiaApiKey, cohereApiKey, pollinationsApiKey, cloudflareApiToken, hfToken, togetherApiKey, stabilityApiKey, replicateApiToken, falApiKey, githubToken };
     if(/^ai[ _-]*(principal|stoica)$/i.test(String(cfg.model||"").trim()))cfg.model="";
     // Migrare 0.6.14: instalațiile vechi pornesc implicit pe profilul Video Rapid.
     if(!raw.videoMode){
@@ -111,6 +137,20 @@ function saveConfig(input) {
     autoStartOmniRoute: !!cfg.autoStartOmniRoute, startWithWindows: !!cfg.startWithWindows,
     closeToTray: cfg.closeToTray !== false, autoUpdate: cfg.autoUpdate !== false,
     speechModel: cfg.speechModel || "openai/whisper-1", speechLanguage: cfg.speechLanguage || "ro",
+    directChatEnabled: cfg.directChatEnabled !== false,
+    directChatCostPolicy: cfg.directChatCostPolicy==="allow_paid"?"allow_paid":"free_only",
+    directChatProviderOrder: String(cfg.directChatProviderOrder || "cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai").trim(),
+    cerebrasModel: String(cfg.cerebrasModel || "gpt-oss-120b").trim(),
+    groqModel: String(cfg.groqModel || "llama-3.3-70b-versatile").trim(),
+    geminiModels: String(cfg.geminiModels || "gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite").trim(),
+    mistralModel: String(cfg.mistralModel || "mistral-small-latest").trim(),
+    nvidiaModel: String(cfg.nvidiaModel || "meta/llama-3.3-70b-instruct").trim(),
+    githubModelsModel: String(cfg.githubModelsModel || "openai/gpt-4.1-mini").trim(),
+    openRouterChatModel: String(cfg.openRouterChatModel || "AUTO_FREE").trim(),
+    cloudflareChatModel: String(cfg.cloudflareChatModel || "@cf/meta/llama-3.3-70b-instruct-fp8-fast").trim(),
+    cohereModel: String(cfg.cohereModel || "command-a-03-2025").trim(),
+    huggingFaceChatModel: String(cfg.huggingFaceChatModel || "meta-llama/Llama-3.3-70B-Instruct").trim(),
+    openAiChatModels: String(cfg.openAiChatModels || "gpt-5-mini,gpt-5-nano").trim(),
     imageModel: String(cfg.imageModel || "").trim(),
     imageProviderMode: ["auto","fast","quality","free"].includes(String(cfg.imageProviderMode))?String(cfg.imageProviderMode):"auto",
     imageCostPolicy: cfg.imageCostPolicy==="allow_paid"?"allow_paid":"free_only",
@@ -144,6 +184,12 @@ function saveConfig(input) {
   storeSecret("apiKey",cfg.apiKey);
   storeSecret("openAiApiKey",cfg.openAiApiKey);
   storeSecret("openRouterApiKey",cfg.openRouterApiKey);
+  storeSecret("cerebrasApiKey",cfg.cerebrasApiKey);
+  storeSecret("groqApiKey",cfg.groqApiKey);
+  storeSecret("geminiApiKey",cfg.geminiApiKey);
+  storeSecret("mistralApiKey",cfg.mistralApiKey);
+  storeSecret("nvidiaApiKey",cfg.nvidiaApiKey);
+  storeSecret("cohereApiKey",cfg.cohereApiKey);
   storeSecret("pollinationsApiKey",cfg.pollinationsApiKey);
   storeSecret("cloudflareApiToken",cfg.cloudflareApiToken);
   storeSecret("hfToken",cfg.hfToken);
@@ -199,6 +245,12 @@ function publicConfig(cfg=loadConfig()) {
     apiKey: cfg.apiKey ? "••••••••" : "",
     openAiApiKey: cfg.openAiApiKey ? "••••••••" : "",
     openRouterApiKey: cfg.openRouterApiKey ? "••••••••" : "",
+    cerebrasApiKey: cfg.cerebrasApiKey ? "••••••••" : "",
+    groqApiKey: cfg.groqApiKey ? "••••••••" : "",
+    geminiApiKey: cfg.geminiApiKey ? "••••••••" : "",
+    mistralApiKey: cfg.mistralApiKey ? "••••••••" : "",
+    nvidiaApiKey: cfg.nvidiaApiKey ? "••••••••" : "",
+    cohereApiKey: cfg.cohereApiKey ? "••••••••" : "",
     pollinationsApiKey: cfg.pollinationsApiKey ? "••••••••" : "",
     cloudflareApiToken: cfg.cloudflareApiToken ? "••••••••" : "",
     hfToken: cfg.hfToken ? "••••••••" : "",
@@ -361,7 +413,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("config:get", () => publicConfig(loadConfig()));
   ipcMain.handle("config:set", async (_e, input) => {
     const current=loadConfig(),next={...(input||{})};
-    for(const name of ["apiKey","openAiApiKey","openRouterApiKey","pollinationsApiKey","cloudflareApiToken","hfToken","togetherApiKey","stabilityApiKey","replicateApiToken","falApiKey","githubToken"]){
+    for(const name of ["apiKey","openAiApiKey","openRouterApiKey","cerebrasApiKey","groqApiKey","geminiApiKey","mistralApiKey","nvidiaApiKey","cohereApiKey","pollinationsApiKey","cloudflareApiToken","hfToken","togetherApiKey","stabilityApiKey","replicateApiToken","falApiKey","githubToken"]){
       if(!next[name]||next[name]==="••••••••")next[name]=current[name]||"";
     }
     const cfg2=saveConfig(next);await ensureOmniRoute();return {ok:true,config:publicConfig(cfg2)};
