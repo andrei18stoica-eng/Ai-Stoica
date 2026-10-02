@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "private": true,
-  "description": "AI Stoica 0.7.4 - jump-to-latest chat button, smart autoscroll, multi-provider image routing and live tools",
+  "description": "AI Stoica 0.7.5 - Cloudflare Pollinations HuggingFace Together image APIs, multi-provider fallback, cost guard and smart chat navigation",
   "main": "main.cjs",
   "repository": {
     "type": "git",
