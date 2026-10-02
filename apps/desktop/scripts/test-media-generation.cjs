@@ -109,6 +109,15 @@ async function main(){
     if(target==="https://api.cloudflare.com/client/v4/accounts/test-account/ai/run/@cf/black-forest-labs/flux-1-schnell"){
       return new Response(JSON.stringify({success:true,result:{image:png.toString("base64")}}),{status:200,headers:{"content-type":"application/json"}});
     }
+    if(target==="https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-fast-generate-preview:predictLongRunning"){
+      return new Response(JSON.stringify({name:"operations/test-video"}),{status:200,headers:{"content-type":"application/json"}});
+    }
+    if(target==="https://generativelanguage.googleapis.com/v1beta/operations/test-video"){
+      return new Response(JSON.stringify({done:true,response:{generateVideoResponse:{generatedSamples:[{video:{uri:"https://gemini.test/video.mp4"}}]}}}),{status:200,headers:{"content-type":"application/json"}});
+    }
+    if(target==="https://gemini.test/video.mp4"){
+      return new Response(mp4,{status:200,headers:{"content-type":"video/mp4"}});
+    }
     return realFetch(url,init);
   };
   try{
@@ -173,9 +182,27 @@ async function main(){
     delete omniConfig.imageProviderMode;
     delete omniConfig.imageProviderOrder;
 
+    omniConfig.geminiApiKey="test-gemini-key";
+    omniConfig.videoCostPolicy="allow_paid";
+    omniConfig.videoMode="fast";
+    omniConfig.videoProviderOrder="gemini";
+    omniConfig.geminiVideoModel="veo-3.1-fast-generate-preview";
+    r=await fetch(base+"/api/generate/video",{method:"POST",headers:ownerHeaders,body:JSON.stringify({prompt:"Direct Gemini Veo test",duration:4,aspectRatio:"16:9"})});
+    const geminiVideo=await r.json();expect(r.ok,geminiVideo.error||"Gemini Veo direct video failed");
+    expect(geminiVideo.data?.kind==="video","Gemini video kind missing");
+    expect(geminiVideo.data?.provider==="gemini-veo-direct","Gemini video provider metadata missing");
+    r=await fetch(base+"/api/files/"+geminiVideo.data.id,{headers:{authorization:"Bearer owner-token"}});
+    const geminiBytes=Buffer.from(await r.arrayBuffer());
+    expect(r.ok&&geminiBytes.subarray(4,8).toString("ascii")==="ftyp","Gemini Veo output is not MP4-like");
+    delete omniConfig.geminiApiKey;
+    delete omniConfig.videoProviderOrder;
+    delete omniConfig.geminiVideoModel;
+
     r=await fetch(base+"/api/generate/video",{method:"POST",headers:ownerHeaders,body:JSON.stringify({prompt:"Owner free video while paid AI is globally off"})});
     const ownerVideo=await r.json();expect(r.ok,ownerVideo.error||"Owner video generation failed while paid AI was off");
     expect(ownerVideo.data?.model==="runway/gen-3","Owner should retain configured paid video access while paid AI is off for normal accounts");
+    delete omniConfig.videoCostPolicy;
+    delete omniConfig.videoMode;
 
     const beforeBlocked=videoGenerationCalls;
     r=await fetch(base+"/api/generate/video",{
