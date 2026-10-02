@@ -22,26 +22,41 @@ function normalizeDb(data) {
 function createStore(dataDir) {
   const file = path.join(dataDir, "ai-stoica-data.json");
   const backup = `${file}.bak`;
+  const conversationDir = path.join(dataDir, "conversations");
   let cache = null;
   let cacheMtime = -1;
 
   function mtimeOf(target) {
     try { return fs.statSync(target).mtimeMs; } catch { return 0; }
   }
-
-  function load() {
-    if (!fs.existsSync(file)) return emptyDb();
-    try {
-      return normalizeDb(JSON.parse(fs.readFileSync(file, "utf8")));
-    } catch {
-      try { fs.copyFileSync(file, `${file}.corrupt-${Date.now()}`); } catch {}
-      try { return normalizeDb(JSON.parse(fs.readFileSync(backup, "utf8"))); } catch {}
-      return emptyDb();
+  function loadConversationFiles() {
+    if (!fs.existsSync(conversationDir)) return [];
+    const out = [];
+    for (const name of fs.readdirSync(conversationDir)) {
+      if (!name.endsWith(".json")) continue;
+      const target=path.join(conversationDir,name);
+      try {
+        const item=JSON.parse(fs.readFileSync(target,"utf8"));
+        if(item && typeof item==="object" && !Array.isArray(item) && item.id) out.push(item);
+      } catch {
+        try { fs.copyFileSync(target, `${target}.corrupt-${Date.now()}`); } catch {}
+      }
     }
+    return out;
   }
-
-  // Returns the live shared database. If the file was changed by something else
-  // (another tool, a restore from backup), it is reloaded first.
+  function load() {
+    let base=emptyDb();
+    if (fs.existsSync(file)) {
+      try { base=normalizeDb(JSON.parse(fs.readFileSync(file, "utf8"))); }
+      catch {
+        try { fs.copyFileSync(file, `${file}.corrupt-${Date.now()}`); } catch {}
+        try { base=normalizeDb(JSON.parse(fs.readFileSync(backup, "utf8"))); } catch { base=emptyDb(); }
+      }
+    }
+    const split=loadConversationFiles();
+    if(split.length)base.conversations=split;
+    return base;
+  }
   function read() {
     const m = mtimeOf(file);
     if (!cache || m !== cacheMtime) {
@@ -50,20 +65,36 @@ function createStore(dataDir) {
     }
     return cache;
   }
-
+  function atomicJson(target,value,backupTarget=null) {
+    fs.mkdirSync(path.dirname(target),{recursive:true});
+    const tmp=`${target}.tmp`;
+    if(backupTarget&&fs.existsSync(target)){try{fs.copyFileSync(target,backupTarget)}catch{}}
+    fs.writeFileSync(tmp,JSON.stringify(value,null,2),"utf8");
+    fs.renameSync(tmp,target);
+  }
   function write(data) {
     if (data && data !== cache) cache = normalizeDb(data);
     if (!cache) cache = emptyDb();
     fs.mkdirSync(dataDir, { recursive: true });
-    const json = JSON.stringify(cache, null, 2);
-    const tmp = `${file}.tmp`;
-    if (fs.existsSync(file)) { try { fs.copyFileSync(file, backup); } catch {} }
-    fs.writeFileSync(tmp, json, "utf8");
-    fs.renameSync(tmp, file);
+    fs.mkdirSync(conversationDir,{recursive:true});
+    const ids=new Set();
+    for(const conv of cache.conversations||[]){
+      if(!conv?.id)continue;
+      ids.add(String(conv.id));
+      const target=path.join(conversationDir,`${conv.id}.json`);
+      atomicJson(target,conv,`${target}.bak`);
+    }
+    for(const name of fs.readdirSync(conversationDir)){
+      if(!name.endsWith(".json"))continue;
+      const id=name.slice(0,-5);
+      if(!ids.has(id)){try{fs.unlinkSync(path.join(conversationDir,name))}catch{}}
+    }
+    const compact={...cache,conversations:[]};
+    atomicJson(file,compact,backup);
     cacheMtime = mtimeOf(file);
   }
 
-  return { read, write, file };
+  return { read, write, file, conversationDir };
 }
 
 module.exports = { createStore, emptyDb, normalizeDb, COLLECTIONS };
