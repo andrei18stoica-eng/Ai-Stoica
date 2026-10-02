@@ -1345,7 +1345,22 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"image",prompt,model})});
         }catch(e){errors.push(`${model}: ${e.message}`)}
       }
-      throw policyFailure(`Niciun model de imagine permis nu a reușit generarea. ${errors.slice(0,4).join(" | ")}`,502);
+      if(ownerRequest(req)){
+        for(const attempt of [
+          ["OpenAI direct",()=>directOpenAiImage(cfg,prompt,req.body?.size)],
+          ["OpenRouter direct",()=>directOpenRouterImage(cfg,prompt)],
+          ["Pollinations direct",()=>directPollinationsImage(cfg,prompt)]
+        ]){
+          try{
+            const resolved=await attempt[1]();
+            if(resolved?.bytes?.length)return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"image",prompt,model:resolved.model||attempt[0]})});
+          }catch(e){errors.push(`${attempt[0]}: ${e.message}`)}
+        }
+      }
+      const providerHint=ownerRequest(req)&&!cfg.openAiApiKey&&!cfg.openRouterApiKey&&!cfg.pollinationsApiKey
+        ?" Nu există o cheie media directă configurată; adaugă o cheie OpenAI, OpenRouter sau Pollinations în Setări > AI & OmniRoute."
+        :"";
+      throw policyFailure(`Generarea imaginii nu a produs un fișier real.${providerHint} ${errors.slice(0,6).join(" | ")}`.trim(),502);
     }catch(e){res.status(e.status||502).json({error:e.message})}
   });
 
@@ -1385,7 +1400,21 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"video",prompt,model})});
         }catch(e){errors.push(`${model}: ${e.message}`)}
       }
-      throw policyFailure(`Niciun model video permis nu a reușit generarea. ${errors.slice(0,4).join(" | ")}`,502);
+      if(ownerRequest(req)){
+        for(const attempt of [
+          ["OpenRouter direct",()=>directOpenRouterVideo(cfg,prompt,req.body?.duration,req.body?.aspectRatio)],
+          ["Pollinations direct",()=>directPollinationsVideo(cfg,prompt,req.body?.duration)]
+        ]){
+          try{
+            const resolved=await attempt[1]();
+            if(resolved?.bytes?.length)return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"video",prompt,model:resolved.model||attempt[0]})});
+          }catch(e){errors.push(`${attempt[0]}: ${e.message}`)}
+        }
+      }
+      const providerHint=ownerRequest(req)&&!cfg.openRouterApiKey&&!cfg.pollinationsApiKey
+        ?" Nu există o cheie directă pentru video configurată; adaugă o cheie OpenRouter sau Pollinations în Setări > AI & OmniRoute."
+        :"";
+      throw policyFailure(`Generarea videoclipului nu a produs un fișier MP4 real.${providerHint} ${errors.slice(0,6).join(" | ")}`.trim(),502);
     }catch(e){res.status(e.status||502).json({error:e.message})}
   });
 
