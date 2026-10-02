@@ -1332,7 +1332,7 @@ function ConversationFilesPanel({conversation,onClose}) {
 }
 
 function SettingsModal({onClose,onSaved,user}) {
-  const [cfg,setCfg]=useState(null),[key,setKey]=useState(""),[openAiKey,setOpenAiKey]=useState(""),[openRouterKey,setOpenRouterKey]=useState(""),[pollinationsKey,setPollinationsKey]=useState(""),[tab,setTab]=useState("general"),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState("");
+  const [cfg,setCfg]=useState(null),[key,setKey]=useState(""),[openAiKey,setOpenAiKey]=useState(""),[openRouterKey,setOpenRouterKey]=useState(""),[pollinationsKey,setPollinationsKey]=useState(""),[githubKey,setGithubKey]=useState(""),[tab,setTab]=useState("general"),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState(""),[toolStatus,setToolStatus]=useState("");
   useEffect(()=>{Promise.all([window.AIStoica.getConfig(),window.AIStoica.systemStatus()]).then(([c,s])=>{setCfg(c);setStatus(s)})},[]);
   if(!cfg)return null;
   async function save(){await window.AIStoica.setConfig({
@@ -1340,9 +1340,11 @@ function SettingsModal({onClose,onSaved,user}) {
     apiKey:key||cfg.apiKey,
     openAiApiKey:openAiKey||cfg.openAiApiKey,
     openRouterApiKey:openRouterKey||cfg.openRouterApiKey,
-    pollinationsApiKey:pollinationsKey||cfg.pollinationsApiKey
+    pollinationsApiKey:pollinationsKey||cfg.pollinationsApiKey,
+    githubToken:githubKey||cfg.githubToken
   });onSaved?.();onClose()}
   async function testMic(){setMicStatus("Se verifică…");try{const s=await navigator.mediaDevices.getUserMedia({audio:true});s.getTracks().forEach(t=>t.stop());setMicStatus("Microfon disponibil și permis ✓")}catch{setMicStatus("Microfon indisponibil sau fără permisiune")}}
+  async function testServer(){setToolStatus("Testez conexiunea SSH…");try{const d=await api("/api/tools/server/check",{method:"POST",body:"{}"});setToolStatus(d?.output||"Server conectat ✓")}catch(e){setToolStatus("Server: "+e.message)}}
   return <div className="modalBackdrop"><div className="settingsModal"><div className="modalHead"><div><h2>Setări AI Stoica</h2><p>Controlează aplicația, vocea, OmniRoute și actualizările.</p></div><button className="iconOnly" onClick={onClose}><X size={20}/></button></div>
     <div className="settingsBody"><div className="settingsNav">
       <button className={tab==="general"?"active":""} onClick={()=>setTab("general")}><SlidersHorizontal size={17}/> General</button>
@@ -1360,6 +1362,19 @@ function SettingsModal({onClose,onSaved,user}) {
         <label>Model imagine OpenRouter<input value={cfg.openRouterImageModel||"google/gemini-3.1-flash-image"} onChange={e=>setCfg({...cfg,openRouterImageModel:e.target.value})}/></label>
         <label>Model video OpenRouter<input value={cfg.openRouterVideoModel||(cfg.videoMode==="quality"?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast")} onChange={e=>setCfg({...cfg,openRouterVideoModel:e.target.value})}/></label>
         <label>Pollinations API key · fallback media<input type="password" value={pollinationsKey} onChange={e=>setPollinationsKey(e.target.value)} placeholder={cfg.pollinationsApiKey?"Cheie salvată — lasă gol pentru a o păstra":"sk_..."}/></label>
+      </details>
+      <details className="mediaProviderSettings"><summary>Internet live, GitHub și server</summary>
+        <p className="settingsHelp">Aceste unelte permit AI Stoica să verifice informații actuale, să aducă fragmente relevante dintr-un repository mare și să verifice serverul tău. Rularea de cod și SSH sunt rezervate Owner-ului.</p>
+        <div className="toggleRow"><div><b>Internet în timp real</b><span>Caută automat surse actuale pentru cereri despre informații recente, versiuni și API-uri.</span></div><input type="checkbox" checked={cfg.webSearchEnabled!==false} onChange={e=>setCfg({...cfg,webSearchEnabled:e.target.checked})}/></div>
+        <div className="toggleRow"><div><b>Context între conversațiile proiectului</b><span>Folosește conversațiile relevante din același Proiect fără să le copiezi manual.</span></div><input type="checkbox" checked={cfg.projectContextEnabled!==false} onChange={e=>setCfg({...cfg,projectContextEnabled:e.target.checked})}/></div>
+        <div className="toggleRow"><div><b>Caută automat în GitHub</b><span>Pentru întrebări de cod, caută fișiere relevante din repository înainte de răspuns.</span></div><input type="checkbox" checked={cfg.githubAutoContext!==false} onChange={e=>setCfg({...cfg,githubAutoContext:e.target.checked})}/></div>
+        <label>GitHub repository<input value={cfg.githubRepo||""} onChange={e=>setCfg({...cfg,githubRepo:e.target.value})} placeholder="owner/repository"/></label>
+        <label>GitHub branch<input value={cfg.githubBranch||"main"} onChange={e=>setCfg({...cfg,githubBranch:e.target.value})} placeholder="main"/></label>
+        <label>GitHub token <span className="optional">pentru repository privat</span><input type="password" value={githubKey} onChange={e=>setGithubKey(e.target.value)} placeholder={cfg.githubToken?"Token salvat — lasă gol pentru a-l păstra":"github_pat_... sau ghp_..."}/></label>
+        <label>Server SSH · host<input value={cfg.serverHost||""} onChange={e=>setCfg({...cfg,serverHost:e.target.value})} placeholder="IP sau domeniu"/></label>
+        <div className="claudeFormRow"><label>Utilizator SSH<input value={cfg.serverUser||"root"} onChange={e=>setCfg({...cfg,serverUser:e.target.value})}/></label><label>Port SSH<input type="number" min="1" max="65535" value={cfg.serverPort||22} onChange={e=>setCfg({...cfg,serverPort:Number(e.target.value)||22})}/></label></div>
+        <label>Calea cheii private SSH<input value={cfg.serverKeyPath||""} onChange={e=>setCfg({...cfg,serverKeyPath:e.target.value})} placeholder="C:\\Users\\Nume\\.ssh\\id_ed25519"/></label>
+        <button type="button" className="secondary testMicBtn" onClick={testServer}>Testează serverul</button>{toolStatus&&<div className="micStatus">{toolStatus}</div>}
       </details>
       <p className="settingsHelp">Când ceri o poză sau un videoclip, AI Stoica trebuie să returneze fișierul real în chat cu buton Download. Nu mai înlocuiește o generare eșuată cu SVG sau cu un răspuns text.</p><label>Comandă OmniRoute<input value={cfg.omniCommand||"omniroute.cmd"} onChange={e=>setCfg({...cfg,omniCommand:e.target.value})}/></label><div className="toggleRow"><div><b>Pornește OmniRoute automat</b><span>Dacă serviciul cade, AI Stoica încearcă să îl repornească.</span></div><input type="checkbox" checked={!!cfg.autoStartOmniRoute} onChange={e=>setCfg({...cfg,autoStartOmniRoute:e.target.checked})}/></div><div className="statusGrid"><div><span>Gateway local</span><b>{status?.gatewayRunning?"Conectat":"Indisponibil"}</b></div><div><span>OmniRoute</span><b>{status?.omniRunning?"Conectat":"Indisponibil"}</b></div></div></>}
       {tab==="voice"&&<><h3>Voce și microfon</h3><label>Limba dictării<select value={cfg.speechLanguage||"ro"} onChange={e=>setCfg({...cfg,speechLanguage:e.target.value})}><option value="ro">Română</option><option value="en">English</option><option value="fr">Français</option></select></label><label>Model transcriere<input value={cfg.speechModel||"openai/whisper-1"} onChange={e=>setCfg({...cfg,speechModel:e.target.value})}/></label><button className="secondary testMicBtn" onClick={testMic}><Mic size={16}/> Testează microfonul</button>{micStatus&&<div className="micStatus">{micStatus}</div>}<p className="settingsHelp">La microfon: apeși o dată pentru a începe înregistrarea și încă o dată pentru a o opri. AI Stoica trimite apoi sunetul către transcriere prin OmniRoute.</p></>}
