@@ -1107,6 +1107,96 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(bytes.length>max)throw new Error(`Rezultatul ${kind==="video"?"video":"imaginii"} depășește limita locală de siguranță.`);
     return {bytes,mime:inferMediaMime(bytes,r.headers.get("content-type"),kind)};
   }
+  function ownerRequest(req){return String(req.cloudUser?.role||req.user?.role||"").toLowerCase()==="owner";}
+
+  async function fetchBinaryOrCandidate(r,kind){
+    const ctype=String(r.headers.get("content-type")||"");
+    if(!r.ok)throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0,700)}`);
+    if((kind==="image"&&ctype.startsWith("image/"))||(kind==="video"&&ctype.startsWith("video/"))){
+      const bytes=Buffer.from(await r.arrayBuffer());
+      return {bytes,mime:inferMediaMime(bytes,ctype,kind)};
+    }
+    const text=await r.text();let body;
+    try{body=JSON.parse(text)}catch{body={url:text}}
+    const candidate=findMediaCandidate(body,kind);
+    return resolveGeneratedMedia(candidate,kind);
+  }
+
+  async function directOpenAiImage(cfg,prompt,size){
+    const key=String(cfg.openAiApiKey||"").trim();if(!key)return null;
+    const model=String(cfg.imageModel||"").replace(/^openai\//i,"")||"gpt-image-2.5-flare";
+    const r=await fetch("https://api.openai.com/v1/images/generations",{
+      method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${key}`},
+      body:JSON.stringify({model,prompt,size:String(size||"1024x1024"),quality:"auto",output_format:"png"}),
+      signal:AbortSignal.timeout(180000)
+    });
+    const resolved=await fetchBinaryOrCandidate(r,"image");
+    return {...resolved,model:`openai/${model}`,provider:"openai-direct"};
+  }
+
+  async function directOpenRouterImage(cfg,prompt){
+    const key=String(cfg.openRouterApiKey||"").trim();if(!key)return null;
+    const model=String(cfg.openRouterImageModel||"google/gemini-3.1-flash-image").trim();
+    const r=await fetch("https://openrouter.ai/api/v1/images",{
+      method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${key}`,"X-Title":"AI Stoica"},
+      body:JSON.stringify({model,prompt}),
+      signal:AbortSignal.timeout(180000)
+    });
+    const resolved=await fetchBinaryOrCandidate(r,"image");
+    return {...resolved,model,provider:"openrouter-direct"};
+  }
+
+  async function directPollinationsImage(cfg,prompt){
+    const key=String(cfg.pollinationsApiKey||"").trim();if(!key)return null;
+    const model=String(cfg.pollinationsImageModel||"black-forest-labs/flux.1-schnell").trim();
+    const r=await fetch("https://gen.pollinations.ai/v1/images/generations",{
+      method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${key}`},
+      body:JSON.stringify({model,prompt,response_format:"b64_json"}),
+      signal:AbortSignal.timeout(180000)
+    });
+    const resolved=await fetchBinaryOrCandidate(r,"image");
+    return {...resolved,model,provider:"pollinations-direct"};
+  }
+
+  async function directOpenRouterVideo(cfg,prompt,duration,aspectRatio){
+    const key=String(cfg.openRouterApiKey||"").trim();if(!key)return null;
+    const model=String(cfg.openRouterVideoModel||"bytedance/seedance-2.5").trim();
+    const headers={"Content-Type":"application/json",Authorization:`Bearer ${key}`,"X-Title":"AI Stoica"};
+    const submit=await fetch("https://openrouter.ai/api/v1/videos",{
+      method:"POST",headers,
+      body:JSON.stringify({model,prompt,duration:Math.max(1,Math.min(15,Number(duration||6))),aspect_ratio:String(aspectRatio||"16:9")}),
+      signal:AbortSignal.timeout(30000)
+    });
+    const text=await submit.text();let job={};try{job=JSON.parse(text)}catch{}
+    if(!submit.ok)throw new Error(`HTTP ${submit.status}: ${text.slice(0,700)}`);
+    const jobId=String(job.id||job.data?.id||"");if(!jobId)throw new Error("OpenRouter nu a returnat ID-ul generării video.");
+    const deadline=Date.now()+5*60*1000;
+    while(Date.now()<deadline){
+      await new Promise(r=>setTimeout(r,3000));
+      const status=await fetch(`https://openrouter.ai/api/v1/videos/${encodeURIComponent(jobId)}`,{headers:{Authorization:`Bearer ${key}`},signal:AbortSignal.timeout(15000)});
+      const st=await status.text();let body={};try{body=JSON.parse(st)}catch{}
+      if(!status.ok)throw new Error(`Status video HTTP ${status.status}: ${st.slice(0,500)}`);
+      const state=String(body.status||body.state||body.data?.status||"").toLowerCase();
+      if(/fail|error|cancel|reject/.test(state))throw new Error(`Generarea video OpenRouter a eșuat: ${st.slice(0,500)}`);
+      if(/complete|succeed|done|finished/.test(state)){
+        const file=await fetch(`https://openrouter.ai/api/v1/videos/${encodeURIComponent(jobId)}/content?index=0`,{headers:{Authorization:`Bearer ${key}`},signal:AbortSignal.timeout(120000)});
+        const resolved=await fetchBinaryOrCandidate(file,"video");
+        return {...resolved,model,provider:"openrouter-direct"};
+      }
+    }
+    throw new Error("Generarea video OpenRouter nu s-a finalizat în 5 minute.");
+  }
+
+  async function directPollinationsVideo(cfg,prompt,duration){
+    const key=String(cfg.pollinationsApiKey||"").trim();if(!key)return null;
+    const model=String(cfg.pollinationsVideoModel||"google/veo-3.1-fast").trim();
+    const url=new URL(`https://gen.pollinations.ai/video/${encodeURIComponent(prompt)}`);
+    url.searchParams.set("model",model);url.searchParams.set("duration",String(Math.max(1,Math.min(10,Number(duration||6)))));
+    const r=await fetch(url,{headers:{Authorization:`Bearer ${key}`},signal:AbortSignal.timeout(360000)});
+    const resolved=await fetchBinaryOrCandidate(r,"video");
+    return {...resolved,model,provider:"pollinations-direct"};
+  }
+
   function saveGeneratedMedia(req,{bytes,mime,kind,prompt,model}){
     const id=crypto.randomUUID(),ext=mediaExtFromMime(mime,kind);
     const base=safeGeneratedName((kind==="image"?"Imagine AI Stoica":"Video AI Stoica")+" - "+String(prompt||"").slice(0,55)).replace(/\.[^.]+$/,"");
@@ -1165,6 +1255,14 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const configured=String(kind==="image"?cfg.imageModel||"":cfg.videoModel||"").trim();
     const rows=await mediaCatalog(cfg,kind);
     const byId=new Map(rows.map(row=>[row.id.toLowerCase(),row]));
+    if(ownerRequest(req)&&kind==="image"){
+      for(const known of ["openai/gpt-image-2.5-flare","openai/gpt-image-2.5-sunburst","openai/gpt-image-2"]){
+        if(!byId.has(known.toLowerCase())){
+          const row=mediaModelRow({id:known,provider:"openai",type:"image"},kind,true);
+          rows.push(row);byId.set(known.toLowerCase(),row);
+        }
+      }
+    }
     if(configured&&!byId.has(configured.toLowerCase())){
       const row=mediaModelRow({id:configured},kind,true);
       if(row){rows.unshift(row);byId.set(configured.toLowerCase(),row)}
@@ -1247,7 +1345,22 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"image",prompt,model})});
         }catch(e){errors.push(`${model}: ${e.message}`)}
       }
-      throw policyFailure(`Niciun model de imagine permis nu a reușit generarea. ${errors.slice(0,4).join(" | ")}`,502);
+      if(ownerRequest(req)){
+        for(const attempt of [
+          ["OpenAI direct",()=>directOpenAiImage(cfg,prompt,req.body?.size)],
+          ["OpenRouter direct",()=>directOpenRouterImage(cfg,prompt)],
+          ["Pollinations direct",()=>directPollinationsImage(cfg,prompt)]
+        ]){
+          try{
+            const resolved=await attempt[1]();
+            if(resolved?.bytes?.length)return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"image",prompt,model:resolved.model||attempt[0]})});
+          }catch(e){errors.push(`${attempt[0]}: ${e.message}`)}
+        }
+      }
+      const providerHint=ownerRequest(req)&&!cfg.openAiApiKey&&!cfg.openRouterApiKey&&!cfg.pollinationsApiKey
+        ?" Nu există o cheie media directă configurată; adaugă o cheie OpenAI, OpenRouter sau Pollinations în Setări > AI & OmniRoute."
+        :"";
+      throw policyFailure(`Generarea imaginii nu a produs un fișier real.${providerHint} ${errors.slice(0,6).join(" | ")}`.trim(),502);
     }catch(e){res.status(e.status||502).json({error:e.message})}
   });
 
@@ -1287,7 +1400,21 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"video",prompt,model})});
         }catch(e){errors.push(`${model}: ${e.message}`)}
       }
-      throw policyFailure(`Niciun model video permis nu a reușit generarea. ${errors.slice(0,4).join(" | ")}`,502);
+      if(ownerRequest(req)){
+        for(const attempt of [
+          ["OpenRouter direct",()=>directOpenRouterVideo(cfg,prompt,req.body?.duration,req.body?.aspectRatio)],
+          ["Pollinations direct",()=>directPollinationsVideo(cfg,prompt,req.body?.duration)]
+        ]){
+          try{
+            const resolved=await attempt[1]();
+            if(resolved?.bytes?.length)return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"video",prompt,model:resolved.model||attempt[0]})});
+          }catch(e){errors.push(`${attempt[0]}: ${e.message}`)}
+        }
+      }
+      const providerHint=ownerRequest(req)&&!cfg.openRouterApiKey&&!cfg.pollinationsApiKey
+        ?" Nu există o cheie directă pentru video configurată; adaugă o cheie OpenRouter sau Pollinations în Setări > AI & OmniRoute."
+        :"";
+      throw policyFailure(`Generarea videoclipului nu a produs un fișier MP4 real.${providerHint} ${errors.slice(0,6).join(" | ")}`.trim(),502);
     }catch(e){res.status(e.status||502).json({error:e.message})}
   });
 

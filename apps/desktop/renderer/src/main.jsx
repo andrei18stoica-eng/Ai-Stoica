@@ -229,9 +229,11 @@ function standaloneExportRequest(value){
 }
 function requestedMediaGeneration(value){
   const t=normalizeDocumentIntent(value).trim();
-  if(!/(cree|crea|gener|fa-mi|fami|realiz|produc|make|generate|create)/.test(t))return null;
-  if(/\b(video|videoclip|filmule|mp4|clip video|film)\b/.test(t))return "video";
-  if(/\b(poza|fotografie|imagine|image|picture|png|jpe?g)\b/.test(t))return "image";
+  const createVerb=/(cree|crea|gener|fa-mi|fami|realiz|produc|make|generate|create|desen|draw|render)/.test(t);
+  if(!createVerb)return null;
+  if(/\b(video|videoclip|filmule|mp4|clip video|film|animatie|animat)\b/.test(t))return "video";
+  if(/\b(poza|foto|fotografie|imagine|image|picture|png|jpe?g|portret|logo|poster|banner|avatar|sticker|wallpaper|coperta|desen|ilustratie|iconita)\b/.test(t))return "image";
+  if(/\b(deseneaza|draw|render)\b/.test(t))return "image";
   return null;
 }
 
@@ -1328,10 +1330,16 @@ function ConversationFilesPanel({conversation,onClose}) {
 }
 
 function SettingsModal({onClose,onSaved,user}) {
-  const [cfg,setCfg]=useState(null),[key,setKey]=useState(""),[tab,setTab]=useState("general"),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState("");
+  const [cfg,setCfg]=useState(null),[key,setKey]=useState(""),[openAiKey,setOpenAiKey]=useState(""),[openRouterKey,setOpenRouterKey]=useState(""),[pollinationsKey,setPollinationsKey]=useState(""),[tab,setTab]=useState("general"),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState("");
   useEffect(()=>{Promise.all([window.AIStoica.getConfig(),window.AIStoica.systemStatus()]).then(([c,s])=>{setCfg(c);setStatus(s)})},[]);
   if(!cfg)return null;
-  async function save(){await window.AIStoica.setConfig({...cfg,apiKey:key||cfg.apiKey});onSaved?.();onClose()}
+  async function save(){await window.AIStoica.setConfig({
+    ...cfg,
+    apiKey:key||cfg.apiKey,
+    openAiApiKey:openAiKey||cfg.openAiApiKey,
+    openRouterApiKey:openRouterKey||cfg.openRouterApiKey,
+    pollinationsApiKey:pollinationsKey||cfg.pollinationsApiKey
+  });onSaved?.();onClose()}
   async function testMic(){setMicStatus("Se verifică…");try{const s=await navigator.mediaDevices.getUserMedia({audio:true});s.getTracks().forEach(t=>t.stop());setMicStatus("Microfon disponibil și permis ✓")}catch{setMicStatus("Microfon indisponibil sau fără permisiune")}}
   return <div className="modalBackdrop"><div className="settingsModal"><div className="modalHead"><div><h2>Setări AI Stoica</h2><p>Controlează aplicația, vocea, OmniRoute și actualizările.</p></div><button className="iconOnly" onClick={onClose}><X size={20}/></button></div>
     <div className="settingsBody"><div className="settingsNav">
@@ -1342,7 +1350,16 @@ function SettingsModal({onClose,onSaved,user}) {
     </div>
     <div className="settingsPane">
       {tab==="general"&&<><h3>General</h3><div className="toggleRow"><div><b>Pornește AI Stoica cu Windows</b><span>Aplicația pornește automat și poate rămâne în fundal.</span></div><input type="checkbox" checked={!!cfg.startWithWindows} onChange={e=>setCfg({...cfg,startWithWindows:e.target.checked})}/></div><div className="toggleRow"><div><b>Închidere în system tray</b><span>Butonul X ascunde aplicația fără să oprească serviciile.</span></div><input type="checkbox" checked={cfg.closeToTray!==false} onChange={e=>setCfg({...cfg,closeToTray:e.target.checked})}/></div><div className="toggleRow"><div><b>Actualizări automate</b><span>AI Stoica caută versiuni noi la pornire.</span></div><input type="checkbox" checked={cfg.autoUpdate!==false} onChange={e=>setCfg({...cfg,autoUpdate:e.target.checked})}/></div></>}
-      {tab==="ai"&&<><h3>AI & OmniRoute</h3><label>Gateway local AI Stoica<input value={cfg.gatewayUrl||"http://127.0.0.1:8787"} onChange={e=>setCfg({...cfg,gatewayUrl:e.target.value})} placeholder="http://127.0.0.1:8787"/></label><label>AI Stoica Cloud API<input value={cfg.controlApiUrl||""} onChange={e=>setCfg({...cfg,controlApiUrl:e.target.value})} placeholder="https://api.aistoica.ro"/></label><p className="settingsHelp">Control Center, aprobarea conturilor și permisiunile folosesc PostgreSQL-ul central atunci când Cloud API este configurat. Până la activarea domeniului, poți lăsa câmpul gol.</p><label>Base URL OmniRoute<input value={cfg.baseUrl} onChange={e=>setCfg({...cfg,baseUrl:e.target.value})}/></label><label>Cheie API<input type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder={cfg.apiKey?"Cheie salvată — lasă gol pentru a o păstra":"Cheie OmniRoute"}/></label><label>Model implicit pentru conversații noi<input value={cfg.model||""} onChange={e=>setCfg({...cfg,model:e.target.value})} placeholder="Alege din selectorul de sus"/></label><label>Model generare imagini <span className="optional">opțional</span><input value={cfg.imageModel||""} onChange={e=>setCfg({...cfg,imageModel:e.target.value})} placeholder="Auto — primul model de imagine disponibil"/></label><label>Model generare video <span className="optional">opțional</span><input value={cfg.videoModel||""} onChange={e=>setCfg({...cfg,videoModel:e.target.value})} placeholder="Auto — model video disponibil"/></label><p className="settingsHelp">Când ceri o poză sau un videoclip, AI Stoica generează fișierul real, îl afișează în chat și îl salvează în Bibliotecă.</p><label>Comandă OmniRoute<input value={cfg.omniCommand||"omniroute.cmd"} onChange={e=>setCfg({...cfg,omniCommand:e.target.value})}/></label><div className="toggleRow"><div><b>Pornește OmniRoute automat</b><span>Dacă serviciul cade, AI Stoica încearcă să îl repornească.</span></div><input type="checkbox" checked={!!cfg.autoStartOmniRoute} onChange={e=>setCfg({...cfg,autoStartOmniRoute:e.target.checked})}/></div><div className="statusGrid"><div><span>Gateway local</span><b>{status?.gatewayRunning?"Conectat":"Indisponibil"}</b></div><div><span>OmniRoute</span><b>{status?.omniRunning?"Conectat":"Indisponibil"}</b></div></div></>}
+      {tab==="ai"&&<><h3>AI & OmniRoute</h3><label>Gateway local AI Stoica<input value={cfg.gatewayUrl||"http://127.0.0.1:8787"} onChange={e=>setCfg({...cfg,gatewayUrl:e.target.value})} placeholder="http://127.0.0.1:8787"/></label><label>AI Stoica Cloud API<input value={cfg.controlApiUrl||""} onChange={e=>setCfg({...cfg,controlApiUrl:e.target.value})} placeholder="https://api.aistoica.ro"/></label><p className="settingsHelp">Control Center, aprobarea conturilor și permisiunile folosesc PostgreSQL-ul central atunci când Cloud API este configurat. Până la activarea domeniului, poți lăsa câmpul gol.</p><label>Base URL OmniRoute<input value={cfg.baseUrl} onChange={e=>setCfg({...cfg,baseUrl:e.target.value})}/></label><label>Cheie API<input type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder={cfg.apiKey?"Cheie salvată — lasă gol pentru a o păstra":"Cheie OmniRoute"}/></label><label>Model implicit pentru conversații noi<input value={cfg.model||""} onChange={e=>setCfg({...cfg,model:e.target.value})} placeholder="Alege din selectorul de sus"/></label><label>Model generare imagini <span className="optional">opțional</span><input value={cfg.imageModel||""} onChange={e=>setCfg({...cfg,imageModel:e.target.value})} placeholder="Auto — primul model de imagine disponibil"/></label><label>Model generare video <span className="optional">opțional</span><input value={cfg.videoModel||""} onChange={e=>setCfg({...cfg,videoModel:e.target.value})} placeholder="Auto — model video disponibil"/></label>
+      <details className="mediaProviderSettings"><summary>Furnizori direcți pentru imagini și video</summary>
+        <p className="settingsHelp">Dacă OmniRoute nu poate genera media, Owner-ul poate folosi direct un furnizor. Cheile sunt salvate criptat local.</p>
+        <label>OpenAI API key · imagini<input type="password" value={openAiKey} onChange={e=>setOpenAiKey(e.target.value)} placeholder={cfg.openAiApiKey?"Cheie salvată — lasă gol pentru a o păstra":"sk-..."}/></label>
+        <label>OpenRouter API key · imagini și video<input type="password" value={openRouterKey} onChange={e=>setOpenRouterKey(e.target.value)} placeholder={cfg.openRouterApiKey?"Cheie salvată — lasă gol pentru a o păstra":"sk-or-..."}/></label>
+        <label>Model imagine OpenRouter<input value={cfg.openRouterImageModel||"google/gemini-3.1-flash-image"} onChange={e=>setCfg({...cfg,openRouterImageModel:e.target.value})}/></label>
+        <label>Model video OpenRouter<input value={cfg.openRouterVideoModel||"bytedance/seedance-2.5"} onChange={e=>setCfg({...cfg,openRouterVideoModel:e.target.value})}/></label>
+        <label>Pollinations API key · fallback media<input type="password" value={pollinationsKey} onChange={e=>setPollinationsKey(e.target.value)} placeholder={cfg.pollinationsApiKey?"Cheie salvată — lasă gol pentru a o păstra":"sk_..."}/></label>
+      </details>
+      <p className="settingsHelp">Când ceri o poză sau un videoclip, AI Stoica trebuie să returneze fișierul real în chat cu buton Download. Nu mai înlocuiește o generare eșuată cu SVG sau cu un răspuns text.</p><label>Comandă OmniRoute<input value={cfg.omniCommand||"omniroute.cmd"} onChange={e=>setCfg({...cfg,omniCommand:e.target.value})}/></label><div className="toggleRow"><div><b>Pornește OmniRoute automat</b><span>Dacă serviciul cade, AI Stoica încearcă să îl repornească.</span></div><input type="checkbox" checked={!!cfg.autoStartOmniRoute} onChange={e=>setCfg({...cfg,autoStartOmniRoute:e.target.checked})}/></div><div className="statusGrid"><div><span>Gateway local</span><b>{status?.gatewayRunning?"Conectat":"Indisponibil"}</b></div><div><span>OmniRoute</span><b>{status?.omniRunning?"Conectat":"Indisponibil"}</b></div></div></>}
       {tab==="voice"&&<><h3>Voce și microfon</h3><label>Limba dictării<select value={cfg.speechLanguage||"ro"} onChange={e=>setCfg({...cfg,speechLanguage:e.target.value})}><option value="ro">Română</option><option value="en">English</option><option value="fr">Français</option></select></label><label>Model transcriere<input value={cfg.speechModel||"openai/whisper-1"} onChange={e=>setCfg({...cfg,speechModel:e.target.value})}/></label><button className="secondary testMicBtn" onClick={testMic}><Mic size={16}/> Testează microfonul</button>{micStatus&&<div className="micStatus">{micStatus}</div>}<p className="settingsHelp">La microfon: apeși o dată pentru a începe înregistrarea și încă o dată pentru a o opri. AI Stoica trimite apoi sunetul către transcriere prin OmniRoute.</p></>}
       {tab==="account"&&<><h3>Cont și date</h3><div className="accountSettingsCard"><div className="accountAvatar big">{(user?.name||user?.email||"S")[0].toUpperCase()}</div><div><b>{user?.name||"Cont AI Stoica"}</b><span>{user?.email}</span></div></div><p className="settingsHelp">Conversațiile, memoria, biblioteca, proiectele, pluginurile și automatizările sunt în prezent păstrate local. După mutarea pe AI Stoica Cloud, acestea vor putea fi sincronizate între PC și telefon.</p></>}
     </div></div>
@@ -1536,10 +1553,13 @@ function App() {
       const saved=await saveConversation({...baseConv,messages:[...messages,assistantMessage],updatedAt:Date.now()});
       api("/api/memory/capture",{method:"POST",body:JSON.stringify({conversationId:saved.id,userText:prompt,assistantText:`${kind==="video"?"Videoclip":"Imagine"} generată: ${file.name}`})}).catch(()=>{});
     }catch(e){
-      console.warn(`Generarea ${kind} nu a fost disponibilă; continui cu AI-ul ales manual.`,e);
-      setBusy(false);
-      setBusyStage("Generarea media nu este disponibilă; continuă cu AI-ul ales manual…");
-      await streamAssistant(baseConv,messages);
+      console.warn(`Generarea reală ${kind} a eșuat.`,e);
+      const assistantMessage={
+        id:uid(),role:"assistant",
+        content:`Generarea reală a ${kind==="video"?"videoclipului":"imaginii"} nu a reușit: ${e.message}`,
+        mediaGenerationError:true,createdAt:Date.now(),streaming:false
+      };
+      await saveConversation({...baseConv,messages:[...messages,assistantMessage],updatedAt:Date.now()});
       return;
     }finally{setBusy(false);setBusyStage("")}
   }
@@ -1586,7 +1606,7 @@ function App() {
   async function deleteCurrent(){if(current)await deleteConversation(current.id)}
   function toggleMenu(){if(window.innerWidth<=900)setSidebar(v=>!v);else setSidebarCollapsed(v=>!v)}
   function useAssistant(id){setSelectedAssistant(id);setCurrentId(null);setDraft("");setToolPanel(null)}
-  function startImagePrompt(imageModel){if(imageModel)chooseModel(imageModel);setCurrentId(null);setDraft("Creează o imagine cu ");setToolPanel(null)}
+  function startImagePrompt(){setCurrentId(null);setDraft("Creează o imagine cu ");setToolPanel(null)}
 
   if(boot)return <div className="loadingScreen"><BrandMark/><span>Se pornește AI Stoica…</span></div>;
   if(!user)return <AuthScreen onAuth={setUser}/>;

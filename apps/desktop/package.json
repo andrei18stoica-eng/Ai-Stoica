@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.6.12",
+  "version": "0.6.13",
   "private": true,
-  "description": "AI Stoica 0.6.12 - Owner-only paid AI, richer automations, durable memory, activity bar",
+  "description": "AI Stoica 0.6.13 - real image/video files, direct media provider fallbacks, no SVG/text substitution",
   "main": "main.cjs",
   "repository": {
     "type": "git",

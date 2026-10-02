@@ -36,17 +36,31 @@ function defaults() {
     speechModel: "openai/whisper-1",
     speechLanguage: "ro",
     imageModel: "",
-    videoModel: ""
+    videoModel: "",
+    openAiApiKey: "",
+    openRouterApiKey: "",
+    pollinationsApiKey: "",
+    openRouterImageModel: "google/gemini-3.1-flash-image",
+    openRouterVideoModel: "bytedance/seedance-2.5",
+    pollinationsImageModel: "black-forest-labs/flux.1-schnell",
+    pollinationsVideoModel: "google/veo-3.1-fast"
   };
 }
 function loadConfig() {
   try {
     const raw = JSON.parse(fs.readFileSync(configPath(), "utf8"));
-    let apiKey = "";
-    if (raw.apiKeyEncrypted && safeStorage.isEncryptionAvailable()) {
-      try { apiKey = safeStorage.decryptString(Buffer.from(raw.apiKeyEncrypted, "base64")); } catch {}
-    } else if (typeof raw.apiKey === "string") apiKey = raw.apiKey;
-    const cfg={ ...defaults(), ...raw, apiKey };
+    function secret(name){
+      const encrypted=raw[name+"Encrypted"];
+      if(encrypted&&safeStorage.isEncryptionAvailable()){
+        try{return safeStorage.decryptString(Buffer.from(encrypted,"base64"))}catch{}
+      }
+      return typeof raw[name]==="string"?raw[name]:"";
+    }
+    const apiKey=secret("apiKey");
+    const openAiApiKey=secret("openAiApiKey");
+    const openRouterApiKey=secret("openRouterApiKey");
+    const pollinationsApiKey=secret("pollinationsApiKey");
+    const cfg={ ...defaults(), ...raw, apiKey, openAiApiKey, openRouterApiKey, pollinationsApiKey };
     if(/^ai[ _-]*(principal|stoica)$/i.test(String(cfg.model||"").trim()))cfg.model="";
     return cfg;
   } catch { return defaults(); }
@@ -59,12 +73,21 @@ function saveConfig(input) {
     autoStartOmniRoute: !!cfg.autoStartOmniRoute, startWithWindows: !!cfg.startWithWindows,
     closeToTray: cfg.closeToTray !== false, autoUpdate: cfg.autoUpdate !== false,
     speechModel: cfg.speechModel || "openai/whisper-1", speechLanguage: cfg.speechLanguage || "ro",
-    imageModel: String(cfg.imageModel || "").trim(), videoModel: String(cfg.videoModel || "").trim()
+    imageModel: String(cfg.imageModel || "").trim(), videoModel: String(cfg.videoModel || "").trim(),
+    openRouterImageModel: String(cfg.openRouterImageModel || "google/gemini-3.1-flash-image").trim(),
+    openRouterVideoModel: String(cfg.openRouterVideoModel || "bytedance/seedance-2.5").trim(),
+    pollinationsImageModel: String(cfg.pollinationsImageModel || "black-forest-labs/flux.1-schnell").trim(),
+    pollinationsVideoModel: String(cfg.pollinationsVideoModel || "google/veo-3.1-fast").trim()
   };
-  if (cfg.apiKey) {
-    if (safeStorage.isEncryptionAvailable()) stored.apiKeyEncrypted = safeStorage.encryptString(cfg.apiKey).toString("base64");
-    else stored.apiKey = cfg.apiKey;
+  function storeSecret(name,value){
+    if(!value)return;
+    if(safeStorage.isEncryptionAvailable())stored[name+"Encrypted"]=safeStorage.encryptString(value).toString("base64");
+    else stored[name]=value;
   }
+  storeSecret("apiKey",cfg.apiKey);
+  storeSecret("openAiApiKey",cfg.openAiApiKey);
+  storeSecret("openRouterApiKey",cfg.openRouterApiKey);
+  storeSecret("pollinationsApiKey",cfg.pollinationsApiKey);
   fs.mkdirSync(path.dirname(configPath()), { recursive: true });
   fs.writeFileSync(configPath(), JSON.stringify(stored, null, 2), "utf8");
   app.setLoginItemSettings({ openAtLogin: !!cfg.startWithWindows, args: ["--background"] });
@@ -254,7 +277,7 @@ app.whenReady().then(async () => {
   autoUpdater.on("update-downloaded", () => mainWindow?.webContents.send("update-ready"));
 
   ipcMain.handle("config:get", () => loadConfig());
-  ipcMain.handle("config:set", async (_e, input) => { const cfg2 = saveConfig(input || {}); await ensureOmniRoute(); return { ok: true, config: { ...cfg2, apiKey: cfg2.apiKey ? "••••••••" : "" } }; });
+  ipcMain.handle("config:set", async (_e, input) => { const cfg2 = saveConfig(input || {}); await ensureOmniRoute(); return { ok: true, config: { ...cfg2, apiKey: cfg2.apiKey ? "••••••••" : "", openAiApiKey: cfg2.openAiApiKey ? "••••••••" : "", openRouterApiKey: cfg2.openRouterApiKey ? "••••••••" : "", pollinationsApiKey: cfg2.pollinationsApiKey ? "••••••••" : "" } }; });
   ipcMain.handle("system:status", () => systemStatus());
   ipcMain.handle("system:ensure-omni", () => ensureOmniRoute());
   ipcMain.handle("system:set-startup", (_e, enabled) => { const cfg2 = saveConfig({ startWithWindows: !!enabled }); return { ok: true, enabled: cfg2.startWithWindows }; });
