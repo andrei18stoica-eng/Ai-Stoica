@@ -1665,14 +1665,14 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     return {...resolved,model,provider:"pollinations-direct"};
   }
 
-  function saveGeneratedMedia(req,{bytes,mime,kind,prompt,model}){
+  function saveGeneratedMedia(req,{bytes,mime,kind,prompt,model,provider}){
     const id=crypto.randomUUID(),ext=mediaExtFromMime(mime,kind);
     const base=safeGeneratedName((kind==="image"?"Imagine AI Stoica":"Video AI Stoica")+" - "+String(prompt||"").slice(0,55)).replace(/\.[^.]+$/,"");
     const name=(base||`AI Stoica ${kind}`)+"."+ext,target=path.join(filesDir,id+"."+ext);
     fs.writeFileSync(target,bytes);
-    const db=store.read(),item={id,userId:req.user.id,name,mime,size:bytes.length,kind,filePath:target,storage:"disk",source:kind==="image"?"ai-image":"ai-video",prompt:String(prompt||"").slice(0,2000),model:String(model||""),createdAt:Date.now()};
+    const db=store.read(),item={id,userId:req.user.id,name,mime,size:bytes.length,kind,filePath:target,storage:"disk",source:kind==="image"?"ai-image":"ai-video",prompt:String(prompt||"").slice(0,2000),model:String(model||""),provider:String(provider||""),createdAt:Date.now()};
     db.library.push(item);store.write(db);
-    return {id:item.id,name:item.name,mimeType:item.mime,size:item.size,kind:item.kind,source:item.source,model:item.model,createdAt:item.createdAt};
+    return {id:item.id,name:item.name,mimeType:item.mime,size:item.size,kind:item.kind,source:item.source,model:item.model,provider:item.provider,createdAt:item.createdAt};
   }
   function mediaModelRow(entry,kind,forcedKind=false){
     const id=String(typeof entry==="string"?entry:entry?.id||"").trim();
@@ -1755,9 +1755,11 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const policy=await cloudModelPolicy(req.cloudToken,rows.map(x=>x.policyId));
     const decisions=new Map(policy.data.map(x=>[String(x.model),x]));
     const isOwner=(req.cloudUser?.role||req.user?.role)==="owner";
+    const strictFree=kind==="image"&&(cfg.imageCostPolicy==="free_only"||cfg.imageProviderMode==="free");
     const allowed=rows
       .map((row,index)=>({row,index,decision:decisions.get(row.policyId)}))
       .filter(x=>x.decision?.allowed)
+      .filter(x=>!strictFree||!(x.decision?.paidRequired===true||localPaidHint(x.row)))
       .sort((a,b)=>{
         const ac=Number(a.row.id===configured),bc=Number(b.row.id===configured);
         if(isOwner&&ac!==bc)return bc-ac;
@@ -1783,64 +1785,63 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const prompt=String(req.body?.prompt||"").trim();
       if(!prompt)return res.status(400).json({error:"Descrierea imaginii lipsește."});
       const cfg=getOmniConfig(),errors=[];
+      const strictFree=cfg.imageCostPolicy==="free_only"||cfg.imageProviderMode==="free";
+
       if(ownerRequest(req)){
-        for(const attempt of [
-          ["OpenAI direct",()=>directOpenAiImage(cfg,prompt,req.body?.size)],
-          ["OpenRouter direct",()=>directOpenRouterImage(cfg,prompt)],
-          ["Pollinations direct",()=>directPollinationsImage(cfg,prompt)]
-        ]){
+        const attempts=await directImageAttempts(cfg,prompt,req.body?.size);
+        for(const attempt of attempts){
           try{
-            const resolved=await attempt[1]();
-            if(resolved?.bytes?.length)return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"image",prompt,model:resolved.model||attempt[0]})});
-          }catch(e){errors.push(`${attempt[0]}: ${e.message}`)}
+            const resolved=await attempt.run();
+            if(resolved?.bytes?.length)return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"image",prompt,model:resolved.model||attempt.label,provider:resolved.provider||attempt.id})});
+          }catch(e){errors.push(attempt.label+": "+e.message)}
         }
       }
-      const models=(await discoverPermittedMediaModels(req,cfg,"image",req.body?.model)).slice(0,3);
-      const imageUrl=`${String(cfg.baseUrl).replace(/\/+$/,"")}/images/generations`;
-      const imageHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})};
-      for(const model of models){
-        try{
-          let upstream=await fetch(imageUrl,{
-            method:"POST",headers:imageHeaders,
-            body:JSON.stringify({model,prompt,size:String(req.body?.size||"1024x1024"),n:1,response_format:"b64_json"}),
-            signal:AbortSignal.timeout(180000)
-          });
-          if(!upstream.ok&&[400,404,405,409,422].includes(upstream.status)){
-            upstream=await fetch(imageUrl,{
+
+      let models=[];
+      try{models=(await discoverPermittedMediaModels(req,cfg,"image",req.body?.model)).slice(0,4)}
+      catch(e){errors.push("OmniRoute: "+e.message)}
+      if(models.length){
+        const imageUrl=String(cfg.baseUrl).replace(/\/+$/,"")+"/images/generations";
+        const imageHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:"Bearer "+cfg.apiKey}:{})};
+        for(const model of models){
+          try{
+            let upstream=await fetch(imageUrl,{
               method:"POST",headers:imageHeaders,
-              body:JSON.stringify({model,prompt,size:String(req.body?.size||"1024x1024"),n:1}),
+              body:JSON.stringify({model,prompt,size:String(req.body?.size||"1024x1024"),n:1,response_format:"b64_json"}),
               signal:AbortSignal.timeout(180000)
             });
-          }
-          const ctype=upstream.headers.get("content-type")||"";
-          if(!upstream.ok){errors.push(`${model}: HTTP ${upstream.status} ${(await upstream.text()).slice(0,350)}`);continue}
-          let resolved;
-          if(ctype.startsWith("image/")){
-            const bytes=Buffer.from(await upstream.arrayBuffer());resolved={bytes,mime:inferMediaMime(bytes,ctype,"image")};
-          }else{
-            const body=await upstream.json(),candidate=findMediaCandidate(body,"image");
-            resolved=await resolveGeneratedMedia(candidate,"image");
-          }
-          if(!resolved.bytes.length){errors.push(`${model}: imagine goală`);continue}
-          return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"image",prompt,model})});
-        }catch(e){errors.push(`${model}: ${e.message}`)}
-      }
-      if(ownerRequest(req)){
-        for(const attempt of [
-          ["OpenAI direct",()=>directOpenAiImage(cfg,prompt,req.body?.size)],
-          ["OpenRouter direct",()=>directOpenRouterImage(cfg,prompt)],
-          ["Pollinations direct",()=>directPollinationsImage(cfg,prompt)]
-        ]){
-          try{
-            const resolved=await attempt[1]();
-            if(resolved?.bytes?.length)return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"image",prompt,model:resolved.model||attempt[0]})});
-          }catch(e){errors.push(`${attempt[0]}: ${e.message}`)}
+            if(!upstream.ok&&[400,404,405,409,422].includes(upstream.status)){
+              upstream=await fetch(imageUrl,{
+                method:"POST",headers:imageHeaders,
+                body:JSON.stringify({model,prompt,size:String(req.body?.size||"1024x1024"),n:1}),
+                signal:AbortSignal.timeout(180000)
+              });
+            }
+            const ctype=upstream.headers.get("content-type")||"";
+            if(!upstream.ok){errors.push(model+": HTTP "+upstream.status+" "+(await upstream.text()).slice(0,350));continue}
+            let resolved;
+            if(ctype.startsWith("image/")){
+              const bytes=Buffer.from(await upstream.arrayBuffer());resolved={bytes,mime:inferMediaMime(bytes,ctype,"image")};
+            }else{
+              const body=await upstream.json(),candidate=findMediaCandidate(body,"image");
+              resolved=await resolveGeneratedMedia(candidate,"image");
+            }
+            if(!resolved.bytes.length){errors.push(model+": imagine goală");continue}
+            return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"image",prompt,model,provider:"omniroute"})});
+          }catch(e){errors.push(model+": "+e.message)}
         }
       }
-      const providerHint=ownerRequest(req)&&!cfg.openAiApiKey&&!directOpenRouterKey(cfg)&&!cfg.pollinationsApiKey
-        ?" Nu există o cheie media directă configurată; adaugă o cheie OpenAI, OpenRouter sau Pollinations în Setări > AI & OmniRoute."
-        :"";
-      throw policyFailure(`Generarea imaginii nu a produs un fișier real.${providerHint} ${errors.slice(0,6).join(" | ")}`.trim(),502);
+
+      const configuredProviders=[
+        cfg.openAiApiKey&&"OpenAI",directOpenRouterKey(cfg)&&"OpenRouter",cfg.stabilityApiKey&&"Stability AI",
+        cfg.falApiKey&&"fal.ai",cfg.replicateApiToken&&"Replicate",cfg.pollinationsApiKey&&"Pollinations"
+      ].filter(Boolean);
+      const providerHint=!configuredProviders.length
+        ?" Nu există nicio cheie de imagine configurată; adaugă cel puțin un provider în Setări > AI & OmniRoute > Providere imagini."
+        :strictFree
+          ?" Protecția «Doar gratuit» este activă; providerii cu cost sau cost necunoscut nu sunt apelați. Pentru ei trebuie să alegi explicit «Permite provideri cu plată»."
+          :"";
+      throw policyFailure(("Generarea imaginii nu a produs un fișier real."+providerHint+" "+errors.slice(0,10).join(" | ")).trim(),502);
     }catch(e){res.status(e.status||502).json({error:e.message})}
   });
 
