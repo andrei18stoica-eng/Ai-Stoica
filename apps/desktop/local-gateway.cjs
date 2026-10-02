@@ -1007,6 +1007,48 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     res.status(410).json({error:"Selectarea automată a AI-ului este dezactivată. Fiecare utilizator alege manual dintre modelele permise de Owner."});
   });
 
+
+  app.get("/api/tools/web/search", auth, async (req,res) => {
+    try{
+      if(!ownerRequest(req)&&cloudBase()&&req.permissions?.web_search!==true)return res.status(403).json({error:"Căutarea web este dezactivată pentru acest cont."});
+      const query=String(req.query?.q||"").trim();if(!query)return res.status(400).json({error:"Termenul de căutare lipsește."});
+      const data=await liveWebSearch(query,Math.max(1,Math.min(8,Number(req.query?.limit||5))));
+      res.json({data});
+    }catch(e){res.status(502).json({error:e.message})}
+  });
+
+  app.post("/api/tools/code/run", auth, ownerOnlyLocal, async (req,res) => {
+    try{
+      const result=await executeCode(req.body?.language||"javascript",req.body?.code||"");
+      res.json({data:result});
+    }catch(e){res.status(400).json({error:e.message})}
+  });
+
+  app.post("/api/tools/server/check", auth, ownerOnlyLocal, async (_req,res) => {
+    try{
+      const cfg=getOmniConfig();
+      const result=await sshRun(cfg,'echo AI_STOICA_SERVER_OK; uname -a 2>/dev/null || ver; uptime 2>/dev/null || true',18000);
+      res.json({ok:result.code===0,output:(result.stdout||result.stderr||"").trim(),data:result});
+    }catch(e){res.status(502).json({error:e.message})}
+  });
+
+  app.post("/api/tools/server/run", auth, ownerOnlyLocal, async (req,res) => {
+    try{
+      const command=String(req.body?.command||"").trim();if(!command)return res.status(400).json({error:"Comanda SSH lipsește."});
+      const result=await sshRun(getOmniConfig(),command,Math.max(5000,Math.min(120000,Number(req.body?.timeout||45000))));
+      res.json({data:result});
+    }catch(e){res.status(502).json({error:e.message})}
+  });
+
+  app.get("/api/tools/github/search", auth, async (req,res) => {
+    try{
+      if(!ownerRequest(req)&&cloudBase()&&req.permissions?.github_access!==true)return res.status(403).json({error:"GitHub este dezactivat pentru acest cont."});
+      const q=String(req.query?.q||"").trim();if(!q)return res.status(400).json({error:"Căutarea GitHub lipsește."});
+      const context=await githubCodeContext(getOmniConfig(),q);
+      res.json({data:{context}});
+    }catch(e){res.status(502).json({error:e.message})}
+  });
+
   app.get("/api/projects", auth, (req,res) => { const db=store.read(); res.json({data:db.projects.filter(x=>x.userId===req.user.id).sort((a,b)=>b.updatedAt-a.updatedAt)}); });
   app.post("/api/projects", auth, (req,res) => {
     const name=String(req.body?.name||"").trim(); if(!name)return res.status(400).json({error:"Numele proiectului este obligatoriu."});
@@ -1858,17 +1900,26 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }catch(e){res.status(e.status||502).json({error:e.message})}
   });
 
-  async function prepareMessages(rawMessages, assistantId, userId) {
+  async function prepareMessages(rawMessages, assistantId, userId, options={}) {
     const db=store.read(),messages=Array.isArray(rawMessages)?rawMessages:[];
     const latest=[...messages].reverse().find(m=>m.role==="user");const latestText=textFromContent(latest?.content);
-    const system=[];
+    const cfg=getOmniConfig(),system=[];
     system.push("Când utilizatorul cere un fișier descărcabil (PDF, DOCX/Word, PPTX/PowerPoint, XLSX/Excel, CSV, JSON, Markdown, TXT, HTML, XML, RTF, ZIP, notebook sau fișier de cod), redactează direct conținutul final care trebuie introdus în acel fișier. Pentru XLSX/CSV folosește preferabil un tabel Markdown cu antete; pentru JSON produce JSON valid; pentru HTML/XML/SVG și cod produce conținut valid, fără explicații în afara lui. Nu afișa pseudo-comenzi de tool: aplicația creează fișierul real și îl atașează separat.");
+    system.push("Capabilități AI Stoica: aplicația are memorie persistentă, poate primi context din alte conversații ale aceluiași Proiect, poate căuta internetul în timp real, poate căuta fragmente relevante într-un repository GitHub configurat și Owner-ul poate rula/testa cod JavaScript sau Python și poate lucra cu serverul SSH configurat. Nu afirma că aceste capabilități nu există atunci când contextul lor este prezent. Nu pretinde însă că un cod a fost executat dacă nu ai primit explicit un rezultat de rulare. Pentru proiecte mari, lucrează modular și folosește contextul relevant recuperat, fără a cere utilizatorului să copieze manual întreaga bază de cod.");
     const assistant=db.assistants.find(a=>a.id===assistantId&&a.userId===userId);if(assistant?.systemPrompt)system.push(assistant.systemPrompt);
     const user=db.users.find(u=>u.id===userId);
     if(user?.memoryEnabled!==false){
       const mem=memoryMatches(db,userId,latestText,8);if(mem.length)system.push("Memorie relevantă despre utilizator și conversațiile anterioare:\n"+mem.map((m,i)=>`${i+1}. ${m.text}`).join("\n"));
     }
     const pctx=await pluginContext(db,userId,latestText);if(pctx.length)system.push("Rezultate furnizate de pluginuri conectate:\n"+pctx.join("\n\n"));
+    if(cfg.projectContextEnabled!==false&&options.projectId){const pc=projectContext(db,userId,options.projectId,latestText);if(pc)system.push("CONTEXT PERSISTENT DIN ACELAȘI PROIECT:\n"+pc)}
+    if(cfg.webSearchEnabled!==false&&options.webAllowed!==false&&shouldUseLiveWeb(latestText)){
+      try{const rows=await liveWebSearch(latestText,5);if(rows.length)system.push("WEB LIVE — rezultate obținute acum. Folosește-le pentru informațiile actuale și indică sursele prin link; nu inventa surse:\n"+rows.map((x,i)=>(i+1)+". "+x.title+"\nURL: "+x.url+"\nExtras: "+String(x.excerpt||"").slice(0,2600)).join("\n\n"))}catch{}
+    }
+    if(cfg.githubAutoContext!==false&&options.githubAllowed!==false){try{const gc=await githubCodeContext(cfg,latestText);if(gc)system.push("GITHUB LIVE — fragmente relevante din repository-ul configurat:\n"+gc)}catch{}}
+    if(options.owner&&cfg.serverHost&&/\\b(server|ssh|hetzner|deploy|deployment|producție|productie|nginx|ubuntu)\\b/i.test(latestText)){
+      try{const s=await sshRun(cfg,"uname -a; uptime; pwd",12000);if(s.stdout)system.push("SERVER LIVE — verificare read-only efectuată acum:\n"+s.stdout.slice(0,8000))}catch(e){system.push("SERVER LIVE — conexiunea de verificare nu a reușit: "+e.message)}
+    }
     return system.length?[{role:"system",content:system.join("\n\n")},...messages.filter(m=>m.role!=="system")]:messages;
   }
 
@@ -1881,7 +1932,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     });
   }
   app.post("/api/chat", auth, async (req,res) => {
-    const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id);if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
+    const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id,{projectId:req.body?.projectId||null,webAllowed:ownerRequest(req)||req.permissions?.web_search!==false,githubAllowed:ownerRequest(req)||req.permissions?.github_access===true,owner:ownerRequest(req)});if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
     try{
       const route=await resolveChatRoute(req,messages,requestedModel);
       const errors=[];
@@ -1899,7 +1950,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }catch(e){res.status(e.status||502).json({error:e.message})}
   });
   app.post("/api/chat/stream", auth, async (req,res) => {
-    const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id);if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
+    const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id,{projectId:req.body?.projectId||null,webAllowed:ownerRequest(req)||req.permissions?.web_search!==false,githubAllowed:ownerRequest(req)||req.permissions?.github_access===true,owner:ownerRequest(req)});if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
     try{
       const route=await resolveChatRoute(req,messages,requestedModel);
       const errors=[];let upstream=null,usedModel="";
