@@ -922,13 +922,23 @@ async function router(request, env) {
   }
 
   if(p==="/api/conversations" && request.method==="GET"){
-    const r=await env.DB.prepare(
-      "SELECT id,title,model,messages_json,summary,created_at,updated_at FROM conversations WHERE user_id=? ORDER BY updated_at DESC"
-    ).bind(user.id).all();
-    return json({data:(r.results||[]).map(x=>({
-      id:x.id,title:x.title,model:x.model,messages:JSON.parse(x.messages_json||"[]"),
-      summary:x.summary||"",createdAt:x.created_at,updatedAt:x.updated_at
-    }))});
+    const requestedLimit=Number(url.searchParams.get("limit")||40);
+    const limit=Math.max(1,Math.min(200,Number.isFinite(requestedLimit)?requestedLimit:40));
+    const before=Number(url.searchParams.get("before")||0);
+    const sql=before>0
+      ? "SELECT id,title,model,messages_json,summary,created_at,updated_at FROM conversations WHERE user_id=? AND updated_at<? ORDER BY updated_at DESC LIMIT ?"
+      : "SELECT id,title,model,messages_json,summary,created_at,updated_at FROM conversations WHERE user_id=? ORDER BY updated_at DESC LIMIT ?";
+    const r=before>0
+      ? await env.DB.prepare(sql).bind(user.id,before,limit+1).all()
+      : await env.DB.prepare(sql).bind(user.id,limit+1).all();
+    const rows=(r.results||[]),page=rows.slice(0,limit);
+    return json({
+      data:page.map(x=>({
+        id:x.id,title:x.title,model:x.model,messages:JSON.parse(x.messages_json||"[]"),
+        summary:x.summary||"",createdAt:x.created_at,updatedAt:x.updated_at
+      })),
+      nextBefore:rows.length>limit?Number(page.at(-1)?.updated_at||0):null
+    });
   }
 
   if(p==="/api/conversations" && request.method==="POST"){
