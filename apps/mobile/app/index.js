@@ -174,9 +174,9 @@ export default function Home(){
     const p=text.trim();
     if((!p&&!pendingFiles.length)||busy)return;
     setBusy(true);
-    const files=pendingFiles;setPendingFiles([]);setText("");
+    const files=pendingFiles;setPendingFiles([]);setText("");let activeConversation=null,beforeMessages=[];
     try{
-      let c=await ensureConversation(p||files[0]?.name||"Fișiere");
+      let c=await ensureConversation(p||files[0]?.name||"Fișiere");activeConversation=c;beforeMessages=[...(c.messages||[])];
       const msg={id:String(Date.now()),role:"user",content:p||"Analizează și rezolvă fișierele atașate.",attachments:files,createdAt:Date.now()};
       const messages=[...(c.messages||[]),msg];
       setConvs(v=>v.map(x=>x.id===c.id?{...x,messages}:x));
@@ -203,7 +203,7 @@ export default function Home(){
       }
       const final=[...messages,{id:`a${Date.now()}`,role:"assistant",content:String(ans),attachments:generatedAttachments,createdAt:Date.now(),provider:d.provider,model:d.model}];
       await saveMessages(c,final);
-    }catch(e){Alert.alert("AI Stoica",e.message);setConvs(v=>v.map(x=>x.id===current?.id?{...x,messages:current.messages||[]}:x));setPendingFiles(files);setText(v=>v||p)}finally{setBusy(false)}
+    }catch(e){Alert.alert("AI Stoica",e.message);if(activeConversation)setConvs(v=>v.map(x=>x.id===activeConversation.id?{...x,messages:beforeMessages}:x));setPendingFiles(files);setText(v=>v||p)}finally{setBusy(false)}
   }
 
   async function exportMessage(m,format){
