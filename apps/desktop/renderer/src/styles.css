@@ -503,3 +503,33 @@
 .providerGroup:first-of-type{margin-top:6px}
 .providerGroup>b{font-size:12px}
 .providerGroup>small{font-size:10px;opacity:.6}
+
+
+/* AI Stoica 0.7.4 — jump to latest message like ChatGPT */
+.jumpToLatest{
+  position:absolute;
+  left:50%;
+  bottom:132px;
+  transform:translateX(-50%);
+  z-index:18;
+  height:38px;
+  padding:0 13px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(18,24,33,.96);
+  color:#eaf2fb;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  box-shadow:0 10px 30px rgba(0,0,0,.45);
+  backdrop-filter:blur(14px);
+  cursor:pointer;
+}
+.jumpToLatest:hover{background:#1a2431;border-color:rgba(255,255,255,.24)}
+.jumpToLatest span{font-size:11px;font-weight:650}
+.jumpToLatest svg{flex:0 0 auto}
+@media(max-width:760px){
+  .jumpToLatest{bottom:126px}
+  .jumpToLatest span{display:none}
+  .jumpToLatest{width:38px;padding:0;justify-content:center}
+}
