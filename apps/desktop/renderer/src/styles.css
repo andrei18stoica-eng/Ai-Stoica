@@ -475,3 +475,24 @@
 .modeChip:hover{background:rgba(255,255,255,.05);color:var(--text,#eef4ff)}
 .modeChip.active{background:rgba(255,255,255,.10);color:var(--text,#eef4ff);border-color:rgba(255,255,255,.18)}
 .attachMenu .menuDivider{height:1px;background:rgba(255,255,255,.08);margin:5px 0}
+
+
+/* AI Stoica 0.7.2 — ChatGPT-like conversation search */
+.searchBox{position:relative}
+.searchBox .searchClear{display:grid;place-items:center;border:0;background:transparent;color:inherit;opacity:.65;cursor:pointer;padding:4px}
+.searchBox .searchClear:hover{opacity:1}
+.currentConversationReturn{width:100%;display:flex;align-items:center;gap:9px;text-align:left;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.045);color:inherit;border-radius:10px;padding:9px 10px;margin:5px 0 8px;cursor:pointer}
+.currentConversationReturn:hover{background:rgba(255,255,255,.075)}
+.currentConversationReturn span{display:flex;flex-direction:column;min-width:0}
+.currentConversationReturn b{font-size:12px}
+.currentConversationReturn small{font-size:10px;opacity:.62;margin-top:2px}
+.conversationSearchResults{display:flex;flex-direction:column;gap:6px}
+.conversationSearchResult{width:100%;display:flex;flex-direction:column;align-items:stretch;text-align:left;border:1px solid transparent;background:transparent;color:inherit;border-radius:10px;padding:9px 10px;cursor:pointer}
+.conversationSearchResult:hover{background:rgba(255,255,255,.055);border-color:rgba(255,255,255,.08)}
+.conversationSearchResult.current{background:rgba(255,255,255,.045)}
+.conversationSearchHead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.conversationSearchHead b{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conversationSearchHead span{font-size:9px;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:2px 6px;opacity:.8}
+.conversationSearchResult p{font-size:10px;line-height:1.35;opacity:.68;margin:5px 0 6px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.conversationSearchResult>small{display:flex;align-items:center;gap:4px;font-size:9px;opacity:.58}
+.searchNoResults{display:flex;align-items:center;gap:8px;padding:12px 8px;font-size:11px;opacity:.6}
