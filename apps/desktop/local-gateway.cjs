@@ -214,7 +214,10 @@ function nextRun(automation, from = Date.now()) {
   const d = new Date(from);
   const freq = automation.frequency || "daily";
   if (freq === "once") return Number(automation.runAt || 0) || null;
-  if (freq === "hourly") return from + 60 * 60 * 1000;
+  if (freq === "hourly" || freq === "interval") {
+    const hours=Math.max(1,Math.min(168,Number(automation.intervalHours||1)));
+    return from + hours * 60 * 60 * 1000;
+  }
   const [hh, mm] = String(automation.time || "09:00").split(":").map(Number);
   const next = new Date(d); next.setSeconds(0,0); next.setHours(hh || 0, mm || 0, 0, 0);
   if (next.getTime() <= from) next.setDate(next.getDate() + 1);
@@ -226,6 +229,11 @@ function nextRun(automation, from = Date.now()) {
     const days = Array.isArray(automation.days) ? automation.days.map(Number) : [];
     if (!days.length) return null;
     while (!days.includes(next.getDay()) || next.getTime() <= from) next.setDate(next.getDate() + 1);
+  }
+  if(freq==="monthly"){
+    const day=Math.max(1,Math.min(28,Number(automation.monthday||1)));
+    next.setDate(day);
+    if(next.getTime()<=from){next.setMonth(next.getMonth()+1);next.setDate(day)}
   }
   return next.getTime();
 }
@@ -547,7 +555,7 @@ async function createExportBytes(format,title,content) {
   return {bytes:Buffer.from(stripOuterFence(content),"utf8"),mime:PLAIN_TEXT_MIME[format]||"text/plain; charset=utf-8"};
 }
 
-function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig }) {
+function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig, onAutomationResult }) {
   const store = createStore(dataDir);
   const secret = loadOrCreateSecret(dataDir);
   const filesDir = path.join(dataDir, "library-files");
@@ -1400,16 +1408,17 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.get("/api/automations", auth, (req,res) => {const db=store.read();res.json({data:db.automations.filter(x=>x.userId===req.user.id).sort((a,b)=>b.createdAt-a.createdAt).map(publicAutomation)});});
   app.post("/api/automations", auth, async (req,res) => {
     const title=String(req.body?.title||"").trim(),prompt=String(req.body?.prompt||"").trim();if(!title||!prompt)return res.status(400).json({error:"Titlul și instrucțiunea sunt obligatorii."});
-    const selectedModel=String(req.body?.model||getOmniConfig()?.model||"Ai principal").trim();
+    const selectedModel=String(req.body?.model||getOmniConfig()?.model||"").trim();
     try{await requireModelAccess(req.cloudToken,selectedModel);}catch(e){return res.status(e.status||403).json({error:e.message})}
-    const db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,title,prompt,trigger:String(req.body?.trigger||`@${title.toLowerCase().replace(/[^a-z0-9ăâîșț]+/gi,"-").replace(/^-|-$/g,"")}`),frequency:req.body?.frequency||"daily",time:req.body?.time||"09:00",weekday:Number(req.body?.weekday??1),days:Array.isArray(req.body?.days)?req.body.days.map(Number):[],runAt:Number(req.body?.runAt||0)||null,model:selectedModel,cloudToken:req.cloudToken||null,enabled:true,lastRunAt:null,lastResult:"",createdAt:Date.now()};
+    const timingMode=["exact_schedule","flexible_schedule","condition_watch"].includes(req.body?.timingMode)?req.body.timingMode:"exact_schedule";
+    const db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,title,prompt,trigger:String(req.body?.trigger||`@${title.toLowerCase().replace(/[^a-z0-9ăâîșț]+/gi,"-").replace(/^-|-$/g,"")}`),frequency:req.body?.frequency||"daily",time:req.body?.time||"09:00",weekday:Number(req.body?.weekday??1),days:Array.isArray(req.body?.days)?req.body.days.map(Number):[],runAt:Number(req.body?.runAt||0)||null,intervalHours:Math.max(1,Number(req.body?.intervalHours||1)),monthday:Math.max(1,Math.min(28,Number(req.body?.monthday||1))),timingMode,notify:req.body?.notify!==false,model:selectedModel,cloudToken:req.cloudToken||null,enabled:true,lastRunAt:null,lastResult:"",lastStatus:"created",createdAt:Date.now()};
     item.nextRunAt=nextRun(item,Date.now());db.automations.push(item);store.write(db);res.json({data:publicAutomation(item)});
   });
   app.patch("/api/automations/:id", auth, async (req,res) => {
     const db=store.read(),item=db.automations.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Automatizarea nu a fost găsită."});
-    const nextModel=String(Object.prototype.hasOwnProperty.call(req.body||{},"model")?req.body.model:(item.model||getOmniConfig()?.model||"Ai principal")).trim();
+    const nextModel=String(Object.prototype.hasOwnProperty.call(req.body||{},"model")?req.body.model:(item.model||getOmniConfig()?.model||"")).trim();
     try{await requireModelAccess(req.cloudToken,nextModel);}catch(e){return res.status(e.status||403).json({error:e.message})}
-    for(const k of ["title","prompt","trigger","frequency","time","weekday","days","runAt","model","enabled"])if(Object.prototype.hasOwnProperty.call(req.body||{},k))item[k]=req.body[k];
+    for(const k of ["title","prompt","trigger","frequency","time","weekday","days","runAt","intervalHours","monthday","timingMode","notify","model","enabled"])if(Object.prototype.hasOwnProperty.call(req.body||{},k))item[k]=req.body[k];
     item.model=nextModel;if(req.cloudToken)item.cloudToken=req.cloudToken;
     item.nextRunAt=item.enabled?nextRun(item,Date.now()):null;store.write(db);res.json({data:publicAutomation(item)});
   });
@@ -1579,15 +1588,26 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const selectedModel=String(item.model||cfg.model||"").trim();
     if(!selectedModel||isSmartAlias(selectedModel))throw policyFailure("Automatizarea nu are un model AI manual valid. Selectează un model permis de Owner.",400);
     await requireModelAccess(cloudToken,selectedModel);
-    const messages=await prepareMessages([{role:"user",content:item.prompt}],null,item.userId);
-    const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},body:JSON.stringify({model:selectedModel,messages,stream:false,temperature:0.35})});
+    const isWatch=item.timingMode==="condition_watch";
+    const taskPrompt=isWatch
+      ? `${item.prompt}\n\nAceasta este o verificare condițională. Dacă nu există o schimbare relevantă sau condiția nu este îndeplinită, răspunde exact: AI_STOICA_NO_NOTIFICATION. Dacă este îndeplinită, răspunde numai cu informația utilă care trebuie notificată.`
+      : item.prompt;
+    const messages=await prepareMessages([{role:"user",content:taskPrompt}],null,item.userId);
+    const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},body:JSON.stringify({model:selectedModel,messages,stream:false,temperature:0.25})});
     if(!r.ok)throw new Error(`OmniRoute HTTP ${r.status}: ${(await r.text()).slice(0,500)}`);
-    const data=await r.json(),answer=data?.choices?.[0]?.message?.content||"";
+    const data=await r.json(),answer=String(data?.choices?.[0]?.message?.content||"").trim();
+    const noNotification=isWatch&&/^AI_STOICA_NO_NOTIFICATION\b/i.test(answer);
     const fresh=store.read(),target=fresh.automations.find(x=>x.id===item.id);if(!target)return;
-    target.lastRunAt=Date.now();target.lastResult=answer.slice(0,30000);
+    target.lastRunAt=Date.now();
+    target.lastStatus=noNotification?"checked_no_change":"delivered";
+    target.lastResult=noNotification?"Verificat — condiția nu este încă îndeplinită.":answer.slice(0,30000);
     if(target.frequency==="once"){target.enabled=false;target.nextRunAt=null;}else target.nextRunAt=nextRun(target,Date.now()+1000);
-    const u=fresh.users.find(x=>x.id===item.userId);if(u?.memoryEnabled!==false)addMemory(fresh,item.userId,`Automatizare "${item.title}": ${answer}`,"automation");
+    const u=fresh.users.find(x=>x.id===item.userId);
+    if(!noNotification&&u?.memoryEnabled!==false)addMemory(fresh,item.userId,`Rezultat automatizare "${item.title}": ${answer.slice(0,1800)}`,"automation",{category:"automatizare"});
     store.write(fresh);
+    if(!noNotification&&target.notify!==false&&typeof onAutomationResult==="function"){
+      try{onAutomationResult({title:item.title,body:answer.slice(0,500),automationId:item.id,userId:item.userId})}catch{}
+    }
   }
 
   let automationBusy=false;
