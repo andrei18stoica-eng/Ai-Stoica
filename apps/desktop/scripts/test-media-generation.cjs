@@ -106,6 +106,9 @@ async function main(){
     if(target==="https://api.stability.ai/v2beta/stable-image/generate/core"){
       return new Response(png,{status:200,headers:{"content-type":"image/png"}});
     }
+    if(target==="https://api.cloudflare.com/client/v4/accounts/test-account/ai/run/@cf/black-forest-labs/flux-1-schnell"){
+      return new Response(JSON.stringify({success:true,result:{image:png.toString("base64")}}),{status:200,headers:{"content-type":"application/json"}});
+    }
     return realFetch(url,init);
   };
   try{
@@ -148,6 +151,24 @@ async function main(){
     const stabilityBytes=Buffer.from(await r.arrayBuffer());
     expect(r.ok&&stabilityBytes.subarray(0,8).equals(png.subarray(0,8)),"Stability direct output is not a real PNG");
     delete omniConfig.stabilityApiKey;
+    delete omniConfig.imageCostPolicy;
+    delete omniConfig.imageProviderMode;
+    delete omniConfig.imageProviderOrder;
+
+    omniConfig.cloudflareAccountId="test-account";
+    omniConfig.cloudflareApiToken="test-cloudflare-token";
+    omniConfig.imageCostPolicy="free_only";
+    omniConfig.imageProviderMode="free";
+    omniConfig.imageProviderOrder="cloudflare";
+    r=await fetch(base+"/api/generate/image",{method:"POST",headers:ownerHeaders,body:JSON.stringify({prompt:"Direct Cloudflare free provider test"})});
+    const cloudflareImage=await r.json();expect(r.ok,cloudflareImage.error||"Cloudflare direct image failed");
+    expect(cloudflareImage.data?.kind==="image","Cloudflare image kind missing");
+    expect(cloudflareImage.data?.provider==="cloudflare-direct","Cloudflare provider metadata missing");
+    r=await fetch(base+"/api/files/"+cloudflareImage.data.id,{headers:{authorization:"Bearer owner-token"}});
+    const cloudflareBytes=Buffer.from(await r.arrayBuffer());
+    expect(r.ok&&cloudflareBytes.subarray(0,8).equals(png.subarray(0,8)),"Cloudflare direct output is not a real PNG");
+    delete omniConfig.cloudflareAccountId;
+    delete omniConfig.cloudflareApiToken;
     delete omniConfig.imageCostPolicy;
     delete omniConfig.imageProviderMode;
     delete omniConfig.imageProviderOrder;
