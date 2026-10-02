@@ -444,7 +444,7 @@ function ModelPicker({model,onSelect,models,onRefresh,refreshing}) {
   </div>;
 }
 
-function Header({onMenu,model,onSelectModel,models,onRefreshModels,refreshingModels,omni,onShare,current,projects,onDetach,onMoveProject,onFiles,onGitHub,onArchive,onDelete}) {
+function Header({onMenu,model,onSelectModel,models,onRefreshModels,refreshingModels,omni,onShare,current,projects,onDetach,onMoveProject,onFiles,onGitHub,onGitHubRollback,hasGitHubBackup,onArchive,onDelete}) {
   const [more,setMore]=useState(false),[moveOpen,setMoveOpen]=useState(false);
   return <header className="topbar">
     <button className="iconOnly menuBtn" onClick={onMenu}><Menu size={20}/></button>
@@ -466,6 +466,7 @@ function Header({onMenu,model,onSelectModel,models,onRefreshModels,refreshingMod
         <div className="menuDivider"/>
         <button disabled={!current} onClick={()=>{onFiles();setMore(false)}}><Library size={18}/> Vizualizare fișiere din conversație</button>
         <button onClick={()=>{onGitHub();setMore(false)}}><Globe2 size={18}/> GitHub Solve</button>
+        {hasGitHubBackup&&<button onClick={()=>{onGitHubRollback();setMore(false)}}><RotateCcw size={18}/> Revino la ultima modificare GitHub</button>}
         <div className="menuDivider"/>
         <button disabled={!current} onClick={()=>{onArchive();setMore(false)}}><Archive size={18}/> Arhivează</button>
         <button className="dangerMenuItem" disabled={!current} onClick={()=>{onDelete();setMore(false)}}><Trash2 size={18}/> Șterge</button>
@@ -1640,18 +1641,34 @@ function App() {
     const instruction=prompt("Ce trebuie să rezolve AI Stoica în acest fișier?","Analizează fișierul, identifică problema și corectează-l.");
     if(instruction===null)return;
     try{
-      const d=await api("/api/github/solve",{method:"POST",body:JSON.stringify({path,instruction})});
-      const proposal=d.data?.proposal||"";
+      const d=await api("/api/github/solve",{method:"POST",body:JSON.stringify({path,instruction,model})});
+      const proposal=d.data?.proposal||"",check=d.data?.check;
       await writeClipboardText(proposal);
-      const apply=confirm("Rezolvarea a fost generată și copiată în clipboard.\n\nVrei să o aplic direct în GitHub?");
+      if(check?.supported&&!check?.ok){
+        alert("AI Stoica a verificat sintaxa înainte de aplicare și a găsit o eroare.\n\n"+(check.stderr||check.stdout||"Verificare eșuată").slice(0,2500)+"\n\nPropunerea a fost copiată în clipboard, dar NU a fost aplicată în GitHub.");
+        return;
+      }
+      const tested=check?.supported?"\n\nVerificare de sintaxă: trecută ✓":"";
+      const apply=confirm("Rezolvarea a fost generată și copiată în clipboard."+tested+"\n\nVrei să o aplic direct în GitHub?");
       if(apply){
         const a=await api("/api/github/apply",{method:"POST",body:JSON.stringify({
           path:d.data.path,content:proposal,sha:d.data.sha,branch:d.data.branch,
           message:"AI Stoica: rezolvare "+d.data.path
         })});
-        alert("Modificarea a fost aplicată în GitHub. Commit: "+(a.data?.commit||"creat"));
+        if(a.data?.backupId)localStorage.setItem("ai-stoica-last-github-backup",JSON.stringify({id:a.data.backupId,path:a.data.path,branch:a.data.branch,commit:a.data.commit,createdAt:Date.now()}));
+        alert("Modificarea a fost aplicată în GitHub. Commit: "+(a.data?.commit||"creat")+"\nBackup local creat pentru revenire.");
       }
     }catch(e){alert("GitHub: "+e.message)}
+  }
+  async function githubRollback(){
+    let last=null;try{last=JSON.parse(localStorage.getItem("ai-stoica-last-github-backup")||"null")}catch{}
+    if(!last?.id){alert("Nu există un backup GitHub recent.");return;}
+    if(!confirm(`Revii la versiunea anterioară pentru ${last.path}?`))return;
+    try{
+      const d=await api(`/api/github/rollback/${last.id}`,{method:"POST",body:"{}"});
+      localStorage.removeItem("ai-stoica-last-github-backup");
+      alert("Rollback GitHub efectuat. Commit: "+(d.data?.commit||"creat"));
+    }catch(e){alert("Rollback GitHub: "+e.message)}
   }
   function openTool(name){setSidebar(false);setToolPanel(name)}
   function attachFromLibrary(a){setAttachments(v=>[...v,a])}
@@ -1669,7 +1686,7 @@ function App() {
   return <div className={cx("appShell",sidebarCollapsed&&"sidebarCollapsed")}>
     <Sidebar open={sidebar} setOpen={setSidebar} user={user} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} onSelect={id=>{setCurrentId(id);setSidebar(false)}} onDeleteConversation={deleteConversation} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} selectedAssistant={selectedAssistant} setSelectedAssistant={setSelectedAssistant} onNewProject={()=>setCreateType("project")} onNewAssistant={()=>setCreateType("assistant")} onTool={openTool} onExplore={()=>openTool("explore")} onSettings={()=>setSettings(true)} onLogout={logout}/>
     {sidebar&&<div className="mobileScrim" onClick={()=>setSidebar(false)}/>}
-    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} busyStage={busyStage} busySteps={busySteps} onRegenerate={regenerate} onRate={rate} canRunCode={user?.role==="owner"} onCodeResult={text=>setDraft(v=>(v?v+"\n\n":"")+text)}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} onStop={stopGeneration} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
+    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onGitHubRollback={githubRollback} hasGitHubBackup={!!localStorage.getItem("ai-stoica-last-github-backup")} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} busyStage={busyStage} busySteps={busySteps} onRegenerate={regenerate} onRate={rate} canRunCode={user?.role==="owner"} onCodeResult={text=>setDraft(v=>(v?v+"\n\n":"")+text)}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} onStop={stopGeneration} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
     {settings&&<SettingsModal user={user} onClose={()=>setSettings(false)} onSaved={()=>{window.AIStoica.ensureOmni();setTimeout(loadData,1000)}}/>}
     {createType&&<CreateModal type={createType} onClose={()=>setCreateType(null)} onCreate={createItem}/>}
     {toolPanel==="explore"&&<ExplorePanel onClose={()=>setToolPanel(null)} assistants={assistants} models={models} onUseAssistant={useAssistant} onImagePrompt={startImagePrompt} onOpenLibrary={()=>setToolPanel("library")}/>} 
