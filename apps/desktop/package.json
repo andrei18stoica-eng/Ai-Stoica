@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.7.6",
+  "version": "0.7.7",
   "private": true,
-  "description": "AI Stoica 0.7.6 - dedicated Photos settings with all image APIs, multi-provider fallback, cost guard and smart chat navigation",
+  "description": "AI Stoica 0.7.7 - direct multi-AI chat APIs with Cerebras Groq Gemini Mistral NVIDIA GitHub OpenRouter Cloudflare Cohere HuggingFace OpenAI fallback",
   "main": "main.cjs",
   "repository": {
     "type": "git",
