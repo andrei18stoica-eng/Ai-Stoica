@@ -820,20 +820,57 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(Object.prototype.hasOwnProperty.call(req.body||{},"instructions"))item.instructions=String(req.body.instructions||"").trim().slice(0,12000);
     item.updatedAt=Date.now();store.write(db);res.json({data:item});
   });
+  app.delete("/api/projects/:id", auth, (req,res) => {
+    const db=store.read(),before=db.projects.length;db.projects=db.projects.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));
+    if(db.projects.length===before)return res.status(404).json({error:"Proiectul nu a fost găsit."});
+    for(const conv of db.conversations)if(conv.userId===req.user.id&&conv.projectId===req.params.id)conv.projectId=null;
+    store.write(db);res.json({ok:true});
+  });
   app.get("/api/assistants", auth, (req,res) => { const db=store.read();res.json({data:db.assistants.filter(x=>x.userId===req.user.id).sort((a,b)=>Number(b.builtIn)-Number(a.builtIn)||a.name.localeCompare(b.name))}); });
   app.post("/api/assistants", auth, (req,res) => {
     const name=String(req.body?.name||"").trim(),systemPrompt=String(req.body?.systemPrompt||"").trim();if(!name)return res.status(400).json({error:"Numele asistentului este obligatoriu."});
     const db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,name,icon:name[0]?.toUpperCase()||"A",systemPrompt,createdAt:Date.now(),builtIn:false};db.assistants.push(item);store.write(db);res.json({data:item});
   });
+  app.patch("/api/assistants/:id", auth, (req,res) => {
+    const db=store.read(),item=db.assistants.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Asistentul nu a fost găsit."});
+    if(item.builtIn)return res.status(400).json({error:"Asistentul principal nu poate fi redenumit."});
+    if(req.body?.name){item.name=String(req.body.name).trim().slice(0,200);item.icon=item.name[0]?.toUpperCase()||"A";}
+    if(Object.prototype.hasOwnProperty.call(req.body||{},"systemPrompt"))item.systemPrompt=String(req.body.systemPrompt||"").trim().slice(0,12000);
+    store.write(db);res.json({data:item});
+  });
+  app.delete("/api/assistants/:id", auth, (req,res) => {
+    const db=store.read(),item=db.assistants.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Asistentul nu a fost găsit."});
+    if(item.builtIn)return res.status(400).json({error:"Asistentul principal nu poate fi șters."});
+    db.assistants=db.assistants.filter(x=>x.id!==item.id);
+    for(const conv of db.conversations)if(conv.userId===req.user.id&&conv.assistantId===item.id)conv.assistantId=null;
+    store.write(db);res.json({ok:true});
+  });
 
-  app.get("/api/conversations", auth, (req,res) => {const db=store.read();res.json({data:db.conversations.filter(x=>x.userId===req.user.id).sort((a,b)=>b.updatedAt-a.updatedAt)});});
+  function sanitizeConversationMessages(messages){
+    return (Array.isArray(messages)?messages:[]).map(message=>{
+      if(!message||typeof message!=="object")return message;
+      const copy={...message};
+      if(Array.isArray(copy.content)){
+        const text=copy.content.filter(x=>x?.type==="text").map(x=>String(x.text||"")).join("\n").trim();
+        copy.content=(copy.attachments?.length?(copy.displayText||text||"Fișier atașat"):text);
+      }else if(typeof copy.content==="string"&&copy.content.startsWith("data:"))copy.content=copy.displayText||"Fișier atașat";
+      return copy;
+    });
+  }
+  app.get("/api/conversations", auth, (req,res) => {
+    const db=store.read();let data=db.conversations.filter(x=>x.userId===req.user.id).sort((a,b)=>b.updatedAt-a.updatedAt);
+    const before=Number(req.query?.before||0);if(before>0)data=data.filter(x=>Number(x.updatedAt||0)<before);
+    const limit=Math.max(1,Math.min(200,Number(req.query?.limit||200)));const page=data.slice(0,limit);
+    res.json({data:page,nextBefore:data.length>limit?Number(page.at(-1)?.updatedAt||0):null});
+  });
   app.post("/api/conversations", auth, (req,res) => {
-    const now=Date.now(),db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,title:String(req.body?.title||"Conversație nouă"),projectId:req.body?.projectId||null,assistantId:req.body?.assistantId||null,model:req.body?.model||null,messages:Array.isArray(req.body?.messages)?req.body.messages:[],createdAt:now,updatedAt:now};
+    const now=Date.now(),db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,title:String(req.body?.title||"Conversație nouă"),projectId:req.body?.projectId||null,assistantId:req.body?.assistantId||null,model:req.body?.model||null,messages:sanitizeConversationMessages(req.body?.messages),createdAt:now,updatedAt:now};
     db.conversations.push(item);store.write(db);res.json({data:item});
   });
   app.put("/api/conversations/:id", auth, (req,res) => {
     const db=store.read(),item=db.conversations.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Conversația nu a fost găsită."});
-    for(const k of ["title","projectId","assistantId","model","messages","archived"])if(Object.prototype.hasOwnProperty.call(req.body||{},k))item[k]=req.body[k];
+    for(const k of ["title","projectId","assistantId","model","archived"])if(Object.prototype.hasOwnProperty.call(req.body||{},k))item[k]=req.body[k];
+    if(Object.prototype.hasOwnProperty.call(req.body||{},"messages"))item.messages=sanitizeConversationMessages(req.body.messages);
     item.updatedAt=Date.now();store.write(db);res.json({data:item});
   });
   app.delete("/api/conversations/:id", auth, (req,res) => {
@@ -905,6 +942,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   },3000).unref?.();
 
   app.post("/api/library/upload", auth, async (req,res) => {
+    if(!featureAllowedResponse(req,res,"file_upload","Încărcarea de fișiere"))return;
     const rawName=String(req.headers["x-file-name"]||"").trim();
     let name=rawName;
     try{name=decodeURIComponent(rawName)}catch{}
@@ -962,6 +1000,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
 
   app.post("/api/library", auth, (req,res) => {
+    if(!featureAllowedResponse(req,res,"file_upload","Încărcarea de fișiere"))return;
     const name=String(req.body?.name||"").trim();if(!name)return res.status(400).json({error:"Numele fișierului lipsește."});
     const db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,name,mime:String(req.body?.mime||""),size:Number(req.body?.size||0),kind:String(req.body?.kind||"file"),dataUrl:req.body?.dataUrl||null,text:req.body?.text||null,createdAt:Date.now()};
     db.library.push(item);store.write(db);res.json({data:{...item,dataUrl:undefined,text:undefined}});
@@ -970,6 +1009,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.delete("/api/library/:id", auth, (req,res) => {const db=store.read(),item=db.library.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(item?.filePath){try{fs.unlinkSync(item.filePath)}catch{}}db.library=db.library.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));store.write(db);res.json({ok:true});});
 
   app.post("/api/export", auth, async (req,res) => {
+    if(!featureAllowedResponse(req,res,"document_generation","Generarea de documente"))return;
     try {
       const format=String(req.body?.format||"docx").toLowerCase().replace(/^\./,"");
       const title=String(req.body?.title||"AI Stoica").trim().slice(0,120)||"AI Stoica";
@@ -989,6 +1029,25 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     } catch(e) { res.status(500).json({error:"Nu am putut genera fișierul: "+e.message}); }
   });
 
+  app.post("/api/files", auth, async (req,res) => {
+    if(!featureAllowedResponse(req,res,"file_upload","Încărcarea de fișiere"))return;
+    const name=String(req.query?.name||req.headers["x-file-name"]||"fisier").trim();
+    const mime=String(req.query?.type||req.headers["content-type"]||"application/octet-stream");
+    const id=crypto.randomUUID(),safeExt=path.extname(name).replace(/[^.a-z0-9_-]/gi,"").slice(0,20),target=path.join(filesDir,`${id}${safeExt}`);
+    let bytes=0,finished=false;const maxUpload=2*1024*1024*1024;const out=fs.createWriteStream(target,{flags:"wx"});
+    const cleanup=()=>{try{out.destroy()}catch{};try{fs.unlinkSync(target)}catch{}};
+    req.on("data",chunk=>{bytes+=chunk.length;if(bytes>maxUpload&&!finished){finished=true;req.unpipe(out);cleanup();if(!res.headersSent)res.status(413).json({error:"Fișierul depășește limita de 2 GB."});req.resume();}});
+    req.on("aborted",()=>{if(!finished)cleanup()});req.on("error",()=>{if(!finished)cleanup()});
+    out.on("error",e=>{cleanup();if(!res.headersSent)res.status(500).json({error:`Nu am putut salva fișierul: ${e.message}`})});
+    out.on("finish",()=>{
+      if(finished)return;finished=true;
+      const db=store.read(),item={id,userId:req.user.id,name,mime,size:bytes,kind:mime.startsWith("image/")?"image":mime.startsWith("video/")?"video":mime.startsWith("audio/")?"audio":"file",filePath:target,storage:"disk",textStatus:"pending",createdAt:Date.now()};
+      db.library.push(item);store.write(db);indexLibraryText(id).catch(()=>{});
+      res.json({data:{id,name,mimeType:mime,mime,size:bytes,kind:item.kind,createdAt:item.createdAt}});
+    });
+    req.pipe(out);
+  });
+
   app.get("/api/files/:id", auth, (req,res) => {
     const db=store.read(),item=db.library.find(x=>x.id===req.params.id&&x.userId===req.user.id);
     if(!item)return res.status(404).json({error:"Fișierul nu a fost găsit."});
@@ -1004,6 +1063,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(role==="owner")return;
     if(cloudBase()&&req.permissions?.[key]!==true)throw policyFailure(`${label} este dezactivată pentru acest cont.`,403);
   }
+  function featureAllowedResponse(req,res,key,label){try{requireFeaturePermission(req,key,label);return true}catch(e){res.status(e.status||403).json({error:e.message});return false}}
   function findMediaCandidate(value,kind) {
     const seen=new Set();
     function walk(v,key=""){
@@ -1835,6 +1895,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   }
 
   app.post("/api/plugins/oauth/start", auth, (req,res) => {
+    if(!featureAllowedResponse(req,res,"plugins","Pluginurile"))return;
     try{
       const name=String(req.body?.name||"").trim(),provider=String(req.body?.provider||"").trim();
       const clientId=String(req.body?.clientId||"").trim(),clientSecret=String(req.body?.clientSecret||"").trim();
@@ -1905,9 +1966,10 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }catch(e){return finish(false,`Nu am putut finaliza OAuth: ${e.message}`)}
   });
 
-  app.get("/api/plugins", auth, (req,res) => {const db=store.read();res.json({data:db.plugins.filter(x=>x.userId===req.user.id).map(publicPlugin)});});
+  app.get("/api/plugins", auth, (req,res) => {if(!featureAllowedResponse(req,res,"plugins","Pluginurile"))return;const db=store.read();res.json({data:db.plugins.filter(x=>x.userId===req.user.id).map(publicPlugin)});});
 
   app.post("/api/plugins/direct", auth, (req,res) => {
+    if(!featureAllowedResponse(req,res,"plugins","Pluginurile"))return;
     const name=String(req.body?.name||"").trim(),appUrl=String(req.body?.appUrl||"").trim();
     if(!name||!appUrl)return res.status(400).json({error:"Numele și adresa aplicației sunt obligatorii."});
     try{
@@ -1927,22 +1989,25 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
 
   app.post("/api/plugins", auth, (req,res) => {
+    if(!featureAllowedResponse(req,res,"plugins","Pluginurile"))return;
     const name=String(req.body?.name||"").trim(),url=String(req.body?.url||"").trim();if(!name||!url)return res.status(400).json({error:"Numele și URL-ul sunt obligatorii."});
     try{new URL(url)}catch{return res.status(400).json({error:"URL-ul pluginului nu este valid."})}
     const db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,name,description:String(req.body?.description||""),url,method:String(req.body?.method||"POST").toUpperCase(),trigger:String(req.body?.trigger||`@${name.toLowerCase().replace(/\s+/g,"-")}`),auto:!!req.body?.auto,enabled:true,authType:String(req.body?.authType||"bearer"),headerName:String(req.body?.headerName||"X-API-Key"),apiKey:String(req.body?.apiKey||""),createdAt:Date.now()};
     db.plugins.push(item);store.write(db);res.json({data:publicPlugin(item)});
   });
   app.patch("/api/plugins/:id", auth, (req,res) => {
+    if(!featureAllowedResponse(req,res,"plugins","Pluginurile"))return;
     const db=store.read(),item=db.plugins.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Pluginul nu a fost găsit."});
     for(const k of ["name","description","url","method","trigger","auto","enabled","authType","headerName"])if(Object.prototype.hasOwnProperty.call(req.body||{},k))item[k]=req.body[k];
     if(req.body?.apiKey)item.apiKey=String(req.body.apiKey);store.write(db);res.json({data:publicPlugin(item)});
   });
   app.post("/api/plugins/:id/test", auth, async (req,res) => {
+    if(!featureAllowedResponse(req,res,"plugins","Pluginurile"))return;
     const db=store.read(),item=db.plugins.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Pluginul nu a fost găsit."});
     if(item.mode==="direct_app")return res.json({ok:true,direct:true,appUrl:item.appUrl||item.url,result:"Conexiune directă pregătită. Aplicația se deschide fără OAuth."});
-    try{const result=await callPlugin(item,String(req.body?.message||"Test AI Stoica"));res.json({ok:true,result:String(result).slice(0,5000)});}catch(e){res.status(502).json({error:e.message});}
+    try{const result=await callPlugin(item,String(req.body?.message||"Test AI Stoica"));if(item._oauthTokenUpdated){delete item._oauthTokenUpdated;store.write(db)}res.json({ok:true,result:String(result).slice(0,5000)});}catch(e){if(item._oauthTokenUpdated){delete item._oauthTokenUpdated;store.write(db)}res.status(502).json({error:e.message});}
   });
-  app.delete("/api/plugins/:id", auth, (req,res) => {const db=store.read();db.plugins=db.plugins.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));store.write(db);res.json({ok:true});});
+  app.delete("/api/plugins/:id", auth, (req,res) => {if(!featureAllowedResponse(req,res,"plugins","Pluginurile"))return;const db=store.read();db.plugins=db.plugins.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));store.write(db);res.json({ok:true});});
 
   function publicAutomation(item){const {cloudToken,...safe}=item||{};return safe;}
   app.get("/api/automations", auth, (req,res) => {const db=store.read();res.json({data:db.automations.filter(x=>x.userId===req.user.id).sort((a,b)=>b.createdAt-a.createdAt).map(publicAutomation)});});
