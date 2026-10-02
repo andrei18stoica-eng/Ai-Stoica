@@ -1560,9 +1560,9 @@ function SettingsModal({onClose,onSaved,user}) {
         <label>Gemini API key<input type="password" value={geminiKey} onChange={e=>setGeminiKey(e.target.value)} placeholder={cfg.geminiApiKey?"Cheie salvată — lasă gol pentru a o păstra":"AIza..."}/></label>
         <label>Model Gemini video<input value={cfg.geminiVideoModel||"veo-3.1-fast-generate-preview"} onChange={e=>setCfg({...cfg,geminiVideoModel:e.target.value})}/></label>
 
-        <div className="providerGroup"><b>fal.ai Video</b><small>Text-to-video prin modelele video fal.</small></div>
+        <div className="providerGroup"><b>fal.ai Video</b><small>Text-to-video prin coada fal.ai; LTX Video este modelul implicit din fișierul tău.</small></div>
         <label>fal API key<input type="password" value={falKey} onChange={e=>setFalKey(e.target.value)} placeholder={cfg.falApiKey?"Cheie salvată — lasă gol pentru a o păstra":"FAL_KEY"}/></label>
-        <label>Model fal video<input value={cfg.falVideoModel||"fal-ai/wan/v2.2-a14b/text-to-video"} onChange={e=>setCfg({...cfg,falVideoModel:e.target.value})}/></label>
+        <label>Model fal video<input value={cfg.falVideoModel||"fal-ai/ltx-video"} onChange={e=>setCfg({...cfg,falVideoModel:e.target.value})}/></label>
 
         <div className="providerGroup"><b>Replicate Video</b><small>Modele video oficiale prin Predictions API.</small></div>
         <label>Replicate API token<input type="password" value={replicateKey} onChange={e=>setReplicateKey(e.target.value)} placeholder={cfg.replicateApiToken?"Token salvat — lasă gol pentru a-l păstra":"r8_..."}/></label>
