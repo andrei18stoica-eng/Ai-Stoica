@@ -45,3 +45,6 @@ jobs:
 
       - name: Test infrastructure regressions
         run: node scripts/test-infrastructure-regressions.cjs
+
+      - name: Test Owner tools
+        run: node scripts/test-owner-tools.cjs
