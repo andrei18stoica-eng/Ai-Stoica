@@ -1111,24 +1111,21 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const p=String(row?.provider||inferProvider(row?.policyId||row?.id)||"").toLowerCase();
     return ["openai","anthropic","openrouter","runway"].includes(p)||/^(openai|anthropic|openrouter|runway)\//i.test(String(row?.policyId||row?.id||""));
   }
-  async function discoverPermittedMediaModel(req,cfg,kind,explicitModel=""){
+  async function discoverPermittedMediaModels(req,cfg,kind,explicitModel=""){
     const explicit=String(explicitModel||"").trim();
     if(explicit){
       await requireModelAccess(req.cloudToken,explicit);
-      return explicit;
+      return [explicit];
     }
 
     const configured=String(kind==="image"?cfg.imageModel||"":cfg.videoModel||"").trim();
-    if(configured){
-      try{
-        await requireModelAccess(req.cloudToken,configured);
-        return configured;
-      }catch(e){
-        // A configured paid/denied media model must not block a free model that Owner permits.
-      }
+    const rows=await mediaCatalog(cfg,kind);
+    const byId=new Map(rows.map(row=>[row.id.toLowerCase(),row]));
+    if(configured&&!byId.has(configured.toLowerCase())){
+      const row=mediaModelRow({id:configured},kind,true);
+      if(row){rows.unshift(row);byId.set(configured.toLowerCase(),row)}
     }
 
-    const rows=await mediaCatalog(cfg,kind);
     if(!rows.length)throw policyFailure(
       kind==="image"
         ?"Nu există momentan niciun model de imagine disponibil în OmniRoute."
@@ -1137,19 +1134,26 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     );
 
     if(!cloudBase()){
-      rows.sort((a,b)=>Number(localPaidHint(a))-Number(localPaidHint(b)));
-      return rows[0].id;
+      rows.sort((a,b)=>{
+        const configuredBoost=Number(b.id===configured)-Number(a.id===configured);
+        if(configuredBoost)return configuredBoost;
+        return Number(localPaidHint(a))-Number(localPaidHint(b));
+      });
+      return rows.map(x=>x.id);
     }
 
     const policy=await cloudModelPolicy(req.cloudToken,rows.map(x=>x.policyId));
     const decisions=new Map(policy.data.map(x=>[String(x.model),x]));
     const allowed=rows
-      .map(row=>({row,decision:decisions.get(row.policyId)}))
+      .map((row,index)=>({row,index,decision:decisions.get(row.policyId)}))
       .filter(x=>x.decision?.allowed)
       .sort((a,b)=>{
         const ap=Number(a.decision?.paidRequired===true||localPaidHint(a.row));
         const bp=Number(b.decision?.paidRequired===true||localPaidHint(b.row));
-        return ap-bp;
+        if(ap!==bp)return ap-bp;
+        const ac=Number(a.row.id===configured),bc=Number(b.row.id===configured);
+        if(ac!==bc)return bc-ac;
+        return a.index-b.index;
       });
 
     if(!allowed.length)throw policyFailure(
@@ -1158,7 +1162,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         :"Generarea video este permisă, dar nu există momentan un model video gratuit sau autorizat pentru acest cont.",
       403
     );
-    return allowed[0].row.id;
+    return allowed.map(x=>x.row.id);
   }
 
   app.post("/api/generate/image", auth, async (req,res) => {
@@ -1166,32 +1170,38 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       requireFeaturePermission(req,"image_generation","Generarea de imagini");
       const prompt=String(req.body?.prompt||"").trim();
       if(!prompt)return res.status(400).json({error:"Descrierea imaginii lipsește."});
-      const cfg=getOmniConfig(),model=await discoverPermittedMediaModel(req,cfg,"image",req.body?.model);
+      const cfg=getOmniConfig(),models=await discoverPermittedMediaModels(req,cfg,"image",req.body?.model);
       const imageUrl=`${String(cfg.baseUrl).replace(/\/+$/,"")}/images/generations`;
       const imageHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})};
-      let upstream=await fetch(imageUrl,{
-        method:"POST",headers:imageHeaders,
-        body:JSON.stringify({model,prompt,size:String(req.body?.size||"1024x1024"),n:1,response_format:"b64_json"}),
-        signal:AbortSignal.timeout(180000)
-      });
-      if(!upstream.ok&&[400,422].includes(upstream.status)){
-        upstream=await fetch(imageUrl,{
-          method:"POST",headers:imageHeaders,
-          body:JSON.stringify({model,prompt,size:String(req.body?.size||"1024x1024"),n:1}),
-          signal:AbortSignal.timeout(180000)
-        });
+      const errors=[];
+      for(const model of models){
+        try{
+          let upstream=await fetch(imageUrl,{
+            method:"POST",headers:imageHeaders,
+            body:JSON.stringify({model,prompt,size:String(req.body?.size||"1024x1024"),n:1,response_format:"b64_json"}),
+            signal:AbortSignal.timeout(180000)
+          });
+          if(!upstream.ok&&[400,404,405,409,422].includes(upstream.status)){
+            upstream=await fetch(imageUrl,{
+              method:"POST",headers:imageHeaders,
+              body:JSON.stringify({model,prompt,size:String(req.body?.size||"1024x1024"),n:1}),
+              signal:AbortSignal.timeout(180000)
+            });
+          }
+          const ctype=upstream.headers.get("content-type")||"";
+          if(!upstream.ok){errors.push(`${model}: HTTP ${upstream.status} ${(await upstream.text()).slice(0,350)}`);continue}
+          let resolved;
+          if(ctype.startsWith("image/")){
+            const bytes=Buffer.from(await upstream.arrayBuffer());resolved={bytes,mime:inferMediaMime(bytes,ctype,"image")};
+          }else{
+            const body=await upstream.json(),candidate=findMediaCandidate(body,"image");
+            resolved=await resolveGeneratedMedia(candidate,"image");
+          }
+          if(!resolved.bytes.length){errors.push(`${model}: imagine goală`);continue}
+          return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"image",prompt,model})});
+        }catch(e){errors.push(`${model}: ${e.message}`)}
       }
-      const ctype=upstream.headers.get("content-type")||"";
-      if(!upstream.ok)return res.status(upstream.status).json({error:`Generarea imaginii a eșuat: ${(await upstream.text()).slice(0,1200)}`});
-      let resolved;
-      if(ctype.startsWith("image/")){
-        const bytes=Buffer.from(await upstream.arrayBuffer());resolved={bytes,mime:inferMediaMime(bytes,ctype,"image")};
-      }else{
-        const body=await upstream.json(),candidate=findMediaCandidate(body,"image");
-        resolved=await resolveGeneratedMedia(candidate,"image");
-      }
-      if(!resolved.bytes.length)throw new Error("Imaginea generată este goală.");
-      res.json({data:saveGeneratedMedia(req,{...resolved,kind:"image",prompt,model})});
+      throw policyFailure(`Niciun model de imagine permis nu a reușit generarea. ${errors.slice(0,4).join(" | ")}`,502);
     }catch(e){res.status(e.status||502).json({error:e.message})}
   });
 
@@ -1200,32 +1210,38 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       requireFeaturePermission(req,"video_generation","Generarea de videoclipuri");
       const prompt=String(req.body?.prompt||"").trim();
       if(!prompt)return res.status(400).json({error:"Descrierea videoclipului lipsește."});
-      const cfg=getOmniConfig(),model=await discoverPermittedMediaModel(req,cfg,"video",req.body?.model);
+      const cfg=getOmniConfig(),models=await discoverPermittedMediaModels(req,cfg,"video",req.body?.model);
       const videoUrl=`${String(cfg.baseUrl).replace(/\/+$/,"")}/videos/generations`;
       const videoHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})};
-      let upstream=await fetch(videoUrl,{
-        method:"POST",headers:videoHeaders,
-        body:JSON.stringify({model,prompt,duration:Math.max(1,Math.min(10,Number(req.body?.duration||6))),aspect_ratio:String(req.body?.aspectRatio||"16:9")}),
-        signal:AbortSignal.timeout(360000)
-      });
-      if(!upstream.ok&&[400,422].includes(upstream.status)){
-        upstream=await fetch(videoUrl,{
-          method:"POST",headers:videoHeaders,body:JSON.stringify({model,prompt}),
-          signal:AbortSignal.timeout(360000)
-        });
+      const errors=[];
+      for(const model of models){
+        try{
+          let upstream=await fetch(videoUrl,{
+            method:"POST",headers:videoHeaders,
+            body:JSON.stringify({model,prompt,duration:Math.max(1,Math.min(10,Number(req.body?.duration||6))),aspect_ratio:String(req.body?.aspectRatio||"16:9")}),
+            signal:AbortSignal.timeout(360000)
+          });
+          if(!upstream.ok&&[400,404,405,409,422].includes(upstream.status)){
+            upstream=await fetch(videoUrl,{
+              method:"POST",headers:videoHeaders,body:JSON.stringify({model,prompt}),
+              signal:AbortSignal.timeout(360000)
+            });
+          }
+          const ctype=upstream.headers.get("content-type")||"";
+          if(!upstream.ok){errors.push(`${model}: HTTP ${upstream.status} ${(await upstream.text()).slice(0,350)}`);continue}
+          let resolved;
+          if(ctype.startsWith("video/")){
+            const bytes=Buffer.from(await upstream.arrayBuffer());resolved={bytes,mime:inferMediaMime(bytes,ctype,"video")};
+          }else{
+            const body=await upstream.json();
+            const candidate=await pollVideoResult(cfg,body);
+            resolved=await resolveGeneratedMedia(candidate,"video");
+          }
+          if(!resolved.bytes.length){errors.push(`${model}: video gol`);continue}
+          return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"video",prompt,model})});
+        }catch(e){errors.push(`${model}: ${e.message}`)}
       }
-      const ctype=upstream.headers.get("content-type")||"";
-      if(!upstream.ok)return res.status(upstream.status).json({error:`Generarea video a eșuat: ${(await upstream.text()).slice(0,1200)}`});
-      let resolved;
-      if(ctype.startsWith("video/")){
-        const bytes=Buffer.from(await upstream.arrayBuffer());resolved={bytes,mime:inferMediaMime(bytes,ctype,"video")};
-      }else{
-        const body=await upstream.json();
-        const candidate=await pollVideoResult(cfg,body);
-        resolved=await resolveGeneratedMedia(candidate,"video");
-      }
-      if(!resolved.bytes.length)throw new Error("Videoclipul generat este gol.");
-      res.json({data:saveGeneratedMedia(req,{...resolved,kind:"video",prompt,model})});
+      throw policyFailure(`Niciun model video permis nu a reușit generarea. ${errors.slice(0,4).join(" | ")}`,502);
     }catch(e){res.status(e.status||502).json({error:e.message})}
   });
 
