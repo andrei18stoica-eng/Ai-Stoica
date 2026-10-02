@@ -159,11 +159,23 @@ async function ensureOmniRoute() {
   return false;
 }
 
+function publicConfig(cfg=loadConfig()) {
+  return {
+    ...cfg,
+    apiKey: cfg.apiKey ? "••••••••" : "",
+    openAiApiKey: cfg.openAiApiKey ? "••••••••" : "",
+    openRouterApiKey: cfg.openRouterApiKey ? "••••••••" : "",
+    pollinationsApiKey: cfg.pollinationsApiKey ? "••••••••" : "",
+    githubToken: cfg.githubToken ? "••••••••" : ""
+  };
+}
+
 async function systemStatus() {
+  const cfg=loadConfig();
   return {
     omniRunning: await isPortOpen(omniPort()),
     gatewayRunning: await isPortOpen(8787),
-    config: { ...loadConfig(), apiKey: loadConfig().apiKey ? "••••••••" : "" }
+    config: publicConfig(cfg)
   };
 }
 
@@ -306,8 +318,14 @@ app.whenReady().then(async () => {
   if (cfg.autoUpdate !== false) autoUpdater.checkForUpdatesAndNotify().catch(() => {});
   autoUpdater.on("update-downloaded", () => mainWindow?.webContents.send("update-ready"));
 
-  ipcMain.handle("config:get", () => loadConfig());
-  ipcMain.handle("config:set", async (_e, input) => { const cfg2 = saveConfig(input || {}); await ensureOmniRoute(); return { ok: true, config: { ...cfg2, apiKey: cfg2.apiKey ? "••••••••" : "", openAiApiKey: cfg2.openAiApiKey ? "••••••••" : "", openRouterApiKey: cfg2.openRouterApiKey ? "••••••••" : "", pollinationsApiKey: cfg2.pollinationsApiKey ? "••••••••" : "", githubToken: cfg2.githubToken ? "••••••••" : "" } }; });
+  ipcMain.handle("config:get", () => publicConfig(loadConfig()));
+  ipcMain.handle("config:set", async (_e, input) => {
+    const current=loadConfig(),next={...(input||{})};
+    for(const name of ["apiKey","openAiApiKey","openRouterApiKey","pollinationsApiKey","githubToken"]){
+      if(!next[name]||next[name]==="••••••••")next[name]=current[name]||"";
+    }
+    const cfg2=saveConfig(next);await ensureOmniRoute();return {ok:true,config:publicConfig(cfg2)};
+  });
   ipcMain.handle("system:status", () => systemStatus());
   ipcMain.handle("system:ensure-omni", () => ensureOmniRoute());
   ipcMain.handle("system:set-startup", (_e, enabled) => { const cfg2 = saveConfig({ startWithWindows: !!enabled }); return { ok: true, enabled: cfg2.startWithWindows }; });
