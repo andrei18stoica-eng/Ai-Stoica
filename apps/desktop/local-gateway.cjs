@@ -2341,14 +2341,25 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           return res.status(200).type(r.headers.get("content-type")||"application/json").send(body);
         }catch(e){errors.push(`${candidate.id}: ${e.message}`)}
       }
-      throw policyFailure("Niciun model selectat de AI Stoica nu a putut răspunde. "+errors.join(" | "),502);
+      if(ownerRequest(req)&&cfg.directChatEnabled!==false){
+        const direct=await directChatFallback(cfg,messages,requestedModel,false);
+        errors.push(...direct.errors);
+        if(direct.response){
+          const body=await direct.response.text();
+          res.setHeader("X-AI-Stoica-Route","direct-fallback");
+          res.setHeader("X-AI-Stoica-Model",direct.candidate.model);
+          res.setHeader("X-AI-Stoica-Provider",direct.candidate.provider);
+          return res.status(200).type(direct.response.headers.get("content-type")||"application/json").send(body);
+        }
+      }
+      throw policyFailure("Niciun model selectat de AI Stoica nu a putut răspunde. "+errors.slice(0,14).join(" | "),502);
     }catch(e){res.status(e.status||502).json({error:e.message})}
   });
   app.post("/api/chat/stream", auth, async (req,res) => {
     const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id,{projectId:req.body?.projectId||null,webAllowed:ownerRequest(req)||req.permissions?.web_search!==false,githubAllowed:ownerRequest(req)||req.permissions?.github_access===true,owner:ownerRequest(req),responseMode:String(req.body?.responseMode||"rapid")});if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
     try{
       const route=await resolveChatRoute(req,messages,requestedModel);
-      const errors=[];let upstream=null,usedModel="";
+      const errors=[];let upstream=null,usedModel="",directCandidate=null;
       for(const candidate of route.candidates){
         try{
           const r=await fetchChatCandidate(cfg,candidate.id,messages,true);
@@ -2356,16 +2367,22 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           upstream=r;usedModel=candidate.id;break;
         }catch(e){errors.push(`${candidate.id}: ${e.message}`)}
       }
-      if(!upstream)throw policyFailure("Niciun model selectat de AI Stoica nu a putut răspunde. "+errors.join(" | "),502);
+      if(!upstream&&ownerRequest(req)&&cfg.directChatEnabled!==false){
+        const direct=await directChatFallback(cfg,messages,requestedModel,true);
+        errors.push(...direct.errors);
+        if(direct.response){upstream=direct.response;usedModel=direct.candidate.model;directCandidate=direct.candidate}
+      }
+      if(!upstream)throw policyFailure("Niciun model selectat de AI Stoica nu a putut răspunde. "+errors.slice(0,14).join(" | "),502);
       const ctype=upstream.headers.get("content-type")||"";
       res.status(200);
       res.setHeader("Content-Type","text/event-stream; charset=utf-8");
       res.setHeader("Cache-Control","no-cache, no-transform");
       res.setHeader("Connection","keep-alive");
-      res.setHeader("X-AI-Stoica-Route",route.task);
+      res.setHeader("X-AI-Stoica-Route",directCandidate?"direct-fallback":route.task);
       res.setHeader("X-AI-Stoica-Model",usedModel);
-      const usedCandidate=route.candidates.find(x=>x.id===usedModel)||{};
-      res.write(`data: ${JSON.stringify({ai_stoica_route:{task:route.task,model:usedModel,provider:usedCandidate.provider||inferProvider(usedModel),reasons:route.reasons||[]}})}\n\n`);
+      if(directCandidate)res.setHeader("X-AI-Stoica-Provider",directCandidate.provider);
+      const usedCandidate=directCandidate||route.candidates.find(x=>x.id===usedModel)||{};
+      res.write(`data: ${JSON.stringify({ai_stoica_route:{task:directCandidate?"direct-fallback":route.task,model:usedModel,provider:usedCandidate.provider||inferProvider(usedModel),reasons:directCandidate?["fallback API direct după indisponibilitatea OmniRoute"]:(route.reasons||[])}})}\n\n`);
       if(!ctype.includes("text/event-stream")){const data=await upstream.json(),text=data?.choices?.[0]?.message?.content||"";res.write(`data: ${JSON.stringify({choices:[{delta:{content:text}}]})}\n\n`);res.write("data: [DONE]\n\n");return res.end();}
       const reader=upstream.body.getReader();while(true){const {value,done}=await reader.read();if(done)break;res.write(Buffer.from(value));}res.end();
     }catch(e){if(!res.headersSent)res.status(e.status||502).json({error:e.message});else{res.write(`data: ${JSON.stringify({error:e.message})}\n\n`);res.end();}}
