@@ -62,24 +62,29 @@ jobs:
         working-directory: apps/desktop
         run: npm run build
 
-      - name: Publica installerul Windows
+      - name: Publica installerul Windows si metadata de auto-update
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $version = $env:AI_STOICA_VERSION
           $tag = "v$version"
-          $installer = "apps/desktop/release/AI_Stoica_Setup_${version}_x64.exe"
-          if (!(Test-Path $installer)) {
-            Write-Error "Installerul AI Stoica nu a fost gasit: $installer"
-            exit 1
+          $releaseDir = "apps/desktop/release"
+          $installer = Join-Path $releaseDir "AI_Stoica_Setup_${version}_x64.exe"
+          $latest = Join-Path $releaseDir "latest.yml"
+          $blockmap = "$installer.blockmap"
+          foreach ($file in @($installer,$latest,$blockmap)) {
+            if (!(Test-Path $file)) {
+              Write-Error "Lipsește fișierul necesar pentru auto-update: $file"
+              exit 1
+            }
           }
 
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $installer --clobber
+            gh release upload $tag $installer $latest $blockmap --clobber
           } else {
-            gh release create $tag $installer --title "AI Stoica $version" --notes "AI Stoica principal pentru Windows."
+            gh release create $tag $installer $latest $blockmap --title "AI Stoica $version" --notes "AI Stoica principal pentru Windows."
           }
 
       - name: Incarca installerul ca Artifact

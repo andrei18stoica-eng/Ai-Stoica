@@ -82,6 +82,8 @@ jobs:
           $version = $env:AI_STOICA_VERSION
           $releaseDir = "apps/desktop/release"
           $installer = Join-Path $releaseDir "AI_Stoica_Setup_${version}_x64.exe"
+          $latest = Join-Path $releaseDir "latest.yml"
+          $blockmap = "$installer.blockmap"
           $portable = Join-Path $releaseDir "win-unpacked"
           $packageDir = "AI_Stoica_Windows_${version}_COMPLET"
           $zip = "AI_Stoica_Windows_${version}_COMPLET.zip"
@@ -94,10 +96,18 @@ jobs:
             Write-Error "Folderul win-unpacked nu a fost gasit: $portable"
             exit 1
           }
+          foreach ($file in @($latest,$blockmap)) {
+            if (!(Test-Path $file)) {
+              Write-Error "Lipsește fișierul necesar pentru auto-update: $file"
+              exit 1
+            }
+          }
 
           New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
           New-Item -ItemType Directory -Force -Path (Join-Path $packageDir "Portable") | Out-Null
           Copy-Item $installer -Destination $packageDir
+          Copy-Item $latest -Destination $packageDir
+          Copy-Item $blockmap -Destination $packageDir
           Copy-Item "$portable\*" -Destination (Join-Path $packageDir "Portable") -Recurse -Force
 
           "AI STOICA $version - WINDOWS" | Out-File -FilePath (Join-Path $packageDir "README_INSTALLARE.txt") -Encoding utf8
@@ -125,11 +135,15 @@ jobs:
           $version = $env:AI_STOICA_VERSION
           $tag = "v$version"
           $zip = "AI_Stoica_Windows_${version}_COMPLET.zip"
+          $releaseDir = "apps/desktop/release"
+          $latest = Join-Path $releaseDir "latest.yml"
+          $installer = Join-Path $releaseDir "AI_Stoica_Setup_${version}_x64.exe"
+          $blockmap = "$installer.blockmap"
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $zip --clobber
+            gh release upload $tag $zip $latest $blockmap --clobber
           } else {
-            gh release create $tag $zip --title "AI Stoica $version" --notes "AI Stoica principal pentru Windows."
+            gh release create $tag $zip $latest $blockmap --title "AI Stoica $version" --notes "AI Stoica principal pentru Windows."
           }
 
       - name: Incarca ZIP ca Artifact
