@@ -1,6 +1,6 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "private": true,
   "description": "AI Stoica 0.7.1 - live web and URL reading, persistent project/library context, GitHub Solve with rollback, Owner code execution, SSH tools and real media",
   "main": "main.cjs",
