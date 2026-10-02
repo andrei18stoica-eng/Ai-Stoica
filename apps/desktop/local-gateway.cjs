@@ -1744,12 +1744,15 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     );
 
     if(!cloudBase()){
-      rows.sort((a,b)=>{
+      const strictFree=kind==="image"&&(cfg.imageCostPolicy==="free_only"||cfg.imageProviderMode==="free");
+      const localRows=strictFree?rows.filter(row=>!localPaidHint(row)):rows;
+      localRows.sort((a,b)=>{
         const configuredBoost=Number(b.id===configured)-Number(a.id===configured);
         if(configuredBoost)return configuredBoost;
         return Number(localPaidHint(a))-Number(localPaidHint(b));
       });
-      return rows.map(x=>x.id);
+      if(strictFree&&!localRows.length)throw policyFailure("Protecția «Doar gratuit» este activă și OmniRoute nu are un model de imagine gratuit identificat.",403);
+      return localRows.map(x=>x.id);
     }
 
     const policy=await cloudModelPolicy(req.cloudToken,rows.map(x=>x.policyId));
