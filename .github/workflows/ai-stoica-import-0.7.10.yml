@@ -1,0 +1,79 @@
+name: Import AI Stoica 0.7.10
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/ai-stoica-import-0.7.10.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Rebuild and apply AI Stoica 0.7.10
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, json, base64, urllib.request, zipfile, hashlib
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+          shas = [
+              "8450aa831e640eceb2345681e5e1fd84a49eff7d",
+              "b00e66e86c9ca5fcac63b8906e42cdadb0e48e9e",
+              "7a59f593c11de7794fa7723820837a425e3c9269",
+              "fcb4d0272a9153dbf3d4781d2a5fa6e6a8474f72",
+              "1b7684fb2ef674b6beee3e3ea2fec5cde4fc450e",
+              "e1a1f799449aa32fa2ee885474bf08c9f50ad68a",
+              "a18026fe75e2630f5c10b572d977034a83982b68",
+          ]
+          out_path = "/tmp/AI_Stoica_0.7.10_complet.zip"
+          with open(out_path, "wb") as out:
+              for sha in shas:
+                  req = urllib.request.Request(
+                      f"https://api.github.com/repos/{repo}/git/blobs/{sha}",
+                      headers={
+                          "Authorization": f"Bearer {token}",
+                          "Accept": "application/vnd.github+json",
+                          "X-GitHub-Api-Version": "2022-11-28",
+                          "User-Agent": "ai-stoica-import",
+                      },
+                  )
+                  with urllib.request.urlopen(req) as response:
+                      payload = json.load(response)
+                  out.write(base64.b64decode(payload["content"].replace("\n", "")))
+
+          digest = hashlib.sha256(open(out_path, "rb").read()).hexdigest()
+          expected = "9b1e2580255600c2fb1fd142bb36dc057bb984f4e27752ba3a90a1f088d2f5e3"
+          if digest != expected:
+              raise SystemExit(f"SHA256 mismatch: {digest}")
+
+          with zipfile.ZipFile(out_path) as archive:
+              bad = archive.testzip()
+              if bad:
+                  raise SystemExit(f"Bad ZIP member: {bad}")
+              archive.extractall(".")
+          PY
+
+          rm -f .github/workflows/ai-stoica-import-0.7.10.yml
+
+      - name: Commit AI Stoica 0.7.10 to main
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Release AI Stoica 0.7.10"
+          git push origin HEAD:main
