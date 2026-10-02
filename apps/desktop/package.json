@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.6.14",
+  "version": "0.6.15",
   "private": true,
-  "description": "AI Stoica 0.6.14 - fast/quality video profiles, real image/video files and direct media fallbacks",
+  "description": "AI Stoica 0.6.15 - writable composer during generation, Stop control, fast/quality video profiles",
   "main": "main.cjs",
   "repository": {
     "type": "git",
