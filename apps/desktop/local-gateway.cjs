@@ -1732,6 +1732,156 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     return {...resolved,model,provider:"pollinations-direct"};
   }
 
+  function pricingNumbers(value,path=""){
+    const out=[];
+    if(value==null)return out;
+    if(typeof value==="number"&&/price|pricing|cost|usd/i.test(path)){out.push(value);return out}
+    if(typeof value==="string"&&/price|pricing|cost|usd/i.test(path)){
+      const n=Number(value.replace(/[^0-9.eE+-]/g,""));if(Number.isFinite(n))out.push(n);return out;
+    }
+    if(typeof value==="object"){
+      if(Array.isArray(value)){value.forEach((x,i)=>out.push(...pricingNumbers(x,path+"."+i)))}
+      else for(const [k,v] of Object.entries(value))out.push(...pricingNumbers(v,path+"."+k));
+    }
+    return out;
+  }
+  function catalogEntryFree(entry){
+    const nums=pricingNumbers(entry?.pricing??entry?.price??entry?.cost??entry,"pricing");
+    return nums.length>0&&nums.every(n=>n<=0);
+  }
+  async function openRouterVideoIsFree(cfg,model){
+    const key=directOpenRouterKey(cfg);if(!key||!model)return false;
+    try{
+      const r=await fetch("https://openrouter.ai/api/v1/videos/models",{headers:{Authorization:"Bearer "+key},signal:AbortSignal.timeout(12000)});
+      if(!r.ok)return false;
+      const data=await r.json(),items=Array.isArray(data)?data:(Array.isArray(data?.data)?data.data:[]);
+      const hit=items.find(x=>String(x?.id||x?.model||"")===String(model));
+      return !!hit&&catalogEntryFree(hit);
+    }catch{return false}
+  }
+  async function pollinationsVideoIsFree(cfg,model){
+    if(!cfg.pollinationsApiKey||!model)return false;
+    try{
+      const r=await fetch("https://gen.pollinations.ai/video/models",{signal:AbortSignal.timeout(12000)});
+      if(!r.ok)return false;
+      const data=await r.json(),items=Array.isArray(data)?data:(Array.isArray(data?.data)?data.data:[]);
+      const hit=items.find(x=>{
+        const id=String(x?.id||x?.model||"");
+        const aliases=Array.isArray(x?.aliases)?x.aliases.map(String):[];
+        return id===String(model)||aliases.includes(String(model));
+      });
+      return !!hit&&catalogEntryFree(hit);
+    }catch{return false}
+  }
+
+  function nearestVeoDuration(value){
+    const n=Math.max(1,Math.min(8,Number(value||4))),allowed=[4,6,8];
+    return allowed.sort((a,b)=>Math.abs(a-n)-Math.abs(b-n))[0];
+  }
+  async function directGeminiVideo(cfg,prompt,duration,aspectRatio){
+    const key=String(cfg.geminiApiKey||"").trim();if(!key)return null;
+    const model=String(cfg.geminiVideoModel||"veo-3.1-fast-generate-preview").trim();
+    const base="https://generativelanguage.googleapis.com/v1beta";
+    const dur=nearestVeoDuration(duration),aspect=["16:9","9:16"].includes(String(aspectRatio))?String(aspectRatio):"16:9";
+    const submit=await fetch(base+"/models/"+encodeURIComponent(model)+":predictLongRunning",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","x-goog-api-key":key},
+      body:JSON.stringify({instances:[{prompt}],parameters:{numberOfVideos:1,aspectRatio:aspect,durationSeconds:String(dur),resolution:"720p"}}),
+      signal:AbortSignal.timeout(60000)
+    });
+    const text=await submit.text();let op={};try{op=JSON.parse(text)}catch{}
+    if(!submit.ok)throw new Error("HTTP "+submit.status+": "+text.slice(0,700));
+    const name=String(op?.name||"").trim();if(!name)throw new Error("Gemini Veo nu a returnat operațiunea de generare.");
+    const deadline=Date.now()+8*60*1000;let state=op;
+    while(Date.now()<deadline){
+      if(state?.error)throw new Error("Gemini Veo: "+JSON.stringify(state.error).slice(0,600));
+      if(state?.done){
+        const uri=state?.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri||
+          state?.response?.generatedVideos?.[0]?.video?.uri||
+          state?.response?.generated_videos?.[0]?.video?.uri;
+        if(!uri)throw new Error("Gemini Veo a finalizat fără URL video.");
+        const file=await fetch(String(uri),{redirect:"follow",headers:{"x-goog-api-key":key},signal:AbortSignal.timeout(180000)});
+        const resolved=await fetchBinaryOrCandidate(file,"video");
+        return {...resolved,model,provider:"gemini-veo-direct"};
+      }
+      await new Promise(r=>setTimeout(r,10000));
+      const r=await fetch(base+"/"+name,{headers:{"x-goog-api-key":key},signal:AbortSignal.timeout(20000)});
+      const st=await r.text();try{state=JSON.parse(st)}catch{state={raw:st}}
+      if(!r.ok)throw new Error("Gemini Veo status HTTP "+r.status+": "+st.slice(0,500));
+    }
+    throw new Error("Gemini Veo nu a finalizat videoclipul în intervalul permis.");
+  }
+
+  async function directFalVideo(cfg,prompt,duration,aspectRatio){
+    const key=String(cfg.falApiKey||"").trim();if(!key)return null;
+    const model=String(cfg.falVideoModel||"fal-ai/wan/v2.2-a14b/text-to-video").trim().replace(/^\/+|\/+$/g,"");
+    const r=await fetch("https://fal.run/"+model,{
+      method:"POST",
+      headers:{"Content-Type":"application/json",Authorization:"Key "+key},
+      body:JSON.stringify({prompt,resolution:"720p",aspect_ratio:["16:9","9:16","1:1"].includes(String(aspectRatio))?String(aspectRatio):"16:9"}),
+      signal:AbortSignal.timeout(420000)
+    });
+    const resolved=await fetchBinaryOrCandidate(r,"video");
+    return {...resolved,model,provider:"fal-video-direct"};
+  }
+
+  async function directReplicateVideo(cfg,prompt,duration,aspectRatio){
+    const key=String(cfg.replicateApiToken||"").trim();if(!key)return null;
+    const model=String(cfg.replicateVideoModel||"wan-video/wan-2.2-t2v-fast").trim();
+    const parts=model.split("/").filter(Boolean);if(parts.length<2)throw new Error("Modelul Replicate trebuie să fie owner/model.");
+    const endpoint="https://api.replicate.com/v1/models/"+encodeURIComponent(parts[0])+"/"+encodeURIComponent(parts.slice(1).join("/"))+"/predictions";
+    const request=async scheme=>fetch(endpoint,{
+      method:"POST",
+      headers:{"Content-Type":"application/json",Authorization:scheme+" "+key,Prefer:"wait=60"},
+      body:JSON.stringify({input:{prompt}}),
+      signal:AbortSignal.timeout(90000)
+    });
+    let r=await request("Bearer");if(r.status===401)r=await request("Token");
+    const text=await r.text();let state={};try{state=JSON.parse(text)}catch{state={raw:text}}
+    if(!r.ok)throw new Error("HTTP "+r.status+": "+text.slice(0,700));
+    let candidate=findMediaCandidate(state,"video");
+    if(candidate){const resolved=await resolveGeneratedMedia(candidate,"video");return {...resolved,model,provider:"replicate-video-direct"}}
+    const id=String(state?.id||"").trim(),getUrl=String(state?.urls?.get||"").trim();
+    if(!id&&!getUrl)throw new Error("Replicate nu a returnat ID de predicție video.");
+    const deadline=Date.now()+8*60*1000;
+    while(Date.now()<deadline){
+      const status=String(state?.status||"").toLowerCase();
+      if(/failed|canceled|cancelled/.test(status))throw new Error("Replicate: "+String(state?.error||status));
+      candidate=findMediaCandidate(state,"video");
+      if(candidate){const resolved=await resolveGeneratedMedia(candidate,"video");return {...resolved,model,provider:"replicate-video-direct"}}
+      await new Promise(r=>setTimeout(r,4000));
+      const pollUrl=getUrl||("https://api.replicate.com/v1/predictions/"+encodeURIComponent(id));
+      let pr=await fetch(pollUrl,{headers:{Authorization:"Bearer "+key},signal:AbortSignal.timeout(20000)});
+      if(pr.status===401)pr=await fetch(pollUrl,{headers:{Authorization:"Token "+key},signal:AbortSignal.timeout(20000)});
+      const pt=await pr.text();try{state=JSON.parse(pt)}catch{state={raw:pt}}
+      if(!pr.ok)throw new Error("Replicate video status HTTP "+pr.status+": "+pt.slice(0,500));
+    }
+    throw new Error("Replicate nu a finalizat videoclipul în intervalul permis.");
+  }
+
+  function videoProviderOrder(cfg){
+    const known=["pollinations","openrouter","gemini","fal","replicate"];
+    const configured=String(cfg.videoProviderOrder||known.join(",")).split(",").map(x=>x.trim().toLowerCase()).filter(x=>known.includes(x));
+    const base=[...new Set([...configured,...known])];
+    if(cfg.videoMode==="quality")return ["gemini","openrouter","fal","replicate","pollinations"];
+    if(cfg.videoMode==="fast")return ["pollinations","openrouter","fal","replicate","gemini"];
+    return base;
+  }
+  async function directVideoAttempts(cfg,prompt,duration,aspectRatio){
+    const strictFree=cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free";
+    const openRouterModel=String(cfg.openRouterVideoModel||"bytedance/seedance-2.0-fast").trim();
+    const pollinationsModel=String(cfg.pollinationsVideoModel||"google/veo-3.1-fast").trim();
+    const [orFree,pollFree]=strictFree?await Promise.all([openRouterVideoIsFree(cfg,openRouterModel),pollinationsVideoIsFree(cfg,pollinationsModel)]):[true,true];
+    const defs={
+      pollinations:{label:"Pollinations",configured:!!String(cfg.pollinationsApiKey||"").trim(),paidRisk:!pollFree,run:()=>directPollinationsVideo(cfg,prompt,duration)},
+      openrouter:{label:"OpenRouter",configured:!!directOpenRouterKey(cfg),paidRisk:!orFree,run:()=>directOpenRouterVideo(cfg,prompt,duration,aspectRatio)},
+      gemini:{label:"Gemini Veo",configured:!!String(cfg.geminiApiKey||"").trim(),paidRisk:true,run:()=>directGeminiVideo(cfg,prompt,duration,aspectRatio)},
+      fal:{label:"fal.ai",configured:!!String(cfg.falApiKey||"").trim(),paidRisk:true,run:()=>directFalVideo(cfg,prompt,duration,aspectRatio)},
+      replicate:{label:"Replicate",configured:!!String(cfg.replicateApiToken||"").trim(),paidRisk:true,run:()=>directReplicateVideo(cfg,prompt,duration,aspectRatio)}
+    };
+    return videoProviderOrder(cfg).map(id=>({id,...defs[id]})).filter(x=>x.configured&&(!strictFree||!x.paidRisk));
+  }
+
   function saveGeneratedMedia(req,{bytes,mime,kind,prompt,model,provider}){
     const id=crypto.randomUUID(),ext=mediaExtFromMime(mime,kind);
     const base=safeGeneratedName((kind==="image"?"Imagine AI Stoica":"Video AI Stoica")+" - "+String(prompt||"").slice(0,55)).replace(/\.[^.]+$/,"");
