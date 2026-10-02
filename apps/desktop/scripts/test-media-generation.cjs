@@ -54,19 +54,23 @@ async function main(){
       res.setHeader("content-type","application/json");
       return res.end(JSON.stringify({data:[
         {id:"openai/gpt-image-2",provider:"openai",type:"image"},
+        {id:"broken-image-1",provider:"cloudflare",type:"image"},
         {id:"free-image-1",provider:"cloudflare",type:"image"},
         {id:"runway/gen-3",provider:"runway",type:"video"},
+        {id:"broken-video-1",provider:"cloudflare",type:"video"},
         {id:"free-video-1",provider:"cloudflare",type:"video"}
       ]}));
     }
     if(req.url==="/v1/images/generations"&&req.method==="POST"){
       const body=JSON.parse(await readBody(req));imageModelUsed=body.model;
       res.setHeader("content-type","application/json");
+      if(body.model==="broken-image-1"){res.statusCode=400;return res.end(JSON.stringify({error:"model endpoint mismatch"}))}
       return res.end(JSON.stringify({created:Date.now(),data:[{b64_json:png.toString("base64")}]}));
     }
     if(req.url==="/v1/videos/generations"&&req.method==="POST"){
       const body=JSON.parse(await readBody(req));videoModelUsed=body.model;videoGenerationCalls++;
       res.setHeader("content-type","application/json");
+      if(body.model==="broken-video-1"){res.statusCode=400;return res.end(JSON.stringify({error:"model endpoint mismatch"}))}
       return res.end(JSON.stringify({id:"job-1",status:"queued"}));
     }
     if(req.url==="/v1/videos/job-1"&&req.method==="GET"){
