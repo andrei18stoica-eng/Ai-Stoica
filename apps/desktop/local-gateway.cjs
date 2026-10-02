@@ -645,6 +645,10 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const enriched=await Promise.all(results.slice(0,maxResults).map(async x=>({...x,excerpt:x.snippet||await pageExcerpt(x.url)})));
     return enriched;
   }
+  function urlsFromText(text){
+    const matches=String(text||"").match(/https?:\/\/[^\s<>"']+/gi)||[];
+    return [...new Set(matches.map(x=>x.replace(/[),.;]+$/,"")).filter(publicWebUrl))].slice(0,3);
+  }
   function shouldUseLiveWeb(text){
     const t=String(text||"").toLowerCase();
     return /\b(azi|acum|actual|actuale|recent|recentă|recente|ultim|ultima|latest|news|știri|stiri|internet|online|caută|cauta|verifică|verifica|preț|pret|vreme|scor|program|orar|versiune|release|documentație|documentatie|api|model nou|2026)\b/.test(t);
@@ -752,7 +756,24 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     let proposal=String(data?.choices?.[0]?.message?.content||"").trim();
     proposal=proposal.replace(/^```[a-z0-9_+.-]*\s*/i,"").replace(/\s*```$/,"");
     if(!proposal)throw new Error("Modelul nu a returnat o propunere de cod.");
-    return {proposal,model};
+    const check=await checkCodeSyntax(file.path,proposal);
+    return {proposal,model,check};
+  }
+  async function checkCodeSyntax(filePath,source){
+    const ext=String(path.extname(filePath||"")).toLowerCase();
+    if(![".js",".cjs",".mjs",".py"].includes(ext))return {supported:false,ok:true,code:null,stdout:"",stderr:"",language:""};
+    const runDir=path.join(toolRunsDir,crypto.randomUUID());fs.mkdirSync(runDir,{recursive:true});
+    try{
+      const file=path.join(runDir,"check"+ext);fs.writeFileSync(file,String(source||""),"utf8");
+      if(ext!==".py"){
+        const r=await spawnCapture(process.execPath,["--check",file],{cwd:runDir,timeout:12000,env:{ELECTRON_RUN_AS_NODE:"1"}});
+        return {supported:true,ok:r.code===0&&!r.timedOut,...r,language:"javascript"};
+      }
+      const commands=process.platform==="win32"?[["py",["-3","-m","py_compile",file]],["python",["-m","py_compile",file]]]:[["python3",["-m","py_compile",file]],["python",["-m","py_compile",file]]];
+      let last;
+      for(const pair of commands){try{const r=await spawnCapture(pair[0],pair[1],{cwd:runDir,timeout:12000});return {supported:true,ok:r.code===0&&!r.timedOut,...r,language:"python"}}catch(e){last=e}}
+      throw last||new Error("Python nu este instalat.");
+    }finally{try{fs.rmSync(runDir,{recursive:true,force:true})}catch{}}
   }
   function spawnCapture(command,args,{cwd,timeout=15000,env={}}={}){
     return new Promise((resolve,reject)=>{
@@ -1105,7 +1126,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const filePath=String(req.body?.path||"").trim();if(!filePath)return res.status(400).json({error:"Calea fișierului GitHub lipsește."});
       const file=await githubReadFile(getOmniConfig(),filePath,req.body?.branch);
       const solved=await generateGithubProposal(req,file,req.body?.instruction);
-      res.json({data:{path:file.path,sha:file.sha,branch:file.branch,proposal:solved.proposal,model:solved.model}});
+      res.json({data:{path:file.path,sha:file.sha,branch:file.branch,proposal:solved.proposal,model:solved.model,check:solved.check}});
     }catch(e){res.status(e.status||502).json({error:e.message})}
   });
 
@@ -1996,8 +2017,9 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }
     const pctx=await pluginContext(db,userId,latestText);if(pctx.length)system.push("Rezultate furnizate de pluginuri conectate:\n"+pctx.join("\n\n"));
     if(cfg.projectContextEnabled!==false&&options.projectId){const pc=projectContext(db,userId,options.projectId,latestText);if(pc)system.push("CONTEXT PERSISTENT DIN ACELAȘI PROIECT:\n"+pc)}
-    if(cfg.webSearchEnabled!==false&&options.webAllowed!==false&&shouldUseLiveWeb(latestText)){
-      try{const rows=await liveWebSearch(latestText,5);if(rows.length)system.push("WEB LIVE — rezultate obținute acum. Folosește-le pentru informațiile actuale și indică sursele prin link; nu inventa surse:\n"+rows.map((x,i)=>(i+1)+". "+x.title+"\nURL: "+x.url+"\nExtras: "+String(x.excerpt||"").slice(0,2600)).join("\n\n"))}catch{}
+    if(cfg.webSearchEnabled!==false&&options.webAllowed!==false){
+      try{const directUrls=urlsFromText(latestText);if(directUrls.length){const pages=[];for(const url of directUrls){const excerpt=await pageExcerpt(url,5000);if(excerpt)pages.push("URL: "+url+"\nExtras: "+excerpt)}if(pages.length)system.push("PAGINI WEB LIVE — conținut citit direct din linkurile utilizatorului:\n"+pages.join("\n\n"))}}catch{}
+      if(shouldUseLiveWeb(latestText)){try{const rows=await liveWebSearch(latestText,5);if(rows.length)system.push("WEB LIVE — rezultate obținute acum. Folosește-le pentru informațiile actuale și indică sursele prin link; nu inventa surse:\n"+rows.map((x,i)=>(i+1)+". "+x.title+"\nURL: "+x.url+"\nExtras: "+String(x.excerpt||"").slice(0,2600)).join("\n\n"))}catch{}}
     }
     if(cfg.githubAutoContext!==false&&options.githubAllowed!==false){try{const gc=await githubCodeContext(cfg,latestText);if(gc)system.push("GITHUB LIVE — fragmente relevante din repository-ul configurat:\n"+gc)}catch{}}
     if(options.owner&&/\b(rulează|ruleaza|execută|executa|testează|testeaza|run|execute|test)\b/i.test(latestText)){
