@@ -1527,7 +1527,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   async function directFalImage(cfg,prompt){
     const key=String(cfg.falApiKey||"").trim();if(!key)return null;
-    const model=String(cfg.falImageModel||"fal-ai/z-image/turbo").trim().replace(/^\\/+|\\/+$/g,"");
+    const model=String(cfg.falImageModel||"fal-ai/z-image/turbo").trim().replace(/^\/+|\/+$/g,"");
     const r=await fetch("https://fal.run/"+model,{
       method:"POST",
       headers:{"Content-Type":"application/json",Authorization:"Key "+key},
