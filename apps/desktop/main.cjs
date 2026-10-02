@@ -347,7 +347,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("config:get", () => publicConfig(loadConfig()));
   ipcMain.handle("config:set", async (_e, input) => {
     const current=loadConfig(),next={...(input||{})};
-    for(const name of ["apiKey","openAiApiKey","openRouterApiKey","pollinationsApiKey","githubToken"]){
+    for(const name of ["apiKey","openAiApiKey","openRouterApiKey","pollinationsApiKey","stabilityApiKey","replicateApiToken","falApiKey","githubToken"]){
       if(!next[name]||next[name]==="••••••••")next[name]=current[name]||"";
     }
     const cfg2=saveConfig(next);await ensureOmniRoute();return {ok:true,config:publicConfig(cfg2)};
