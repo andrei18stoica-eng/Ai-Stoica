@@ -27,6 +27,9 @@ const MODEL_SELECTED_KEY = "aiStoicaSelectedModelV1";
 const SMART_ROUTER_DEFAULT_KEY = "aiStoicaSmartRouterDefaultV1";
 const AUTO_ROUTER_ENABLED_KEY = "aiStoicaAutoRouterEnabledV1";
 const MANUAL_MODEL_KEY = "aiStoicaManualModelV1";
+const SPEECH_LANGUAGE_KEY = "aiStoicaSpeechLanguageV1";
+function currentSpeechLanguage(){const v=localStorage.getItem(SPEECH_LANGUAGE_KEY)||"ro";return ({ro:"ro-RO",en:"en-US",fr:"fr-FR"})[v]||v||"ro-RO";}
+function friendlyError(message,status=0){const base=String(message||`HTTP ${status}`);if(/Pas următor:/i.test(base))return base;let next="Încearcă din nou.";if(status===401)next="Autentifică-te din nou.";else if(status===403)next="Verifică permisiunile contului în Control Center.";else if(status===413)next="Micșorează fișierul sau încarcă-l în Bibliotecă.";else if(status>=500)next="Verifică serverul/conexiunea și încearcă din nou.";return `${base}\n\nPas următor: ${next}`;}
 
 function cachedModels() {
   try {
@@ -51,7 +54,7 @@ async function api(path, options = {}) {
   const text = await r.text();
   let data;
   try { data = text ? JSON.parse(text) : {}; } catch { data = { error: text || `HTTP ${r.status}` }; }
-  if (!r.ok) throw new Error(data?.error?.message || data?.error || `HTTP ${r.status}`);
+  if (!r.ok) throw new Error(friendlyError(data?.error?.message || data?.error || `HTTP ${r.status}`,r.status));
   return data;
 }
 
@@ -70,7 +73,7 @@ async function uploadFileToLibrary(file) {
   });
   const text=await r.text();let data;
   try{data=text?JSON.parse(text):{}}catch{data={error:text||`HTTP ${r.status}`}}
-  if(!r.ok)throw new Error(data?.error||`HTTP ${r.status}`);
+  if(!r.ok)throw new Error(friendlyError(data?.error||`HTTP ${r.status}`,r.status));
   return data.data;
 }
 function formatBytes(n){
@@ -205,19 +208,17 @@ function normalizeDocumentIntent(value){
 const DOWNLOAD_FORMATS=["pdf","docx","pptx","xlsx","csv","json","md","txt","html","xml","rtf","zip","ipynb","svg","js","ts","jsx","tsx","py","java","c","cpp","cs","go","rs","php","rb","sh","ps1","sql","css","yaml","yml","toml","ini","tex"];
 function requestedDocumentFormat(value){
   const t=normalizeDocumentIntent(value).trim();
-  const asks=/(trimite|da-mi|dami|descarc|download|export|salveaz|fisier|document|format|creeaz|genereaz|fa-mi|fami|fa\s+un|make|create|save)/;
+  if(!t)return null;
+  const informational=/^(cum|ce|care|cand|de ce|unde|pot|se poate|exista|explica|spune-mi|vreau sa stiu)\b/;
+  const outputVerb=/\b(trimite-mi|da-mi|dami|descarca|download|exporta|salveaza|creeaza-mi|creaza-mi|genereaza-mi|fa-mi|fami|make me|create me|save as|export as)\b/;
   const explicit=t.match(/\.(pdf|docx|pptx|xlsx|csv|json|md|txt|html|xml|rtf|zip|ipynb|svg|js|ts|jsx|tsx|py|java|c|cpp|cs|go|rs|php|rb|sh|ps1|sql|css|yaml|yml|toml|ini|tex)\b/);
-  if(explicit&&asks.test(t))return explicit[1];
-  const candidates=[
-    ["pptx",/\bpptx\b|powerpoint|prezentare/],["docx",/\bdocx\b|\bword\b/],["xlsx",/\bxlsx\b|\bexcel\b|foaie de calcul|spreadsheet/],
-    ["pdf",/\bpdf\b/],["csv",/\bcsv\b/],["json",/\bjson\b/],["html",/\bhtml\b/],["xml",/\bxml\b/],["rtf",/\brtf\b/],
-    ["zip",/\bzip\b|arhiva/],["ipynb",/\bipynb\b|jupyter|notebook/],["svg",/\bsvg\b/],["md",/\bmarkdown\b|\bmd\b/],["txt",/\btxt\b|text simplu/],
-    ["py",/\bpython\b/],["js",/\bjavascript\b/],["ts",/\btypescript\b/],["ps1",/\bpowershell\b/],["sql",/\bsql\b/],["yaml",/\byaml\b/],["tex",/\blatex\b/]
-  ];
-  const found=candidates.find(([,re])=>re.test(t));
+  const candidates=[["pptx",/\bpptx\b|powerpoint|prezentare/],["docx",/\bdocx\b|\bword\b/],["xlsx",/\bxlsx\b|\bexcel\b|foaie de calcul|spreadsheet/],["pdf",/\bpdf\b/],["csv",/\bcsv\b/],["json",/\bjson\b/],["html",/\bhtml\b/],["xml",/\bxml\b/],["rtf",/\brtf\b/],["zip",/\bzip\b|arhiva/],["ipynb",/\bipynb\b|jupyter|notebook/],["svg",/\bsvg\b/],["md",/\bmarkdown\b|\bmd\b/],["txt",/\btxt\b|text simplu/],["py",/\bpython\b/],["js",/\bjavascript\b/],["ts",/\btypescript\b/],["ps1",/\bpowershell\b/],["sql",/\bsql\b/],["yaml",/\byaml\b/],["tex",/\blatex\b/]];
+  const found=explicit?.[1]||candidates.find(([,re])=>re.test(t))?.[0]||null;
   if(!found)return null;
-  const simple=new RegExp("^\\s*(in\\s+)?("+found[0]+"|word|powerpoint|excel|markdown|python|javascript|typescript|jupyter|notebook)(\\s+te\\s+rog)?[.!]?\\s*$");
-  return (simple.test(t)||asks.test(t))?found[0]:null;
+  const standalone=new RegExp("^\\s*(in\\s+)?("+found+"|word|powerpoint|excel|markdown|python|javascript|typescript|jupyter|notebook)(\\s+te\\s+rog)?[.!]?\\s*$");
+  if(standalone.test(t))return found;
+  if(informational.test(t)&&!outputVerb.test(t))return null;
+  return outputVerb.test(t)?found:null;
 }
 function standaloneExportRequest(value){
   const t=normalizeDocumentIntent(value).replace(/[^a-z0-9.\s-]/g," ").replace(/\s+/g," ").trim();
@@ -227,15 +228,7 @@ function standaloneExportRequest(value){
   stripped=stripped.replace(/\b(trimite|da-mi|dami|descarca|descarc|download|exporta|export|salveaza|salveaz|creeaza|creeaz|genereaza|genereaz|fa-mi|fami|fa|in|ca|te|rog|mi|un|o)\b/g," ").replace(/\s+/g," ").trim();
   return stripped.length<18;
 }
-function requestedMediaGeneration(value){
-  const t=normalizeDocumentIntent(value).trim();
-  const createVerb=/(cree|crea|gener|fa-mi|fami|realiz|produc|make|generate|create|desen|draw|render)/.test(t);
-  if(!createVerb)return null;
-  if(/\b(video|videoclip|filmule|mp4|clip video|film|animatie|animat)\b/.test(t))return "video";
-  if(/\b(poza|foto|fotografie|imagine|image|picture|png|jpe?g|portret|logo|poster|banner|avatar|sticker|wallpaper|coperta|desen|ilustratie|iconita)\b/.test(t))return "image";
-  if(/\b(deseneaza|draw|render)\b/.test(t))return "image";
-  return null;
-}
+function requestedMediaGeneration(){return null;}
 
 function groupLabel(ts) {
   const d = new Date(ts || Date.now()), now = new Date();
@@ -321,7 +314,7 @@ async function libraryItemToAttachment(item) {
   if(kind==="audio"||kind==="video"){
     let transcript="",transcriptionError="";
     if(Number(d.size||0)<=25*1024*1024){
-      try{const tr=await api(`/api/library/${d.id}/transcribe`,{method:"POST",body:JSON.stringify({language:"ro"})});transcript=String(tr.text||"").trim()}
+      try{const tr=await api(`/api/library/${d.id}/transcribe`,{method:"POST",body:JSON.stringify({language:(localStorage.getItem(SPEECH_LANGUAGE_KEY)||"ro")})});transcript=String(tr.text||"").trim()}
       catch(e){transcriptionError=e.message}
     }else transcriptionError="Fișierul depășește 25 MB pentru transcriere automată.";
     let frames=[];
@@ -531,7 +524,7 @@ function MessageActions({message,onRegenerate,onRate}) {
     try{
       window.speechSynthesis.cancel();
       if(speaking){setSpeaking(false);return;}
-      const u=new SpeechSynthesisUtterance(text);u.lang="ro-RO";u.rate=1;u.onend=()=>setSpeaking(false);u.onerror=()=>setSpeaking(false);setSpeaking(true);window.speechSynthesis.speak(u);
+      const u=new SpeechSynthesisUtterance(text);u.lang=currentSpeechLanguage();u.rate=1;u.onend=()=>setSpeaking(false);u.onerror=()=>setSpeaking(false);setSpeaking(true);window.speechSynthesis.speak(u);
     }catch{setSpeaking(false)}
   }
   async function exp(format){try{await exportMessageFile(message,format)}catch(e){alert("Export: "+e.message)}}
@@ -744,7 +737,7 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
   async function fallbackSpeech(){
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
     if(!SR)throw new Error("Recunoașterea vocală nu este disponibilă.");
-    const r=new SR();r.lang="ro-RO";r.interimResults=false;
+    const r=new SR();r.lang=currentSpeechLanguage();r.interimResults=false;
     r.onresult=e=>setDraft(v=>(v?v+" ":"")+e.results[0][0].transcript);
     r.onerror=e=>alert("Microfon: "+(e.error||"eroare de recunoaștere"));
     r.start();
@@ -809,8 +802,10 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
     </div><div className="composerModeRow"><button className={cx("modeChip",responseMode==="rapid"&&"active")} onClick={()=>setResponseMode?.("rapid")}><Sparkles size={13}/> Rapid</button><button className={cx("modeChip",responseMode==="thinking"&&"active")} onClick={()=>setResponseMode?.("thinking")}><Brain size={13}/> Gândire</button></div><div className="composerHint">{uploading?"Fișierul se salvează în Biblioteca AI Stoica — fără limită software de dimensiune":recording?"Microfon activ — vorbește acum":transcribing?"AI Stoica transcrie înregistrarea…":"AI Stoica poate greși. Verifică informațiile importante."}</div></div>;
 }
 
+function useEscapeClose(onClose){useEffect(()=>{const h=e=>{if(e.key==="Escape")onClose?.()};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h)},[onClose])}
 function ToolShell({title,subtitle,onClose,children}) {
-  return <div className="modalBackdrop"><div className="toolModal"><div className="toolHead"><div><h2>{title}</h2><p>{subtitle}</p></div><button className="iconOnly" onClick={onClose}><X size={20}/></button></div>{children}</div></div>;
+  useEscapeClose(onClose);
+  return <div className="modalBackdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose?.()}}><div className="toolModal"><div className="toolHead"><div><h2>{title}</h2><p>{subtitle}</p></div><button className="iconOnly" onClick={onClose}><X size={20}/></button></div>{children}</div></div>;
 }
 
 function LibraryPanel({onClose,onAttach}) {
@@ -1415,6 +1410,7 @@ function ProviderTestBox() {
   </div>;
 }
 function FirstRunGuide({onDone,onOpenSettings}) {
+  useEscapeClose(()=>onDone(false));
   const [key,setKey]=useState(""),[status,setStatus]=useState(""),[busy,setBusy]=useState(false);
   async function openKeys(){try{await window.AIStoica.openExternal("https://aistudio.google.com/apikey")}catch{}}
   async function saveAndTest(){
@@ -1428,7 +1424,7 @@ function FirstRunGuide({onDone,onOpenSettings}) {
       else setStatus("Cheia nu a funcționat: "+(gem?.error||"verifică dacă ai copiat-o complet."));
     }catch(e){setStatus(e.message)}finally{setBusy(false)}
   }
-  return <div className="modalBackdrop"><div className="modal firstRun">
+  return <div className="modalBackdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onDone(false)}}><div className="modal firstRun">
     <div className="modalHead"><div><h2>Bun venit în AI Stoica</h2><p>3 pași, gratuit, fără card. Durează un minut.</p></div><button className="iconOnly" onClick={()=>onDone(false)} aria-label="Închide"><X size={20}/></button></div>
     <ol className="firstRunSteps">
       <li><b>Creează o cheie Gemini gratuită</b><span>Se deschide pagina Google. Apasă „Create API key” și copiaz-o.</span><button className="secondary" onClick={openKeys}>Deschide pagina Google</button></li>
@@ -1440,10 +1436,11 @@ function FirstRunGuide({onDone,onOpenSettings}) {
   </div></div>;
 }
 function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true}) {
+  useEscapeClose(onClose);
   const [cfg,setCfg]=useState(null),[key,setKey]=useState(""),[openAiKey,setOpenAiKey]=useState(""),[openRouterKey,setOpenRouterKey]=useState(""),[cerebrasKey,setCerebrasKey]=useState(""),[groqKey,setGroqKey]=useState(""),[geminiKey,setGeminiKey]=useState(""),[mistralKey,setMistralKey]=useState(""),[nvidiaKey,setNvidiaKey]=useState(""),[cohereKey,setCohereKey]=useState(""),[pollinationsKey,setPollinationsKey]=useState(""),[cloudflareToken,setCloudflareToken]=useState(""),[hfKey,setHfKey]=useState(""),[togetherKey,setTogetherKey]=useState(""),[stabilityKey,setStabilityKey]=useState(""),[replicateKey,setReplicateKey]=useState(""),[falKey,setFalKey]=useState(""),[githubKey,setGithubKey]=useState(""),[tab,setTab]=useState("general"),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState(""),[toolStatus,setToolStatus]=useState("");
   useEffect(()=>{Promise.all([window.AIStoica.getConfig(),window.AIStoica.systemStatus()]).then(([c,s])=>{setCfg(c);setStatus(s)})},[]);
   if(!cfg)return null;
-  async function save(){await window.AIStoica.setConfig({
+  async function save(){localStorage.setItem(SPEECH_LANGUAGE_KEY,cfg.speechLanguage||"ro");await window.AIStoica.setConfig({
     ...cfg,
     apiKey:key||cfg.apiKey,
     openAiApiKey:openAiKey||cfg.openAiApiKey,
@@ -1465,7 +1462,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true}) {
   });onSaved?.();onClose()}
   async function testMic(){setMicStatus("Se verifică…");try{const s=await navigator.mediaDevices.getUserMedia({audio:true});s.getTracks().forEach(t=>t.stop());setMicStatus("Microfon disponibil și permis ✓")}catch{setMicStatus("Microfon indisponibil sau fără permisiune")}}
   async function testServer(){setToolStatus("Testez conexiunea SSH…");try{const d=await api("/api/tools/server/check",{method:"POST",body:JSON.stringify({serverHost:cfg.serverHost,serverPort:cfg.serverPort,serverUser:cfg.serverUser,serverKeyPath:cfg.serverKeyPath})});setToolStatus(d?.output||"Server conectat ✓")}catch(e){setToolStatus("Server: "+e.message)}}
-  return <div className="modalBackdrop"><div className="settingsModal"><div className="modalHead"><div><h2>Setări AI Stoica</h2><p>Controlează aplicația, vocea, OmniRoute și actualizările.</p></div><button className="iconOnly" onClick={onClose}><X size={20}/></button></div>
+  return <div className="modalBackdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose?.()}}><div className="settingsModal"><div className="modalHead"><div><h2>Setări AI Stoica</h2><p>Controlează aplicația, vocea, OmniRoute și actualizările.</p></div><button className="iconOnly" onClick={onClose}><X size={20}/></button></div>
     <div className="settingsBody"><div className="settingsNav">
       <button className={tab==="general"?"active":""} onClick={()=>setTab("general")}><SlidersHorizontal size={17}/> General</button>
       {machineSettingsAllowed&&<button className={tab==="ai"?"active":""} onClick={()=>setTab("ai")}><Bot size={17}/> AI & OmniRoute</button>}
@@ -1626,8 +1623,9 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true}) {
 }
 
 function CreateModal({type,onClose,onCreate}) {
+  useEscapeClose(onClose);
   const [name,setName]=useState(""),[prompt,setPrompt]=useState(""),[instructions,setInstructions]=useState("");
-  return <div className="modalBackdrop"><div className="modal smallModal"><div className="modalHead"><h2>{type==="project"?"Proiect nou":"Asistent personalizat"}</h2><button className="iconOnly" onClick={onClose}><X size={20}/></button></div><label>Nume<input autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder={type==="project"?"Ex. Proiecte Primărie":"Ex. Profesor de matematică"}/></label>{type==="assistant"&&<label>Instrucțiuni pentru asistent<textarea className="promptArea" value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="Cum vrei să lucreze acest asistent?"/></label>}{type==="project"&&<label>Instrucțiuni comune proiectului <span className="optional">opțional</span><textarea className="promptArea" value={instructions} onChange={e=>setInstructions(e.target.value)} placeholder="Ex. Folosește documentele proiectului, păstrează ton administrativ și reține deciziile importante."/></label>}<div className="modalActions"><button className="secondary" onClick={onClose}>Anulează</button><button className="primary" disabled={!name.trim()} onClick={()=>onCreate({name:name.trim(),systemPrompt:prompt.trim(),instructions:instructions.trim()})}>Creează</button></div></div></div>;
+  return <div className="modalBackdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose?.()}}><div className="modal smallModal"><div className="modalHead"><h2>{type==="project"?"Proiect nou":"Asistent personalizat"}</h2><button className="iconOnly" onClick={onClose}><X size={20}/></button></div><label>Nume<input autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder={type==="project"?"Ex. Proiecte Primărie":"Ex. Profesor de matematică"}/></label>{type==="assistant"&&<label>Instrucțiuni pentru asistent<textarea className="promptArea" value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="Cum vrei să lucreze acest asistent?"/></label>}{type==="project"&&<label>Instrucțiuni comune proiectului <span className="optional">opțional</span><textarea className="promptArea" value={instructions} onChange={e=>setInstructions(e.target.value)} placeholder="Ex. Folosește documentele proiectului, păstrează ton administrativ și reține deciziile importante."/></label>}<div className="modalActions"><button className="secondary" onClick={onClose}>Anulează</button><button className="primary" disabled={!name.trim()} onClick={()=>onCreate({name:name.trim(),systemPrompt:prompt.trim(),instructions:instructions.trim()})}>Creează</button></div></div></div>;
 }
 
 function App() {
