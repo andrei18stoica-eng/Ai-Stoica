@@ -44,7 +44,17 @@ function defaults() {
     openRouterImageModel: "google/gemini-3.1-flash-image",
     openRouterVideoModel: "bytedance/seedance-2.0-fast",
     pollinationsImageModel: "black-forest-labs/flux.1-schnell",
-    pollinationsVideoModel: "google/veo-3.1-fast"
+    pollinationsVideoModel: "google/veo-3.1-fast",
+    webSearchEnabled: true,
+    projectContextEnabled: true,
+    githubAutoContext: true,
+    githubRepo: "",
+    githubBranch: "main",
+    githubToken: "",
+    serverHost: "",
+    serverPort: 22,
+    serverUser: "root",
+    serverKeyPath: ""
   };
 }
 function loadConfig() {
@@ -61,7 +71,8 @@ function loadConfig() {
     const openAiApiKey=secret("openAiApiKey");
     const openRouterApiKey=secret("openRouterApiKey");
     const pollinationsApiKey=secret("pollinationsApiKey");
-    const cfg={ ...defaults(), ...raw, apiKey, openAiApiKey, openRouterApiKey, pollinationsApiKey };
+    const githubToken=secret("githubToken");
+    const cfg={ ...defaults(), ...raw, apiKey, openAiApiKey, openRouterApiKey, pollinationsApiKey, githubToken };
     if(/^ai[ _-]*(principal|stoica)$/i.test(String(cfg.model||"").trim()))cfg.model="";
     // Migrare 0.6.14: instalațiile vechi pornesc implicit pe profilul Video Rapid.
     if(!raw.videoMode){
@@ -86,7 +97,16 @@ function saveConfig(input) {
     openRouterImageModel: String(cfg.openRouterImageModel || "google/gemini-3.1-flash-image").trim(),
     openRouterVideoModel: String(cfg.openRouterVideoModel || (cfg.videoMode==="quality"?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast")).trim(),
     pollinationsImageModel: String(cfg.pollinationsImageModel || "black-forest-labs/flux.1-schnell").trim(),
-    pollinationsVideoModel: String(cfg.pollinationsVideoModel || "google/veo-3.1-fast").trim()
+    pollinationsVideoModel: String(cfg.pollinationsVideoModel || "google/veo-3.1-fast").trim(),
+    webSearchEnabled: cfg.webSearchEnabled !== false,
+    projectContextEnabled: cfg.projectContextEnabled !== false,
+    githubAutoContext: cfg.githubAutoContext !== false,
+    githubRepo: String(cfg.githubRepo || "").trim(),
+    githubBranch: String(cfg.githubBranch || "main").trim() || "main",
+    serverHost: String(cfg.serverHost || "").trim(),
+    serverPort: Math.max(1, Math.min(65535, Number(cfg.serverPort || 22))),
+    serverUser: String(cfg.serverUser || "root").trim() || "root",
+    serverKeyPath: String(cfg.serverKeyPath || "").trim()
   };
   function storeSecret(name,value){
     if(!value)return;
@@ -97,6 +117,7 @@ function saveConfig(input) {
   storeSecret("openAiApiKey",cfg.openAiApiKey);
   storeSecret("openRouterApiKey",cfg.openRouterApiKey);
   storeSecret("pollinationsApiKey",cfg.pollinationsApiKey);
+  storeSecret("githubToken",cfg.githubToken);
   fs.mkdirSync(path.dirname(configPath()), { recursive: true });
   fs.writeFileSync(configPath(), JSON.stringify(stored, null, 2), "utf8");
   app.setLoginItemSettings({ openAtLogin: !!cfg.startWithWindows, args: ["--background"] });
@@ -286,7 +307,7 @@ app.whenReady().then(async () => {
   autoUpdater.on("update-downloaded", () => mainWindow?.webContents.send("update-ready"));
 
   ipcMain.handle("config:get", () => loadConfig());
-  ipcMain.handle("config:set", async (_e, input) => { const cfg2 = saveConfig(input || {}); await ensureOmniRoute(); return { ok: true, config: { ...cfg2, apiKey: cfg2.apiKey ? "••••••••" : "", openAiApiKey: cfg2.openAiApiKey ? "••••••••" : "", openRouterApiKey: cfg2.openRouterApiKey ? "••••••••" : "", pollinationsApiKey: cfg2.pollinationsApiKey ? "••••••••" : "" } }; });
+  ipcMain.handle("config:set", async (_e, input) => { const cfg2 = saveConfig(input || {}); await ensureOmniRoute(); return { ok: true, config: { ...cfg2, apiKey: cfg2.apiKey ? "••••••••" : "", openAiApiKey: cfg2.openAiApiKey ? "••••••••" : "", openRouterApiKey: cfg2.openRouterApiKey ? "••••••••" : "", pollinationsApiKey: cfg2.pollinationsApiKey ? "••••••••" : "", githubToken: cfg2.githubToken ? "••••••••" : "" } }; });
   ipcMain.handle("system:status", () => systemStatus());
   ipcMain.handle("system:ensure-omni", () => ensureOmniRoute());
   ipcMain.handle("system:set-startup", (_e, enabled) => { const cfg2 = saveConfig({ startWithWindows: !!enabled }); return { ok: true, enabled: cfg2.startWithWindows }; });
