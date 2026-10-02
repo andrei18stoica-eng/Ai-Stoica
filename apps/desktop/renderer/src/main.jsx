@@ -229,9 +229,11 @@ function standaloneExportRequest(value){
 }
 function requestedMediaGeneration(value){
   const t=normalizeDocumentIntent(value).trim();
-  if(!/(cree|crea|gener|fa-mi|fami|realiz|produc|make|generate|create)/.test(t))return null;
-  if(/\b(video|videoclip|filmule|mp4|clip video|film)\b/.test(t))return "video";
-  if(/\b(poza|fotografie|imagine|image|picture|png|jpe?g)\b/.test(t))return "image";
+  const createVerb=/(cree|crea|gener|fa-mi|fami|realiz|produc|make|generate|create|desen|draw|render)/.test(t);
+  if(!createVerb)return null;
+  if(/\b(video|videoclip|filmule|mp4|clip video|film|animatie|animat)\b/.test(t))return "video";
+  if(/\b(poza|foto|fotografie|imagine|image|picture|png|jpe?g|portret|logo|poster|banner|avatar|sticker|wallpaper|coperta|desen|ilustratie|iconita)\b/.test(t))return "image";
+  if(/\b(deseneaza|draw|render)\b/.test(t))return "image";
   return null;
 }
 
@@ -1536,10 +1538,13 @@ function App() {
       const saved=await saveConversation({...baseConv,messages:[...messages,assistantMessage],updatedAt:Date.now()});
       api("/api/memory/capture",{method:"POST",body:JSON.stringify({conversationId:saved.id,userText:prompt,assistantText:`${kind==="video"?"Videoclip":"Imagine"} generată: ${file.name}`})}).catch(()=>{});
     }catch(e){
-      console.warn(`Generarea ${kind} nu a fost disponibilă; continui cu AI-ul ales manual.`,e);
-      setBusy(false);
-      setBusyStage("Generarea media nu este disponibilă; continuă cu AI-ul ales manual…");
-      await streamAssistant(baseConv,messages);
+      console.warn(`Generarea reală ${kind} a eșuat.`,e);
+      const assistantMessage={
+        id:uid(),role:"assistant",
+        content:`Generarea reală a ${kind==="video"?"videoclipului":"imaginii"} nu a reușit: ${e.message}`,
+        mediaGenerationError:true,createdAt:Date.now(),streaming:false
+      };
+      await saveConversation({...baseConv,messages:[...messages,assistantMessage],updatedAt:Date.now()});
       return;
     }finally{setBusy(false);setBusyStage("")}
   }
@@ -1586,7 +1591,7 @@ function App() {
   async function deleteCurrent(){if(current)await deleteConversation(current.id)}
   function toggleMenu(){if(window.innerWidth<=900)setSidebar(v=>!v);else setSidebarCollapsed(v=>!v)}
   function useAssistant(id){setSelectedAssistant(id);setCurrentId(null);setDraft("");setToolPanel(null)}
-  function startImagePrompt(imageModel){if(imageModel)chooseModel(imageModel);setCurrentId(null);setDraft("Creează o imagine cu ");setToolPanel(null)}
+  function startImagePrompt(){setCurrentId(null);setDraft("Creează o imagine cu ");setToolPanel(null)}
 
   if(boot)return <div className="loadingScreen"><BrandMark/><span>Se pornește AI Stoica…</span></div>;
   if(!user)return <AuthScreen onAuth={setUser}/>;
