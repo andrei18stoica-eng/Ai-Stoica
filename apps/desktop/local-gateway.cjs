@@ -578,8 +578,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   function decodeHtml(value){
     return String(value||"")
-      .replace(/<script[\\s\\S]*?<\\/script>/gi," ")
-      .replace(/<style[\\s\\S]*?<\\/style>/gi," ")
+      .replace(/<script[\s\S]*?<\/script>/gi," ")
+      .replace(/<style[\s\S]*?<\/style>/gi," ")
       .replace(/<[^>]+>/g," ")
       .replace(/&nbsp;/gi," ")
       .replace(/&amp;/gi,"&")
@@ -587,20 +587,20 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       .replace(/&#39;|&apos;/gi,"'")
       .replace(/&lt;/gi,"<")
       .replace(/&gt;/gi,">")
-      .replace(/&#(\\d+);/g,(_m,n)=>String.fromCodePoint(Number(n)||32))
+      .replace(/&#(\d+);/g,(_m,n)=>String.fromCodePoint(Number(n)||32))
       .replace(/&#x([0-9a-f]+);/gi,(_m,n)=>String.fromCodePoint(parseInt(n,16)||32))
-      .replace(/\\s+/g," ").trim();
+      .replace(/\s+/g," ").trim();
   }
   function publicWebUrl(raw){
     try{
       let value=String(raw||"").trim();
       if(value.startsWith("//"))value="https:"+value;
       const u=new URL(value);
-      if(/duckduckgo\\.com$/i.test(u.hostname)&&u.pathname.startsWith("/l/")&&u.searchParams.get("uddg"))return publicWebUrl(decodeURIComponent(u.searchParams.get("uddg")));
+      if(/duckduckgo\.com$/i.test(u.hostname)&&u.pathname.startsWith("/l/")&&u.searchParams.get("uddg"))return publicWebUrl(decodeURIComponent(u.searchParams.get("uddg")));
       if(!["http:","https:"].includes(u.protocol))return "";
       const h=u.hostname.toLowerCase();
-      if(h==="localhost"||h==="::1"||/^127\\./.test(h)||/^10\\./.test(h)||/^192\\.168\\./.test(h)||/^169\\.254\\./.test(h))return "";
-      const m=h.match(/^172\\.(\\d+)\\./);if(m&&Number(m[1])>=16&&Number(m[1])<=31)return "";
+      if(h==="localhost"||h==="::1"||/^127\./.test(h)||/^10\./.test(h)||/^192\.168\./.test(h)||/^169\.254\./.test(h))return "";
+      const m=h.match(/^172\.(\d+)\./);if(m&&Number(m[1])>=16&&Number(m[1])<=31)return "";
       return u.toString();
     }catch{return ""}
   }
@@ -610,7 +610,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const r=await fetch(safe,{redirect:"follow",headers:{"User-Agent":"AI-Stoica/0.7 (+desktop assistant)","Accept":"text/html,text/plain;q=0.9,*/*;q=0.5"},signal:AbortSignal.timeout(9000)});
       if(!r.ok)return "";
       const ctype=String(r.headers.get("content-type")||"");
-      if(!/text\\/|json|xml|html/i.test(ctype))return "";
+      if(!/text\/|json|xml|html/i.test(ctype))return "";
       const text=await r.text();
       return decodeHtml(text).slice(0,maxChars);
     }catch{return ""}
@@ -624,7 +624,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         signal:AbortSignal.timeout(12000)
       });
       const html=await r.text();
-      const re=/<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\\s\\S]*?)<\\/a>/gi;
+      const re=/<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
       let m;const seen=new Set();
       while((m=re.exec(html))&&results.length<maxResults){
         const url=publicWebUrl(m[1]);if(!url||seen.has(url))continue;seen.add(url);
@@ -647,11 +647,11 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   }
   function shouldUseLiveWeb(text){
     const t=String(text||"").toLowerCase();
-    return /\\b(azi|acum|actual|actuale|recent|recentă|recente|ultim|ultima|latest|news|știri|stiri|internet|online|caută|cauta|verifică|verifica|preț|pret|vreme|scor|program|orar|versiune|release|documentație|documentatie|api|model nou|2026)\\b/.test(t);
+    return /\b(azi|acum|actual|actuale|recent|recentă|recente|ultim|ultima|latest|news|știri|stiri|internet|online|caută|cauta|verifică|verifica|preț|pret|vreme|scor|program|orar|versiune|release|documentație|documentatie|api|model nou|2026)\b/.test(t);
   }
   function projectContext(db,userId,projectId,latestText){
     if(!projectId)return "";
-    const words=[...new Set(normalizeMemoryText(latestText).split(/\\s+/).filter(x=>x.length>=4))].slice(0,30);
+    const words=[...new Set(normalizeMemoryText(latestText).split(/\s+/).filter(x=>x.length>=4))].slice(0,30);
     const rows=db.conversations.filter(x=>x.userId===userId&&x.projectId===projectId).map(conv=>{
       const sample=(conv.messages||[]).slice(-8).map(m=>textFromContent(m.content)).join(" ");
       const hay=normalizeMemoryText((conv.title||"")+" "+sample);
@@ -661,8 +661,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     let out="";
     for(const row of rows){
       const conv=row.conv;
-      const msgs=(conv.messages||[]).slice(-4).map(m=>(m.role==="assistant"?"AI Stoica":"Utilizator")+": "+textFromContent(m.content).slice(0,1800)).join("\\n");
-      const block="Conversație proiect: "+(conv.title||"fără titlu")+"\\n"+msgs+"\\n\\n";
+      const msgs=(conv.messages||[]).slice(-4).map(m=>(m.role==="assistant"?"AI Stoica":"Utilizator")+": "+textFromContent(m.content).slice(0,1800)).join("\n");
+      const block="Conversație proiect: "+(conv.title||"fără titlu")+"\n"+msgs+"\n\n";
       if(out.length+block.length>18000)break;
       out+=block;
     }
@@ -673,7 +673,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     return [...new Set(String(text||"").match(/[A-Za-z0-9_.-]{4,}/g)||[])].filter(x=>!stop.has(x.toLowerCase())).sort((a,b)=>b.length-a.length).slice(0,3);
   }
   function shouldUseGithub(text){
-    return /\\b(github|repository|repo|cod|code|bug|eroare|build|component|funcție|functie|endpoint|react|node|python|server|api|fișier|fisier)\\b/i.test(String(text||""));
+    return /\b(github|repository|repo|cod|code|bug|eroare|build|component|funcție|functie|endpoint|react|node|python|server|api|fișier|fisier)\b/i.test(String(text||""));
   }
   async function githubCodeContext(cfg,text){
     const repo=String(cfg.githubRepo||"").trim(),token=String(cfg.githubToken||"").trim();
@@ -695,9 +695,9 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       try{
         const r=await fetch(item.url,{headers,signal:AbortSignal.timeout(10000)});if(!r.ok)continue;
         const data=await r.json();let source="";
-        if(data?.content&&data?.encoding==="base64")source=Buffer.from(String(data.content).replace(/\\n/g,""),"base64").toString("utf8");
+        if(data?.content&&data?.encoding==="base64")source=Buffer.from(String(data.content).replace(/\n/g,""),"base64").toString("utf8");
         if(!source&&data?.download_url)source=await pageExcerpt(data.download_url,9000);
-        const block="GitHub "+repo+"/"+item.path+"\\n"+source.slice(0,9000)+"\\n\\n";
+        const block="GitHub "+repo+"/"+item.path+"\n"+source.slice(0,9000)+"\n\n";
         if(out.length+block.length>26000)break;out+=block;
       }catch{}
     }
@@ -1917,7 +1917,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       try{const rows=await liveWebSearch(latestText,5);if(rows.length)system.push("WEB LIVE — rezultate obținute acum. Folosește-le pentru informațiile actuale și indică sursele prin link; nu inventa surse:\n"+rows.map((x,i)=>(i+1)+". "+x.title+"\nURL: "+x.url+"\nExtras: "+String(x.excerpt||"").slice(0,2600)).join("\n\n"))}catch{}
     }
     if(cfg.githubAutoContext!==false&&options.githubAllowed!==false){try{const gc=await githubCodeContext(cfg,latestText);if(gc)system.push("GITHUB LIVE — fragmente relevante din repository-ul configurat:\n"+gc)}catch{}}
-    if(options.owner&&cfg.serverHost&&/\\b(server|ssh|hetzner|deploy|deployment|producție|productie|nginx|ubuntu)\\b/i.test(latestText)){
+    if(options.owner&&cfg.serverHost&&/\b(server|ssh|hetzner|deploy|deployment|producție|productie|nginx|ubuntu)\b/i.test(latestText)){
       try{const s=await sshRun(cfg,"uname -a; uptime; pwd",12000);if(s.stdout)system.push("SERVER LIVE — verificare read-only efectuată acum:\n"+s.stdout.slice(0,8000))}catch(e){system.push("SERVER LIVE — conexiunea de verificare nu a reușit: "+e.message)}
     }
     return system.length?[{role:"system",content:system.join("\n\n")},...messages.filter(m=>m.role!=="system")]:messages;
