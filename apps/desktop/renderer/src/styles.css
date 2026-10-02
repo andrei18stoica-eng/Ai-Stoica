@@ -496,3 +496,10 @@
 .conversationSearchResult p{font-size:10px;line-height:1.35;opacity:.68;margin:5px 0 6px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .conversationSearchResult>small{display:flex;align-items:center;gap:4px;font-size:9px;opacity:.58}
 .searchNoResults{display:flex;align-items:center;gap:8px;padding:12px 8px;font-size:11px;opacity:.6}
+
+
+/* AI Stoica 0.7.3 — multi-provider image settings */
+.providerGroup{display:flex;flex-direction:column;gap:2px;margin:14px 0 5px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08)}
+.providerGroup:first-of-type{margin-top:6px}
+.providerGroup>b{font-size:12px}
+.providerGroup>small{font-size:10px;opacity:.6}
