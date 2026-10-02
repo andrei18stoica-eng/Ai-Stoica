@@ -1508,6 +1508,57 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const resolved=await fetchBinaryOrCandidate(r,"image");
     return {...resolved,model,provider:"pollinations-direct"};
   }
+  async function directCloudflareImage(cfg,prompt){
+    const account=String(cfg.cloudflareAccountId||"").trim(),token=String(cfg.cloudflareApiToken||"").trim();
+    if(!account||!token)return null;
+    const model="@cf/black-forest-labs/flux-1-schnell";
+    const url="https://api.cloudflare.com/client/v4/accounts/"+encodeURIComponent(account)+"/ai/run/"+model;
+    const r=await fetch(url,{
+      method:"POST",
+      headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},
+      body:JSON.stringify({prompt,steps:4}),
+      signal:AbortSignal.timeout(180000)
+    });
+    if(!r.ok)throw new Error("HTTP "+r.status+": "+(await r.text()).slice(0,700));
+    const body=await r.json();
+    const b64=String(body?.result?.image||"").trim();
+    if(!b64)throw new Error("Cloudflare nu a returnat imagine base64.");
+    const bytes=Buffer.from(b64,"base64");
+    return {bytes,mime:inferMediaMime(bytes,"image/png","image"),model,provider:"cloudflare-direct"};
+  }
+
+  async function directHuggingFaceImage(cfg,prompt,size){
+    const token=String(cfg.hfToken||"").trim();if(!token)return null;
+    const model="black-forest-labs/FLUX.1-schnell";
+    const url="https://router.huggingface.co/hf-inference/models/"+model;
+    const raw=String(size||"1024x1024").split("x");
+    const width=Math.max(256,Math.min(2048,Number(raw[0]||1024)));
+    const height=Math.max(256,Math.min(2048,Number(raw[1]||1024)));
+    const r=await fetch(url,{
+      method:"POST",
+      headers:{"Content-Type":"application/json",Authorization:"Bearer "+token,Accept:"image/*"},
+      body:JSON.stringify({inputs:prompt,parameters:{width,height}}),
+      signal:AbortSignal.timeout(180000)
+    });
+    const resolved=await fetchBinaryOrCandidate(r,"image");
+    return {...resolved,model:"huggingface/"+model,provider:"huggingface-direct"};
+  }
+
+  async function directTogetherImage(cfg,prompt,size){
+    const key=String(cfg.togetherApiKey||"").trim();if(!key)return null;
+    const model="black-forest-labs/FLUX.1-schnell";
+    const raw=String(size||"1024x1024").split("x");
+    const width=Math.max(256,Math.min(2048,Number(raw[0]||1024)));
+    const height=Math.max(256,Math.min(2048,Number(raw[1]||1024)));
+    const r=await fetch("https://api.together.xyz/v1/images/generations",{
+      method:"POST",
+      headers:{"Content-Type":"application/json",Authorization:"Bearer "+key},
+      body:JSON.stringify({model,prompt,width,height,steps:4,n:1,response_format:"b64_json"}),
+      signal:AbortSignal.timeout(180000)
+    });
+    const resolved=await fetchBinaryOrCandidate(r,"image");
+    return {...resolved,model:"together/"+model,provider:"together-direct"};
+  }
   async function directStabilityImage(cfg,prompt){
     const key=String(cfg.stabilityApiKey||"").trim();if(!key)return null;
     const engine=["core","ultra","sd3"].includes(String(cfg.stabilityImageEngine))?String(cfg.stabilityImageEngine):"core";
@@ -1597,12 +1648,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   }
 
   function imageProviderOrder(cfg){
-    const known=["openrouter","pollinations","fal","replicate","stability","openai"];
+    const known=["cloudflare","pollinations","huggingface","together","openrouter","fal","replicate","stability","openai"];
     const configured=String(cfg.imageProviderOrder||"").split(",").map(x=>x.trim().toLowerCase()).filter(x=>known.includes(x));
     const base=[...new Set([...configured,...known])];
     const mode=String(cfg.imageProviderMode||"auto");
-    if(mode==="fast")return ["openrouter","fal","pollinations","replicate","stability","openai"];
-    if(mode==="quality")return ["openai","openrouter","stability","fal","replicate","pollinations"];
+    if(mode==="fast")return ["cloudflare","pollinations","openrouter","fal","huggingface","together","replicate","stability","openai"];
+    if(mode==="quality")return ["openai","openrouter","stability","fal","cloudflare","huggingface","together","replicate","pollinations"];
     return base;
   }
 
@@ -1611,12 +1662,15 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const openRouterModel=String(cfg.openRouterImageModel||"google/gemini-3.1-flash-image").trim();
     const openRouterFree=strictFree?await openRouterImageIsFree(cfg,openRouterModel):true;
     const definitions={
+      cloudflare:{label:"Cloudflare Workers AI",configured:!!String(cfg.cloudflareAccountId||"").trim()&&!!String(cfg.cloudflareApiToken||"").trim(),paidRisk:false,run:()=>directCloudflareImage(cfg,prompt)},
+      huggingface:{label:"Hugging Face",configured:!!String(cfg.hfToken||"").trim(),paidRisk:true,run:()=>directHuggingFaceImage(cfg,prompt,size)},
+      together:{label:"Together AI",configured:!!String(cfg.togetherApiKey||"").trim(),paidRisk:true,run:()=>directTogetherImage(cfg,prompt,size)},
       openai:{label:"OpenAI",configured:!!String(cfg.openAiApiKey||"").trim(),paidRisk:true,run:()=>directOpenAiImage(cfg,prompt,size)},
       openrouter:{label:"OpenRouter",configured:!!directOpenRouterKey(cfg),paidRisk:!openRouterFree,run:()=>directOpenRouterImage(cfg,prompt)},
       stability:{label:"Stability AI",configured:!!String(cfg.stabilityApiKey||"").trim(),paidRisk:true,run:()=>directStabilityImage(cfg,prompt)},
       fal:{label:"fal.ai",configured:!!String(cfg.falApiKey||"").trim(),paidRisk:true,run:()=>directFalImage(cfg,prompt)},
       replicate:{label:"Replicate",configured:!!String(cfg.replicateApiToken||"").trim(),paidRisk:true,run:()=>directReplicateImage(cfg,prompt)},
-      pollinations:{label:"Pollinations",configured:!!String(cfg.pollinationsApiKey||"").trim(),paidRisk:true,run:()=>directPollinationsImage(cfg,prompt)}
+      pollinations:{label:"Pollinations",configured:!!String(cfg.pollinationsApiKey||"").trim(),paidRisk:false,run:()=>directPollinationsImage(cfg,prompt)}
     };
     return imageProviderOrder(cfg).map(id=>({id,...definitions[id]})).filter(x=>x.configured&&(!strictFree||!x.paidRisk));
   }
@@ -1836,8 +1890,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       }
 
       const configuredProviders=[
-        cfg.openAiApiKey&&"OpenAI",directOpenRouterKey(cfg)&&"OpenRouter",cfg.stabilityApiKey&&"Stability AI",
-        cfg.falApiKey&&"fal.ai",cfg.replicateApiToken&&"Replicate",cfg.pollinationsApiKey&&"Pollinations"
+        cfg.cloudflareAccountId&&cfg.cloudflareApiToken&&"Cloudflare",cfg.pollinationsApiKey&&"Pollinations",cfg.hfToken&&"Hugging Face",cfg.togetherApiKey&&"Together AI",
+        cfg.openAiApiKey&&"OpenAI",directOpenRouterKey(cfg)&&"OpenRouter",cfg.stabilityApiKey&&"Stability AI",cfg.falApiKey&&"fal.ai",cfg.replicateApiToken&&"Replicate"
       ].filter(Boolean);
       const providerHint=!configuredProviders.length
         ?" Nu există nicio cheie de imagine configurată; adaugă cel puțin un provider în Setări > AI & OmniRoute > Providere imagini."
