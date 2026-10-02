@@ -41,12 +41,16 @@ function defaults() {
     openAiApiKey: "",
     openRouterApiKey: "",
     pollinationsApiKey: "",
+    cloudflareAccountId: "",
+    cloudflareApiToken: "",
+    hfToken: "",
+    togetherApiKey: "",
     stabilityApiKey: "",
     replicateApiToken: "",
     falApiKey: "",
     imageProviderMode: "auto",
     imageCostPolicy: "free_only",
-    imageProviderOrder: "openrouter,pollinations,fal,replicate,stability,openai",
+    imageProviderOrder: "cloudflare,pollinations,huggingface,together,openrouter,fal,replicate,stability,openai",
     openAiImageModel: "gpt-image-1-mini",
     stabilityImageEngine: "core",
     replicateImageModel: "black-forest-labs/flux-schnell",
@@ -81,11 +85,14 @@ function loadConfig() {
     const openAiApiKey=secret("openAiApiKey");
     const openRouterApiKey=secret("openRouterApiKey");
     const pollinationsApiKey=secret("pollinationsApiKey");
+    const cloudflareApiToken=secret("cloudflareApiToken");
+    const hfToken=secret("hfToken");
+    const togetherApiKey=secret("togetherApiKey");
     const stabilityApiKey=secret("stabilityApiKey");
     const replicateApiToken=secret("replicateApiToken");
     const falApiKey=secret("falApiKey");
     const githubToken=secret("githubToken");
-    const cfg={ ...defaults(), ...raw, apiKey, openAiApiKey, openRouterApiKey, pollinationsApiKey, stabilityApiKey, replicateApiToken, falApiKey, githubToken };
+    const cfg={ ...defaults(), ...raw, apiKey, openAiApiKey, openRouterApiKey, pollinationsApiKey, cloudflareApiToken, hfToken, togetherApiKey, stabilityApiKey, replicateApiToken, falApiKey, githubToken };
     if(/^ai[ _-]*(principal|stoica)$/i.test(String(cfg.model||"").trim()))cfg.model="";
     // Migrare 0.6.14: instalațiile vechi pornesc implicit pe profilul Video Rapid.
     if(!raw.videoMode){
@@ -107,7 +114,8 @@ function saveConfig(input) {
     imageModel: String(cfg.imageModel || "").trim(),
     imageProviderMode: ["auto","fast","quality","free"].includes(String(cfg.imageProviderMode))?String(cfg.imageProviderMode):"auto",
     imageCostPolicy: cfg.imageCostPolicy==="allow_paid"?"allow_paid":"free_only",
-    imageProviderOrder: String(cfg.imageProviderOrder || "openrouter,pollinations,fal,replicate,stability,openai").trim(),
+    imageProviderOrder: String(cfg.imageProviderOrder || "cloudflare,pollinations,huggingface,together,openrouter,fal,replicate,stability,openai").trim(),
+    cloudflareAccountId: String(cfg.cloudflareAccountId || "").trim(),
     openAiImageModel: String(cfg.openAiImageModel || "gpt-image-1-mini").trim(),
     stabilityImageEngine: ["core","ultra","sd3"].includes(String(cfg.stabilityImageEngine))?String(cfg.stabilityImageEngine):"core",
     replicateImageModel: String(cfg.replicateImageModel || "black-forest-labs/flux-schnell").trim(),
@@ -137,6 +145,9 @@ function saveConfig(input) {
   storeSecret("openAiApiKey",cfg.openAiApiKey);
   storeSecret("openRouterApiKey",cfg.openRouterApiKey);
   storeSecret("pollinationsApiKey",cfg.pollinationsApiKey);
+  storeSecret("cloudflareApiToken",cfg.cloudflareApiToken);
+  storeSecret("hfToken",cfg.hfToken);
+  storeSecret("togetherApiKey",cfg.togetherApiKey);
   storeSecret("stabilityApiKey",cfg.stabilityApiKey);
   storeSecret("replicateApiToken",cfg.replicateApiToken);
   storeSecret("falApiKey",cfg.falApiKey);
@@ -189,6 +200,9 @@ function publicConfig(cfg=loadConfig()) {
     openAiApiKey: cfg.openAiApiKey ? "••••••••" : "",
     openRouterApiKey: cfg.openRouterApiKey ? "••••••••" : "",
     pollinationsApiKey: cfg.pollinationsApiKey ? "••••••••" : "",
+    cloudflareApiToken: cfg.cloudflareApiToken ? "••••••••" : "",
+    hfToken: cfg.hfToken ? "••••••••" : "",
+    togetherApiKey: cfg.togetherApiKey ? "••••••••" : "",
     stabilityApiKey: cfg.stabilityApiKey ? "••••••••" : "",
     replicateApiToken: cfg.replicateApiToken ? "••••••••" : "",
     falApiKey: cfg.falApiKey ? "••••••••" : "",
@@ -347,7 +361,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("config:get", () => publicConfig(loadConfig()));
   ipcMain.handle("config:set", async (_e, input) => {
     const current=loadConfig(),next={...(input||{})};
-    for(const name of ["apiKey","openAiApiKey","openRouterApiKey","pollinationsApiKey","stabilityApiKey","replicateApiToken","falApiKey","githubToken"]){
+    for(const name of ["apiKey","openAiApiKey","openRouterApiKey","pollinationsApiKey","cloudflareApiToken","hfToken","togetherApiKey","stabilityApiKey","replicateApiToken","falApiKey","githubToken"]){
       if(!next[name]||next[name]==="••••••••")next[name]=current[name]||"";
     }
     const cfg2=saveConfig(next);await ensureOmniRoute();return {ok:true,config:publicConfig(cfg2)};
