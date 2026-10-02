@@ -2235,6 +2235,89 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     return system.length?[{role:"system",content:system.join("\n\n")},...messages.filter(m=>m.role!=="system")]:messages;
   }
 
+
+  async function openRouterFreeChatModel(cfg){
+    const key=directOpenRouterKey(cfg);if(!key)throw new Error("Lipsește cheia OpenRouter.");
+    const r=await fetch("https://openrouter.ai/api/v1/models",{
+      headers:{Authorization:"Bearer "+key,"X-Title":"AI Stoica"},
+      signal:AbortSignal.timeout(12000)
+    });
+    if(!r.ok)throw new Error("OpenRouter models HTTP "+r.status+": "+(await r.text()).slice(0,400));
+    const data=await r.json();
+    const ids=(Array.isArray(data?.data)?data.data:[]).map(x=>String(x?.id||"")).filter(id=>id.endsWith(":free"));
+    if(!ids.length)throw new Error("OpenRouter nu are momentan niciun model :free disponibil.");
+    return ids[0];
+  }
+
+  function csvValues(value,fallback=""){
+    return String(value||fallback).split(",").map(x=>x.trim()).filter(Boolean);
+  }
+
+  async function directChatCandidates(cfg,requestedModel=""){
+    if(cfg.directChatEnabled===false)return [];
+    const strictFree=cfg.directChatCostPolicy!=="allow_paid";
+    const known=["cerebras","groq","gemini","mistral","nvidia","github","openrouter","cloudflare","cohere","huggingface","openai"];
+    const configured=String(cfg.directChatProviderOrder||known.join(",")).split(",").map(x=>x.trim().toLowerCase()).filter(x=>known.includes(x));
+    const order=[...new Set([...configured,...known])];
+    const requested=String(requestedModel||"").trim();
+    const result=[];
+
+    const push=(provider,baseUrl,key,models,{label=provider,paidRisk=false,headers={}}={})=>{
+      if(!key||!baseUrl||!models?.length)return;
+      if(strictFree&&paidRisk)return;
+      const reqProvider=(requested.split("/")[0]||"").toLowerCase();
+      const requestedForProvider=reqProvider===provider?requested.slice(provider.length+1):"";
+      const list=requestedForProvider?[requestedForProvider,...models]:models;
+      for(const model of [...new Set(list.filter(Boolean))])result.push({provider,label,baseUrl,key,model,headers,paidRisk});
+    };
+
+    let openRouterModel=String(cfg.openRouterChatModel||"AUTO_FREE").trim();
+    if(openRouterModel==="AUTO_FREE"){
+      try{openRouterModel=await openRouterFreeChatModel(cfg)}catch{openRouterModel=""}
+    }
+
+    const defs={
+      cerebras:()=>push("cerebras","https://api.cerebras.ai/v1",String(cfg.cerebrasApiKey||"").trim(),[String(cfg.cerebrasModel||"gpt-oss-120b").trim()],{label:"Cerebras"}),
+      groq:()=>push("groq","https://api.groq.com/openai/v1",String(cfg.groqApiKey||"").trim(),[String(cfg.groqModel||"llama-3.3-70b-versatile").trim()],{label:"Groq"}),
+      gemini:()=>push("gemini","https://generativelanguage.googleapis.com/v1beta/openai",String(cfg.geminiApiKey||"").trim(),csvValues(cfg.geminiModels,"gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite"),{label:"Gemini"}),
+      mistral:()=>push("mistral","https://api.mistral.ai/v1",String(cfg.mistralApiKey||"").trim(),[String(cfg.mistralModel||"mistral-small-latest").trim()],{label:"Mistral"}),
+      nvidia:()=>push("nvidia","https://integrate.api.nvidia.com/v1",String(cfg.nvidiaApiKey||"").trim(),[String(cfg.nvidiaModel||"meta/llama-3.3-70b-instruct").trim()],{label:"NVIDIA"}),
+      github:()=>push("github","https://models.github.ai/inference",String(cfg.githubToken||"").trim(),[String(cfg.githubModelsModel||"openai/gpt-4.1-mini").trim()],{label:"GitHub Models",headers:{Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"}}),
+      openrouter:()=>push("openrouter","https://openrouter.ai/api/v1",directOpenRouterKey(cfg),openRouterModel?[openRouterModel]:[],{label:"OpenRouter",headers:{"X-Title":"AI Stoica"}}),
+      cloudflare:()=>push("cloudflare",cfg.cloudflareAccountId?"https://api.cloudflare.com/client/v4/accounts/"+encodeURIComponent(String(cfg.cloudflareAccountId).trim())+"/ai/v1":"",String(cfg.cloudflareApiToken||"").trim(),[String(cfg.cloudflareChatModel||"@cf/meta/llama-3.3-70b-instruct-fp8-fast").trim()],{label:"Cloudflare Workers AI"}),
+      cohere:()=>push("cohere","https://api.cohere.ai/compatibility/v1",String(cfg.cohereApiKey||"").trim(),[String(cfg.cohereModel||"command-a-03-2025").trim()],{label:"Cohere"}),
+      huggingface:()=>push("huggingface","https://router.huggingface.co/v1",String(cfg.hfToken||"").trim(),[String(cfg.huggingFaceChatModel||"meta-llama/Llama-3.3-70B-Instruct").trim()],{label:"Hugging Face"}),
+      openai:()=>push("openai","https://api.openai.com/v1",String(cfg.openAiApiKey||"").trim(),csvValues(cfg.openAiChatModels,"gpt-5-mini,gpt-5-nano"),{label:"OpenAI",paidRisk:true})
+    };
+    for(const id of order)defs[id]?.();
+    return result;
+  }
+
+  async function fetchDirectChatCandidate(candidate,messages,stream){
+    const headers={"Content-Type":"application/json",Authorization:"Bearer "+candidate.key,...(candidate.headers||{})};
+    const call=async wantsStream=>fetch(String(candidate.baseUrl).replace(/\/+$/,"")+"/chat/completions",{
+      method:"POST",
+      headers,
+      body:JSON.stringify({model:candidate.model,messages,stream:!!wantsStream}),
+      signal:AbortSignal.timeout(wantsStream?120000:90000)
+    });
+    let r=await call(stream);
+    if(stream&&[400,404,405,409,422].includes(r.status))r=await call(false);
+    return r;
+  }
+
+  async function directChatFallback(cfg,messages,requestedModel,stream){
+    const candidates=await directChatCandidates(cfg,requestedModel),errors=[];
+    for(const candidate of candidates){
+      try{
+        const r=await fetchDirectChatCandidate(candidate,messages,stream);
+        if(!r.ok){errors.push(candidate.label+" · "+candidate.model+": HTTP "+r.status+" "+(await r.text()).slice(0,220));continue}
+        return {response:r,candidate,errors};
+      }catch(e){errors.push(candidate.label+" · "+candidate.model+": "+e.message)}
+    }
+    return {response:null,candidate:null,errors};
+  }
+
   async function fetchChatCandidate(cfg,model,messages,stream){
     return await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{
       method:"POST",
