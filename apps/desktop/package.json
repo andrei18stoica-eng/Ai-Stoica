@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "private": true,
-  "description": "AI Stoica 0.7.1 - live web and URL reading, persistent project/library context, GitHub Solve with rollback, Owner code execution, SSH tools and real media",
+  "description": "AI Stoica 0.7.3 - multi-provider image generation with OpenRouter OpenAI Stability fal Replicate Pollinations, fallback routing and cost guard",
   "main": "main.cjs",
   "repository": {
     "type": "git",
