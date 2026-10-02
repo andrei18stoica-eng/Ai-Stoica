@@ -15,7 +15,7 @@ async function main(){
   const mp4=Buffer.concat([
     Buffer.from([0,0,0,24]),Buffer.from("ftyp","ascii"),Buffer.from("isom0000isomiso2","ascii"),Buffer.alloc(64,0)
   ]);
-  let imageModelUsed="",videoModelUsed="",videoGenerationCalls=0;
+  let imageModelUsed="",videoModelUsed="",videoDurationUsed=0,videoGenerationCalls=0;
 
   const cloud=http.createServer(async(req,res)=>{
     res.setHeader("content-type","application/json");
@@ -69,7 +69,7 @@ async function main(){
       return res.end(JSON.stringify({created:Date.now(),data:[{b64_json:png.toString("base64")}]}));
     }
     if(req.url==="/v1/videos/generations"&&req.method==="POST"){
-      const body=JSON.parse(await readBody(req));videoModelUsed=body.model;videoGenerationCalls++;
+      const body=JSON.parse(await readBody(req));videoModelUsed=body.model;videoDurationUsed=Number(body.duration||0);videoGenerationCalls++;
       res.setHeader("content-type","application/json");
       if(body.model==="broken-video-1"){res.statusCode=400;return res.end(JSON.stringify({error:"model endpoint mismatch"}))}
       return res.end(JSON.stringify({id:"job-1",status:"queued"}));
@@ -117,6 +117,7 @@ async function main(){
     expect(video.data?.kind==="video","Generated video kind missing");
     expect(video.data?.model==="free-video-1","Free permitted video model was not selected");
     expect(videoModelUsed==="free-video-1","Paid configured video model should have fallen back to free permitted model");
+    expect(videoDurationUsed===4,"Default video duration should be 4 seconds for provider compatibility");
     r=await fetch(base+"/api/files/"+video.data.id,{headers:{authorization:"Bearer normal-token"}});
     const videoBytes=Buffer.from(await r.arrayBuffer());
     expect(r.ok&&videoBytes.subarray(4,8).toString("ascii")==="ftyp","Generated video file is not MP4-like");
