@@ -38,7 +38,8 @@ async function main(){
       const models=Array.isArray(body.models)?body.models:[body.model].filter(Boolean);
       const data=models.map(model=>{
         const value=String(model);
-        const allowed=/^cloudflare\//i.test(value);
+        const isOwner=token==="owner-token";
+        const allowed=isOwner||/^cloudflare\//i.test(value);
         const paidRequired=/^(openai|anthropic|openrouter|runway)\//i.test(value);
         return {model:value,allowed,paidRequired,reason:allowed?"":"Modelul nu este permis pentru acest cont."};
       });
@@ -123,11 +124,11 @@ async function main(){
     const ownerHeaders={authorization:"Bearer owner-token","content-type":"application/json"};
     r=await fetch(base+"/api/generate/image",{method:"POST",headers:ownerHeaders,body:JSON.stringify({prompt:"Owner free image while paid AI is globally off"})});
     const ownerImage=await r.json();expect(r.ok,ownerImage.error||"Owner image generation failed while paid AI was off");
-    expect(ownerImage.data?.model==="free-image-1","Owner should fall back to free image model while paid AI is globally off");
+    expect(ownerImage.data?.model==="openai/gpt-image-2","Owner should retain configured paid image access while paid AI is off for normal accounts");
 
     r=await fetch(base+"/api/generate/video",{method:"POST",headers:ownerHeaders,body:JSON.stringify({prompt:"Owner free video while paid AI is globally off"})});
     const ownerVideo=await r.json();expect(r.ok,ownerVideo.error||"Owner video generation failed while paid AI was off");
-    expect(ownerVideo.data?.model==="free-video-1","Owner should fall back to free video model while paid AI is globally off");
+    expect(ownerVideo.data?.model==="runway/gen-3","Owner should retain configured paid video access while paid AI is off for normal accounts");
 
     const beforeBlocked=videoGenerationCalls;
     r=await fetch(base+"/api/generate/video",{
