@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.6.15",
+  "version": "0.6.16",
   "private": true,
-  "description": "AI Stoica 0.6.15 - writable composer during generation, Stop control, fast/quality video profiles",
+  "description": "AI Stoica 0.6.16 - real media providers first, reliable OpenRouter video polling, writable composer and Stop control",
   "main": "main.cjs",
   "repository": {
     "type": "git",
