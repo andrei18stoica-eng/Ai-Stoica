@@ -41,6 +41,7 @@ function defaults() {
     openRouterApiKey: "",
     pollinationsApiKey: "",
     openRouterImageModel: "google/gemini-3.1-flash-image",
+    openRouterVideoModel: "bytedance/seedance-2.5",
     pollinationsImageModel: "black-forest-labs/flux.1-schnell",
     pollinationsVideoModel: "google/veo-3.1-fast"
   };
@@ -74,6 +75,7 @@ function saveConfig(input) {
     speechModel: cfg.speechModel || "openai/whisper-1", speechLanguage: cfg.speechLanguage || "ro",
     imageModel: String(cfg.imageModel || "").trim(), videoModel: String(cfg.videoModel || "").trim(),
     openRouterImageModel: String(cfg.openRouterImageModel || "google/gemini-3.1-flash-image").trim(),
+    openRouterVideoModel: String(cfg.openRouterVideoModel || "bytedance/seedance-2.5").trim(),
     pollinationsImageModel: String(cfg.pollinationsImageModel || "black-forest-labs/flux.1-schnell").trim(),
     pollinationsVideoModel: String(cfg.pollinationsVideoModel || "google/veo-3.1-fast").trim()
   };
