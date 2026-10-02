@@ -486,12 +486,22 @@ function CopyMessageButton({message,className=""}) {
 }
 
 function MessageActions({message,onRegenerate,onRate}) {
+  const [speaking,setSpeaking]=useState(false);
+  function speak(){
+    const text=messageText(message);if(!text)return;
+    try{
+      window.speechSynthesis.cancel();
+      if(speaking){setSpeaking(false);return;}
+      const u=new SpeechSynthesisUtterance(text);u.lang="ro-RO";u.rate=1;u.onend=()=>setSpeaking(false);u.onerror=()=>setSpeaking(false);setSpeaking(true);window.speechSynthesis.speak(u);
+    }catch{setSpeaking(false)}
+  }
   async function exp(format){try{await exportMessageFile(message,format)}catch(e){alert("Export: "+e.message)}}
   return <div className="messageActions">
     <CopyMessageButton message={message}/>
     <button onClick={()=>exp("pdf")} title="Descarcă PDF"><span style={{fontSize:10,fontWeight:800}}>PDF</span></button>
     <button onClick={()=>exp("docx")} title="Descarcă DOCX"><span style={{fontSize:9,fontWeight:800}}>DOCX</span></button>
     <button onClick={()=>exp("pptx")} title="Descarcă PPTX"><span style={{fontSize:9,fontWeight:800}}>PPTX</span></button>
+    <button onClick={speak} title={speaking?"Oprește citirea":"Citește cu voce"}><Volume2 size={15}/></button>
     <button className={message.rating===1?"selected":""} onClick={()=>onRate(1)}><ThumbsUp size={15}/></button>
     <button className={message.rating===-1?"selected":""} onClick={()=>onRate(-1)}><ThumbsDown size={15}/></button>
     <button onClick={onRegenerate}><RotateCcw size={15}/></button>
@@ -623,7 +633,7 @@ function ConversationView({conversation,busy,busyStage,busySteps,onRegenerate,on
   </div>;
 }
 
-function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAttachments,onOpenLibrary}) {
+function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAttachments,onOpenLibrary,onToolPrompt,responseMode,setResponseMode}) {
   const ta=useRef(null),fileInput=useRef(null),imageInput=useRef(null),videoInput=useRef(null),audioInput=useRef(null),recorderRef=useRef(null),streamRef=useRef(null),chunksRef=useRef([]);
   const [menu,setMenu]=useState(false),[recording,setRecording]=useState(false),[transcribing,setTranscribing]=useState(false),[uploading,setUploading]=useState(false),[mentions,setMentions]=useState([]);
   useEffect(()=>{if(ta.current){ta.current.style.height="0px";ta.current.style.height=Math.min(ta.current.scrollHeight,190)+"px"}},[draft]);
@@ -740,7 +750,12 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
         <input ref={imageInput} type="file" hidden multiple accept="image/png,image/jpeg,image/webp,image/gif,.heic,.heif" onChange={filesChosen}/>
         <input ref={videoInput} type="file" hidden multiple accept="video/mp4,video/webm,video/quicktime,.mp4,.mov,.m4v,.avi,.mkv,.mpeg,.mpg" onChange={filesChosen}/>
         <input ref={audioInput} type="file" hidden multiple accept="audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/flac,audio/opus,.mp3,.m4a,.aac,.wav,.ogg,.flac,.opus" onChange={filesChosen}/>
-        <div className="attachWrap"><button className="composerIcon" onClick={()=>setMenu(!menu)} title="Fișiere și bibliotecă"><Plus size={21}/></button>{menu&&<div className="attachMenu"><button onClick={()=>fileInput.current?.click()}><Upload size={16}/> Încarcă orice fișier</button><button onClick={()=>{setMenu(false);onOpenLibrary()}}><Library size={16}/> Alege din Bibliotecă</button></div>}</div>
+        <div className="attachWrap"><button className="composerIcon" onClick={()=>setMenu(!menu)} title="Fișiere și unelte"><Plus size={21}/></button>{menu&&<div className="attachMenu">
+  <button onClick={()=>{setMenu(false);onToolPrompt?.("Caută pe internet informații actuale despre ")}}><Globe2 size={16}/> Căutare web</button>
+  <button onClick={()=>{setMenu(false);onToolPrompt?.("Fă deep research, verifică mai multe surse și explică-mi complet: ")}}><Search size={16}/> Deep Research</button>
+  <button onClick={()=>{setMenu(false);onToolPrompt?.("Creează o imagine cu ")}}><ImageIcon size={16}/> Creează imagine</button>
+  <div className="menuDivider"/><button onClick={()=>fileInput.current?.click()}><Upload size={16}/> Încarcă orice fișier</button><button onClick={()=>{setMenu(false);onOpenLibrary()}}><Library size={16}/> Alege din Bibliotecă</button>
+</div>}</div>
         <div className="mediaQuickButtons">
           <button className="composerIcon mediaQuick" onClick={()=>imageInput.current?.click()} title="Încarcă imagine"><ImageIcon size={19}/></button>
           <button className="composerIcon mediaQuick" onClick={()=>videoInput.current?.click()} title="Încarcă video MP4 / MOV / WebM"><Play size={19}/></button>
@@ -752,7 +767,7 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
           ? <button className="sendButton stopButton" onClick={onStop} title="Oprește răspunsul"><Square size={15} fill="currentColor"/></button>
           : <button className="sendButton" disabled={recording||transcribing||uploading||(!draft.trim()&&!attachments.some(a=>a.part||a.parts?.length))} onClick={onSend}><ArrowUp size={20}/></button>}
       </div>
-    </div><div className="composerHint">{uploading?"Fișierul se salvează în Biblioteca AI Stoica — fără limită software de dimensiune":recording?"Microfon activ — vorbește acum":transcribing?"AI Stoica transcrie înregistrarea…":"AI Stoica poate greși. Verifică informațiile importante."}</div></div>;
+    </div><div className="composerModeRow"><button className={cx("modeChip",responseMode==="rapid"&&"active")} onClick={()=>setResponseMode?.("rapid")}><Sparkles size={13}/> Rapid</button><button className={cx("modeChip",responseMode==="thinking"&&"active")} onClick={()=>setResponseMode?.("thinking")}><Brain size={13}/> Gândire</button></div><div className="composerHint">{uploading?"Fișierul se salvează în Biblioteca AI Stoica — fără limită software de dimensiune":recording?"Microfon activ — vorbește acum":transcribing?"AI Stoica transcrie înregistrarea…":"AI Stoica poate greși. Verifică informațiile importante."}</div></div>;
 }
 
 function ToolShell({title,subtitle,onClose,children}) {
@@ -1398,8 +1413,8 @@ function SettingsModal({onClose,onSaved,user}) {
 }
 
 function CreateModal({type,onClose,onCreate}) {
-  const [name,setName]=useState(""),[prompt,setPrompt]=useState("");
-  return <div className="modalBackdrop"><div className="modal smallModal"><div className="modalHead"><h2>{type==="project"?"Proiect nou":"Asistent personalizat"}</h2><button className="iconOnly" onClick={onClose}><X size={20}/></button></div><label>Nume<input autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder={type==="project"?"Ex. Proiecte Primărie":"Ex. Profesor de matematică"}/></label>{type==="assistant"&&<label>Instrucțiuni pentru asistent<textarea className="promptArea" value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="Cum vrei să lucreze acest asistent?"/></label>}<div className="modalActions"><button className="secondary" onClick={onClose}>Anulează</button><button className="primary" disabled={!name.trim()} onClick={()=>onCreate({name:name.trim(),systemPrompt:prompt.trim()})}>Creează</button></div></div></div>;
+  const [name,setName]=useState(""),[prompt,setPrompt]=useState(""),[instructions,setInstructions]=useState("");
+  return <div className="modalBackdrop"><div className="modal smallModal"><div className="modalHead"><h2>{type==="project"?"Proiect nou":"Asistent personalizat"}</h2><button className="iconOnly" onClick={onClose}><X size={20}/></button></div><label>Nume<input autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder={type==="project"?"Ex. Proiecte Primărie":"Ex. Profesor de matematică"}/></label>{type==="assistant"&&<label>Instrucțiuni pentru asistent<textarea className="promptArea" value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="Cum vrei să lucreze acest asistent?"/></label>}{type==="project"&&<label>Instrucțiuni comune proiectului <span className="optional">opțional</span><textarea className="promptArea" value={instructions} onChange={e=>setInstructions(e.target.value)} placeholder="Ex. Folosește documentele proiectului, păstrează ton administrativ și reține deciziile importante."/></label>}<div className="modalActions"><button className="secondary" onClick={onClose}>Anulează</button><button className="primary" disabled={!name.trim()} onClick={()=>onCreate({name:name.trim(),systemPrompt:prompt.trim(),instructions:instructions.trim()})}>Creează</button></div></div></div>;
 }
 
 function App() {
@@ -1408,7 +1423,7 @@ function App() {
   const [boot,setBoot]=useState(true),[conversations,setConversations]=useState([]),[projects,setProjects]=useState([]),[assistants,setAssistants]=useState([]),[models,setModels]=useState(initialModels);
   const initialManualModel=useMemo(()=>localStorage.getItem(MANUAL_MODEL_KEY)||localStorage.getItem(MODEL_SELECTED_KEY)||initialModels.find(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x))||"",[initialModels]);
   const [currentId,setCurrentId]=useState(null),[model,setModel]=useState(initialManualModel),[selectedProject,setSelectedProject]=useState(null),[selectedAssistant,setSelectedAssistant]=useState(null);
-  const [draft,setDraft]=useState(""),[attachments,setAttachments]=useState([]),[busy,setBusy]=useState(false),[busyStage,setBusyStage]=useState(""),[busySteps,setBusySteps]=useState([]),[search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[omni,setOmni]=useState(false),[refreshingModels,setRefreshingModels]=useState(false),[modelPolicyEnforced,setModelPolicyEnforced]=useState(false);
+  const [draft,setDraft]=useState(""),[attachments,setAttachments]=useState([]),[responseMode,setResponseMode]=useState(()=>localStorage.getItem("ai-stoica-response-mode")||"rapid"),[busy,setBusy]=useState(false),[busyStage,setBusyStage]=useState(""),[busySteps,setBusySteps]=useState([]),[search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[omni,setOmni]=useState(false),[refreshingModels,setRefreshingModels]=useState(false),[modelPolicyEnforced,setModelPolicyEnforced]=useState(false);
   const [settings,setSettings]=useState(false),[createType,setCreateType]=useState(null),[toolPanel,setToolPanel]=useState(null),[filesPanel,setFilesPanel]=useState(false),[updateReady,setUpdateReady]=useState(false),[sidebarCollapsed,setSidebarCollapsed]=useState(false),[lastGithubBackup,setLastGithubBackup]=useState(()=>{try{return JSON.parse(localStorage.getItem("ai-stoica-last-github-backup")||"null")}catch{return null}});
   const chatRef=useRef(null);
   const activeGenerationRef=useRef(null);
@@ -1546,7 +1561,7 @@ function App() {
       setBusyStage("Verifică memoria, fișierele și contextul relevant…");
       await new Promise(r=>setTimeout(r,120));
       setBusyStage("Pregătește AI-ul ales manual…");
-      const token=localStorage.getItem(TOKEN_KEY)||"",r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({model:effectiveModel,assistantId:working.assistantId,projectId:working.projectId||null,messages}),signal:controller.signal});
+      const token=localStorage.getItem(TOKEN_KEY)||"",r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({model:effectiveModel,assistantId:working.assistantId,projectId:working.projectId||null,responseMode,messages}),signal:controller.signal});
       if(!r.ok){let e;try{e=await r.json()}catch{e={error:await r.text()}};throw new Error(e?.error||`HTTP ${r.status}`)}
       const reader=r.body.getReader(),dec=new TextDecoder();let buf="";
       while(true){const {value,done}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const events=buf.split("\n\n");buf=events.pop()||"";for(const ev of events)for(const line of ev.split("\n")){if(!line.startsWith("data:"))continue;const raw=line.slice(5).trim();if(!raw||raw==="[DONE]")continue;try{
@@ -1686,7 +1701,7 @@ function App() {
   return <div className={cx("appShell",sidebarCollapsed&&"sidebarCollapsed")}>
     <Sidebar open={sidebar} setOpen={setSidebar} user={user} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} onSelect={id=>{setCurrentId(id);setSidebar(false)}} onDeleteConversation={deleteConversation} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} selectedAssistant={selectedAssistant} setSelectedAssistant={setSelectedAssistant} onNewProject={()=>setCreateType("project")} onNewAssistant={()=>setCreateType("assistant")} onTool={openTool} onExplore={()=>openTool("explore")} onSettings={()=>setSettings(true)} onLogout={logout}/>
     {sidebar&&<div className="mobileScrim" onClick={()=>setSidebar(false)}/>}
-    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onGitHubRollback={githubRollback} hasGitHubBackup={!!lastGithubBackup} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} busyStage={busyStage} busySteps={busySteps} onRegenerate={regenerate} onRate={rate} canRunCode={user?.role==="owner"} onCodeResult={text=>setDraft(v=>(v?v+"\n\n":"")+text)}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} onStop={stopGeneration} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
+    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onGitHubRollback={githubRollback} hasGitHubBackup={!!lastGithubBackup} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} busyStage={busyStage} busySteps={busySteps} onRegenerate={regenerate} onRate={rate} canRunCode={user?.role==="owner"} onCodeResult={text=>setDraft(v=>(v?v+"\n\n":"")+text)}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} onStop={stopGeneration} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")} onToolPrompt={text=>{setDraft(text);setTimeout(()=>document.querySelector(".composerLine textarea")?.focus(),0)}} responseMode={responseMode} setResponseMode={m=>{setResponseMode(m);localStorage.setItem("ai-stoica-response-mode",m)}}/></main>
     {settings&&<SettingsModal user={user} onClose={()=>setSettings(false)} onSaved={()=>{window.AIStoica.ensureOmni();setTimeout(loadData,1000)}}/>}
     {createType&&<CreateModal type={createType} onClose={()=>setCreateType(null)} onCreate={createItem}/>}
     {toolPanel==="explore"&&<ExplorePanel onClose={()=>setToolPanel(null)} assistants={assistants} models={models} onUseAssistant={useAssistant} onImagePrompt={startImagePrompt} onOpenLibrary={()=>setToolPanel("library")}/>} 
