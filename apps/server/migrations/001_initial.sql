@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS ai_combinations (
 );
 
 INSERT INTO system_settings(key, value)
-VALUES ('paid_ai_enabled', 'true'::jsonb)
+VALUES ('paid_ai_enabled', 'false'::jsonb)
 ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO ai_combinations(id,name,providers,paid_required,enabled) VALUES
