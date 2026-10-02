@@ -87,18 +87,27 @@ async function main(){
   });
   const omniPort=await listen(omni);
   const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),"ai-stoica-media-"));
+  const omniConfig={
+    baseUrl:"http://127.0.0.1:"+omniPort+"/v1",
+    controlApiUrl:"http://127.0.0.1:"+cloudPort,
+    apiKey:"",
+    model:"groq/llama-3.3-70b-versatile",
+    imageModel:"openai/gpt-image-2",
+    videoModel:"runway/gen-3"
+  };
   const gateway=startLocalGateway({
     dataDir,port:8799,host:"127.0.0.1",
-    getOmniConfig:()=>({
-      baseUrl:"http://127.0.0.1:"+omniPort+"/v1",
-      controlApiUrl:"http://127.0.0.1:"+cloudPort,
-      apiKey:"",
-      model:"groq/llama-3.3-70b-versatile",
-      imageModel:"openai/gpt-image-2",
-      videoModel:"runway/gen-3"
-    })
+    getOmniConfig:()=>omniConfig
   });
   const base="http://127.0.0.1:8799";
+  const realFetch=global.fetch;
+  global.fetch=async (url,init)=>{
+    const target=String(url);
+    if(target==="https://api.stability.ai/v2beta/stable-image/generate/core"){
+      return new Response(png,{status:200,headers:{"content-type":"image/png"}});
+    }
+    return realFetch(url,init);
+  };
   try{
     await new Promise(r=>setTimeout(r,120));
     const headers={authorization:"Bearer normal-token","content-type":"application/json"};
@@ -127,6 +136,22 @@ async function main(){
     const ownerImage=await r.json();expect(r.ok,ownerImage.error||"Owner image generation failed while paid AI was off");
     expect(ownerImage.data?.model==="openai/gpt-image-2","Owner should retain configured paid image access while paid AI is off for normal accounts");
 
+    omniConfig.stabilityApiKey="test-stability-key";
+    omniConfig.imageCostPolicy="allow_paid";
+    omniConfig.imageProviderMode="auto";
+    omniConfig.imageProviderOrder="stability";
+    r=await fetch(base+"/api/generate/image",{method:"POST",headers:ownerHeaders,body:JSON.stringify({prompt:"Direct Stability provider test"})});
+    const stabilityImage=await r.json();expect(r.ok,stabilityImage.error||"Stability direct image failed");
+    expect(stabilityImage.data?.kind==="image","Stability image kind missing");
+    expect(stabilityImage.data?.provider==="stability-direct","Stability provider metadata missing");
+    r=await fetch(base+"/api/files/"+stabilityImage.data.id,{headers:{authorization:"Bearer owner-token"}});
+    const stabilityBytes=Buffer.from(await r.arrayBuffer());
+    expect(r.ok&&stabilityBytes.subarray(0,8).equals(png.subarray(0,8)),"Stability direct output is not a real PNG");
+    delete omniConfig.stabilityApiKey;
+    delete omniConfig.imageCostPolicy;
+    delete omniConfig.imageProviderMode;
+    delete omniConfig.imageProviderOrder;
+
     r=await fetch(base+"/api/generate/video",{method:"POST",headers:ownerHeaders,body:JSON.stringify({prompt:"Owner free video while paid AI is globally off"})});
     const ownerVideo=await r.json();expect(r.ok,ownerVideo.error||"Owner video generation failed while paid AI was off");
     expect(ownerVideo.data?.model==="runway/gen-3","Owner should retain configured paid video access while paid AI is off for normal accounts");
@@ -145,6 +170,7 @@ async function main(){
     expect(lib.data.some(x=>x.id===video.data.id&&x.kind==="video"),"Video not saved to library");
     console.log("MEDIA_GENERATION_TESTS_PASSED");
   } finally {
+    global.fetch=realFetch;
     await gateway.close();
     await closeServer(cloud);
     await closeServer(omni);
