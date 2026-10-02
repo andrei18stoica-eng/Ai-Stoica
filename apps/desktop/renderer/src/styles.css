@@ -467,3 +467,4 @@
   .thinkingActivityHead{grid-template-columns:24px minmax(0,1fr) auto 20px}
   .memorySummary{grid-template-columns:1fr 1fr 1fr}
 }
+\n\n/* v0.6.15 — keep composer writable while generating + visible Stop control */\n.stopButton{background:#f1f1f1;color:#111;cursor:pointer}\n.stopButton:hover{background:#fff}\n.stopButton svg{width:15px;height:15px}\n.composerLine textarea:not(:disabled){pointer-events:auto;user-select:text}\n
