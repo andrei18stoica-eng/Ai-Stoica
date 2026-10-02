@@ -5,6 +5,8 @@ const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
 const JSZip = require("jszip");
+const MDBReaderModule = require("mdb-reader");
+const MDBReader = MDBReaderModule.default || MDBReaderModule;
 
 const MAX_CHARS = 200000;
 const TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|jsonl|js|cjs|mjs|ts|tsx|jsx|py|java|c|h|cpp|hpp|cs|go|rs|php|rb|sh|ps1|bat|sql|html|htm|css|scss|xml|yaml|yml|toml|ini|cfg|log|tex|srt|vtt)$/i;
@@ -101,6 +103,38 @@ async function extractOpenDocument(buf) {
     .replace(/<[^>]+>/g, ""));
 }
 
+async function extractAccess(buf) {
+  const reader = new MDBReader(buf);
+  const tableNames = reader.getTableNames({ normalTables:true, systemTables:false, linkedTables:true }).slice(0,100);
+  const out = [];
+  const safeValue = (value) => {
+    if (typeof value === "bigint") return value.toString();
+    if (value instanceof Date) return value.toISOString();
+    if (Buffer.isBuffer(value)) return `[binary ${value.length} bytes]`;
+    if (Array.isArray(value)) return value.map(x => x && typeof x === "object" ? {
+      name:x.name || "", type:x.type || "", url:x.url || "",
+      timestamp:x.timestamp instanceof Date ? x.timestamp.toISOString() : (x.timestamp || ""),
+      data:x.data && Buffer.isBuffer(x.data) ? `[binary ${x.data.length} bytes]` : undefined
+    } : x);
+    return value;
+  };
+  for (const name of tableNames) {
+    const table = reader.getTable(name);
+    const columns = table.getColumnNames();
+    const rows = table.getData({ rowOffset:0, rowLimit:500 });
+    out.push(`--- Tabel: ${name} (${table.rowCount} rânduri) ---`);
+    out.push(columns.join("\t"));
+    for (const row of rows) {
+      out.push(columns.map(col => {
+        const value=safeValue(row[col]);
+        return value && typeof value === "object" ? JSON.stringify(value) : String(value ?? "");
+      }).join("\t"));
+      if (out.join("\n").length >= MAX_CHARS) return out.join("\n").slice(0,MAX_CHARS);
+    }
+    if (table.rowCount > rows.length) out.push(`[... ${table.rowCount-rows.length} rânduri neafișate ...]`);
+  }
+  return out.join("\n");
+}
 // ---------- PDF (best effort, for PDFs that contain real text) ----------
 
 function decodePdfLiteral(s) {
@@ -228,6 +262,7 @@ function kindFor(name, mime) {
   if (/\.xlsx$/.test(n) || m.includes("spreadsheetml")) return "xlsx";
   if (/\.(odt|odp|ods)$/.test(n) || m.includes("opendocument")) return "odf";
   if (/\.pdf$/.test(n) || m === "application/pdf") return "pdf";
+  if (/\.(mdb|accdb)$/.test(n) || /msaccess|access/.test(m)) return "access";
   if (TEXT_EXT.test(n) || m.startsWith("text/") || /json|xml|javascript|yaml|csv/.test(m)) return "text";
   return "";
 }
@@ -247,8 +282,9 @@ async function extractText(filePath, mime, name) {
   else if (kind === "xlsx") text = await extractXlsx(buf);
   else if (kind === "odf") text = await extractOpenDocument(buf);
   else if (kind === "pdf") text = extractPdf(buf);
+  else if (kind === "access") text = await extractAccess(buf);
   text = cleanText(text);
   return { text, status: text.replace(/[\s\-–—]/g, "").length >= 3 ? "ok" : "empty" };
 }
 
-module.exports = { extractText, kindFor, extractPdf, extractDocx, extractPptx, extractXlsx, decodePdfLiteral };
+module.exports = { extractText, kindFor, extractPdf, extractDocx, extractPptx, extractXlsx, extractAccess, decodePdfLiteral };
