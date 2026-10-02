@@ -558,7 +558,7 @@ function GeneratedAttachment({attachment}) {
   if(["image","video","audio"].includes(kind)){
     return <div className={cx("generatedMedia",kind)}>
       {src&&(kind==="image"?<img src={src} alt={attachment.name||"Imagine generată de AI Stoica"}/>:kind==="video"?<video controls preload="metadata" src={src}/>:<audio controls preload="metadata" src={src}/>)}
-      <div className="generatedMediaBar"><span><b>{attachment.name}</b><small>{(attachment.mimeType||kind).replace(/^.*\//,"").toUpperCase()} · {formatBytes(attachment.size)}</small></span><button onClick={()=>downloadGeneratedFile(attachment)}><Download size={17}/> Download</button></div>
+      <div className="generatedMediaBar"><span><b>{attachment.name}</b><small>{(attachment.mimeType||kind).replace(/^.*\//,"").toUpperCase()} · {formatBytes(attachment.size)}{attachment.provider?` · ${attachment.provider}`:""}</small></span><button onClick={()=>downloadGeneratedFile(attachment)}><Download size={17}/> Download</button></div>
     </div>;
   }
   return <button className="generatedDownload" onClick={()=>downloadGeneratedFile(attachment)} title={"Descarcă "+attachment.name}><span className="generatedFileIcon"><FileText size={20}/></span><span className="generatedFileMeta"><b>{attachment.name}</b><small>{(attachment.format||attachment.name?.split(".").pop()||"FIȘIER").toUpperCase()} · {formatBytes(attachment.size)}</small></span><span className="generatedDownloadAction"><Download size={18}/><em>Download</em></span></button>;
