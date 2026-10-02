@@ -1024,9 +1024,9 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }catch(e){res.status(400).json({error:e.message})}
   });
 
-  app.post("/api/tools/server/check", auth, ownerOnlyLocal, async (_req,res) => {
+  app.post("/api/tools/server/check", auth, ownerOnlyLocal, async (req,res) => {
     try{
-      const cfg=getOmniConfig();
+      const cfg={...getOmniConfig(),...Object.fromEntries(["serverHost","serverPort","serverUser","serverKeyPath"].filter(k=>req.body?.[k]!==undefined).map(k=>[k,req.body[k]]))};
       const result=await sshRun(cfg,'echo AI_STOICA_SERVER_OK; uname -a 2>/dev/null || ver; uptime 2>/dev/null || true',18000);
       res.json({ok:result.code===0,output:(result.stdout||result.stderr||"").trim(),data:result});
     }catch(e){res.status(502).json({error:e.message})}
