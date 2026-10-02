@@ -376,9 +376,10 @@ function AuthScreen({ onAuth }) {
 
 function BrandMark({small=false}) { return <div className={cx("brandMark",small&&"small")}><img src="./stoica-enterprises-ai.png" alt="S"/></div>; }
 
-function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,conversations,currentId,onSelect,onDeleteConversation,onNew,selectedProject,setSelectedProject,selectedAssistant,setSelectedAssistant,onNewProject,onNewAssistant,onTool,onExplore,onSettings,onLogout}) {
+function Sidebar({open,setOpen,user,permissions,search,setSearch,projects,assistants,conversations,currentId,onSelect,onDeleteConversation,onRestoreConversation,onNew,selectedProject,setSelectedProject,selectedAssistant,setSelectedAssistant,onNewProject,onNewAssistant,onRenameProject,onDeleteProject,onRenameAssistant,onDeleteAssistant,onTool,onExplore,onSettings,onLogout}) {
+  const [showArchived,setShowArchived]=useState(false);
   const searchQuery=String(search||"").trim().toLowerCase();
-  const visibleConversations=conversations.filter(c=>!c.archived);
+  const visibleConversations=conversations.filter(c=>showArchived?!!c.archived:!c.archived);
   const searchResults=useMemo(()=>{
     if(!searchQuery)return [];
     return visibleConversations.map(c=>{
@@ -408,21 +409,21 @@ function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,convers
     <div className="sideScroll">
       <div className="sideSection"><div className="sectionHead"><span>Instrumente</span></div>
         <button className="sideItem exploreItem" onClick={()=>onTool("explore")}><Compass size={16}/> Explorează</button>
-        <button className="sideItem toolItem" onClick={()=>onTool("automations")}><CalendarClock size={16}/> Automatizări</button>
-        <button className="sideItem toolItem" onClick={()=>onTool("plugins")}><Plug size={16}/> Pluginuri</button>
+        {(user?.role==="owner"||permissions?.automations===true)&&<button className="sideItem toolItem" onClick={()=>onTool("automations")}><CalendarClock size={16}/> Automatizări</button>}
+        {(user?.role==="owner"||permissions?.plugins===true)&&<button className="sideItem toolItem" onClick={()=>onTool("plugins")}><Plug size={16}/> Pluginuri</button>}
         <button className="sideItem toolItem" onClick={()=>onTool("library")}><Library size={16}/> Bibliotecă</button>
         <button className="sideItem toolItem" onClick={()=>onTool("memory")}><Brain size={16}/> Memorie</button>
         {user?.role==="owner"&&<button className="sideItem ownerItem" onClick={()=>onTool("admin")}><ShieldCheck size={16}/> Control Center</button>}
       </div>
       <div className="sideSection"><div className="sectionHead"><span>Proiecte</span><button onClick={onNewProject}><Plus size={15}/></button></div>
         <button className={cx("sideItem",selectedProject===null&&"active")} onClick={()=>setSelectedProject(null)}><Folder size={16}/> Toate conversațiile</button>
-        {projects.map(p=><button key={p.id} className={cx("sideItem",selectedProject===p.id&&"active")} onClick={()=>setSelectedProject(p.id)}><Folder size={16}/>{p.name}</button>)}
+        {projects.map(p=><div className="historyRow" key={p.id}><button className={cx("sideItem",selectedProject===p.id&&"active")} onClick={()=>setSelectedProject(p.id)}><Folder size={16}/>{p.name}</button><button className="historyDelete" title="Redenumește proiectul" onClick={()=>onRenameProject(p)}><MoreHorizontal size={14}/></button><button className="historyDelete" title="Șterge proiectul" onClick={()=>onDeleteProject(p)}><Trash2 size={14}/></button></div>)}
       </div>
       <div className="sideSection"><div className="sectionHead"><span>Asistenți</span><button onClick={onNewAssistant}><Plus size={15}/></button></div>
-        {assistants.map(a=><button key={a.id} className={cx("sideItem",selectedAssistant===a.id&&"active")} onClick={()=>setSelectedAssistant(a.id)}><Bot size={16}/>{a.name}</button>)}
+        {assistants.map(a=><div className="historyRow" key={a.id}><button className={cx("sideItem",selectedAssistant===a.id&&"active")} onClick={()=>setSelectedAssistant(a.id)}><Bot size={16}/>{a.name}</button>{!a.builtIn&&<><button className="historyDelete" title="Redenumește asistentul" onClick={()=>onRenameAssistant(a)}><MoreHorizontal size={14}/></button><button className="historyDelete" title="Șterge asistentul" onClick={()=>onDeleteAssistant(a)}><Trash2 size={14}/></button></>}</div>)}
       </div>
       <div className="sideSection historySection">
-        <div className="sectionHead"><span>{searchQuery?"Rezultate căutare":"Conversații"}</span>{searchQuery&&<small>{searchResults.length}</small>}</div>
+        <div className="sectionHead"><span>{searchQuery?"Rezultate căutare":showArchived?"Arhivate":"Conversații"}</span><button title={showArchived?"Vezi conversațiile active":"Vezi conversațiile arhivate"} onClick={()=>{setShowArchived(v=>!v);setSearch("")}}>{showArchived?<RotateCcw size={14}/>:<Archive size={14}/>}</button>{searchQuery&&<small>{searchResults.length}</small>}</div>
         {searchQuery?<>
           {currentId&&<button className="currentConversationReturn" onClick={()=>{onSelect(currentId);setSearch("")}}><RotateCcw size={15}/><span><b>Conversația curentă</b><small>Revino la conversația în care erai</small></span></button>}
           <div className="conversationSearchResults">
@@ -433,7 +434,7 @@ function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,convers
             </button>)}
             {!searchResults.length&&<div className="searchNoResults"><Search size={18}/><span>Nu am găsit textul în conversațiile tale.</span></div>}
           </div>
-        </>:Object.entries(groups).map(([g,items])=><div key={g} className="historyGroup"><div className="historyLabel">{g}</div>{items.filter(c=>!selectedProject||c.projectId===selectedProject).map(c=><div className={cx("historyRow",currentId===c.id&&"active")} key={c.id}><button className="historyItem" onClick={()=>onSelect(c.id)} title={c.title}>{c.title||"Conversație"}</button><button className="historyDelete" title="Șterge conversația" onClick={e=>{e.stopPropagation();onDeleteConversation(c.id)}}><Trash2 size={14}/></button></div>)}</div>)}
+        </>:Object.entries(groups).map(([g,items])=><div key={g} className="historyGroup"><div className="historyLabel">{g}</div>{items.filter(c=>!selectedProject||c.projectId===selectedProject).map(c=><div className={cx("historyRow",currentId===c.id&&"active")} key={c.id}><button className="historyItem" onClick={()=>onSelect(c.id)} title={c.title}>{c.title||"Conversație"}</button>{showArchived&&<button className="historyDelete" title="Restaurează conversația" onClick={e=>{e.stopPropagation();onRestoreConversation(c.id)}}><RotateCcw size={14}/></button>}<button className="historyDelete" title="Șterge conversația" onClick={e=>{e.stopPropagation();onDeleteConversation(c.id)}}><Trash2 size={14}/></button></div>)}</div>)}
       </div>
     </div>
     <div className="accountArea"><div className="accountBadge"><div className="accountAvatar">{(user?.name||user?.email||"S")[0].toUpperCase()}</div><div className="accountText"><b>{user?.name||"Cont Stoica"}</b><span>{user?.email}</span></div></div><div className="accountButtons"><button onClick={onSettings}><Settings size={17}/> Setări</button><button onClick={onLogout}><LogOut size={17}/> Deconectare</button></div></div>
@@ -665,7 +666,7 @@ function ConversationView({conversation,busy,busyStage,busySteps,onRegenerate,on
   </div>;
 }
 
-function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAttachments,onOpenLibrary,onToolPrompt,responseMode,setResponseMode}) {
+function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAttachments,onOpenLibrary,onToolPrompt,onGenerateMedia,permissions,user,responseMode,setResponseMode}) {
   const ta=useRef(null),fileInput=useRef(null),imageInput=useRef(null),videoInput=useRef(null),audioInput=useRef(null),recorderRef=useRef(null),streamRef=useRef(null),chunksRef=useRef([]);
   const [menu,setMenu]=useState(false),[recording,setRecording]=useState(false),[transcribing,setTranscribing]=useState(false),[uploading,setUploading]=useState(false),[mentions,setMentions]=useState([]);
   useEffect(()=>{if(ta.current){ta.current.style.height="0px";ta.current.style.height=Math.min(ta.current.scrollHeight,190)+"px"}},[draft]);
@@ -697,6 +698,7 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
   const mentionOptions=mentionMatch?mentions.filter(x=>x.name.toLowerCase().includes(mentionQuery)||x.trigger.toLowerCase().includes("@"+mentionQuery)).slice(0,8):[];
   function insertMention(x){setDraft(v=>v.replace(/@([^\s@]*)$/,(x.trigger||"@"+x.name)+" "));setTimeout(()=>ta.current?.focus(),0)}
   async function addComposerFiles(files){
+    if(user?.role!=="owner"&&permissions?.file_upload!==true){alert("Încărcarea de fișiere este dezactivată pentru acest cont.\n\nPas următor: cere Owner-ului să activeze permisiunea din Control Center.");return}
     if(!files?.length)return;
     setUploading(true);
     try{
@@ -784,13 +786,15 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
         <input ref={audioInput} type="file" hidden multiple accept="audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/flac,audio/opus,.mp3,.m4a,.aac,.wav,.ogg,.flac,.opus" onChange={filesChosen}/>
         <div className="attachWrap"><button className="composerIcon" onClick={()=>setMenu(!menu)} title="Fișiere și unelte"><Plus size={21}/></button>{menu&&<div className="attachMenu">
   <button onClick={()=>{setMenu(false);onToolPrompt?.("Caută pe internet informații actuale despre ")}}><Globe2 size={16}/> Căutare web</button>
-  <button onClick={()=>{setMenu(false);onToolPrompt?.("Fă deep research, verifică mai multe surse și explică-mi complet: ")}}><Search size={16}/> Deep Research</button>
-  <button onClick={()=>{setMenu(false);onToolPrompt?.("Creează o imagine cu ")}}><ImageIcon size={16}/> Creează imagine</button>
+  {(user?.role==="owner"||permissions?.deep_research===true)&&<button onClick={()=>{setMenu(false);onToolPrompt?.("Fă deep research, verifică mai multe surse și explică-mi complet: ")}}><Search size={16}/> Deep Research</button>}
+  {(user?.role==="owner"||permissions?.image_generation===true)&&<button onClick={()=>{setMenu(false);onGenerateMedia?.("image")}}><ImageIcon size={16}/> Generează imagine</button>}
+  {(user?.role==="owner"||permissions?.video_generation===true)&&<button onClick={()=>{setMenu(false);onGenerateMedia?.("video")}}><Play size={16}/> Generează video</button>
   <div className="menuDivider"/><button onClick={()=>fileInput.current?.click()}><Upload size={16}/> Încarcă orice fișier</button><button onClick={()=>{setMenu(false);onOpenLibrary()}}><Library size={16}/> Alege din Bibliotecă</button>
 </div>}</div>
         <div className="mediaQuickButtons">
-          <button className="composerIcon mediaQuick" onClick={()=>imageInput.current?.click()} title="Încarcă imagine"><ImageIcon size={19}/></button>
-          <button className="composerIcon mediaQuick" onClick={()=>videoInput.current?.click()} title="Încarcă video MP4 / MOV / WebM"><Play size={19}/></button>
+          <button className="composerIcon mediaQuick" onClick={()=>imageInput.current?.click()} title="Încarcă imagine"><Upload size={17}/><ImageIcon size={14}/></button>
+          {(user?.role==="owner"||permissions?.image_generation===true)&&<button className="composerIcon mediaQuick" onClick={()=>onGenerateMedia?.("image")} title="Generează imagine"><ImageIcon size={19}/></button>}
+          {(user?.role==="owner"||permissions?.video_generation===true)&&<button className="composerIcon mediaQuick" onClick={()=>onGenerateMedia?.("video")} title="Generează video"><Play size={19}/></button>}
           <button className="composerIcon mediaQuick" onClick={()=>audioInput.current?.click()} title="Încarcă audio MP3 / M4A / WAV / OGG"><Volume2 size={19}/></button>
         </div>
         <textarea ref={ta} value={draft} onChange={e=>setDraft(e.target.value)} onPaste={pasteIntoComposer} spellCheck={true} aria-label="Mesaj pentru AI Stoica" placeholder={uploading?"Încarc fișierul…":recording?"Ascult… apasă microfonul pentru oprire":transcribing?"Transcriu vocea…":"Mesaj pentru AI Stoica"} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!mentionOptions.length&&!busy){e.preventDefault();onSend()}}}/>
