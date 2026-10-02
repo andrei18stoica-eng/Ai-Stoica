@@ -2271,8 +2271,10 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const strictFree=cfg.directChatCostPolicy!=="allow_paid";
     const known=["cerebras","groq","gemini","mistral","nvidia","github","openrouter","cloudflare","cohere","huggingface","openai"];
     const configured=String(cfg.directChatProviderOrder||known.join(",")).split(",").map(x=>x.trim().toLowerCase()).filter(x=>known.includes(x));
-    const order=[...new Set([...configured,...known])];
+    const baseOrder=[...new Set([...configured,...known])];
     const requested=String(requestedModel||"").trim();
+    const requestedProvider=(requested.split("/")[0]||"").toLowerCase();
+    const order=known.includes(requestedProvider)?[requestedProvider,...baseOrder.filter(x=>x!==requestedProvider)]:baseOrder;
     const result=[];
 
     const push=(provider,baseUrl,key,models,{label=provider,paidRisk=false,headers={}}={})=>{
