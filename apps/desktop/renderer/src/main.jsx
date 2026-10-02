@@ -1485,9 +1485,10 @@ function App() {
   const [boot,setBoot]=useState(true),[conversations,setConversations]=useState([]),[projects,setProjects]=useState([]),[assistants,setAssistants]=useState([]),[models,setModels]=useState(initialModels);
   const initialManualModel=useMemo(()=>localStorage.getItem(MANUAL_MODEL_KEY)||localStorage.getItem(MODEL_SELECTED_KEY)||initialModels.find(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x))||"",[initialModels]);
   const [currentId,setCurrentId]=useState(null),[model,setModel]=useState(initialManualModel),[selectedProject,setSelectedProject]=useState(null),[selectedAssistant,setSelectedAssistant]=useState(null);
-  const [draft,setDraft]=useState(""),[attachments,setAttachments]=useState([]),[responseMode,setResponseMode]=useState(()=>localStorage.getItem("ai-stoica-response-mode")||"rapid"),[busy,setBusy]=useState(false),[busyStage,setBusyStage]=useState(""),[busySteps,setBusySteps]=useState([]),[search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[omni,setOmni]=useState(false),[refreshingModels,setRefreshingModels]=useState(false),[modelPolicyEnforced,setModelPolicyEnforced]=useState(false);
+  const [draft,setDraft]=useState(""),[attachments,setAttachments]=useState([]),[responseMode,setResponseMode]=useState(()=>localStorage.getItem("ai-stoica-response-mode")||"rapid"),[busy,setBusy]=useState(false),[busyStage,setBusyStage]=useState(""),[busySteps,setBusySteps]=useState([]),[search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[omni,setOmni]=useState(false),[refreshingModels,setRefreshingModels]=useState(false),[modelPolicyEnforced,setModelPolicyEnforced]=useState(false),[showJumpBottom,setShowJumpBottom]=useState(false);
   const [settings,setSettings]=useState(false),[createType,setCreateType]=useState(null),[toolPanel,setToolPanel]=useState(null),[filesPanel,setFilesPanel]=useState(false),[updateReady,setUpdateReady]=useState(false),[sidebarCollapsed,setSidebarCollapsed]=useState(false),[lastGithubBackup,setLastGithubBackup]=useState(()=>{try{return JSON.parse(localStorage.getItem("ai-stoica-last-github-backup")||"null")}catch{return null}});
   const chatRef=useRef(null);
+  const stickToBottomRef=useRef(true);
   const activeGenerationRef=useRef(null);
   const current=conversations.find(c=>c.id===currentId)||null;
 
@@ -1565,7 +1566,32 @@ function App() {
     return()=>{active=false};
   },[user?.id]);
   useEffect(()=>{const poll=async()=>{try{const h=await fetch(`${GATEWAY}/health`).then(r=>r.json());setOmni(!!h.omni)}catch{setOmni(false);window.AIStoica?.ensureOmni?.().catch(()=>{})}};poll();const id=setInterval(poll,8000);return()=>clearInterval(id)},[]);
-  useEffect(()=>{setTimeout(()=>chatRef.current?.scrollTo({top:chatRef.current.scrollHeight,behavior:"smooth"}),30)},[current?.messages?.length,busy,current?.messages?.at(-1)?.content]);
+  function updateChatScrollState(){
+    const el=chatRef.current;if(!el)return;
+    const distance=el.scrollHeight-el.scrollTop-el.clientHeight;
+    const nearBottom=distance<120;
+    stickToBottomRef.current=nearBottom;
+    setShowJumpBottom(!nearBottom);
+  }
+  function jumpToLatest({smooth=true}={}){
+    const el=chatRef.current;if(!el)return;
+    stickToBottomRef.current=true;
+    setShowJumpBottom(false);
+    el.scrollTo({top:el.scrollHeight,behavior:smooth?"smooth":"auto"});
+  }
+  useEffect(()=>{
+    const id=setTimeout(()=>{
+      if(stickToBottomRef.current)jumpToLatest({smooth:false});
+      else updateChatScrollState();
+    },30);
+    return()=>clearTimeout(id);
+  },[current?.messages?.length,busy,current?.messages?.at(-1)?.content]);
+  useEffect(()=>{
+    stickToBottomRef.current=true;
+    setShowJumpBottom(false);
+    const id=setTimeout(()=>jumpToLatest({smooth:false}),40);
+    return()=>clearTimeout(id);
+  },[currentId]);
   useEffect(()=>{
     if(!busy||!busyStage)return;
     setBusySteps(v=>v.at(-1)===busyStage?v:[...v,busyStage].slice(-8));
@@ -1763,7 +1789,7 @@ function App() {
   return <div className={cx("appShell",sidebarCollapsed&&"sidebarCollapsed")}>
     <Sidebar open={sidebar} setOpen={setSidebar} user={user} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} onSelect={id=>{setCurrentId(id);setSidebar(false)}} onDeleteConversation={deleteConversation} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} selectedAssistant={selectedAssistant} setSelectedAssistant={setSelectedAssistant} onNewProject={()=>setCreateType("project")} onNewAssistant={()=>setCreateType("assistant")} onTool={openTool} onExplore={()=>openTool("explore")} onSettings={()=>setSettings(true)} onLogout={logout}/>
     {sidebar&&<div className="mobileScrim" onClick={()=>setSidebar(false)}/>}
-    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onGitHubRollback={githubRollback} hasGitHubBackup={!!lastGithubBackup} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} busyStage={busyStage} busySteps={busySteps} onRegenerate={regenerate} onRate={rate} canRunCode={user?.role==="owner"} onCodeResult={text=>setDraft(v=>(v?v+"\n\n":"")+text)}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} onStop={stopGeneration} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")} onToolPrompt={text=>{setDraft(text);setTimeout(()=>document.querySelector(".composerLine textarea")?.focus(),0)}} responseMode={responseMode} setResponseMode={m=>{setResponseMode(m);localStorage.setItem("ai-stoica-response-mode",m)}}/></main>
+    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onGitHubRollback={githubRollback} hasGitHubBackup={!!lastGithubBackup} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef} onScroll={updateChatScrollState}><ConversationView conversation={current} busy={busy} busyStage={busyStage} busySteps={busySteps} onRegenerate={regenerate} onRate={rate} canRunCode={user?.role==="owner"} onCodeResult={text=>setDraft(v=>(v?v+"\n\n":"")+text)}/></div>{showJumpBottom&&hasMessages&&<button className="jumpToLatest" onClick={()=>jumpToLatest({smooth:true})} title="Mergi la ultimul mesaj" aria-label="Mergi la ultimul mesaj"><ChevronDown size={19}/><span>Ultimul mesaj</span></button>}<Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} onStop={stopGeneration} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")} onToolPrompt={text=>{setDraft(text);setTimeout(()=>document.querySelector(".composerLine textarea")?.focus(),0)}} responseMode={responseMode} setResponseMode={m=>{setResponseMode(m);localStorage.setItem("ai-stoica-response-mode",m)}}/></main>
     {settings&&<SettingsModal user={user} onClose={()=>setSettings(false)} onSaved={()=>{window.AIStoica.ensureOmni();setTimeout(loadData,1000)}}/>}
     {createType&&<CreateModal type={createType} onClose={()=>setCreateType(null)} onCreate={createItem}/>}
     {toolPanel==="explore"&&<ExplorePanel onClose={()=>setToolPanel(null)} assistants={assistants} models={models} onUseAssistant={useAssistant} onImagePrompt={startImagePrompt} onOpenLibrary={()=>setToolPanel("library")}/>} 
