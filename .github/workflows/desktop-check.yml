@@ -1,0 +1,47 @@
+name: AI Stoica Desktop Check
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+concurrency:
+  group: desktop-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop-check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Check desktop syntax
+        run: |
+          node --check main.cjs
+          node --check preload.cjs
+          node --check local-gateway.cjs
+
+      - name: Build renderer
+        run: npm run build:ui
+
+      - name: Test AI permissions
+        run: node scripts/test-ai-access-enforcement.cjs
+
+      - name: Test media generation
+        run: node scripts/test-media-generation.cjs
+
+      - name: Test infrastructure regressions
+        run: node scripts/test-infrastructure-regressions.cjs

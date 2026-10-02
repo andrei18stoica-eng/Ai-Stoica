@@ -99,13 +99,40 @@ function memoryMatches(db, userId, query, limit = 10) {
     .slice(0, limit)
     .map((x) => x.m);
 }
+function normalizeMemoryText(value){
+  return String(value||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim();
+}
+function memoryCategory(text){
+  const t=normalizeMemoryText(text);
+  if(/prefer|imi place|nu vreau|vreau sa fie|stil|format/.test(t))return "preferință";
+  if(/proiect|lucrez|aplicatie|site|firma|primarie|scoala/.test(t))return "proiect";
+  if(/am decis|decizie|ramane|aleg|folosim|vom folosi/.test(t))return "decizie";
+  return "detaliu";
+}
+function durableMemoryCandidate(userText){
+  const clean=String(userText||"").trim();
+  if(clean.length<12)return "";
+  const t=normalizeMemoryText(clean);
+  const explicit=/tine minte|retine|remember|sa nu uiti/.test(t);
+  const durable=/\b(prefer|vreau|nu vreau|folosesc|am decis|lucrez|proiect|obiectiv|format|program|domeniu|server|model|masina|liceu|clasa|firma|primarie)\b/.test(t);
+  if(!explicit&&!durable)return "";
+  return clean.slice(0,1800);
+}
 function addMemory(db, userId, text, source = "conversation", extra = {}) {
   const clean = String(text || "").trim();
   if (!clean) return null;
+  const normalized=normalizeMemoryText(clean);
+  const existing=db.memories.find(m=>m.userId===userId&&normalizeMemoryText(m.text)===normalized);
+  if(existing){
+    existing.updatedAt=Date.now();
+    if(extra.pinned)existing.pinned=true;
+    return existing;
+  }
   const item = {
     id: crypto.randomUUID(), userId, text: clean.slice(0, 12000), source,
+    category:extra.category||memoryCategory(clean),
     pinned: !!extra.pinned, conversationId: extra.conversationId || null,
-    createdAt: Date.now()
+    createdAt: Date.now(),updatedAt:Date.now()
   };
   db.memories.push(item);
   return item;
@@ -142,6 +169,14 @@ async function callOAuthPlugin(plugin, message) {
   }finally{clearTimeout(timer)}
 }
 async function callPlugin(plugin, message) {
+  if(plugin.mode==="direct_app"){
+    return JSON.stringify({
+      mode:"direct_app",
+      name:plugin.name,
+      appUrl:plugin.appUrl||plugin.url,
+      message:"Plugin configurat pentru deschidere directă. Nu este necesar OAuth pentru lansarea aplicației."
+    });
+  }
   if(plugin.oauthConnected&&plugin.accessToken)return callOAuthPlugin(plugin,message);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12000);
@@ -179,7 +214,10 @@ function nextRun(automation, from = Date.now()) {
   const d = new Date(from);
   const freq = automation.frequency || "daily";
   if (freq === "once") return Number(automation.runAt || 0) || null;
-  if (freq === "hourly") return from + 60 * 60 * 1000;
+  if (freq === "hourly" || freq === "interval") {
+    const hours=Math.max(1,Math.min(168,Number(automation.intervalHours||1)));
+    return from + hours * 60 * 60 * 1000;
+  }
   const [hh, mm] = String(automation.time || "09:00").split(":").map(Number);
   const next = new Date(d); next.setSeconds(0,0); next.setHours(hh || 0, mm || 0, 0, 0);
   if (next.getTime() <= from) next.setDate(next.getDate() + 1);
@@ -191,6 +229,11 @@ function nextRun(automation, from = Date.now()) {
     const days = Array.isArray(automation.days) ? automation.days.map(Number) : [];
     if (!days.length) return null;
     while (!days.includes(next.getDay()) || next.getTime() <= from) next.setDate(next.getDate() + 1);
+  }
+  if(freq==="monthly"){
+    const day=Math.max(1,Math.min(28,Number(automation.monthday||1)));
+    next.setDate(day);
+    if(next.getTime()<=from){next.setMonth(next.getMonth()+1);next.setDate(day)}
   }
   return next.getTime();
 }
@@ -512,7 +555,7 @@ async function createExportBytes(format,title,content) {
   return {bytes:Buffer.from(stripOuterFence(content),"utf8"),mime:PLAIN_TEXT_MIME[format]||"text/plain; charset=utf-8"};
 }
 
-function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig }) {
+function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig, onAutomationResult }) {
   const store = createStore(dataDir);
   const secret = loadOrCreateSecret(dataDir);
   const filesDir = path.join(dataDir, "library-files");
@@ -824,17 +867,26 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
   app.post("/api/memory/capture", auth, (req,res) => {
     const db=store.read(),user=db.users.find(u=>u.id===req.user.id);if(user?.memoryEnabled===false)return res.json({ok:true,stored:false});
-    const userText=String(req.body?.userText||"").trim(),assistantText=String(req.body?.assistantText||"").trim();
-    const text=[userText&&`Utilizator: ${userText}`,assistantText&&`AI Stoica: ${assistantText}`].filter(Boolean).join("\n");
-    const item=addMemory(db,req.user.id,text,"conversation",{conversationId:req.body?.conversationId||null});if(item)store.write(db);res.json({ok:true,stored:!!item,data:item});
+    const userText=String(req.body?.userText||"").trim();
+    const candidate=durableMemoryCandidate(userText);
+    if(!candidate)return res.json({ok:true,stored:false});
+    const item=addMemory(db,req.user.id,candidate,"automatic",{conversationId:req.body?.conversationId||null,category:memoryCategory(candidate)});
+    if(item)store.write(db);res.json({ok:true,stored:!!item,data:item});
+  });
+  app.get("/api/memory/summary", auth, (req,res) => {
+    const db=store.read(),all=db.memories.filter(m=>m.userId===req.user.id);
+    const pinned=all.filter(m=>m.pinned);
+    const recent=[...all].sort((a,b)=>(b.updatedAt||b.createdAt)-(a.updatedAt||a.createdAt)).slice(0,12);
+    const categories={};for(const m of all)categories[m.category||"detaliu"]=(categories[m.category||"detaliu"]||0)+1;
+    res.json({data:{count:all.length,pinned:pinned.length,categories,recent:recent.map(m=>({id:m.id,text:m.text,category:m.category||"detaliu",pinned:!!m.pinned,updatedAt:m.updatedAt||m.createdAt}))}});
   });
   app.post("/api/memory/import-history", auth, (req,res) => {
     const db=store.read();let count=0;
     for(const c of db.conversations.filter(x=>x.userId===req.user.id)){
       for(let i=0;i<c.messages.length;i+=2){
         const u=c.messages[i],a=c.messages[i+1];if(u?.role!=="user")continue;
-        const text=[`Utilizator: ${textFromContent(u.content)}`,a?.role==="assistant"?`AI Stoica: ${textFromContent(a.content)}`:""].filter(Boolean).join("\n").trim();
-        if(text){addMemory(db,req.user.id,text,"history",{conversationId:c.id});count++;}
+        const candidate=durableMemoryCandidate(textFromContent(u.content));
+        if(candidate){addMemory(db,req.user.id,candidate,"history",{conversationId:c.id,category:memoryCategory(candidate)});count++;}
       }
     }
     store.write(db);res.json({ok:true,count});
@@ -1103,24 +1155,21 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const p=String(row?.provider||inferProvider(row?.policyId||row?.id)||"").toLowerCase();
     return ["openai","anthropic","openrouter","runway"].includes(p)||/^(openai|anthropic|openrouter|runway)\//i.test(String(row?.policyId||row?.id||""));
   }
-  async function discoverPermittedMediaModel(req,cfg,kind,explicitModel=""){
+  async function discoverPermittedMediaModels(req,cfg,kind,explicitModel=""){
     const explicit=String(explicitModel||"").trim();
     if(explicit){
       await requireModelAccess(req.cloudToken,explicit);
-      return explicit;
+      return [explicit];
     }
 
     const configured=String(kind==="image"?cfg.imageModel||"":cfg.videoModel||"").trim();
-    if(configured){
-      try{
-        await requireModelAccess(req.cloudToken,configured);
-        return configured;
-      }catch(e){
-        // A configured paid/denied media model must not block a free model that Owner permits.
-      }
+    const rows=await mediaCatalog(cfg,kind);
+    const byId=new Map(rows.map(row=>[row.id.toLowerCase(),row]));
+    if(configured&&!byId.has(configured.toLowerCase())){
+      const row=mediaModelRow({id:configured},kind,true);
+      if(row){rows.unshift(row);byId.set(configured.toLowerCase(),row)}
     }
 
-    const rows=await mediaCatalog(cfg,kind);
     if(!rows.length)throw policyFailure(
       kind==="image"
         ?"Nu există momentan niciun model de imagine disponibil în OmniRoute."
@@ -1129,19 +1178,28 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     );
 
     if(!cloudBase()){
-      rows.sort((a,b)=>Number(localPaidHint(a))-Number(localPaidHint(b)));
-      return rows[0].id;
+      rows.sort((a,b)=>{
+        const configuredBoost=Number(b.id===configured)-Number(a.id===configured);
+        if(configuredBoost)return configuredBoost;
+        return Number(localPaidHint(a))-Number(localPaidHint(b));
+      });
+      return rows.map(x=>x.id);
     }
 
     const policy=await cloudModelPolicy(req.cloudToken,rows.map(x=>x.policyId));
     const decisions=new Map(policy.data.map(x=>[String(x.model),x]));
+    const isOwner=(req.cloudUser?.role||req.user?.role)==="owner";
     const allowed=rows
-      .map(row=>({row,decision:decisions.get(row.policyId)}))
+      .map((row,index)=>({row,index,decision:decisions.get(row.policyId)}))
       .filter(x=>x.decision?.allowed)
       .sort((a,b)=>{
+        const ac=Number(a.row.id===configured),bc=Number(b.row.id===configured);
+        if(isOwner&&ac!==bc)return bc-ac;
         const ap=Number(a.decision?.paidRequired===true||localPaidHint(a.row));
         const bp=Number(b.decision?.paidRequired===true||localPaidHint(b.row));
-        return ap-bp;
+        if(ap!==bp)return ap-bp;
+        if(ac!==bc)return bc-ac;
+        return a.index-b.index;
       });
 
     if(!allowed.length)throw policyFailure(
@@ -1150,7 +1208,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         :"Generarea video este permisă, dar nu există momentan un model video gratuit sau autorizat pentru acest cont.",
       403
     );
-    return allowed[0].row.id;
+    return allowed.map(x=>x.row.id);
   }
 
   app.post("/api/generate/image", auth, async (req,res) => {
@@ -1158,32 +1216,38 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       requireFeaturePermission(req,"image_generation","Generarea de imagini");
       const prompt=String(req.body?.prompt||"").trim();
       if(!prompt)return res.status(400).json({error:"Descrierea imaginii lipsește."});
-      const cfg=getOmniConfig(),model=await discoverPermittedMediaModel(req,cfg,"image",req.body?.model);
+      const cfg=getOmniConfig(),models=await discoverPermittedMediaModels(req,cfg,"image",req.body?.model);
       const imageUrl=`${String(cfg.baseUrl).replace(/\/+$/,"")}/images/generations`;
       const imageHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})};
-      let upstream=await fetch(imageUrl,{
-        method:"POST",headers:imageHeaders,
-        body:JSON.stringify({model,prompt,size:String(req.body?.size||"1024x1024"),n:1,response_format:"b64_json"}),
-        signal:AbortSignal.timeout(180000)
-      });
-      if(!upstream.ok&&[400,422].includes(upstream.status)){
-        upstream=await fetch(imageUrl,{
-          method:"POST",headers:imageHeaders,
-          body:JSON.stringify({model,prompt,size:String(req.body?.size||"1024x1024"),n:1}),
-          signal:AbortSignal.timeout(180000)
-        });
+      const errors=[];
+      for(const model of models){
+        try{
+          let upstream=await fetch(imageUrl,{
+            method:"POST",headers:imageHeaders,
+            body:JSON.stringify({model,prompt,size:String(req.body?.size||"1024x1024"),n:1,response_format:"b64_json"}),
+            signal:AbortSignal.timeout(180000)
+          });
+          if(!upstream.ok&&[400,404,405,409,422].includes(upstream.status)){
+            upstream=await fetch(imageUrl,{
+              method:"POST",headers:imageHeaders,
+              body:JSON.stringify({model,prompt,size:String(req.body?.size||"1024x1024"),n:1}),
+              signal:AbortSignal.timeout(180000)
+            });
+          }
+          const ctype=upstream.headers.get("content-type")||"";
+          if(!upstream.ok){errors.push(`${model}: HTTP ${upstream.status} ${(await upstream.text()).slice(0,350)}`);continue}
+          let resolved;
+          if(ctype.startsWith("image/")){
+            const bytes=Buffer.from(await upstream.arrayBuffer());resolved={bytes,mime:inferMediaMime(bytes,ctype,"image")};
+          }else{
+            const body=await upstream.json(),candidate=findMediaCandidate(body,"image");
+            resolved=await resolveGeneratedMedia(candidate,"image");
+          }
+          if(!resolved.bytes.length){errors.push(`${model}: imagine goală`);continue}
+          return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"image",prompt,model})});
+        }catch(e){errors.push(`${model}: ${e.message}`)}
       }
-      const ctype=upstream.headers.get("content-type")||"";
-      if(!upstream.ok)return res.status(upstream.status).json({error:`Generarea imaginii a eșuat: ${(await upstream.text()).slice(0,1200)}`});
-      let resolved;
-      if(ctype.startsWith("image/")){
-        const bytes=Buffer.from(await upstream.arrayBuffer());resolved={bytes,mime:inferMediaMime(bytes,ctype,"image")};
-      }else{
-        const body=await upstream.json(),candidate=findMediaCandidate(body,"image");
-        resolved=await resolveGeneratedMedia(candidate,"image");
-      }
-      if(!resolved.bytes.length)throw new Error("Imaginea generată este goală.");
-      res.json({data:saveGeneratedMedia(req,{...resolved,kind:"image",prompt,model})});
+      throw policyFailure(`Niciun model de imagine permis nu a reușit generarea. ${errors.slice(0,4).join(" | ")}`,502);
     }catch(e){res.status(e.status||502).json({error:e.message})}
   });
 
@@ -1192,32 +1256,38 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       requireFeaturePermission(req,"video_generation","Generarea de videoclipuri");
       const prompt=String(req.body?.prompt||"").trim();
       if(!prompt)return res.status(400).json({error:"Descrierea videoclipului lipsește."});
-      const cfg=getOmniConfig(),model=await discoverPermittedMediaModel(req,cfg,"video",req.body?.model);
+      const cfg=getOmniConfig(),models=await discoverPermittedMediaModels(req,cfg,"video",req.body?.model);
       const videoUrl=`${String(cfg.baseUrl).replace(/\/+$/,"")}/videos/generations`;
       const videoHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})};
-      let upstream=await fetch(videoUrl,{
-        method:"POST",headers:videoHeaders,
-        body:JSON.stringify({model,prompt,duration:Math.max(1,Math.min(10,Number(req.body?.duration||6))),aspect_ratio:String(req.body?.aspectRatio||"16:9")}),
-        signal:AbortSignal.timeout(360000)
-      });
-      if(!upstream.ok&&[400,422].includes(upstream.status)){
-        upstream=await fetch(videoUrl,{
-          method:"POST",headers:videoHeaders,body:JSON.stringify({model,prompt}),
-          signal:AbortSignal.timeout(360000)
-        });
+      const errors=[];
+      for(const model of models){
+        try{
+          let upstream=await fetch(videoUrl,{
+            method:"POST",headers:videoHeaders,
+            body:JSON.stringify({model,prompt,duration:Math.max(1,Math.min(10,Number(req.body?.duration||6))),aspect_ratio:String(req.body?.aspectRatio||"16:9")}),
+            signal:AbortSignal.timeout(360000)
+          });
+          if(!upstream.ok&&[400,404,405,409,422].includes(upstream.status)){
+            upstream=await fetch(videoUrl,{
+              method:"POST",headers:videoHeaders,body:JSON.stringify({model,prompt}),
+              signal:AbortSignal.timeout(360000)
+            });
+          }
+          const ctype=upstream.headers.get("content-type")||"";
+          if(!upstream.ok){errors.push(`${model}: HTTP ${upstream.status} ${(await upstream.text()).slice(0,350)}`);continue}
+          let resolved;
+          if(ctype.startsWith("video/")){
+            const bytes=Buffer.from(await upstream.arrayBuffer());resolved={bytes,mime:inferMediaMime(bytes,ctype,"video")};
+          }else{
+            const body=await upstream.json();
+            const candidate=await pollVideoResult(cfg,body);
+            resolved=await resolveGeneratedMedia(candidate,"video");
+          }
+          if(!resolved.bytes.length){errors.push(`${model}: video gol`);continue}
+          return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"video",prompt,model})});
+        }catch(e){errors.push(`${model}: ${e.message}`)}
       }
-      const ctype=upstream.headers.get("content-type")||"";
-      if(!upstream.ok)return res.status(upstream.status).json({error:`Generarea video a eșuat: ${(await upstream.text()).slice(0,1200)}`});
-      let resolved;
-      if(ctype.startsWith("video/")){
-        const bytes=Buffer.from(await upstream.arrayBuffer());resolved={bytes,mime:inferMediaMime(bytes,ctype,"video")};
-      }else{
-        const body=await upstream.json();
-        const candidate=await pollVideoResult(cfg,body);
-        resolved=await resolveGeneratedMedia(candidate,"video");
-      }
-      if(!resolved.bytes.length)throw new Error("Videoclipul generat este gol.");
-      res.json({data:saveGeneratedMedia(req,{...resolved,kind:"video",prompt,model})});
+      throw policyFailure(`Niciun model video permis nu a reușit generarea. ${errors.slice(0,4).join(" | ")}`,502);
     }catch(e){res.status(e.status||502).json({error:e.message})}
   });
 
@@ -1298,6 +1368,26 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
 
   app.get("/api/plugins", auth, (req,res) => {const db=store.read();res.json({data:db.plugins.filter(x=>x.userId===req.user.id).map(publicPlugin)});});
+
+  app.post("/api/plugins/direct", auth, (req,res) => {
+    const name=String(req.body?.name||"").trim(),appUrl=String(req.body?.appUrl||"").trim();
+    if(!name||!appUrl)return res.status(400).json({error:"Numele și adresa aplicației sunt obligatorii."});
+    try{
+      const u=new URL(appUrl);
+      if(!["https:","http:"].includes(u.protocol))throw new Error("protocol");
+    }catch{return res.status(400).json({error:"Adresa aplicației nu este validă."})}
+    const db=store.read();
+    db.plugins=db.plugins.filter(x=>!(x.userId===req.user.id&&String(x.name||"").toLowerCase()===name.toLowerCase()));
+    const item={
+      id:crypto.randomUUID(),userId:req.user.id,name,
+      description:String(req.body?.description||"Deschidere directă în aplicația oficială"),
+      url:appUrl,appUrl,method:"OPEN",mode:"direct_app",
+      trigger:String(req.body?.trigger||`@${name.toLowerCase().replace(/\s+/g,"-")}`),
+      auto:false,enabled:true,oauthConnected:false,createdAt:Date.now()
+    };
+    db.plugins.push(item);store.write(db);res.json({data:publicPlugin(item)});
+  });
+
   app.post("/api/plugins", auth, (req,res) => {
     const name=String(req.body?.name||"").trim(),url=String(req.body?.url||"").trim();if(!name||!url)return res.status(400).json({error:"Numele și URL-ul sunt obligatorii."});
     try{new URL(url)}catch{return res.status(400).json({error:"URL-ul pluginului nu este valid."})}
@@ -1311,6 +1401,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
   app.post("/api/plugins/:id/test", auth, async (req,res) => {
     const db=store.read(),item=db.plugins.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Pluginul nu a fost găsit."});
+    if(item.mode==="direct_app")return res.json({ok:true,direct:true,appUrl:item.appUrl||item.url,result:"Conexiune directă pregătită. Aplicația se deschide fără OAuth."});
     try{const result=await callPlugin(item,String(req.body?.message||"Test AI Stoica"));res.json({ok:true,result:String(result).slice(0,5000)});}catch(e){res.status(502).json({error:e.message});}
   });
   app.delete("/api/plugins/:id", auth, (req,res) => {const db=store.read();db.plugins=db.plugins.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));store.write(db);res.json({ok:true});});
@@ -1319,16 +1410,17 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.get("/api/automations", auth, (req,res) => {const db=store.read();res.json({data:db.automations.filter(x=>x.userId===req.user.id).sort((a,b)=>b.createdAt-a.createdAt).map(publicAutomation)});});
   app.post("/api/automations", auth, async (req,res) => {
     const title=String(req.body?.title||"").trim(),prompt=String(req.body?.prompt||"").trim();if(!title||!prompt)return res.status(400).json({error:"Titlul și instrucțiunea sunt obligatorii."});
-    const selectedModel=String(req.body?.model||getOmniConfig()?.model||"Ai principal").trim();
+    const selectedModel=String(req.body?.model||getOmniConfig()?.model||"").trim();
     try{await requireModelAccess(req.cloudToken,selectedModel);}catch(e){return res.status(e.status||403).json({error:e.message})}
-    const db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,title,prompt,trigger:String(req.body?.trigger||`@${title.toLowerCase().replace(/[^a-z0-9ăâîșț]+/gi,"-").replace(/^-|-$/g,"")}`),frequency:req.body?.frequency||"daily",time:req.body?.time||"09:00",weekday:Number(req.body?.weekday??1),days:Array.isArray(req.body?.days)?req.body.days.map(Number):[],runAt:Number(req.body?.runAt||0)||null,model:selectedModel,cloudToken:req.cloudToken||null,enabled:true,lastRunAt:null,lastResult:"",createdAt:Date.now()};
+    const timingMode=["exact_schedule","flexible_schedule","condition_watch"].includes(req.body?.timingMode)?req.body.timingMode:"exact_schedule";
+    const db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,title,prompt,trigger:String(req.body?.trigger||`@${title.toLowerCase().replace(/[^a-z0-9ăâîșț]+/gi,"-").replace(/^-|-$/g,"")}`),frequency:req.body?.frequency||"daily",time:req.body?.time||"09:00",weekday:Number(req.body?.weekday??1),days:Array.isArray(req.body?.days)?req.body.days.map(Number):[],runAt:Number(req.body?.runAt||0)||null,intervalHours:Math.max(1,Number(req.body?.intervalHours||1)),monthday:Math.max(1,Math.min(28,Number(req.body?.monthday||1))),timingMode,notify:req.body?.notify!==false,model:selectedModel,cloudToken:req.cloudToken||null,enabled:true,lastRunAt:null,lastResult:"",lastStatus:"created",createdAt:Date.now()};
     item.nextRunAt=nextRun(item,Date.now());db.automations.push(item);store.write(db);res.json({data:publicAutomation(item)});
   });
   app.patch("/api/automations/:id", auth, async (req,res) => {
     const db=store.read(),item=db.automations.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Automatizarea nu a fost găsită."});
-    const nextModel=String(Object.prototype.hasOwnProperty.call(req.body||{},"model")?req.body.model:(item.model||getOmniConfig()?.model||"Ai principal")).trim();
+    const nextModel=String(Object.prototype.hasOwnProperty.call(req.body||{},"model")?req.body.model:(item.model||getOmniConfig()?.model||"")).trim();
     try{await requireModelAccess(req.cloudToken,nextModel);}catch(e){return res.status(e.status||403).json({error:e.message})}
-    for(const k of ["title","prompt","trigger","frequency","time","weekday","days","runAt","model","enabled"])if(Object.prototype.hasOwnProperty.call(req.body||{},k))item[k]=req.body[k];
+    for(const k of ["title","prompt","trigger","frequency","time","weekday","days","runAt","intervalHours","monthday","timingMode","notify","model","enabled"])if(Object.prototype.hasOwnProperty.call(req.body||{},k))item[k]=req.body[k];
     item.model=nextModel;if(req.cloudToken)item.cloudToken=req.cloudToken;
     item.nextRunAt=item.enabled?nextRun(item,Date.now()):null;store.write(db);res.json({data:publicAutomation(item)});
   });
@@ -1498,15 +1590,26 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const selectedModel=String(item.model||cfg.model||"").trim();
     if(!selectedModel||isSmartAlias(selectedModel))throw policyFailure("Automatizarea nu are un model AI manual valid. Selectează un model permis de Owner.",400);
     await requireModelAccess(cloudToken,selectedModel);
-    const messages=await prepareMessages([{role:"user",content:item.prompt}],null,item.userId);
-    const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},body:JSON.stringify({model:selectedModel,messages,stream:false,temperature:0.35})});
+    const isWatch=item.timingMode==="condition_watch";
+    const taskPrompt=isWatch
+      ? `${item.prompt}\n\nAceasta este o verificare condițională. Dacă nu există o schimbare relevantă sau condiția nu este îndeplinită, răspunde exact: AI_STOICA_NO_NOTIFICATION. Dacă este îndeplinită, răspunde numai cu informația utilă care trebuie notificată.`
+      : item.prompt;
+    const messages=await prepareMessages([{role:"user",content:taskPrompt}],null,item.userId);
+    const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},body:JSON.stringify({model:selectedModel,messages,stream:false,temperature:0.25})});
     if(!r.ok)throw new Error(`OmniRoute HTTP ${r.status}: ${(await r.text()).slice(0,500)}`);
-    const data=await r.json(),answer=data?.choices?.[0]?.message?.content||"";
+    const data=await r.json(),answer=String(data?.choices?.[0]?.message?.content||"").trim();
+    const noNotification=isWatch&&/^AI_STOICA_NO_NOTIFICATION\b/i.test(answer);
     const fresh=store.read(),target=fresh.automations.find(x=>x.id===item.id);if(!target)return;
-    target.lastRunAt=Date.now();target.lastResult=answer.slice(0,30000);
+    target.lastRunAt=Date.now();
+    target.lastStatus=noNotification?"checked_no_change":"delivered";
+    target.lastResult=noNotification?"Verificat — condiția nu este încă îndeplinită.":answer.slice(0,30000);
     if(target.frequency==="once"){target.enabled=false;target.nextRunAt=null;}else target.nextRunAt=nextRun(target,Date.now()+1000);
-    const u=fresh.users.find(x=>x.id===item.userId);if(u?.memoryEnabled!==false)addMemory(fresh,item.userId,`Automatizare "${item.title}": ${answer}`,"automation");
+    const u=fresh.users.find(x=>x.id===item.userId);
+    if(!noNotification&&u?.memoryEnabled!==false)addMemory(fresh,item.userId,`Rezultat automatizare "${item.title}": ${answer.slice(0,1800)}`,"automation",{category:"automatizare"});
     store.write(fresh);
+    if(!noNotification&&target.notify!==false&&typeof onAutomationResult==="function"){
+      try{onAutomationResult({title:item.title,body:answer.slice(0,500),automationId:item.id,userId:item.userId})}catch{}
+    }
   }
 
   let automationBusy=false;

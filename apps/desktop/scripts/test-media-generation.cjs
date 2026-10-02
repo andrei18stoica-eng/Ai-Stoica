@@ -21,10 +21,11 @@ async function main(){
     res.setHeader("content-type","application/json");
     const token=String(req.headers.authorization||"").replace(/^Bearer\s+/i,"");
     if(req.url==="/auth/me"){
-      if(!["normal-token","blocked-video-token"].includes(token)){res.statusCode=401;return res.end(JSON.stringify({error:"bad token"}))}
-      const videoAllowed=token==="normal-token";
+      if(!["normal-token","blocked-video-token","owner-token"].includes(token)){res.statusCode=401;return res.end(JSON.stringify({error:"bad token"}))}
+      const isOwner=token==="owner-token";
+      const videoAllowed=token!=="blocked-video-token";
       return res.end(JSON.stringify({
-        user:{id:videoAllowed?"user-media":"user-media-blocked",email:videoAllowed?"media@example.com":"media-blocked@example.com",name:"Media User",role:"user",status:"active"},
+        user:{id:isOwner?"owner-media":videoAllowed?"user-media":"user-media-blocked",email:isOwner?"owner@example.com":videoAllowed?"media@example.com":"media-blocked@example.com",name:isOwner?"Owner":"Media User",role:isOwner?"owner":"user",status:"active"},
         permissions:{
           chat:true,image_generation:true,video_generation:videoAllowed,
           cloudflare:true,groq:true,cerebras:true,gemini:true,
@@ -37,7 +38,8 @@ async function main(){
       const models=Array.isArray(body.models)?body.models:[body.model].filter(Boolean);
       const data=models.map(model=>{
         const value=String(model);
-        const allowed=/^cloudflare\//i.test(value);
+        const isOwner=token==="owner-token";
+        const allowed=isOwner||/^cloudflare\//i.test(value);
         const paidRequired=/^(openai|anthropic|openrouter|runway)\//i.test(value);
         return {model:value,allowed,paidRequired,reason:allowed?"":"Modelul nu este permis pentru acest cont."};
       });
@@ -53,19 +55,23 @@ async function main(){
       res.setHeader("content-type","application/json");
       return res.end(JSON.stringify({data:[
         {id:"openai/gpt-image-2",provider:"openai",type:"image"},
+        {id:"broken-image-1",provider:"cloudflare",type:"image"},
         {id:"free-image-1",provider:"cloudflare",type:"image"},
         {id:"runway/gen-3",provider:"runway",type:"video"},
+        {id:"broken-video-1",provider:"cloudflare",type:"video"},
         {id:"free-video-1",provider:"cloudflare",type:"video"}
       ]}));
     }
     if(req.url==="/v1/images/generations"&&req.method==="POST"){
       const body=JSON.parse(await readBody(req));imageModelUsed=body.model;
       res.setHeader("content-type","application/json");
+      if(body.model==="broken-image-1"){res.statusCode=400;return res.end(JSON.stringify({error:"model endpoint mismatch"}))}
       return res.end(JSON.stringify({created:Date.now(),data:[{b64_json:png.toString("base64")}]}));
     }
     if(req.url==="/v1/videos/generations"&&req.method==="POST"){
       const body=JSON.parse(await readBody(req));videoModelUsed=body.model;videoGenerationCalls++;
       res.setHeader("content-type","application/json");
+      if(body.model==="broken-video-1"){res.statusCode=400;return res.end(JSON.stringify({error:"model endpoint mismatch"}))}
       return res.end(JSON.stringify({id:"job-1",status:"queued"}));
     }
     if(req.url==="/v1/videos/job-1"&&req.method==="GET"){
@@ -114,6 +120,15 @@ async function main(){
     r=await fetch(base+"/api/files/"+video.data.id,{headers:{authorization:"Bearer normal-token"}});
     const videoBytes=Buffer.from(await r.arrayBuffer());
     expect(r.ok&&videoBytes.subarray(4,8).toString("ascii")==="ftyp","Generated video file is not MP4-like");
+
+    const ownerHeaders={authorization:"Bearer owner-token","content-type":"application/json"};
+    r=await fetch(base+"/api/generate/image",{method:"POST",headers:ownerHeaders,body:JSON.stringify({prompt:"Owner free image while paid AI is globally off"})});
+    const ownerImage=await r.json();expect(r.ok,ownerImage.error||"Owner image generation failed while paid AI was off");
+    expect(ownerImage.data?.model==="openai/gpt-image-2","Owner should retain configured paid image access while paid AI is off for normal accounts");
+
+    r=await fetch(base+"/api/generate/video",{method:"POST",headers:ownerHeaders,body:JSON.stringify({prompt:"Owner free video while paid AI is globally off"})});
+    const ownerVideo=await r.json();expect(r.ok,ownerVideo.error||"Owner video generation failed while paid AI was off");
+    expect(ownerVideo.data?.model==="runway/gen-3","Owner should retain configured paid video access while paid AI is off for normal accounts");
 
     const beforeBlocked=videoGenerationCalls;
     r=await fetch(base+"/api/generate/video",{

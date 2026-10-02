@@ -535,7 +535,35 @@ function MediaAttachment({attachment}) {
   </div>;
 }
 
-function ConversationView({conversation,busy,busyStage,onRegenerate,onRate}) {
+function ThinkingActivity({stage,steps=[]}) {
+  const [open,setOpen]=useState(false);
+  const visible=(steps.length?steps:[stage]).filter(Boolean);
+  const current=stage||visible.at(-1)||"Pregătește răspunsul…";
+  function iconFor(text){
+    const t=String(text||"").toLowerCase();
+    if(/memorie|context/.test(t))return <Brain size={16}/>;
+    if(/fișier|document|pdf|docx|pptx/.test(t))return <FileText size={16}/>;
+    if(/imagine|video|media/.test(t))return <ImageIcon size={16}/>;
+    if(/web|internet|verific/.test(t))return <Globe2 size={16}/>;
+    return <Sparkles size={16}/>;
+  }
+  return <div className={cx("thinkingActivity",open&&"open")}>
+    <button className="thinkingActivityHead" onClick={()=>setOpen(v=>!v)}>
+      <span className="thinkingActivityIcon">{iconFor(current)}</span>
+      <span className="thinkingActivityTitle">{current}</span>
+      <span className="thinkingActivityPulse"><i/><i/><i/></span>
+      <ChevronDown size={17} className="thinkingActivityChevron"/>
+    </button>
+    {open&&<div className="thinkingActivitySteps">
+      {visible.map((x,i)=><div key={i} className={cx("thinkingActivityStep",i===visible.length-1&&"active")}>
+        <span>{iconFor(x)}</span><b>{x}</b>
+      </div>)}
+      <small>Se afișează doar etapele de lucru, nu raționamentul intern al modelului.</small>
+    </div>}
+  </div>;
+}
+
+function ConversationView({conversation,busy,busyStage,busySteps,onRegenerate,onRate}) {
   const [contextMenu,setContextMenu]=useState(null);
   useEffect(()=>{
     const close=()=>setContextMenu(null);
@@ -571,7 +599,7 @@ function ConversationView({conversation,busy,busyStage,onRegenerate,onRate}) {
           {!m.streaming&&!m.attachmentOnly&&<MessageActions message={m} onRegenerate={()=>onRegenerate(i)} onRate={v=>onRate(i,v)}/>}
         </div></div>
         :null)}
-    {busy&&<div className="thinking"><div className="thinkingPulse"><span/><span/><span/></div><div className="thinkingCopy"><b>{busyStage||"Gândește și pregătește răspunsul…"}</b><small>AI Stoica afișează etapa de lucru, nu raționamentul intern.</small></div></div>}
+    {busy&&<ThinkingActivity stage={busyStage} steps={busySteps}/>} 
     {contextMenu&&<div className="copyContextMenu" style={{left:contextMenu.x,top:contextMenu.y}} onClick={e=>e.stopPropagation()}>
       {contextMenu.codeText&&<button onClick={()=>copyValue(contextMenu.codeText)}><Copy size={15}/><span><b>Copiază codul</b><small>Doar blocul de cod selectat</small></span></button>}
       {contextMenu.selection&&<button onClick={()=>copyValue(contextMenu.selection)}><Copy size={15}/><span><b>Copiază selecția</b><small>Textul pe care l-ai selectat</small></span></button>}
@@ -734,20 +762,32 @@ function LibraryPanel({onClose,onAttach}) {
 }
 
 function MemoryPanel({onClose}) {
-  const [items,setItems]=useState([]),[enabled,setEnabled]=useState(true),[query,setQuery]=useState(""),[text,setText]=useState("");
-  async function load(q=""){const d=await api(`/api/memory${q?`?q=${encodeURIComponent(q)}`:""}`);setItems(d.data||[]);setEnabled(d.enabled!==false)}
+  const [items,setItems]=useState([]),[enabled,setEnabled]=useState(true),[query,setQuery]=useState(""),[text,setText]=useState(""),[summary,setSummary]=useState(null);
+  async function load(q=""){
+    const [d,sm]=await Promise.all([
+      api(`/api/memory${q?`?q=${encodeURIComponent(q)}`:""}`),
+      api("/api/memory/summary").catch(()=>({data:null}))
+    ]);
+    setItems(d.data||[]);setEnabled(d.enabled!==false);setSummary(sm.data||null);
+  }
   useEffect(()=>{load()},[]);
   async function toggle(){const d=await api("/api/memory/toggle",{method:"POST",body:JSON.stringify({enabled:!enabled})});setEnabled(d.enabled)}
   async function add(){if(!text.trim())return;await api("/api/memory",{method:"POST",body:JSON.stringify({text,pinned:true})});setText("");await load(query)}
   async function pin(x){await api(`/api/memory/${x.id}`,{method:"PATCH",body:JSON.stringify({pinned:!x.pinned})});await load(query)}
   async function remove(id){await api(`/api/memory/${id}`,{method:"DELETE"});await load(query)}
   async function clear(){if(confirm("Ștergi toate memoriile AI Stoica pentru acest cont?")){await api("/api/memory",{method:"DELETE"});await load()}}
-  async function importHistory(){const d=await api("/api/memory/import-history",{method:"POST",body:"{}"});alert(`Au fost importate ${d.count} fragmente din istoricul conversațiilor.`);await load()}
-  return <ToolShell title="Memorie" subtitle="AI Stoica poate reține conversațiile și folosi informațiile relevante în discuțiile viitoare." onClose={onClose}>
-    <div className="memoryTop"><button className={cx("memoryToggle",enabled&&"on")} onClick={toggle}>{enabled?<ToggleRight size={22}/>:<ToggleLeft size={22}/>} Memorie {enabled?"activă":"oprită"}</button><button className="secondary" onClick={importHistory}>Importă istoricul</button><button className="dangerButton" onClick={clear}><Trash2 size={15}/> Șterge tot</button></div>
-    <div className="memoryAdd"><textarea value={text} onChange={e=>setText(e.target.value)} placeholder="Adaugă manual ceva important pe care AI Stoica să-l țină minte…"/><button className="primary" onClick={add}>Salvează în memorie</button></div>
+  async function importHistory(){const d=await api("/api/memory/import-history",{method:"POST",body:"{}"});alert(`Au fost importate ${d.count} informații relevante din istoricul conversațiilor.`);await load()}
+  return <ToolShell title="Memorie" subtitle="Reține automat informațiile durabile și relevante, fără să salveze fiecare replică." onClose={onClose}>
+    <div className="memoryTop"><button className={cx("memoryToggle",enabled&&"on")} onClick={toggle}>{enabled?<ToggleRight size={22}/>:<ToggleLeft size={22}/>} Memorie {enabled?"activă":"oprită"}</button><button className="secondary" onClick={importHistory}>Importă istoricul relevant</button><button className="dangerButton" onClick={clear}><Trash2 size={15}/> Șterge tot</button></div>
+    {summary&&<div className="memorySummary">
+      <div><span>Total memorii</span><b>{summary.count||0}</b></div>
+      <div><span>Fixate</span><b>{summary.pinned||0}</b></div>
+      <div><span>Categorii</span><b>{Object.keys(summary.categories||{}).length}</b></div>
+      <small>AI Stoica extrage automat preferințe, decizii și detalii de proiect și le folosește doar când sunt relevante.</small>
+    </div>}
+    <div className="memoryAdd"><textarea value={text} onChange={e=>setText(e.target.value)} placeholder="Adaugă manual ceva important pe care AI Stoica să-l țină minte…"/><button className="primary" onClick={add}>Salvează și fixează</button></div>
     <div className="memorySearch"><Search size={15}/><input value={query} onChange={e=>{setQuery(e.target.value);load(e.target.value)}} placeholder="Caută în memorie"/></div>
-    <div className="memoryList">{items.map(x=><div className="memoryItem" key={x.id}><button className="pinBtn" onClick={()=>pin(x)}>{x.pinned?<Pin size={16}/>:<PinOff size={16}/>}</button><div><p>{x.text}</p><span>{x.source} · {fmtTime(x.createdAt)}</span></div><button className="iconDanger" onClick={()=>remove(x.id)}><Trash2 size={15}/></button></div>)}</div>
+    <div className="memoryList">{items.map(x=><div className="memoryItem" key={x.id}><button className="pinBtn" onClick={()=>pin(x)}>{x.pinned?<Pin size={16}/>:<PinOff size={16}/>}</button><div><p>{x.text}</p><span>{x.category||"detaliu"} · {x.source} · {fmtTime(x.updatedAt||x.createdAt)}</span></div><button className="iconDanger" onClick={()=>remove(x.id)}><Trash2 size={15}/></button></div>)}</div>
   </ToolShell>;
 }
 
@@ -969,8 +1009,25 @@ function PluginsPanel({onClose}) {
   async function openProviderApp(){
     const url=selected?.appUrl;
     if(!url)return;
-    const r=await window.AIStoica?.openExternal?.(url);
-    if(r&&!r.ok)setResult(`${selected.name}: nu am putut deschide aplicația — ${r.error||"eroare"}`);
+    try{
+      await api("/api/plugins/direct",{method:"POST",body:JSON.stringify({
+        name:selected.name,description:selected.description,trigger:selected.trigger,appUrl:url
+      })});
+      await load();
+      const r=await window.AIStoica?.openExternal?.(url);
+      if(r&&!r.ok)throw new Error(r.error||"Nu am putut deschide aplicația.");
+      setResult(`${selected.name}: conectat pentru deschidere directă, fără OAuth. Autentifică-te normal în aplicația oficială.`);
+      closeSetup();
+    }catch(e){setResult(`${selected.name}: ${e.message}`)}
+  }
+  async function runInstalledPlugin(x){
+    if(x.mode==="direct_app"&&(x.appUrl||x.url)){
+      const r=await window.AIStoica?.openExternal?.(x.appUrl||x.url);
+      if(r&&!r.ok)setResult(`${x.name}: nu am putut deschide aplicația — ${r.error||"eroare"}`);
+      else setResult(`${x.name}: aplicația a fost deschisă.`);
+      return;
+    }
+    await test(x);
   }
 
   const installedNames=new Set(items.map(x=>String(x.name||"").toLowerCase()));
@@ -994,7 +1051,7 @@ function PluginsPanel({onClose}) {
         {!!items.length&&<section className="stoicaInstalled">
           <button className="stoicaSectionTitle" onClick={()=>{}}>Instalate <span>›</span></button>
           <div className="stoicaInstalledIcons">
-            {items.slice(0,8).map(x=><button key={x.id} className="stoicaInstalledIcon" title={x.name} onClick={()=>test(x)}>
+            {items.slice(0,8).map(x=><button key={x.id} className="stoicaInstalledIcon" title={x.name} onClick={()=>runInstalledPlugin(x)}>
               <span>{String(x.name||"P").slice(0,2).toUpperCase()}</span>
             </button>)}
           </div>
@@ -1011,7 +1068,7 @@ function PluginsPanel({onClose}) {
           items.map(x=><div className="stoicaManageRow" key={x.id}>
             <div className="stoicaPluginLogo"><span>{String(x.name||"P").slice(0,2).toUpperCase()}</span></div>
             <div className="stoicaPluginInfo"><b>{x.name}</b><small>{x.description||x.url}</small></div>
-            <button className="smallBtn" onClick={()=>test(x)}>Testează</button>
+            <button className="smallBtn" onClick={()=>runInstalledPlugin(x)}>{x.mode==="direct_app"?"Deschide":"Testează"}</button>
             <button className={cx("claudeToggle",x.enabled&&"on")} onClick={()=>patch(x,{enabled:!x.enabled})}><span/></button>
             <button className="iconDanger" onClick={()=>remove(x.id)}><Trash2 size={16}/></button>
           </div>)}
@@ -1052,17 +1109,17 @@ function PluginsPanel({onClose}) {
             <div><h3>{selected.name}</h3><p>{selected.description}</p></div>
             <button className="iconOnly" onClick={closeSetup}><X size={18}/></button>
           </div>
-          <div className="claudeSetupNotice"><Plug size={16}/><span>Autentificarea în site/aplicație și autorizarea API sunt pași diferiți. AI Stoica nu consideră pluginul conectat până când nu există o conexiune OAuth/API validă.</span></div>
+          <div className="claudeSetupNotice"><Plug size={16}/><span>Poți folosi pluginul fără OAuth pentru deschiderea directă a aplicației. OAuth/API rămâne opțional doar când vrei ca AI Stoica să citească sau să modifice date private din acel serviciu.</span></div>
           {selected.appUrl&&<div className="pluginDirectConnect">
-            <button className="primary" onClick={openProviderApp}><ExternalLink size={16}/> Deschide {selected.name} și autentifică-te</button>
-            <small>Se deschide aplicația oficială în browser. După autentificare, conexiunea AI Stoica se finalizează prin OAuth/API.</small>
+            <button className="primary" onClick={openProviderApp}><ExternalLink size={16}/> Conectează fără OAuth și deschide {selected.name}</button>
+            <small>AI Stoica salvează pluginul ca legătură directă și deschide aplicația oficială. Te autentifici normal în browser/aplicație.</small>
           </div>}
           <div className="claudeSetupForm">
             <label>Nume<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label>
             {selected.oauth&&<>
               <label>OAuth Client ID<input placeholder="Client ID al aplicației AI Stoica" value={form.oauthClientId} onChange={e=>setForm({...form,oauthClientId:e.target.value})}/></label>
               <label>OAuth Client Secret <span className="optional">{selected.oauth.requiresSecret?"necesar":"opțional / PKCE"}</span><input type="password" placeholder="Client Secret" value={form.oauthClientSecret} onChange={e=>setForm({...form,oauthClientSecret:e.target.value})}/></label>
-              <button type="button" className="primary pluginOAuthButton" onClick={connectOAuth}><ExternalLink size={15}/> Conectează contul cu OAuth</button>
+              <button type="button" className="secondary pluginOAuthButton" onClick={connectOAuth}><ExternalLink size={15}/> OAuth avansat pentru acces la date</button>
             </>}
             <label>Endpoint / webhook / API personalizat<input placeholder="https://…" value={form.url} onChange={e=>setForm({...form,url:e.target.value})}/></label>
             <div className="claudeFormRow"><label>Trigger<input placeholder="@gmail" value={form.trigger} onChange={e=>setForm({...form,trigger:e.target.value})}/></label><label>Metodă<select value={form.method} onChange={e=>setForm({...form,method:e.target.value})}><option>POST</option><option>GET</option></select></label></div>
@@ -1127,7 +1184,10 @@ function AdminPanel({onClose}) {
   }
   async function togglePaid(){
     const next=!paidAi;
-    if(next&&!confirm("Activezi serviciile AI plătite la nivel global? Acest comutator nu cumpără automat credite, dar permite folosirea furnizorilor plătiți dacă există chei și permisiuni."))return;
+    const message=next
+      ?"Permiți AI plătit și celorlalte conturi eligibile? Fiecare utilizator are nevoie în continuare de permisiunea individuală OpenAI / Claude / OpenRouter."
+      :"Oprești AI-ul plătit pentru conturile normale? Owner-ul își păstrează accesul la modelele plătite.";
+    if(!confirm(message))return;
     try{
       const d=await api("/api/admin/ai",{method:"PATCH",body:JSON.stringify({paidAiEnabled:next})});
       setPaidAi(!!d.paidAiEnabled);
@@ -1141,7 +1201,7 @@ function AdminPanel({onClose}) {
         <div><span>Utilizatori</span><b>{users.length}</b></div>
         <div className={pendingCount?"warn":""}><span>În așteptare</span><b>{pendingCount}</b></div>
         <div><span>Activi</span><b>{activeCount}</b></div>
-        <button className={cx("adminPaidAi",paidAi&&"on")} onClick={togglePaid}><span>AI plătit</span><b>{paidAi?"PORNIT":"OPRIT"}</b></button>
+        <button className={cx("adminPaidAi",paidAi&&"on")} onClick={togglePaid} title="Controlează AI-ul plătit pentru conturile normale. Owner-ul rămâne permis."><span>AI plătit · UTILIZATORI</span><b>{paidAi?"PORNIT":"OPRIT"}</b></button>
       </div>
 
       <div className="adminToolbar">
@@ -1201,19 +1261,40 @@ function AdminPanel({onClose}) {
 }
 
 function AutomationsPanel({onClose,model}) {
-  const blank={title:"",prompt:"",trigger:"",frequency:"daily",time:"09:00",weekday:1,days:[1,2,3,4,5,6,0],runAt:""};
+  const blank={title:"",prompt:"",trigger:"",frequency:"daily",time:"09:00",weekday:1,days:[1,2,3,4,5,6,0],runAt:"",intervalHours:1,monthday:1,timingMode:"exact_schedule",notify:true};
   const dayNames=[[1,"L"],[2,"Ma"],[3,"Mi"],[4,"J"],[5,"V"],[6,"S"],[0,"D"]];
   const [items,setItems]=useState([]),[form,setForm]=useState(blank),[busy,setBusy]=useState(false);
   async function load(){setItems((await api("/api/automations")).data||[])}
-  useEffect(()=>{load()},[]);
+  useEffect(()=>{load();const id=setInterval(load,30000);return()=>clearInterval(id)},[]);
   async function add(){if(!form.title.trim()||!form.prompt.trim())return;await api("/api/automations",{method:"POST",body:JSON.stringify({...form,runAt:form.frequency==="once"?Date.parse(form.runAt||""):null,model})});setForm(blank);await load()}
   async function patch(x,p){await api(`/api/automations/${x.id}`,{method:"PATCH",body:JSON.stringify(p)});await load()}
   async function run(x){setBusy(true);try{await api(`/api/automations/${x.id}/run`,{method:"POST",body:"{}"});await load()}finally{setBusy(false)}}
   async function remove(id){await api(`/api/automations/${id}`,{method:"DELETE"});await load()}
   function toggleDay(d){setForm(v=>({...v,days:v.days.includes(d)?v.days.filter(x=>x!==d):[...v.days,d]}))}
-  return <ToolShell title="Automatizări" subtitle="Creează sarcini recurente. În chat scrie @ și poți insera automatizarea după nume." onClose={onClose}>
-    <div className="automationForm"><input placeholder="Titlu, ex. Rezumat zilnic" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/><input placeholder="Trigger opțional, ex. @rezumat-zilnic" value={form.trigger} onChange={e=>setForm({...form,trigger:e.target.value})}/><textarea placeholder="Ce trebuie să facă AI Stoica?" value={form.prompt} onChange={e=>setForm({...form,prompt:e.target.value})}/><div className="automationRow"><select value={form.frequency} onChange={e=>setForm({...form,frequency:e.target.value})}><option value="hourly">La fiecare oră</option><option value="daily">În fiecare zi</option><option value="selected_days">În anumite zile</option><option value="weekly">O dată pe săptămână</option><option value="once">O singură dată</option></select>{form.frequency!=="hourly"&&form.frequency!=="once"&&<input type="time" value={form.time} onChange={e=>setForm({...form,time:e.target.value})}/>} {form.frequency==="once"&&<input type="datetime-local" value={form.runAt} onChange={e=>setForm({...form,runAt:e.target.value})}/>} {form.frequency==="weekly"&&<select value={form.weekday} onChange={e=>setForm({...form,weekday:Number(e.target.value)})}><option value={1}>Luni</option><option value={2}>Marți</option><option value={3}>Miercuri</option><option value={4}>Joi</option><option value={5}>Vineri</option><option value={6}>Sâmbătă</option><option value={0}>Duminică</option></select>}</div>{form.frequency==="selected_days"&&<div className="dayPicker">{dayNames.map(([d,n])=><button type="button" key={d} className={form.days.includes(d)?"active":""} onClick={()=>toggleDay(d)}>{n}</button>)}</div>}<button className="primary" onClick={add}><Plus size={16}/> Creează automatizare</button></div>
-    <div className="automationList">{items.map(x=><div className="automationCard" key={x.id}><div className="automationIcon"><CalendarClock size={20}/></div><div className="automationInfo"><b>{x.title}</b><span>{x.trigger||"@automatizare"} · {x.frequency} · următoarea: {fmtTime(x.nextRunAt)}</span><p>{x.prompt}</p>{x.lastResult&&<details><summary>Ultimul rezultat · {fmtTime(x.lastRunAt)}</summary><div className="lastResult">{x.lastResult}</div></details>}</div><button className="iconOnly" disabled={busy} onClick={()=>run(x)} title="Rulează acum"><Play size={16}/></button><button className="smallBtn" onClick={()=>patch(x,{enabled:!x.enabled})}>{x.enabled?"Activ":"Oprit"}</button><button className="iconDanger" onClick={()=>remove(x.id)}><Trash2 size={16}/></button></div>)}</div>
+  const watch=form.timingMode==="condition_watch";
+  return <ToolShell title="Automatizări" subtitle="Memento-uri, sarcini recurente și verificări condiționale care rulează în fundal cât AI Stoica este pornit." onClose={onClose}>
+    <div className="automationModeTabs">
+      {[["exact_schedule","La oră exactă"],["flexible_schedule","Flexibil"],["condition_watch","Când se schimbă ceva"]].map(([k,label])=><button key={k} className={form.timingMode===k?"active":""} onClick={()=>setForm({...form,timingMode:k,frequency:k==="condition_watch"?"hourly":form.frequency})}>{label}</button>)}
+    </div>
+    <div className="automationForm">
+      <input placeholder="Titlu, ex. Rezumat zilnic" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
+      <input placeholder="Trigger opțional, ex. @rezumat-zilnic" value={form.trigger} onChange={e=>setForm({...form,trigger:e.target.value})}/>
+      <textarea placeholder={watch?"Ce condiție trebuie verificată și când să te notific?":"Ce trebuie să facă AI Stoica?"} value={form.prompt} onChange={e=>setForm({...form,prompt:e.target.value})}/>
+      <div className="automationRow">
+        <select value={form.frequency} onChange={e=>setForm({...form,frequency:e.target.value})}>
+          <option value="hourly">La fiecare oră</option><option value="interval">La fiecare N ore</option><option value="daily">În fiecare zi</option><option value="selected_days">În anumite zile</option><option value="weekly">O dată pe săptămână</option><option value="monthly">Lunar</option><option value="once">O singură dată</option>
+        </select>
+        {form.frequency==="interval"&&<input type="number" min="1" max="168" value={form.intervalHours} onChange={e=>setForm({...form,intervalHours:Number(e.target.value)||1})}/>}
+        {!["hourly","interval","once"].includes(form.frequency)&&<input type="time" value={form.time} onChange={e=>setForm({...form,time:e.target.value})}/>}
+        {form.frequency==="once"&&<input type="datetime-local" value={form.runAt} onChange={e=>setForm({...form,runAt:e.target.value})}/>}
+        {form.frequency==="weekly"&&<select value={form.weekday} onChange={e=>setForm({...form,weekday:Number(e.target.value)})}><option value={1}>Luni</option><option value={2}>Marți</option><option value={3}>Miercuri</option><option value={4}>Joi</option><option value={5}>Vineri</option><option value={6}>Sâmbătă</option><option value={0}>Duminică</option></select>}
+        {form.frequency==="monthly"&&<input type="number" min="1" max="28" value={form.monthday} onChange={e=>setForm({...form,monthday:Number(e.target.value)||1})} title="Ziua lunii"/>}
+      </div>
+      {form.frequency==="selected_days"&&<div className="dayPicker">{dayNames.map(([d,n])=><button type="button" key={d} className={form.days.includes(d)?"active":""} onClick={()=>toggleDay(d)}>{n}</button>)}</div>}
+      <label className="automationNotify"><input type="checkbox" checked={form.notify} onChange={e=>setForm({...form,notify:e.target.checked})}/><span><b>Notifică-mă când are rezultat</b><small>{watch?"La verificările condiționale nu notifică dacă nu s-a schimbat nimic.":"Afișează notificare desktop când sarcina rulează."}</small></span></label>
+      <button className="primary" onClick={add}><Plus size={16}/> Creează automatizare</button>
+    </div>
+    <div className="automationList">{items.map(x=><div className="automationCard" key={x.id}><div className="automationIcon"><CalendarClock size={20}/></div><div className="automationInfo"><b>{x.title}</b><span>{x.timingMode==="condition_watch"?"Monitorizare":x.timingMode==="flexible_schedule"?"Program flexibil":"Program exact"} · {x.frequency} · următoarea: {fmtTime(x.nextRunAt)}</span><p>{x.prompt}</p>{x.lastResult&&<details><summary>{x.lastStatus==="checked_no_change"?"Ultima verificare fără schimbări":"Ultimul rezultat"} · {fmtTime(x.lastRunAt)}</summary><div className="lastResult">{x.lastResult}</div></details>}</div><button className="iconOnly" disabled={busy} onClick={()=>run(x)} title="Rulează acum"><Play size={16}/></button><button className="smallBtn" onClick={()=>patch(x,{enabled:!x.enabled})}>{x.enabled?"Activ":"Oprit"}</button><button className="iconDanger" onClick={()=>remove(x.id)}><Trash2 size={16}/></button></div>)}</div>
   </ToolShell>;
 }
 
@@ -1280,7 +1361,7 @@ function App() {
   const [boot,setBoot]=useState(true),[conversations,setConversations]=useState([]),[projects,setProjects]=useState([]),[assistants,setAssistants]=useState([]),[models,setModels]=useState(initialModels);
   const initialManualModel=useMemo(()=>localStorage.getItem(MANUAL_MODEL_KEY)||localStorage.getItem(MODEL_SELECTED_KEY)||initialModels.find(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x))||"",[initialModels]);
   const [currentId,setCurrentId]=useState(null),[model,setModel]=useState(initialManualModel),[selectedProject,setSelectedProject]=useState(null),[selectedAssistant,setSelectedAssistant]=useState(null);
-  const [draft,setDraft]=useState(""),[attachments,setAttachments]=useState([]),[busy,setBusy]=useState(false),[busyStage,setBusyStage]=useState(""),[search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[omni,setOmni]=useState(false),[refreshingModels,setRefreshingModels]=useState(false),[modelPolicyEnforced,setModelPolicyEnforced]=useState(false);
+  const [draft,setDraft]=useState(""),[attachments,setAttachments]=useState([]),[busy,setBusy]=useState(false),[busyStage,setBusyStage]=useState(""),[busySteps,setBusySteps]=useState([]),[search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[omni,setOmni]=useState(false),[refreshingModels,setRefreshingModels]=useState(false),[modelPolicyEnforced,setModelPolicyEnforced]=useState(false);
   const [settings,setSettings]=useState(false),[createType,setCreateType]=useState(null),[toolPanel,setToolPanel]=useState(null),[filesPanel,setFilesPanel]=useState(false),[updateReady,setUpdateReady]=useState(false),[sidebarCollapsed,setSidebarCollapsed]=useState(false);
   const chatRef=useRef(null);
   const current=conversations.find(c=>c.id===currentId)||null;
@@ -1361,6 +1442,10 @@ function App() {
   useEffect(()=>{const poll=async()=>{try{const h=await fetch(`${GATEWAY}/health`).then(r=>r.json());setOmni(!!h.omni)}catch{setOmni(false);window.AIStoica?.ensureOmni?.().catch(()=>{})}};poll();const id=setInterval(poll,8000);return()=>clearInterval(id)},[]);
   useEffect(()=>{setTimeout(()=>chatRef.current?.scrollTo({top:chatRef.current.scrollHeight,behavior:"smooth"}),30)},[current?.messages?.length,busy,current?.messages?.at(-1)?.content]);
   useEffect(()=>{
+    if(!busy||!busyStage)return;
+    setBusySteps(v=>v.at(-1)===busyStage?v:[...v,busyStage].slice(-8));
+  },[busy,busyStage]);
+  useEffect(()=>{
     if(!current?.model)return;
     const isSmart=/^ai[ _-]*(principal|stoica)$/i.test(current.model);
     if(isSmart){
@@ -1390,10 +1475,12 @@ function App() {
     const desiredModel=String(baseConv.model||model||"").trim();
     const manualModel=modelPolicyEnforced?(models.includes(desiredModel)?desiredModel:(models.includes(model)?model:(models.find(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x))||""))):desiredModel;
     const effectiveModel=manualModel;
-    setBusy(true);setBusyStage("Analizează cererea și identifică tipul sarcinii…");const assistantMessage={id:uid(),role:"assistant",content:"",attachmentOnly:fileMode,createdAt:Date.now(),streaming:true};let working={...baseConv,model:manualModel||baseConv.model||model,messages:[...messages,assistantMessage],updatedAt:Date.now()};setConversations(v=>v.map(x=>x.id===working.id?working:x));
+    setBusySteps([]);setBusy(true);setBusyStage("Analizează cererea și identifică tipul sarcinii…");const assistantMessage={id:uid(),role:"assistant",content:"",attachmentOnly:fileMode,createdAt:Date.now(),streaming:true};let working={...baseConv,model:manualModel||baseConv.model||model,messages:[...messages,assistantMessage],updatedAt:Date.now()};setConversations(v=>v.map(x=>x.id===working.id?working:x));
     try{
       if(!effectiveModel)throw new Error("Nu există niciun model AI permis pentru acest cont.");
       if(!omni){setBusyStage("Pornește și verifică OmniRoute…");await window.AIStoica.ensureOmni();await new Promise(r=>setTimeout(r,1200))}
+      setBusyStage("Verifică memoria, fișierele și contextul relevant…");
+      await new Promise(r=>setTimeout(r,120));
       setBusyStage("Pregătește AI-ul ales manual…");
       const token=localStorage.getItem(TOKEN_KEY)||"",r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({model:effectiveModel,assistantId:working.assistantId,messages})});
       if(!r.ok){let e;try{e=await r.json()}catch{e={error:await r.text()}};throw new Error(e?.error||`HTTP ${r.status}`)}
@@ -1438,7 +1525,7 @@ function App() {
     }catch(e){working={...working,messages:[...messages,{...assistantMessage,content:`Eroare: ${e.message}`,streaming:false}],updatedAt:Date.now()};await saveConversation(working)}finally{setBusy(false);setBusyStage("")}
   }
   async function generateMediaAssistant(baseConv,messages,kind,prompt){
-    setBusy(true);setBusyStage(kind==="video"?"Creează videoclipul și pregătește fișierul MP4…":"Creează imaginea și pregătește fișierul pentru Download…");
+    setBusySteps([]);setBusy(true);setBusyStage(kind==="video"?"Creează videoclipul și pregătește fișierul MP4…":"Creează imaginea și pregătește fișierul pentru Download…");
     try{
       if(!omni){await window.AIStoica.ensureOmni();await new Promise(r=>setTimeout(r,900))}
       const endpoint=kind==="video"?"/api/generate/video":"/api/generate/image";
@@ -1507,7 +1594,7 @@ function App() {
   return <div className={cx("appShell",sidebarCollapsed&&"sidebarCollapsed")}>
     <Sidebar open={sidebar} setOpen={setSidebar} user={user} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} onSelect={id=>{setCurrentId(id);setSidebar(false)}} onDeleteConversation={deleteConversation} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} selectedAssistant={selectedAssistant} setSelectedAssistant={setSelectedAssistant} onNewProject={()=>setCreateType("project")} onNewAssistant={()=>setCreateType("assistant")} onTool={openTool} onExplore={()=>openTool("explore")} onSettings={()=>setSettings(true)} onLogout={logout}/>
     {sidebar&&<div className="mobileScrim" onClick={()=>setSidebar(false)}/>}
-    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} busyStage={busyStage} onRegenerate={regenerate} onRate={rate}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
+    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} busyStage={busyStage} busySteps={busySteps} onRegenerate={regenerate} onRate={rate}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
     {settings&&<SettingsModal user={user} onClose={()=>setSettings(false)} onSaved={()=>{window.AIStoica.ensureOmni();setTimeout(loadData,1000)}}/>}
     {createType&&<CreateModal type={createType} onClose={()=>setCreateType(null)} onCreate={createItem}/>}
     {toolPanel==="explore"&&<ExplorePanel onClose={()=>setToolPanel(null)} assistants={assistants} models={models} onUseAssistant={useAssistant} onImagePrompt={startImagePrompt} onOpenLibrary={()=>setToolPanel("library")}/>} 

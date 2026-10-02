@@ -63,7 +63,7 @@ function providerAccess(context, provider) {
 
   if (PAID_PROVIDERS.has(provider)) {
     if (!isOwner && !paidEnabled) {
-      return { allowed:false, reason:"Serviciile AI plătite nu sunt activate de Owner pentru acest cont." };
+      return { allowed:false, reason:"AI-ul plătit este disponibil doar pentru Owner sau pentru conturile cărora Owner le activează explicit accesul." };
     }
     if (!isOwner && permissions[provider] !== true) {
       const label = provider === "openai" ? "OpenAI / GPT" : provider === "anthropic" ? "Claude / Anthropic" : "OpenRouter";
@@ -100,7 +100,7 @@ function evaluateModelAccess(context, model) {
       return { model:requested, allowed:false, providers, paidRequired, source:"combination", combinationId:combo.id, reason:"Combinația AI este dezactivată." };
     }
     if (!isOwner && paidRequired && context?.paidEnabled !== true) {
-      return { model:requested, allowed:false, providers, paidRequired:true, source:"combination", combinationId:combo.id, reason:"Combinația folosește AI plătit, iar accesul nu este activat de Owner pentru acest cont." };
+      return { model:requested, allowed:false, providers, paidRequired:true, source:"combination", combinationId:combo.id, reason:"AI-ul plătit este disponibil doar pentru Owner sau pentru conturile cărora Owner le activează explicit accesul." };
     }
     for (const provider of providers) {
       const access = providerAccess(context, provider);
@@ -114,7 +114,7 @@ function evaluateModelAccess(context, model) {
   if (isManagedPaidAlias(requested)) {
     const providers = ["openai","anthropic"];
     if (!isOwner && context?.paidEnabled !== true) {
-      return { model:requested, allowed:false, providers, paidRequired:true, source:"managed_alias", reason:"AI principal / AI Stoica poate include servicii plătite, iar accesul nu este activat de Owner pentru acest cont." };
+      return { model:requested, allowed:false, providers, paidRequired:true, source:"managed_alias", reason:"AI-ul plătit este disponibil doar pentru Owner sau pentru conturile cărora Owner le activează explicit accesul." };
     }
     for (const provider of providers) {
       const access = providerAccess(context, provider);

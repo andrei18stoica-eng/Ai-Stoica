@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, safeStorage, Tray, Menu, nativeImage, session, shell, clipboard } = require("electron");
+const { app, BrowserWindow, ipcMain, safeStorage, Tray, Menu, nativeImage, session, shell, clipboard, Notification } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const net = require("net");
@@ -224,7 +224,14 @@ app.whenReady().then(async () => {
 
   try {
     if (!(await isPortOpen(8787))) {
-      gateway = startLocalGateway({ dataDir: app.getPath("userData"), port: 8787, getOmniConfig: loadConfig });
+      gateway = startLocalGateway({
+        dataDir: app.getPath("userData"), port: 8787, getOmniConfig: loadConfig,
+        onAutomationResult: ({title,body}) => {
+          try{
+            if(Notification.isSupported())new Notification({title:`AI Stoica · ${title||"Automatizare"}`,body:String(body||"").slice(0,500)}).show();
+          }catch{}
+        }
+      });
       gateway?.server?.on?.("error", (e) => {
         try {
           fs.appendFileSync(path.join(app.getPath("userData"), "ai-stoica-errors.log"),
