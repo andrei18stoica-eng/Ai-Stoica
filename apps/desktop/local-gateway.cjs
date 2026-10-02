@@ -653,6 +653,21 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const t=String(text||"").toLowerCase();
     return /\b(azi|acum|actual|actuale|recent|recentă|recente|ultim|ultima|latest|news|știri|stiri|internet|online|caută|cauta|verifică|verifica|preț|pret|vreme|scor|program|orar|versiune|release|documentație|documentatie|api|model nou|2026)\b/.test(t);
   }
+  function libraryContext(db,userId,query){
+    const words=[...new Set(normalizeMemoryText(query).split(/\s+/).filter(x=>x.length>=4))].slice(0,35);
+    const rows=db.library.filter(x=>x.userId===userId).map(item=>{
+      const body=String(item.text||item.transcript||item.prompt||"");
+      const hay=normalizeMemoryText((item.name||"")+" "+body);
+      const score=words.reduce((n,w)=>n+(hay.includes(w)?1:0),0);
+      return {item,body,score};
+    }).filter(x=>x.score>0&&x.body).sort((a,b)=>b.score-a.score||(b.item.createdAt||0)-(a.item.createdAt||0)).slice(0,5);
+    let out="";
+    for(const row of rows){
+      const block="Fișier bibliotecă: "+(row.item.name||row.item.id)+"\n"+row.body.slice(0,5000)+"\n\n";
+      if(out.length+block.length>18000)break;out+=block;
+    }
+    return out.trim();
+  }
   function projectContext(db,userId,projectId,latestText){
     if(!projectId)return "";
     const words=[...new Set(normalizeMemoryText(latestText).split(/\s+/).filter(x=>x.length>=4))].slice(0,30);
@@ -2016,6 +2031,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const mem=memoryMatches(db,userId,latestText,8);if(mem.length)system.push("Memorie relevantă despre utilizator și conversațiile anterioare:\n"+mem.map((m,i)=>`${i+1}. ${m.text}`).join("\n"));
     }
     const pctx=await pluginContext(db,userId,latestText);if(pctx.length)system.push("Rezultate furnizate de pluginuri conectate:\n"+pctx.join("\n\n"));
+    const lctx=libraryContext(db,userId,latestText);if(lctx)system.push("BIBLIOTECA AI STOICA — fragmente relevante din fișierele încărcate:\n"+lctx);
     if(cfg.projectContextEnabled!==false&&options.projectId){const pc=projectContext(db,userId,options.projectId,latestText);if(pc)system.push("CONTEXT PERSISTENT DIN ACELAȘI PROIECT:\n"+pc)}
     if(cfg.webSearchEnabled!==false&&options.webAllowed!==false){
       try{const directUrls=urlsFromText(latestText);if(directUrls.length){const pages=[];for(const url of directUrls){const excerpt=await pageExcerpt(url,5000);if(excerpt)pages.push("URL: "+url+"\nExtras: "+excerpt)}if(pages.length)system.push("PAGINI WEB LIVE — conținut citit direct din linkurile utilizatorului:\n"+pages.join("\n\n"))}}catch{}
