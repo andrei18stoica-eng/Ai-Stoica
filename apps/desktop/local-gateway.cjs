@@ -1170,7 +1170,13 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.get("/api/projects", auth, (req,res) => { const db=store.read(); res.json({data:db.projects.filter(x=>x.userId===req.user.id).sort((a,b)=>b.updatedAt-a.updatedAt)}); });
   app.post("/api/projects", auth, (req,res) => {
     const name=String(req.body?.name||"").trim(); if(!name)return res.status(400).json({error:"Numele proiectului este obligatoriu."});
-    const db=store.read(), item={id:crypto.randomUUID(),userId:req.user.id,name,createdAt:Date.now(),updatedAt:Date.now()}; db.projects.push(item);store.write(db);res.json({data:item});
+    const db=store.read(), item={id:crypto.randomUUID(),userId:req.user.id,name,instructions:String(req.body?.instructions||"").trim().slice(0,12000),createdAt:Date.now(),updatedAt:Date.now()}; db.projects.push(item);store.write(db);res.json({data:item});
+  });
+  app.patch("/api/projects/:id", auth, (req,res) => {
+    const db=store.read(),item=db.projects.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Proiectul nu a fost găsit."});
+    if(req.body?.name)item.name=String(req.body.name).trim().slice(0,200);
+    if(Object.prototype.hasOwnProperty.call(req.body||{},"instructions"))item.instructions=String(req.body.instructions||"").trim().slice(0,12000);
+    item.updatedAt=Date.now();store.write(db);res.json({data:item});
   });
   app.get("/api/assistants", auth, (req,res) => { const db=store.read();res.json({data:db.assistants.filter(x=>x.userId===req.user.id).sort((a,b)=>Number(b.builtIn)-Number(a.builtIn)||a.name.localeCompare(b.name))}); });
   app.post("/api/assistants", auth, (req,res) => {
@@ -2032,10 +2038,16 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }
     const pctx=await pluginContext(db,userId,latestText);if(pctx.length)system.push("Rezultate furnizate de pluginuri conectate:\n"+pctx.join("\n\n"));
     const lctx=libraryContext(db,userId,latestText);if(lctx)system.push("BIBLIOTECA AI STOICA — fragmente relevante din fișierele încărcate:\n"+lctx);
-    if(cfg.projectContextEnabled!==false&&options.projectId){const pc=projectContext(db,userId,options.projectId,latestText);if(pc)system.push("CONTEXT PERSISTENT DIN ACELAȘI PROIECT:\n"+pc)}
+    if(cfg.projectContextEnabled!==false&&options.projectId){
+      const project=db.projects.find(p=>p.id===options.projectId&&p.userId===userId);
+      if(project?.instructions)system.push("INSTRUCȚIUNI PROPRII ALE PROIECTULUI:\n"+project.instructions);
+      const pc=projectContext(db,userId,options.projectId,latestText);if(pc)system.push("CONTEXT PERSISTENT DIN ACELAȘI PROIECT:\n"+pc)
+    }
+    if(options.responseMode==="thinking")system.push("MOD GÂNDIRE: analizează mai riguros, verifică ipotezele și structurează răspunsul înainte de concluzie. Nu expune raționamentul intern; oferă doar concluzii și pași utili.");
+    if(options.responseMode==="rapid")system.push("MOD RAPID: prioritizează un răspuns direct, concis și util, fără analiză inutil de lungă.");
     if(cfg.webSearchEnabled!==false&&options.webAllowed!==false){
       try{const directUrls=urlsFromText(latestText);if(directUrls.length){const pages=[];for(const url of directUrls){const excerpt=await pageExcerpt(url,5000);if(excerpt)pages.push("URL: "+url+"\nExtras: "+excerpt)}if(pages.length)system.push("PAGINI WEB LIVE — conținut citit direct din linkurile utilizatorului:\n"+pages.join("\n\n"))}}catch{}
-      if(shouldUseLiveWeb(latestText)){try{const rows=await liveWebSearch(latestText,5);if(rows.length)system.push("WEB LIVE — rezultate obținute acum. Folosește-le pentru informațiile actuale și indică sursele prin link; nu inventa surse:\n"+rows.map((x,i)=>(i+1)+". "+x.title+"\nURL: "+x.url+"\nExtras: "+String(x.excerpt||"").slice(0,2600)).join("\n\n"))}catch{}}
+      if(shouldUseLiveWeb(latestText)){try{const deep=/deep research|cercetare aprofundată|cercetare aprofundata/i.test(latestText);const rows=await liveWebSearch(latestText,deep?8:5);if(rows.length)system.push("WEB LIVE — rezultate obținute acum. Folosește-le pentru informațiile actuale și indică sursele prin link; nu inventa surse:\n"+rows.map((x,i)=>(i+1)+". "+x.title+"\nURL: "+x.url+"\nExtras: "+String(x.excerpt||"").slice(0,2600)).join("\n\n"))}catch{}}
     }
     if(cfg.githubAutoContext!==false&&options.githubAllowed!==false){try{const gc=await githubCodeContext(cfg,latestText);if(gc)system.push("GITHUB LIVE — fragmente relevante din repository-ul configurat:\n"+gc)}catch{}}
     if(options.owner&&/\b(rulează|ruleaza|execută|executa|testează|testeaza|run|execute|test)\b/i.test(latestText)){
@@ -2062,7 +2074,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     });
   }
   app.post("/api/chat", auth, async (req,res) => {
-    const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id,{projectId:req.body?.projectId||null,webAllowed:ownerRequest(req)||req.permissions?.web_search!==false,githubAllowed:ownerRequest(req)||req.permissions?.github_access===true,owner:ownerRequest(req)});if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
+    const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id,{projectId:req.body?.projectId||null,webAllowed:ownerRequest(req)||req.permissions?.web_search!==false,githubAllowed:ownerRequest(req)||req.permissions?.github_access===true,owner:ownerRequest(req),responseMode:String(req.body?.responseMode||"rapid")});if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
     try{
       const route=await resolveChatRoute(req,messages,requestedModel);
       const errors=[];
@@ -2080,7 +2092,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }catch(e){res.status(e.status||502).json({error:e.message})}
   });
   app.post("/api/chat/stream", auth, async (req,res) => {
-    const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id,{projectId:req.body?.projectId||null,webAllowed:ownerRequest(req)||req.permissions?.web_search!==false,githubAllowed:ownerRequest(req)||req.permissions?.github_access===true,owner:ownerRequest(req)});if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
+    const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id,{projectId:req.body?.projectId||null,webAllowed:ownerRequest(req)||req.permissions?.web_search!==false,githubAllowed:ownerRequest(req)||req.permissions?.github_access===true,owner:ownerRequest(req),responseMode:String(req.body?.responseMode||"rapid")});if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
     try{
       const route=await resolveChatRoute(req,messages,requestedModel);
       const errors=[];let upstream=null,usedModel="";
