@@ -40,7 +40,7 @@ jobs:
           POSTGRES_DB: aistoica
           POSTGRES_USER: aistoica
           POSTGRES_PASSWORD: test-only-password
-          OWNER_EMAIL: andrei18stoica@gmail.com
+          OWNER_EMAIL: owner@example.com
           AI_STOICA_DOMAIN: api.example.com
         run: docker compose -f deploy/hetzner/docker-compose.yml config >/dev/null
       - name: Build API image

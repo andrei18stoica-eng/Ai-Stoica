@@ -33,6 +33,10 @@ jobs:
           node --check main.cjs
           node --check preload.cjs
           node --check local-gateway.cjs
+          for f in lib/*.cjs scripts/*.cjs; do node --check "$f"; done
+
+      - name: Test data store, memory and document reading
+        run: node scripts/test-modules.cjs
 
       - name: Build renderer
         run: npm run build:ui
@@ -48,3 +52,9 @@ jobs:
 
       - name: Test Owner tools
         run: node scripts/test-owner-tools.cjs
+
+      - name: Test local mode (free APIs without Cloud)
+        run: node scripts/test-local-mode.cjs
+
+      - name: Test document export (PDF, Word, PowerPoint, Excel)
+        run: node scripts/test-document-export.cjs
