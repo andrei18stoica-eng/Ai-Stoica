@@ -1188,14 +1188,16 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
     const policy=await cloudModelPolicy(req.cloudToken,rows.map(x=>x.policyId));
     const decisions=new Map(policy.data.map(x=>[String(x.model),x]));
+    const isOwner=(req.cloudUser?.role||req.user?.role)==="owner";
     const allowed=rows
       .map((row,index)=>({row,index,decision:decisions.get(row.policyId)}))
       .filter(x=>x.decision?.allowed)
       .sort((a,b)=>{
+        const ac=Number(a.row.id===configured),bc=Number(b.row.id===configured);
+        if(isOwner&&ac!==bc)return bc-ac;
         const ap=Number(a.decision?.paidRequired===true||localPaidHint(a.row));
         const bp=Number(b.decision?.paidRequired===true||localPaidHint(b.row));
         if(ap!==bp)return ap-bp;
-        const ac=Number(a.row.id===configured),bc=Number(b.row.id===configured);
         if(ac!==bc)return bc-ac;
         return a.index-b.index;
       });
