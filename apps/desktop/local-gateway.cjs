@@ -2010,29 +2010,36 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.delete("/api/plugins/:id", auth, (req,res) => {if(!featureAllowedResponse(req,res,"plugins","Pluginurile"))return;const db=store.read();db.plugins=db.plugins.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));store.write(db);res.json({ok:true});});
 
   function publicAutomation(item){const {cloudToken,...safe}=item||{};return safe;}
-  app.get("/api/automations", auth, (req,res) => {const db=store.read();res.json({data:db.automations.filter(x=>x.userId===req.user.id).sort((a,b)=>b.createdAt-a.createdAt).map(publicAutomation)});});
+  app.get("/api/automations", auth, (req,res) => {if(!featureAllowedResponse(req,res,"automations","Automatizările"))return;const db=store.read();res.json({data:db.automations.filter(x=>x.userId===req.user.id).sort((a,b)=>b.createdAt-a.createdAt).map(publicAutomation)});});
   app.post("/api/automations", auth, async (req,res) => {
+    if(!featureAllowedResponse(req,res,"automations","Automatizările"))return;
     const title=String(req.body?.title||"").trim(),prompt=String(req.body?.prompt||"").trim();if(!title||!prompt)return res.status(400).json({error:"Titlul și instrucțiunea sunt obligatorii."});
     const selectedModel=String(req.body?.model||getOmniConfig()?.model||"").trim();
     if(!selectedModel)return res.status(400).json({error:"Alege mai întâi un model AI din lista de sus, apoi creează automatizarea."});
     try{await requireModelAccess(req.cloudToken,selectedModel);}catch(e){return res.status(e.status||403).json({error:e.message})}
     const timingMode=["exact_schedule","flexible_schedule","condition_watch"].includes(req.body?.timingMode)?req.body.timingMode:"exact_schedule";
-    const db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,title,prompt,trigger:String(req.body?.trigger||`@${title.toLowerCase().replace(/[^a-z0-9ăâîșț]+/gi,"-").replace(/^-|-$/g,"")}`),frequency:req.body?.frequency||"daily",time:req.body?.time||"09:00",weekday:Number(req.body?.weekday??1),days:Array.isArray(req.body?.days)?req.body.days.map(Number):[],runAt:Number(req.body?.runAt||0)||null,intervalHours:Math.max(1,Number(req.body?.intervalHours||1)),monthday:Math.max(1,Math.min(28,Number(req.body?.monthday||1))),timingMode,notify:req.body?.notify!==false,model:selectedModel,cloudToken:req.cloudToken||null,enabled:true,lastRunAt:null,lastResult:"",lastStatus:"created",createdAt:Date.now()};
+    const db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,title,prompt,trigger:String(req.body?.trigger||`@${title.toLowerCase().replace(/[^a-z0-9ăâîșț]+/gi,"-").replace(/^-|-$/g,"")}`),frequency:String(req.body?.frequency||"daily"),time:String(req.body?.time||"09:00"),weekday:Number(req.body?.weekday??1),days:Array.isArray(req.body?.days)?req.body.days.map(Number):[],runAt:Number(req.body?.runAt||0)||null,intervalHours:Number(req.body?.intervalHours||1),monthday:Number(req.body?.monthday||1),timingMode,notify:req.body?.notify!==false,model:selectedModel,cloudToken:req.cloudToken||null,enabled:true,lastRunAt:null,lastResult:"",lastStatus:"created",createdAt:Date.now()};
+    const invalid=validateAutomationSchedule(item);if(invalid)return res.status(400).json({error:invalid});
     item.nextRunAt=nextRun(item,Date.now());db.automations.push(item);store.write(db);res.json({data:publicAutomation(item)});
   });
   app.patch("/api/automations/:id", auth, async (req,res) => {
+    if(!featureAllowedResponse(req,res,"automations","Automatizările"))return;
     const db=store.read(),item=db.automations.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Automatizarea nu a fost găsită."});
     const nextModel=String(Object.prototype.hasOwnProperty.call(req.body||{},"model")?req.body.model:(item.model||getOmniConfig()?.model||"")).trim();
     try{await requireModelAccess(req.cloudToken,nextModel);}catch(e){return res.status(e.status||403).json({error:e.message})}
-    for(const k of ["title","prompt","trigger","frequency","time","weekday","days","runAt","intervalHours","monthday","timingMode","notify","model","enabled"])if(Object.prototype.hasOwnProperty.call(req.body||{},k))item[k]=req.body[k];
-    item.model=nextModel;if(req.cloudToken)item.cloudToken=req.cloudToken;
+    const candidate={...item};
+    for(const k of ["title","prompt","trigger","frequency","time","weekday","days","runAt","intervalHours","monthday","timingMode","notify","model","enabled"])if(Object.prototype.hasOwnProperty.call(req.body||{},k))candidate[k]=req.body[k];
+    candidate.model=nextModel;
+    const invalid=validateAutomationSchedule(candidate);if(invalid)return res.status(400).json({error:invalid});
+    Object.assign(item,candidate);if(req.cloudToken)item.cloudToken=req.cloudToken;
     item.failures=0;item.nextRunAt=item.enabled?nextRun(item,Date.now()):null;store.write(db);res.json({data:publicAutomation(item)});
   });
   app.post("/api/automations/:id/run", auth, async (req,res) => {
+    if(!featureAllowedResponse(req,res,"automations","Automatizările"))return;
     const db=store.read(),item=db.automations.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Automatizarea nu a fost găsită."});
     try{await runAutomation(item,req.cloudToken||item.cloudToken);const fresh=store.read().automations.find(x=>x.id===item.id);res.json({data:publicAutomation(fresh)});}catch(e){res.status(e.status||502).json({error:e.message});}
   });
-  app.delete("/api/automations/:id", auth, (req,res) => {const db=store.read();db.automations=db.automations.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));store.write(db);res.json({ok:true});});
+  app.delete("/api/automations/:id", auth, (req,res) => {if(!featureAllowedResponse(req,res,"automations","Automatizările"))return;const db=store.read();db.automations=db.automations.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));store.write(db);res.json({ok:true});});
 
   function mediaExtension(mime,name="") {
     const fromName=path.extname(String(name||"")).replace(/^\./,"").toLowerCase();
@@ -2134,7 +2141,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(user?.memoryEnabled!==false){
       const mem=await embeddingIndex.search(cfg,db,userId,latestText,8);if(mem.length)system.push("Memorie relevantă despre utilizator și conversațiile anterioare:\n"+mem.map((m,i)=>`${i+1}. ${m.text}`).join("\n"));
     }
-    const pctx=await pluginContext(db,userId,latestText);if(pctx.length)system.push("Rezultate furnizate de pluginuri conectate:\n"+pctx.join("\n\n"));
+    if(options.pluginsAllowed!==false){const pctx=await pluginContext(db,userId,latestText,()=>store.write(db));if(pctx.length)system.push("Rezultate furnizate de pluginuri conectate:\n"+pctx.join("\n\n"));}
     const lctx=libraryContext(db,userId,latestText);if(lctx)system.push("BIBLIOTECA AI STOICA — fragmente relevante din fișierele încărcate:\n"+lctx);
     if(cfg.projectContextEnabled!==false&&options.projectId){
       const project=db.projects.find(p=>p.id===options.projectId&&p.userId===userId);
@@ -2143,9 +2150,11 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }
     if(options.responseMode==="thinking")system.push("MOD GÂNDIRE: analizează mai riguros, verifică ipotezele și structurează răspunsul înainte de concluzie. Nu expune raționamentul intern; oferă doar concluzii și pași utili.");
     if(options.responseMode==="rapid")system.push("MOD RAPID: prioritizează un răspuns direct, concis și util, fără analiză inutil de lungă.");
+    const deepResearch=isDeepResearchRequest(latestText);
+    if(deepResearch&&options.deepResearchAllowed===false)throw policyFailure("Deep Research este dezactivat pentru acest cont.",403);
     if(cfg.webSearchEnabled!==false&&options.webAllowed!==false){
       try{const directUrls=urlsFromText(latestText);if(directUrls.length){const pages=[];for(const url of directUrls){const excerpt=await pageExcerpt(url,5000);if(excerpt)pages.push("URL: "+url+"\nExtras: "+excerpt)}if(pages.length)system.push("PAGINI WEB LIVE — conținut citit direct din linkurile utilizatorului:\n"+pages.join("\n\n"))}}catch{}
-      if(shouldUseLiveWeb(latestText)){try{const deep=/deep research|cercetare aprofundată|cercetare aprofundata/i.test(latestText);const rows=await liveWebSearch(latestText,deep?8:5);if(rows.length)system.push("WEB LIVE — rezultate obținute acum. Folosește-le pentru informațiile actuale și indică sursele prin link; nu inventa surse:\n"+rows.map((x,i)=>(i+1)+". "+x.title+"\nURL: "+x.url+"\nExtras: "+String(x.excerpt||"").slice(0,2600)).join("\n\n"))}catch{}}
+      if(shouldUseLiveWeb(latestText)||deepResearch){try{const rows=await liveWebSearch(latestText,deepResearch?8:5);if(rows.length)system.push("WEB LIVE — rezultate obținute acum. Folosește-le pentru informațiile actuale și indică sursele prin link; nu inventa surse:\n"+rows.map((x,i)=>(i+1)+". "+x.title+"\nURL: "+x.url+"\nExtras: "+String(x.excerpt||"").slice(0,2600)).join("\n\n"))}catch{}}
     }
     if(cfg.githubAutoContext!==false&&options.githubAllowed!==false){try{const gc=await githubCodeContext(cfg,latestText);if(gc)system.push("GITHUB LIVE — fragmente relevante din repository-ul configurat:\n"+gc)}catch{}}
     if(options.owner&&cfg.serverHost&&/\b(server|ssh|hetzner|deploy|deployment|producție|productie|nginx|ubuntu)\b/i.test(latestText)){
@@ -2282,7 +2291,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     });
   }
   app.post("/api/chat", auth, async (req,res) => {
-    const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id,{projectId:req.body?.projectId||null,webAllowed:ownerRequest(req)||!cloudBase()||req.permissions?.web_search===true,githubAllowed:ownerRequest(req)||req.permissions?.github_access===true,owner:ownerRequest(req),responseMode:String(req.body?.responseMode||"rapid")});if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
+    const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id,{projectId:req.body?.projectId||null,webAllowed:ownerRequest(req)||!cloudBase()||req.permissions?.web_search===true,deepResearchAllowed:ownerRequest(req)||!cloudBase()||req.permissions?.deep_research===true,pluginsAllowed:ownerRequest(req)||!cloudBase()||req.permissions?.plugins===true,githubAllowed:ownerRequest(req)||req.permissions?.github_access===true,owner:ownerRequest(req),responseMode:String(req.body?.responseMode||"rapid")});if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
     try{
       const route=await resolveChatRoute(req,messages,requestedModel);
       const errors=[];
@@ -2311,7 +2320,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }catch(e){res.status(e.status||502).json({error:e.message})}
   });
   app.post("/api/chat/stream", auth, async (req,res) => {
-    const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id,{projectId:req.body?.projectId||null,webAllowed:ownerRequest(req)||!cloudBase()||req.permissions?.web_search===true,githubAllowed:ownerRequest(req)||req.permissions?.github_access===true,owner:ownerRequest(req),responseMode:String(req.body?.responseMode||"rapid")});if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
+    const cfg=getOmniConfig(),requestedModel=String(req.body?.model||cfg.model||"").trim(),messages=await prepareMessages(req.body?.messages,req.body?.assistantId,req.user.id,{projectId:req.body?.projectId||null,webAllowed:ownerRequest(req)||!cloudBase()||req.permissions?.web_search===true,deepResearchAllowed:ownerRequest(req)||!cloudBase()||req.permissions?.deep_research===true,pluginsAllowed:ownerRequest(req)||!cloudBase()||req.permissions?.plugins===true,githubAllowed:ownerRequest(req)||req.permissions?.github_access===true,owner:ownerRequest(req),responseMode:String(req.body?.responseMode||"rapid")});if(!messages.length)return res.status(400).json({error:"Nu există mesaje."});
     // When the user presses Stop (or closes the window) the request to the AI provider is cancelled too.
     const clientGone=new AbortController();
     res.on("close",()=>{if(!res.writableFinished)clientGone.abort()});
@@ -2358,6 +2367,13 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   async function runAutomation(item, cloudToken) {
     const cfg=getOmniConfig(),db=store.read(),user=db.users.find(u=>u.id===item.userId);if(!user)throw new Error("Contul automatizării nu mai există.");
+    if(cloudBase()&&String(user.role||"").toLowerCase()!=="owner"){
+      if(!cloudToken)throw policyFailure("Automatizarea nu mai are o sesiune Cloud validă. Autentifică-te din nou.",403);
+      const remote=await cloudFetch("/auth/me",{headers:{Authorization:`Bearer ${cloudToken}`},timeout:7000});
+      const text=await remote.text();let me={};try{me=JSON.parse(text||"{}")}catch{}
+      if(!remote.ok)throw policyFailure(me?.error||"Nu pot verifica permisiunea automatizării.",remote.status||503);
+      if(me?.permissions?.automations!==true)throw policyFailure("Automatizările sunt dezactivate pentru acest cont.",403);
+    }
     const selectedModel=String(item.model||cfg.model||"").trim();
     if(!selectedModel||isSmartAlias(selectedModel))throw policyFailure("Automatizarea nu are un model AI manual valid. Selectează un model permis de Owner.",400);
     await requireModelAccess(cloudToken,selectedModel);
