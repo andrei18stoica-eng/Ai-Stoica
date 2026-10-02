@@ -1814,14 +1814,46 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   async function directFalVideo(cfg,prompt,duration,aspectRatio){
     const key=String(cfg.falApiKey||"").trim();if(!key)return null;
-    const model=String(cfg.falVideoModel||"fal-ai/wan/v2.2-a14b/text-to-video").trim().replace(/^\/+|\/+$/g,"");
-    const r=await fetch("https://fal.run/"+model,{
+    const model=String(cfg.falVideoModel||"fal-ai/ltx-video").trim().replace(/^\/+|\/+$/g,"");
+    const headers={"Content-Type":"application/json",Authorization:"Key "+key};
+    const submit=await fetch("https://queue.fal.run/"+model,{
       method:"POST",
-      headers:{"Content-Type":"application/json",Authorization:"Key "+key},
-      body:JSON.stringify({prompt,resolution:"720p",aspect_ratio:["16:9","9:16","1:1"].includes(String(aspectRatio))?String(aspectRatio):"16:9"}),
-      signal:AbortSignal.timeout(420000)
+      headers,
+      body:JSON.stringify({prompt}),
+      signal:AbortSignal.timeout(60000)
     });
-    const resolved=await fetchBinaryOrCandidate(r,"video");
+    const text=await submit.text();let job={};try{job=JSON.parse(text)}catch{job={raw:text}}
+    if(!submit.ok)throw new Error("fal.ai submit HTTP "+submit.status+": "+text.slice(0,700));
+
+    let candidate=findMediaCandidate(job,"video");
+    if(candidate){
+      const resolved=await resolveGeneratedMedia(candidate,"video");
+      return {...resolved,model,provider:"fal-video-direct"};
+    }
+
+    const statusUrl=String(job?.status_url||job?.statusUrl||"").trim();
+    const responseUrl=String(job?.response_url||job?.responseUrl||"").trim();
+    if(!statusUrl||!responseUrl)throw new Error("fal.ai nu a returnat status_url și response_url.");
+
+    const deadline=Date.now()+10*60*1000;
+    let state=job;
+    while(Date.now()<deadline){
+      const status=String(state?.status||"").toUpperCase();
+      if(status==="COMPLETED")break;
+      if(["FAILED","ERROR","CANCELED","CANCELLED"].includes(status))throw new Error("fal.ai video eșuat: "+JSON.stringify(state).slice(0,700));
+      await new Promise(r=>setTimeout(r,5000));
+      const sr=await fetch(statusUrl,{headers:{Authorization:"Key "+key},signal:AbortSignal.timeout(30000)});
+      const st=await sr.text();try{state=JSON.parse(st)}catch{state={raw:st}}
+      if(!sr.ok)throw new Error("fal.ai status HTTP "+sr.status+": "+st.slice(0,500));
+    }
+    if(String(state?.status||"").toUpperCase()!=="COMPLETED")throw new Error("Video-ul fal.ai nu s-a finalizat în intervalul permis.");
+
+    const rr=await fetch(responseUrl,{headers:{Authorization:"Key "+key},signal:AbortSignal.timeout(120000)});
+    const rt=await rr.text();let result={};try{result=JSON.parse(rt)}catch{result={raw:rt}}
+    if(!rr.ok)throw new Error("fal.ai result HTTP "+rr.status+": "+rt.slice(0,700));
+    candidate=findMediaCandidate(result,"video")||result?.video?.url||result?.data?.video?.url||result?.output?.video?.url;
+    if(!candidate)throw new Error("fal.ai a finalizat fără URL video.");
+    const resolved=await resolveGeneratedMedia(candidate,"video");
     return {...resolved,model,provider:"fal-video-direct"};
   }
 
