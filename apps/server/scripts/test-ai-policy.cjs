@@ -37,9 +37,9 @@ expect(allowed(ctx({permissions:{openai:true,anthropic:true}}),"Ai principal"),"
 expect(allowed(ctx({permissions:{openai:true,anthropic:true}}),"GPT + Claude"),"Paid combination should work with both permissions");
 
 expect(!allowed(ctx({paidEnabled:false,permissions:{openai:true,anthropic:true}}),"openai/gpt-5"),"Global paid switch must override individual OpenAI permission");
-expect(!allowed(ctx({role:"owner",paidEnabled:false}),"openai/gpt-5"),"Explicit global OFF from Control Center must block paid AI for Owner too");
-expect(!allowed(ctx({role:"owner",paidEnabled:false}),"anthropic/claude-sonnet"),"Explicit global OFF must block Anthropic too");
-expect(!allowed(ctx({role:"owner",paidEnabled:false}),"GPT + Claude"),"Explicit global OFF must block paid combinations");
+expect(allowed(ctx({role:"owner",paidEnabled:false}),"openai/gpt-5"),"Owner must retain OpenAI access when paid AI is off for other accounts");
+expect(allowed(ctx({role:"owner",paidEnabled:false}),"anthropic/claude-sonnet"),"Owner must retain Anthropic access");
+expect(allowed(ctx({role:"owner",paidEnabled:false}),"GPT + Claude"),"Owner must retain paid combinations");
 expect(allowed(ctx({role:"owner",paidEnabled:false}),"mystery-model"),"Owner may use unknown non-classified models");
 expect(!allowed(ctx({permissions:{chat:false}}),"groq/llama-3.3-70b-versatile"),"Chat permission must be enforced");
 expect(!allowed(ctx({permissions:{chat:false}}),"Ai principal"),"Legacy direct alias must still obey the chat permission");
