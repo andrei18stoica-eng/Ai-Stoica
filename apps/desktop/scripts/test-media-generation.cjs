@@ -21,10 +21,11 @@ async function main(){
     res.setHeader("content-type","application/json");
     const token=String(req.headers.authorization||"").replace(/^Bearer\s+/i,"");
     if(req.url==="/auth/me"){
-      if(!["normal-token","blocked-video-token"].includes(token)){res.statusCode=401;return res.end(JSON.stringify({error:"bad token"}))}
-      const videoAllowed=token==="normal-token";
+      if(!["normal-token","blocked-video-token","owner-token"].includes(token)){res.statusCode=401;return res.end(JSON.stringify({error:"bad token"}))}
+      const isOwner=token==="owner-token";
+      const videoAllowed=token!=="blocked-video-token";
       return res.end(JSON.stringify({
-        user:{id:videoAllowed?"user-media":"user-media-blocked",email:videoAllowed?"media@example.com":"media-blocked@example.com",name:"Media User",role:"user",status:"active"},
+        user:{id:isOwner?"owner-media":videoAllowed?"user-media":"user-media-blocked",email:isOwner?"owner@example.com":videoAllowed?"media@example.com":"media-blocked@example.com",name:isOwner?"Owner":"Media User",role:isOwner?"owner":"user",status:"active"},
         permissions:{
           chat:true,image_generation:true,video_generation:videoAllowed,
           cloudflare:true,groq:true,cerebras:true,gemini:true,
@@ -114,6 +115,15 @@ async function main(){
     r=await fetch(base+"/api/files/"+video.data.id,{headers:{authorization:"Bearer normal-token"}});
     const videoBytes=Buffer.from(await r.arrayBuffer());
     expect(r.ok&&videoBytes.subarray(4,8).toString("ascii")==="ftyp","Generated video file is not MP4-like");
+
+    const ownerHeaders={authorization:"Bearer owner-token","content-type":"application/json"};
+    r=await fetch(base+"/api/generate/image",{method:"POST",headers:ownerHeaders,body:JSON.stringify({prompt:"Owner free image while paid AI is globally off"})});
+    const ownerImage=await r.json();expect(r.ok,ownerImage.error||"Owner image generation failed while paid AI was off");
+    expect(ownerImage.data?.model==="free-image-1","Owner should fall back to free image model while paid AI is globally off");
+
+    r=await fetch(base+"/api/generate/video",{method:"POST",headers:ownerHeaders,body:JSON.stringify({prompt:"Owner free video while paid AI is globally off"})});
+    const ownerVideo=await r.json();expect(r.ok,ownerVideo.error||"Owner video generation failed while paid AI was off");
+    expect(ownerVideo.data?.model==="free-video-1","Owner should fall back to free video model while paid AI is globally off");
 
     const beforeBlocked=videoGenerationCalls;
     r=await fetch(base+"/api/generate/video",{
