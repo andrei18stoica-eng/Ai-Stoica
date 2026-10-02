@@ -1393,7 +1393,7 @@ function ConversationFilesPanel({conversation,onClose}) {
 }
 
 function SettingsModal({onClose,onSaved,user}) {
-  const [cfg,setCfg]=useState(null),[key,setKey]=useState(""),[openAiKey,setOpenAiKey]=useState(""),[openRouterKey,setOpenRouterKey]=useState(""),[pollinationsKey,setPollinationsKey]=useState(""),[githubKey,setGithubKey]=useState(""),[tab,setTab]=useState("general"),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState(""),[toolStatus,setToolStatus]=useState("");
+  const [cfg,setCfg]=useState(null),[key,setKey]=useState(""),[openAiKey,setOpenAiKey]=useState(""),[openRouterKey,setOpenRouterKey]=useState(""),[pollinationsKey,setPollinationsKey]=useState(""),[stabilityKey,setStabilityKey]=useState(""),[replicateKey,setReplicateKey]=useState(""),[falKey,setFalKey]=useState(""),[githubKey,setGithubKey]=useState(""),[tab,setTab]=useState("general"),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState(""),[toolStatus,setToolStatus]=useState("");
   useEffect(()=>{Promise.all([window.AIStoica.getConfig(),window.AIStoica.systemStatus()]).then(([c,s])=>{setCfg(c);setStatus(s)})},[]);
   if(!cfg)return null;
   async function save(){await window.AIStoica.setConfig({
@@ -1402,6 +1402,9 @@ function SettingsModal({onClose,onSaved,user}) {
     openAiApiKey:openAiKey||cfg.openAiApiKey,
     openRouterApiKey:openRouterKey||cfg.openRouterApiKey,
     pollinationsApiKey:pollinationsKey||cfg.pollinationsApiKey,
+    stabilityApiKey:stabilityKey||cfg.stabilityApiKey,
+    replicateApiToken:replicateKey||cfg.replicateApiToken,
+    falApiKey:falKey||cfg.falApiKey,
     githubToken:githubKey||cfg.githubToken
   });onSaved?.();onClose()}
   async function testMic(){setMicStatus("Se verifică…");try{const s=await navigator.mediaDevices.getUserMedia({audio:true});s.getTracks().forEach(t=>t.stop());setMicStatus("Microfon disponibil și permis ✓")}catch{setMicStatus("Microfon indisponibil sau fără permisiune")}}
@@ -1416,13 +1419,39 @@ function SettingsModal({onClose,onSaved,user}) {
     <div className="settingsPane">
       {tab==="general"&&<><h3>General</h3><div className="toggleRow"><div><b>Pornește AI Stoica cu Windows</b><span>Aplicația pornește automat și poate rămâne în fundal.</span></div><input type="checkbox" checked={!!cfg.startWithWindows} onChange={e=>setCfg({...cfg,startWithWindows:e.target.checked})}/></div><div className="toggleRow"><div><b>Închidere în system tray</b><span>Butonul X ascunde aplicația fără să oprească serviciile.</span></div><input type="checkbox" checked={cfg.closeToTray!==false} onChange={e=>setCfg({...cfg,closeToTray:e.target.checked})}/></div><div className="toggleRow"><div><b>Actualizări automate</b><span>AI Stoica caută versiuni noi la pornire.</span></div><input type="checkbox" checked={cfg.autoUpdate!==false} onChange={e=>setCfg({...cfg,autoUpdate:e.target.checked})}/></div></>}
       {tab==="ai"&&<><h3>AI & OmniRoute</h3><label>Gateway local AI Stoica<input value={cfg.gatewayUrl||"http://127.0.0.1:8787"} onChange={e=>setCfg({...cfg,gatewayUrl:e.target.value})} placeholder="http://127.0.0.1:8787"/></label><label>AI Stoica Cloud API<input value={cfg.controlApiUrl||""} onChange={e=>setCfg({...cfg,controlApiUrl:e.target.value})} placeholder="https://api.aistoica.ro"/></label><p className="settingsHelp">Control Center, aprobarea conturilor și permisiunile folosesc PostgreSQL-ul central atunci când Cloud API este configurat. Până la activarea domeniului, poți lăsa câmpul gol.</p><label>Base URL OmniRoute<input value={cfg.baseUrl} onChange={e=>setCfg({...cfg,baseUrl:e.target.value})}/></label><label>Cheie API<input type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder={cfg.apiKey?"Cheie salvată — lasă gol pentru a o păstra":"Cheie OmniRoute"}/></label><label>Model implicit pentru conversații noi<input value={cfg.model||""} onChange={e=>setCfg({...cfg,model:e.target.value})} placeholder="Alege din selectorul de sus"/></label><label>Model generare imagini <span className="optional">opțional</span><input value={cfg.imageModel||""} onChange={e=>setCfg({...cfg,imageModel:e.target.value})} placeholder="Auto — primul model de imagine disponibil"/></label><label>Mod generare video<select value={cfg.videoMode||"fast"} onChange={e=>{const videoMode=e.target.value;const videoModel=videoMode==="quality"?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast";setCfg({...cfg,videoMode,videoModel,openRouterVideoModel:videoModel,pollinationsVideoModel:"google/veo-3.1-fast"})}}><option value="fast">⚡ Video Rapid — Seedance 2.0 Fast</option><option value="quality">🎬 Video Calitate — Seedance 2.5 / Veo 3.1</option></select></label><p className="settingsHelp">Video Rapid este modul implicit pentru generări mai scurte și teste. Video Calitate folosește Seedance 2.5 și păstrează Veo 3.1 Fast ca fallback.</p>
-      <details className="mediaProviderSettings"><summary>Furnizori direcți pentru imagini și video</summary>
-        <p className="settingsHelp">Dacă OmniRoute nu poate genera media, Owner-ul poate folosi direct un furnizor. Cheile sunt salvate criptat local.</p>
-        <label>OpenAI API key · imagini<input type="password" value={openAiKey} onChange={e=>setOpenAiKey(e.target.value)} placeholder={cfg.openAiApiKey?"Cheie salvată — lasă gol pentru a o păstra":"sk-..."}/></label>
-        <label>OpenRouter API key · imagini și video<input type="password" value={openRouterKey} onChange={e=>setOpenRouterKey(e.target.value)} placeholder={cfg.openRouterApiKey?"Cheie salvată — lasă gol pentru a o păstra":"sk-or-..."}/></label>
+      <details className="mediaProviderSettings" open><summary>Providere imagini · multi-API și fallback</summary>
+        <p className="settingsHelp">Poți conecta simultan mai multe servicii. AI Stoica încearcă providerii în ordine și trece automat la următorul dacă unul eșuează. Cheile sunt criptate local.</p>
+        <label>Mod rutare imagini<select value={cfg.imageProviderMode||"auto"} onChange={e=>setCfg({...cfg,imageProviderMode:e.target.value})}><option value="auto">Auto — ordinea mea de fallback</option><option value="fast">⚡ Rapid</option><option value="quality">✨ Calitate</option><option value="free">🛡️ Doar gratuit</option></select></label>
+        <label>Protecție costuri<select value={cfg.imageCostPolicy||"free_only"} onChange={e=>setCfg({...cfg,imageCostPolicy:e.target.value})}><option value="free_only">Nu permite costuri directe</option><option value="allow_paid">Permite provideri cu plată</option></select></label>
+        <p className="settingsHelp">{(cfg.imageCostPolicy||"free_only")==="free_only"?"Protecție activă: OpenAI, Stability, fal.ai, Replicate și providerii cu cost necunoscut nu sunt apelați direct. La OpenRouter, AI Stoica verifică prețul endpointului înainte de apel.":"Atenție: providerii configurați pot consuma credit conform tarifelor lor."}</p>
+        <label>Ordine fallback<input value={cfg.imageProviderOrder||"openrouter,pollinations,fal,replicate,stability,openai"} onChange={e=>setCfg({...cfg,imageProviderOrder:e.target.value})} placeholder="openrouter,pollinations,fal,replicate,stability,openai"/></label>
+
+        <div className="providerGroup"><b>OpenRouter</b><small>Acces la mai multe modele de imagine printr-o singură cheie.</small></div>
+        <label>OpenRouter API key<input type="password" value={openRouterKey} onChange={e=>setOpenRouterKey(e.target.value)} placeholder={cfg.openRouterApiKey?"Cheie salvată — lasă gol pentru a o păstra":"sk-or-..."}/></label>
         <label>Model imagine OpenRouter<input value={cfg.openRouterImageModel||"google/gemini-3.1-flash-image"} onChange={e=>setCfg({...cfg,openRouterImageModel:e.target.value})}/></label>
+
+        <div className="providerGroup"><b>OpenAI</b><small>GPT Image prin API OpenAI.</small></div>
+        <label>OpenAI API key<input type="password" value={openAiKey} onChange={e=>setOpenAiKey(e.target.value)} placeholder={cfg.openAiApiKey?"Cheie salvată — lasă gol pentru a o păstra":"sk-..."}/></label>
+        <label>Model imagine OpenAI<input value={cfg.openAiImageModel||"gpt-image-1-mini"} onChange={e=>setCfg({...cfg,openAiImageModel:e.target.value})}/></label>
+
+        <div className="providerGroup"><b>Stability AI</b><small>Stable Image REST API.</small></div>
+        <label>Stability API key<input type="password" value={stabilityKey} onChange={e=>setStabilityKey(e.target.value)} placeholder={cfg.stabilityApiKey?"Cheie salvată — lasă gol pentru a o păstra":"sk-..."}/></label>
+        <label>Stability engine<select value={cfg.stabilityImageEngine||"core"} onChange={e=>setCfg({...cfg,stabilityImageEngine:e.target.value})}><option value="core">Core</option><option value="ultra">Ultra</option><option value="sd3">SD3</option></select></label>
+
+        <div className="providerGroup"><b>fal.ai</b><small>Modele rapide de generare prin fal.run.</small></div>
+        <label>fal API key<input type="password" value={falKey} onChange={e=>setFalKey(e.target.value)} placeholder={cfg.falApiKey?"Cheie salvată — lasă gol pentru a o păstra":"FAL_KEY"}/></label>
+        <label>Model fal.ai<input value={cfg.falImageModel||"fal-ai/z-image/turbo"} onChange={e=>setCfg({...cfg,falImageModel:e.target.value})}/></label>
+
+        <div className="providerGroup"><b>Replicate</b><small>Modele oficiale și community prin Predictions API.</small></div>
+        <label>Replicate API token<input type="password" value={replicateKey} onChange={e=>setReplicateKey(e.target.value)} placeholder={cfg.replicateApiToken?"Token salvat — lasă gol pentru a-l păstra":"r8_..."}/></label>
+        <label>Model Replicate<input value={cfg.replicateImageModel||"black-forest-labs/flux-schnell"} onChange={e=>setCfg({...cfg,replicateImageModel:e.target.value})}/></label>
+
+        <div className="providerGroup"><b>Pollinations</b><small>Fallback media existent.</small></div>
+        <label>Pollinations API key<input type="password" value={pollinationsKey} onChange={e=>setPollinationsKey(e.target.value)} placeholder={cfg.pollinationsApiKey?"Cheie salvată — lasă gol pentru a o păstra":"sk_..."}/></label>
+        <label>Model Pollinations<input value={cfg.pollinationsImageModel||"black-forest-labs/flux.1-schnell"} onChange={e=>setCfg({...cfg,pollinationsImageModel:e.target.value})}/></label>
+
+        <div className="providerGroup"><b>Video</b><small>OpenRouter rămâne disponibil separat pentru video.</small></div>
         <label>Model video OpenRouter<input value={cfg.openRouterVideoModel||(cfg.videoMode==="quality"?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast")} onChange={e=>setCfg({...cfg,openRouterVideoModel:e.target.value})}/></label>
-        <label>Pollinations API key · fallback media<input type="password" value={pollinationsKey} onChange={e=>setPollinationsKey(e.target.value)} placeholder={cfg.pollinationsApiKey?"Cheie salvată — lasă gol pentru a o păstra":"sk_..."}/></label>
       </details>
       <details className="mediaProviderSettings"><summary>Internet live, GitHub și server</summary>
         <p className="settingsHelp">Aceste unelte permit AI Stoica să verifice informații actuale, să aducă fragmente relevante dintr-un repository mare și să verifice serverul tău. Rularea de cod și SSH sunt rezervate Owner-ului.</p>
