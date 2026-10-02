@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import {
   Menu, Plus, Search, Folder, Bot, Settings, LogOut, Share2, MoreHorizontal,
   Paperclip, Mic, ArrowUp, Copy, ThumbsUp, ThumbsDown, RotateCcw, X,
-  ChevronDown, User, Check, Wifi, WifiOff, Sparkles, SquarePen,
+  ChevronDown, User, Check, Wifi, WifiOff, Sparkles, SquarePen, Square,
   CalendarClock, Plug, Library, Brain, Upload, Trash2, Play, Pin, PinOff,
   FileText, Image as ImageIcon, HardDrive, ToggleLeft, ToggleRight,
   Compass, Map, Globe2, Archive, ExternalLink, SlidersHorizontal, Volume2,
@@ -610,7 +610,7 @@ function ConversationView({conversation,busy,busyStage,busySteps,onRegenerate,on
   </div>;
 }
 
-function Composer({centered,draft,setDraft,onSend,busy,attachments,setAttachments,onOpenLibrary}) {
+function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAttachments,onOpenLibrary}) {
   const ta=useRef(null),fileInput=useRef(null),imageInput=useRef(null),videoInput=useRef(null),audioInput=useRef(null),recorderRef=useRef(null),streamRef=useRef(null),chunksRef=useRef([]);
   const [menu,setMenu]=useState(false),[recording,setRecording]=useState(false),[transcribing,setTranscribing]=useState(false),[uploading,setUploading]=useState(false),[mentions,setMentions]=useState([]);
   useEffect(()=>{if(ta.current){ta.current.style.height="0px";ta.current.style.height=Math.min(ta.current.scrollHeight,190)+"px"}},[draft]);
@@ -733,9 +733,11 @@ function Composer({centered,draft,setDraft,onSend,busy,attachments,setAttachment
           <button className="composerIcon mediaQuick" onClick={()=>videoInput.current?.click()} title="Încarcă video MP4 / MOV / WebM"><Play size={19}/></button>
           <button className="composerIcon mediaQuick" onClick={()=>audioInput.current?.click()} title="Încarcă audio MP3 / M4A / WAV / OGG"><Volume2 size={19}/></button>
         </div>
-        <textarea ref={ta} value={draft} onChange={e=>setDraft(e.target.value)} onPaste={pasteIntoComposer} spellCheck={true} aria-label="Mesaj pentru AI Stoica" placeholder={uploading?"Încarc fișierul…":recording?"Ascult… apasă microfonul pentru oprire":transcribing?"Transcriu vocea…":"Mesaj pentru AI Stoica"} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!mentionOptions.length){e.preventDefault();onSend()}}}/>
+        <textarea ref={ta} value={draft} onChange={e=>setDraft(e.target.value)} onPaste={pasteIntoComposer} spellCheck={true} aria-label="Mesaj pentru AI Stoica" placeholder={uploading?"Încarc fișierul…":recording?"Ascult… apasă microfonul pentru oprire":transcribing?"Transcriu vocea…":"Mesaj pentru AI Stoica"} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!mentionOptions.length&&!busy){e.preventDefault();onSend()}}}/>
         <button className={cx("composerIcon",recording&&"recording")} onClick={mic} title={recording?"Oprește vocalul":"Înregistrează vocal"} disabled={transcribing}><Mic size={20}/></button>
-        <button className="sendButton" disabled={busy||recording||transcribing||uploading||(!draft.trim()&&!attachments.some(a=>a.part||a.parts?.length))} onClick={onSend}><ArrowUp size={20}/></button>
+        {busy
+          ? <button className="sendButton stopButton" onClick={onStop} title="Oprește răspunsul"><Square size={15} fill="currentColor"/></button>
+          : <button className="sendButton" disabled={recording||transcribing||uploading||(!draft.trim()&&!attachments.some(a=>a.part||a.parts?.length))} onClick={onSend}><ArrowUp size={20}/></button>}
       </div>
     </div><div className="composerHint">{uploading?"Fișierul se salvează în Biblioteca AI Stoica — fără limită software de dimensiune":recording?"Microfon activ — vorbește acum":transcribing?"AI Stoica transcrie înregistrarea…":"AI Stoica poate greși. Verifică informațiile importante."}</div></div>;
 }
@@ -1381,6 +1383,7 @@ function App() {
   const [draft,setDraft]=useState(""),[attachments,setAttachments]=useState([]),[busy,setBusy]=useState(false),[busyStage,setBusyStage]=useState(""),[busySteps,setBusySteps]=useState([]),[search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[omni,setOmni]=useState(false),[refreshingModels,setRefreshingModels]=useState(false),[modelPolicyEnforced,setModelPolicyEnforced]=useState(false);
   const [settings,setSettings]=useState(false),[createType,setCreateType]=useState(null),[toolPanel,setToolPanel]=useState(null),[filesPanel,setFilesPanel]=useState(false),[updateReady,setUpdateReady]=useState(false),[sidebarCollapsed,setSidebarCollapsed]=useState(false);
   const chatRef=useRef(null);
+  const activeGenerationRef=useRef(null);
   const current=conversations.find(c=>c.id===currentId)||null;
 
   async function refreshModels({silent=false}={}){
@@ -1482,8 +1485,22 @@ function App() {
     if(!modelPolicyEnforced)setModels(v=>uniqueModels([current.model,...v]));
   },[currentId,modelPolicyEnforced,models.join("|")]);
 
-  function logout(){localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(USER_KEY);setUser(null);setConversations([]);setCurrentId(null)}
-  function newConversation(){setCurrentId(null);setDraft("");setAttachments([]);setSidebar(false)}
+  function logout(){activeGenerationRef.current?.abort?.();localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(USER_KEY);setUser(null);setConversations([]);setCurrentId(null)}
+  function newConversation(){activeGenerationRef.current?.abort?.();setBusy(false);setBusyStage("");setCurrentId(null);setDraft("");setAttachments([]);setSidebar(false)}
+  function startGeneration(){
+    try{activeGenerationRef.current?.abort?.()}catch{}
+    const controller=new AbortController();
+    activeGenerationRef.current=controller;
+    return controller;
+  }
+  function stopGeneration(){
+    const controller=activeGenerationRef.current;
+    if(controller&&!controller.signal.aborted)controller.abort("user-stop");
+    setBusy(false);setBusyStage("");
+  }
+  function finishGeneration(controller){
+    if(activeGenerationRef.current===controller)activeGenerationRef.current=null;
+  }
   async function saveConversation(conv){if(conv.id){const d=await api(`/api/conversations/${conv.id}`,{method:"PUT",body:JSON.stringify(conv)});setConversations(v=>v.map(x=>x.id===conv.id?d.data:x));return d.data}const d=await api("/api/conversations",{method:"POST",body:JSON.stringify(conv)});setConversations(v=>[d.data,...v]);setCurrentId(d.data.id);return d.data}
   async function streamAssistant(baseConv,messages){
     const lastUser=[...messages].reverse().find(m=>m.role==="user");
@@ -1492,16 +1509,18 @@ function App() {
     const desiredModel=String(baseConv.model||model||"").trim();
     const manualModel=modelPolicyEnforced?(models.includes(desiredModel)?desiredModel:(models.includes(model)?model:(models.find(x=>!/^ai[ _-]*(principal|stoica)$/i.test(x))||""))):desiredModel;
     const effectiveModel=manualModel;
+    const controller=startGeneration();let answer="",routeInfo=null,startedAnswer=false;
     setBusySteps([]);setBusy(true);setBusyStage("Analizează cererea și identifică tipul sarcinii…");const assistantMessage={id:uid(),role:"assistant",content:"",attachmentOnly:fileMode,createdAt:Date.now(),streaming:true};let working={...baseConv,model:manualModel||baseConv.model||model,messages:[...messages,assistantMessage],updatedAt:Date.now()};setConversations(v=>v.map(x=>x.id===working.id?working:x));
     try{
       if(!effectiveModel)throw new Error("Nu există niciun model AI permis pentru acest cont.");
       if(!omni){setBusyStage("Pornește și verifică OmniRoute…");await window.AIStoica.ensureOmni();await new Promise(r=>setTimeout(r,1200))}
+      if(controller.signal.aborted)throw new DOMException("Oprit de utilizator","AbortError");
       setBusyStage("Verifică memoria, fișierele și contextul relevant…");
       await new Promise(r=>setTimeout(r,120));
       setBusyStage("Pregătește AI-ul ales manual…");
-      const token=localStorage.getItem(TOKEN_KEY)||"",r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({model:effectiveModel,assistantId:working.assistantId,messages})});
+      const token=localStorage.getItem(TOKEN_KEY)||"",r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({model:effectiveModel,assistantId:working.assistantId,messages}),signal:controller.signal});
       if(!r.ok){let e;try{e=await r.json()}catch{e={error:await r.text()}};throw new Error(e?.error||`HTTP ${r.status}`)}
-      const reader=r.body.getReader(),dec=new TextDecoder();let buf="",answer="",routeInfo=null,startedAnswer=false;
+      const reader=r.body.getReader(),dec=new TextDecoder();let buf="";
       while(true){const {value,done}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const events=buf.split("\n\n");buf=events.pop()||"";for(const ev of events)for(const line of ev.split("\n")){if(!line.startsWith("data:"))continue;const raw=line.slice(5).trim();if(!raw||raw==="[DONE]")continue;try{
         const j=JSON.parse(raw);
         if(j?.ai_stoica_route){
@@ -1539,20 +1558,29 @@ function App() {
       const attachmentOnly=!!requestedFormat&&generatedAttachments.length>0;
       working={...working,messages:[...messages,{...assistantMessage,routeInfo,content:attachmentOnly?"":(answer||"Nu am primit răspuns."),artifactSource:attachmentOnly?answer:undefined,attachments:generatedAttachments,attachmentOnly,streaming:false}],updatedAt:Date.now()};const saved=await saveConversation(working);
       api("/api/memory/capture",{method:"POST",body:JSON.stringify({conversationId:saved.id,userText:messageText(lastUser),assistantText:answer})}).catch(()=>{});
-    }catch(e){working={...working,messages:[...messages,{...assistantMessage,content:`Eroare: ${e.message}`,streaming:false}],updatedAt:Date.now()};await saveConversation(working)}finally{setBusy(false);setBusyStage("")}
+    }catch(e){
+      if(controller.signal.aborted||e?.name==="AbortError"){
+        working={...working,messages:[...messages,{...assistantMessage,routeInfo,content:fileMode?"":answer,streaming:false,stopped:true}],updatedAt:Date.now()};
+        await saveConversation(working);
+      }else{
+        working={...working,messages:[...messages,{...assistantMessage,content:`Eroare: ${e.message}`,streaming:false}],updatedAt:Date.now()};await saveConversation(working);
+      }
+    }finally{finishGeneration(controller);setBusy(false);setBusyStage("")}
   }
   async function generateMediaAssistant(baseConv,messages,kind,prompt){
+    const controller=startGeneration();
     setBusySteps([]);setBusy(true);setBusyStage(kind==="video"?"Generează videoclipul și pregătește MP4-ul…":"Creează imaginea și pregătește fișierul pentru Download…");
     try{
       if(!omni){await window.AIStoica.ensureOmni();await new Promise(r=>setTimeout(r,900))}
       const endpoint=kind==="video"?"/api/generate/video":"/api/generate/image";
-      const d=await api(endpoint,{method:"POST",body:JSON.stringify({prompt})});
+      const d=await api(endpoint,{method:"POST",body:JSON.stringify({prompt}),signal:controller.signal});
       const file={...d.data,type:d.data?.kind||kind,kind:d.data?.kind||kind};
       const routeInfo={task:kind==="video"?"video_generation":"image_generation",model:file.model||"",provider:inferModelProvider(file.model||"")};
       const assistantMessage={id:uid(),role:"assistant",content:"",attachments:[file],routeInfo,attachmentOnly:true,createdAt:Date.now(),streaming:false};
       const saved=await saveConversation({...baseConv,messages:[...messages,assistantMessage],updatedAt:Date.now()});
       api("/api/memory/capture",{method:"POST",body:JSON.stringify({conversationId:saved.id,userText:prompt,assistantText:`${kind==="video"?"Videoclip":"Imagine"} generată: ${file.name}`})}).catch(()=>{});
     }catch(e){
+      if(controller.signal.aborted||e?.name==="AbortError")return;
       console.warn(`Generarea reală ${kind} a eșuat.`,e);
       const assistantMessage={
         id:uid(),role:"assistant",
@@ -1561,7 +1589,7 @@ function App() {
       };
       await saveConversation({...baseConv,messages:[...messages,assistantMessage],updatedAt:Date.now()});
       return;
-    }finally{setBusy(false);setBusyStage("")}
+    }finally{finishGeneration(controller);setBusy(false);setBusyStage("")}
   }
   async function send(){
     const text=draft.trim(),usable=attachments.filter(a=>a.part||a.parts?.length);if((!text&&!usable.length)||busy)return;
@@ -1614,7 +1642,7 @@ function App() {
   return <div className={cx("appShell",sidebarCollapsed&&"sidebarCollapsed")}>
     <Sidebar open={sidebar} setOpen={setSidebar} user={user} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} onSelect={id=>{setCurrentId(id);setSidebar(false)}} onDeleteConversation={deleteConversation} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} selectedAssistant={selectedAssistant} setSelectedAssistant={setSelectedAssistant} onNewProject={()=>setCreateType("project")} onNewAssistant={()=>setCreateType("assistant")} onTool={openTool} onExplore={()=>openTool("explore")} onSettings={()=>setSettings(true)} onLogout={logout}/>
     {sidebar&&<div className="mobileScrim" onClick={()=>setSidebar(false)}/>}
-    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} busyStage={busyStage} busySteps={busySteps} onRegenerate={regenerate} onRate={rate}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
+    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} busyStage={busyStage} busySteps={busySteps} onRegenerate={regenerate} onRate={rate}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} onStop={stopGeneration} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
     {settings&&<SettingsModal user={user} onClose={()=>setSettings(false)} onSaved={()=>{window.AIStoica.ensureOmni();setTimeout(loadData,1000)}}/>}
     {createType&&<CreateModal type={createType} onClose={()=>setCreateType(null)} onCreate={createItem}/>}
     {toolPanel==="explore"&&<ExplorePanel onClose={()=>setToolPanel(null)} assistants={assistants} models={models} onUseAssistant={useAssistant} onImagePrompt={startImagePrompt} onOpenLibrary={()=>setToolPanel("library")}/>} 
