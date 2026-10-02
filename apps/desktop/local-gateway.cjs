@@ -1134,8 +1134,15 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     return {...resolved,model:`openai/${model}`,provider:"openai-direct"};
   }
 
+  function directOpenRouterKey(cfg){
+    const explicit=String(cfg.openRouterApiKey||"").trim();
+    if(explicit)return explicit;
+    const omniKey=String(cfg.apiKey||"").trim();
+    return /^sk-or-/i.test(omniKey)?omniKey:"";
+  }
+
   async function directOpenRouterImage(cfg,prompt){
-    const key=String(cfg.openRouterApiKey||"").trim();if(!key)return null;
+    const key=directOpenRouterKey(cfg);if(!key)return null;
     const model=String(cfg.openRouterImageModel||"google/gemini-3.1-flash-image").trim();
     const r=await fetch("https://openrouter.ai/api/v1/images",{
       method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${key}`,"X-Title":"AI Stoica"},
@@ -1159,13 +1166,13 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   }
 
   async function directOpenRouterVideo(cfg,prompt,duration,aspectRatio){
-    const key=String(cfg.openRouterApiKey||"").trim();if(!key)return null;
+    const key=directOpenRouterKey(cfg);if(!key)return null;
     const defaultModel=cfg.videoMode==="quality"?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast";
     const model=String(cfg.openRouterVideoModel||defaultModel).trim();
     const headers={"Content-Type":"application/json",Authorization:`Bearer ${key}`,"X-Title":"AI Stoica"};
     const submit=await fetch("https://openrouter.ai/api/v1/videos",{
       method:"POST",headers,
-      body:JSON.stringify({model,prompt,duration:Math.max(1,Math.min(15,Number(duration||6))),aspect_ratio:String(aspectRatio||"16:9")}),
+      body:JSON.stringify({model,prompt,duration:Math.max(1,Math.min(15,Number(duration||4))),resolution:"720p",aspect_ratio:String(aspectRatio||"16:9"),generate_audio:false}),
       signal:AbortSignal.timeout(30000)
     });
     const text=await submit.text();let job={};try{job=JSON.parse(text)}catch{}
@@ -1192,7 +1199,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const key=String(cfg.pollinationsApiKey||"").trim();if(!key)return null;
     const model=String(cfg.pollinationsVideoModel||"google/veo-3.1-fast").trim();
     const url=new URL(`https://gen.pollinations.ai/video/${encodeURIComponent(prompt)}`);
-    url.searchParams.set("model",model);url.searchParams.set("duration",String(Math.max(1,Math.min(10,Number(duration||6)))));
+    url.searchParams.set("model",model);url.searchParams.set("duration",String(Math.max(1,Math.min(10,Number(duration||4)))));
     const r=await fetch(url,{headers:{Authorization:`Bearer ${key}`},signal:AbortSignal.timeout(360000)});
     const resolved=await fetchBinaryOrCandidate(r,"video");
     return {...resolved,model,provider:"pollinations-direct"};
@@ -1315,10 +1322,22 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       requireFeaturePermission(req,"image_generation","Generarea de imagini");
       const prompt=String(req.body?.prompt||"").trim();
       if(!prompt)return res.status(400).json({error:"Descrierea imaginii lipsește."});
-      const cfg=getOmniConfig(),models=await discoverPermittedMediaModels(req,cfg,"image",req.body?.model);
+      const cfg=getOmniConfig(),errors=[];
+      if(ownerRequest(req)){
+        for(const attempt of [
+          ["OpenAI direct",()=>directOpenAiImage(cfg,prompt,req.body?.size)],
+          ["OpenRouter direct",()=>directOpenRouterImage(cfg,prompt)],
+          ["Pollinations direct",()=>directPollinationsImage(cfg,prompt)]
+        ]){
+          try{
+            const resolved=await attempt[1]();
+            if(resolved?.bytes?.length)return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"image",prompt,model:resolved.model||attempt[0]})});
+          }catch(e){errors.push(`${attempt[0]}: ${e.message}`)}
+        }
+      }
+      const models=(await discoverPermittedMediaModels(req,cfg,"image",req.body?.model)).slice(0,3);
       const imageUrl=`${String(cfg.baseUrl).replace(/\/+$/,"")}/images/generations`;
       const imageHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})};
-      const errors=[];
       for(const model of models){
         try{
           let upstream=await fetch(imageUrl,{
@@ -1358,7 +1377,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           }catch(e){errors.push(`${attempt[0]}: ${e.message}`)}
         }
       }
-      const providerHint=ownerRequest(req)&&!cfg.openAiApiKey&&!cfg.openRouterApiKey&&!cfg.pollinationsApiKey
+      const providerHint=ownerRequest(req)&&!cfg.openAiApiKey&&!directOpenRouterKey(cfg)&&!cfg.pollinationsApiKey
         ?" Nu există o cheie media directă configurată; adaugă o cheie OpenAI, OpenRouter sau Pollinations în Setări > AI & OmniRoute."
         :"";
       throw policyFailure(`Generarea imaginii nu a produs un fișier real.${providerHint} ${errors.slice(0,6).join(" | ")}`.trim(),502);
@@ -1370,15 +1389,26 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       requireFeaturePermission(req,"video_generation","Generarea de videoclipuri");
       const prompt=String(req.body?.prompt||"").trim();
       if(!prompt)return res.status(400).json({error:"Descrierea videoclipului lipsește."});
-      const cfg=getOmniConfig(),models=await discoverPermittedMediaModels(req,cfg,"video",req.body?.model);
+      const cfg=getOmniConfig(),errors=[];
+      if(ownerRequest(req)){
+        for(const attempt of [
+          ["OpenRouter direct",()=>directOpenRouterVideo(cfg,prompt,req.body?.duration,req.body?.aspectRatio)],
+          ["Pollinations direct",()=>directPollinationsVideo(cfg,prompt,req.body?.duration)]
+        ]){
+          try{
+            const resolved=await attempt[1]();
+            if(resolved?.bytes?.length)return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"video",prompt,model:resolved.model||attempt[0]})});
+          }catch(e){errors.push(`${attempt[0]}: ${e.message}`)}
+        }
+      }
+      const models=(await discoverPermittedMediaModels(req,cfg,"video",req.body?.model)).slice(0,3);
       const videoUrl=`${String(cfg.baseUrl).replace(/\/+$/,"")}/videos/generations`;
       const videoHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})};
-      const errors=[];
       for(const model of models){
         try{
           let upstream=await fetch(videoUrl,{
             method:"POST",headers:videoHeaders,
-            body:JSON.stringify({model,prompt,duration:Math.max(1,Math.min(10,Number(req.body?.duration||6))),aspect_ratio:String(req.body?.aspectRatio||"16:9")}),
+            body:JSON.stringify({model,prompt,duration:Math.max(1,Math.min(10,Number(req.body?.duration||4))),aspect_ratio:String(req.body?.aspectRatio||"16:9")}),
             signal:AbortSignal.timeout(360000)
           });
           if(!upstream.ok&&[400,404,405,409,422].includes(upstream.status)){
@@ -1412,7 +1442,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           }catch(e){errors.push(`${attempt[0]}: ${e.message}`)}
         }
       }
-      const providerHint=ownerRequest(req)&&!cfg.openRouterApiKey&&!cfg.pollinationsApiKey
+      const providerHint=ownerRequest(req)&&!directOpenRouterKey(cfg)&&!cfg.pollinationsApiKey
         ?" Nu există o cheie directă pentru video configurată; adaugă o cheie OpenRouter sau Pollinations în Setări > AI & OmniRoute."
         :"";
       throw policyFailure(`Generarea videoclipului nu a produs un fișier MP4 real.${providerHint} ${errors.slice(0,6).join(" | ")}`.trim(),502);
