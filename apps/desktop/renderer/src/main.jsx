@@ -565,7 +565,7 @@ function ThinkingActivity({stage,steps=[]}) {
   </div>;
 }
 
-function ConversationView({conversation,busy,busyStage,busySteps,onRegenerate,onRate}) {
+function ConversationView({conversation,busy,busyStage,busySteps,onRegenerate,onRate,onCodeResult,canRunCode}) {
   const [contextMenu,setContextMenu]=useState(null);
   useEffect(()=>{
     const close=()=>setContextMenu(null);
@@ -580,16 +580,27 @@ function ConversationView({conversation,busy,busyStage,busySteps,onRegenerate,on
     const code=e.target?.closest?.("code");
     const selection=String(window.getSelection?.()?.toString?.()||"").trim();
     const codeText=pre?.innerText||(code&&!pre?code.innerText:"");
+    const language=String(code?.className||"").replace(/^language-/,"").trim()||"javascript";
     setContextMenu({
       x:Math.min(e.clientX,window.innerWidth-235),
       y:Math.min(e.clientY,window.innerHeight-150),
       messageText:messageText(message),
       codeText:String(codeText||"").trim(),
+      language,
       selection
     });
   }
   async function copyValue(value){if(!value)return;const ok=await writeClipboardText(value);if(!ok)alert("Nu am putut copia textul în clipboard.");setContextMenu(null)}
-  if(!conversation||!conversation.messages?.length)return <div className="welcome"><BrandMark/><h1>Cu ce lucrăm astăzi?</h1><p>Întreabă orice. AI Stoica poate folosi memoria, biblioteca, pluginurile și automatizările tale.</p></div>;
+  async function runCodeValue(){
+    if(!contextMenu?.codeText)return;
+    try{
+      const d=await api("/api/tools/code/run",{method:"POST",body:JSON.stringify({language:contextMenu.language||"javascript",code:contextMenu.codeText})});
+      const r=d.data||{};
+      const report=["Rezultat real de rulare AI Stoica:",`Limbaj: ${r.language||contextMenu.language}`,`Exit code: ${r.code}`,r.timedOut?"Timeout: DA":"Timeout: NU",r.stdout?`STDOUT:\n${r.stdout}`:"STDOUT: (gol)",r.stderr?`STDERR:\n${r.stderr}`:"STDERR: (gol)"].join("\n");
+      onCodeResult?.(report);setContextMenu(null);alert("Codul a fost rulat. Rezultatul real a fost pus în caseta de mesaj pentru AI Stoica.");
+    }catch(e){alert("Rulare cod: "+e.message)}
+  }
+  if(!conversation||!conversation.messages?.length)return <div className="welcome"><BrandMark/><h1>Cu ce lucrăm astăzi?</h1><p>Întreabă orice. AI Stoica poate folosi memoria, internetul live, contextul proiectului, GitHub, biblioteca, pluginurile și automatizările tale. Owner-ul poate rula cod direct din blocurile de cod.</p></div>;
   return <div className="messagesColumn">
     {conversation.messages.map((m,i)=>m.role==="user"
       ?<div key={m.id||i} className="userRow"><div className="userMessageWrap"><div className="userBubble copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}><div>{messageText(m)}</div>{m.attachments?.length>0&&<div className="inlineAttachments mediaAttachments">{m.attachments.map((a,j)=><MediaAttachment key={a.libraryId||j} attachment={a}/>)}</div>}</div><div className="userMessageActions"><CopyMessageButton message={m}/></div></div></div>
@@ -604,6 +615,7 @@ function ConversationView({conversation,busy,busyStage,busySteps,onRegenerate,on
     {busy&&<ThinkingActivity stage={busyStage} steps={busySteps}/>} 
     {contextMenu&&<div className="copyContextMenu" style={{left:contextMenu.x,top:contextMenu.y}} onClick={e=>e.stopPropagation()}>
       {contextMenu.codeText&&<button onClick={()=>copyValue(contextMenu.codeText)}><Copy size={15}/><span><b>Copiază codul</b><small>Doar blocul de cod selectat</small></span></button>}
+      {canRunCode&&contextMenu.codeText&&<button onClick={runCodeValue}><Play size={15}/><span><b>Rulează / testează codul</b><small>Owner · Node/Python · rezultat real</small></span></button>}
       {contextMenu.selection&&<button onClick={()=>copyValue(contextMenu.selection)}><Copy size={15}/><span><b>Copiază selecția</b><small>Textul pe care l-ai selectat</small></span></button>}
       <button onClick={()=>copyValue(contextMenu.messageText)}><Copy size={15}/><span><b>Copiază mesajul</b><small>Mesajul complet</small></span></button>
     </div>}
@@ -1344,7 +1356,7 @@ function SettingsModal({onClose,onSaved,user}) {
     githubToken:githubKey||cfg.githubToken
   });onSaved?.();onClose()}
   async function testMic(){setMicStatus("Se verifică…");try{const s=await navigator.mediaDevices.getUserMedia({audio:true});s.getTracks().forEach(t=>t.stop());setMicStatus("Microfon disponibil și permis ✓")}catch{setMicStatus("Microfon indisponibil sau fără permisiune")}}
-  async function testServer(){setToolStatus("Testez conexiunea SSH…");try{const d=await api("/api/tools/server/check",{method:"POST",body:"{}"});setToolStatus(d?.output||"Server conectat ✓")}catch(e){setToolStatus("Server: "+e.message)}}
+  async function testServer(){setToolStatus("Testez conexiunea SSH…");try{const d=await api("/api/tools/server/check",{method:"POST",body:JSON.stringify({serverHost:cfg.serverHost,serverPort:cfg.serverPort,serverUser:cfg.serverUser,serverKeyPath:cfg.serverKeyPath})});setToolStatus(d?.output||"Server conectat ✓")}catch(e){setToolStatus("Server: "+e.message)}}
   return <div className="modalBackdrop"><div className="settingsModal"><div className="modalHead"><div><h2>Setări AI Stoica</h2><p>Controlează aplicația, vocea, OmniRoute și actualizările.</p></div><button className="iconOnly" onClick={onClose}><X size={20}/></button></div>
     <div className="settingsBody"><div className="settingsNav">
       <button className={tab==="general"?"active":""} onClick={()=>setTab("general")}><SlidersHorizontal size={17}/> General</button>
@@ -1533,7 +1545,7 @@ function App() {
       setBusyStage("Verifică memoria, fișierele și contextul relevant…");
       await new Promise(r=>setTimeout(r,120));
       setBusyStage("Pregătește AI-ul ales manual…");
-      const token=localStorage.getItem(TOKEN_KEY)||"",r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({model:effectiveModel,assistantId:working.assistantId,messages}),signal:controller.signal});
+      const token=localStorage.getItem(TOKEN_KEY)||"",r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({model:effectiveModel,assistantId:working.assistantId,projectId:working.projectId||null,messages}),signal:controller.signal});
       if(!r.ok){let e;try{e=await r.json()}catch{e={error:await r.text()}};throw new Error(e?.error||`HTTP ${r.status}`)}
       const reader=r.body.getReader(),dec=new TextDecoder();let buf="";
       while(true){const {value,done}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const events=buf.split("\n\n");buf=events.pop()||"";for(const ev of events)for(const line of ev.split("\n")){if(!line.startsWith("data:"))continue;const raw=line.slice(5).trim();if(!raw||raw==="[DONE]")continue;try{
@@ -1657,7 +1669,7 @@ function App() {
   return <div className={cx("appShell",sidebarCollapsed&&"sidebarCollapsed")}>
     <Sidebar open={sidebar} setOpen={setSidebar} user={user} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} onSelect={id=>{setCurrentId(id);setSidebar(false)}} onDeleteConversation={deleteConversation} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} selectedAssistant={selectedAssistant} setSelectedAssistant={setSelectedAssistant} onNewProject={()=>setCreateType("project")} onNewAssistant={()=>setCreateType("assistant")} onTool={openTool} onExplore={()=>openTool("explore")} onSettings={()=>setSettings(true)} onLogout={logout}/>
     {sidebar&&<div className="mobileScrim" onClick={()=>setSidebar(false)}/>}
-    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} busyStage={busyStage} busySteps={busySteps} onRegenerate={regenerate} onRate={rate}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} onStop={stopGeneration} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
+    <main className="mainArea"><Header onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} omni={omni} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={githubSolve} onArchive={archiveCurrent} onDelete={deleteCurrent}/>{updateReady&&<button className="updateBanner" onClick={()=>window.AIStoica.installUpdate()}>Actualizare AI Stoica disponibilă — instalează acum</button>}<div className="chatScroll" ref={chatRef}><ConversationView conversation={current} busy={busy} busyStage={busyStage} busySteps={busySteps} onRegenerate={regenerate} onRate={rate} canRunCode={user?.role==="owner"} onCodeResult={text=>setDraft(v=>(v?v+"\n\n":"")+text)}/></div><Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} onStop={stopGeneration} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>setToolPanel("library")}/></main>
     {settings&&<SettingsModal user={user} onClose={()=>setSettings(false)} onSaved={()=>{window.AIStoica.ensureOmni();setTimeout(loadData,1000)}}/>}
     {createType&&<CreateModal type={createType} onClose={()=>setCreateType(null)} onCreate={createItem}/>}
     {toolPanel==="explore"&&<ExplorePanel onClose={()=>setToolPanel(null)} assistants={assistants} models={models} onUseAssistant={useAssistant} onImagePrompt={startImagePrompt} onOpenLibrary={()=>setToolPanel("library")}/>} 
