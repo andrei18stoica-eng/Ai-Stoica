@@ -2071,7 +2071,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const prompt=String(req.body?.prompt||"").trim();
       if(!prompt)return res.status(400).json({error:"Descrierea videoclipului lipsește."});
       const cfg=getOmniConfig(),errors=[];
-      const strictFree=cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free";
+      const strictFree=ownerRequest(req)&&(cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free");
 
       if(ownerRequest(req)){
         const attempts=await directVideoAttempts(cfg,prompt,req.body?.duration,req.body?.aspectRatio);
