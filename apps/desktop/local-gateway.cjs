@@ -2071,62 +2071,64 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const prompt=String(req.body?.prompt||"").trim();
       if(!prompt)return res.status(400).json({error:"Descrierea videoclipului lipsește."});
       const cfg=getOmniConfig(),errors=[];
+      const strictFree=cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free";
+
       if(ownerRequest(req)){
-        for(const attempt of [
-          ["OpenRouter direct",()=>directOpenRouterVideo(cfg,prompt,req.body?.duration,req.body?.aspectRatio)],
-          ["Pollinations direct",()=>directPollinationsVideo(cfg,prompt,req.body?.duration)]
-        ]){
+        const attempts=await directVideoAttempts(cfg,prompt,req.body?.duration,req.body?.aspectRatio);
+        for(const attempt of attempts){
           try{
-            const resolved=await attempt[1]();
-            if(resolved?.bytes?.length)return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"video",prompt,model:resolved.model||attempt[0]})});
-          }catch(e){errors.push(`${attempt[0]}: ${e.message}`)}
+            const resolved=await attempt.run();
+            if(resolved?.bytes?.length)return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"video",prompt,model:resolved.model||attempt.label,provider:resolved.provider||attempt.id})});
+          }catch(e){errors.push(attempt.label+": "+e.message)}
         }
       }
-      const models=(await discoverPermittedMediaModels(req,cfg,"video",req.body?.model)).slice(0,3);
-      const videoUrl=`${String(cfg.baseUrl).replace(/\/+$/,"")}/videos/generations`;
-      const videoHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})};
-      for(const model of models){
-        try{
-          let upstream=await fetch(videoUrl,{
-            method:"POST",headers:videoHeaders,
-            body:JSON.stringify({model,prompt,duration:Math.max(1,Math.min(10,Number(req.body?.duration||4))),aspect_ratio:String(req.body?.aspectRatio||"16:9")}),
-            signal:AbortSignal.timeout(360000)
-          });
-          if(!upstream.ok&&[400,404,405,409,422].includes(upstream.status)){
-            upstream=await fetch(videoUrl,{
-              method:"POST",headers:videoHeaders,body:JSON.stringify({model,prompt}),
-              signal:AbortSignal.timeout(360000)
-            });
+
+      if(!strictFree){
+        let models=[];
+        try{models=(await discoverPermittedMediaModels(req,cfg,"video",req.body?.model)).slice(0,3)}
+        catch(e){errors.push("OmniRoute: "+e.message)}
+        if(models.length){
+          const videoUrl=String(cfg.baseUrl).replace(/\/+$/,"")+"/videos/generations";
+          const videoHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:"Bearer "+cfg.apiKey}:{})};
+          for(const model of models){
+            try{
+              let upstream=await fetch(videoUrl,{
+                method:"POST",headers:videoHeaders,
+                body:JSON.stringify({model,prompt,duration:Math.max(1,Math.min(10,Number(req.body?.duration||4))),aspect_ratio:String(req.body?.aspectRatio||"16:9")}),
+                signal:AbortSignal.timeout(360000)
+              });
+              if(!upstream.ok&&[400,404,405,409,422].includes(upstream.status)){
+                upstream=await fetch(videoUrl,{
+                  method:"POST",headers:videoHeaders,body:JSON.stringify({model,prompt}),
+                  signal:AbortSignal.timeout(360000)
+                });
+              }
+              const ctype=upstream.headers.get("content-type")||"";
+              if(!upstream.ok){errors.push(model+": HTTP "+upstream.status+" "+(await upstream.text()).slice(0,350));continue}
+              let resolved;
+              if(ctype.startsWith("video/")){
+                const bytes=Buffer.from(await upstream.arrayBuffer());resolved={bytes,mime:inferMediaMime(bytes,ctype,"video")};
+              }else{
+                const body=await upstream.json();
+                const candidate=await pollVideoResult(cfg,body);
+                resolved=await resolveGeneratedMedia(candidate,"video");
+              }
+              if(!resolved.bytes.length){errors.push(model+": video gol");continue}
+              return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"video",prompt,model,provider:"omniroute"})});
+            }catch(e){errors.push(model+": "+e.message)}
           }
-          const ctype=upstream.headers.get("content-type")||"";
-          if(!upstream.ok){errors.push(`${model}: HTTP ${upstream.status} ${(await upstream.text()).slice(0,350)}`);continue}
-          let resolved;
-          if(ctype.startsWith("video/")){
-            const bytes=Buffer.from(await upstream.arrayBuffer());resolved={bytes,mime:inferMediaMime(bytes,ctype,"video")};
-          }else{
-            const body=await upstream.json();
-            const candidate=await pollVideoResult(cfg,body);
-            resolved=await resolveGeneratedMedia(candidate,"video");
-          }
-          if(!resolved.bytes.length){errors.push(`${model}: video gol`);continue}
-          return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"video",prompt,model})});
-        }catch(e){errors.push(`${model}: ${e.message}`)}
-      }
-      if(ownerRequest(req)){
-        for(const attempt of [
-          ["OpenRouter direct",()=>directOpenRouterVideo(cfg,prompt,req.body?.duration,req.body?.aspectRatio)],
-          ["Pollinations direct",()=>directPollinationsVideo(cfg,prompt,req.body?.duration)]
-        ]){
-          try{
-            const resolved=await attempt[1]();
-            if(resolved?.bytes?.length)return res.json({data:saveGeneratedMedia(req,{...resolved,kind:"video",prompt,model:resolved.model||attempt[0]})});
-          }catch(e){errors.push(`${attempt[0]}: ${e.message}`)}
         }
       }
-      const providerHint=ownerRequest(req)&&!directOpenRouterKey(cfg)&&!cfg.pollinationsApiKey
-        ?" Nu există o cheie directă pentru video configurată; adaugă o cheie OpenRouter sau Pollinations în Setări > AI & OmniRoute."
-        :"";
-      throw policyFailure(`Generarea videoclipului nu a produs un fișier MP4 real.${providerHint} ${errors.slice(0,6).join(" | ")}`.trim(),502);
+
+      const configuredProviders=[
+        cfg.pollinationsApiKey&&"Pollinations",directOpenRouterKey(cfg)&&"OpenRouter",cfg.geminiApiKey&&"Gemini Veo",cfg.falApiKey&&"fal.ai",cfg.replicateApiToken&&"Replicate"
+      ].filter(Boolean);
+      const hint=!configuredProviders.length
+        ?" Nu există nicio cheie video configurată în Setări > Video."
+        :strictFree
+          ?" Protecția «Doar gratuit» este activă. AI Stoica nu pornește niciun job dacă nu poate confirma costul $0 din catalogul providerului."
+          :"";
+      throw policyFailure(("Generarea videoclipului nu a produs un fișier MP4 real."+hint+" "+errors.slice(0,10).join(" | ")).trim(),502);
     }catch(e){res.status(e.status||502).json({error:e.message})}
   });
 
