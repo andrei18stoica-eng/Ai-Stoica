@@ -1468,7 +1468,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   async function directOpenAiImage(cfg,prompt,size){
     const key=String(cfg.openAiApiKey||"").trim();if(!key)return null;
-    const model=String(cfg.imageModel||"").replace(/^openai\//i,"")||"gpt-image-2.5-flare";
+    const model=String(cfg.openAiImageModel||cfg.imageModel||"").replace(/^openai\//i,"")||"gpt-image-1-mini";
     const r=await fetch("https://api.openai.com/v1/images/generations",{
       method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${key}`},
       body:JSON.stringify({model,prompt,size:String(size||"1024x1024"),quality:"auto",output_format:"png"}),
@@ -1507,6 +1507,118 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     });
     const resolved=await fetchBinaryOrCandidate(r,"image");
     return {...resolved,model,provider:"pollinations-direct"};
+  }
+  async function directStabilityImage(cfg,prompt){
+    const key=String(cfg.stabilityApiKey||"").trim();if(!key)return null;
+    const engine=["core","ultra","sd3"].includes(String(cfg.stabilityImageEngine))?String(cfg.stabilityImageEngine):"core";
+    const form=new FormData();
+    form.set("prompt",prompt);
+    form.set("output_format","png");
+    if(engine==="sd3")form.set("model","sd3.5-large");
+    const r=await fetch("https://api.stability.ai/v2beta/stable-image/generate/"+engine,{
+      method:"POST",
+      headers:{Authorization:"Bearer "+key,Accept:"image/*"},
+      body:form,
+      signal:AbortSignal.timeout(180000)
+    });
+    const resolved=await fetchBinaryOrCandidate(r,"image");
+    return {...resolved,model:"stability/"+engine,provider:"stability-direct"};
+  }
+
+  async function directFalImage(cfg,prompt){
+    const key=String(cfg.falApiKey||"").trim();if(!key)return null;
+    const model=String(cfg.falImageModel||"fal-ai/z-image/turbo").trim().replace(/^\\/+|\\/+$/g,"");
+    const r=await fetch("https://fal.run/"+model,{
+      method:"POST",
+      headers:{"Content-Type":"application/json",Authorization:"Key "+key},
+      body:JSON.stringify({prompt}),
+      signal:AbortSignal.timeout(180000)
+    });
+    const resolved=await fetchBinaryOrCandidate(r,"image");
+    return {...resolved,model,provider:"fal-direct"};
+  }
+
+  async function directReplicateImage(cfg,prompt){
+    const key=String(cfg.replicateApiToken||"").trim();if(!key)return null;
+    const model=String(cfg.replicateImageModel||"black-forest-labs/flux-schnell").trim();
+    const request=async authScheme=>fetch("https://api.replicate.com/v1/predictions",{
+      method:"POST",
+      headers:{"Content-Type":"application/json",Authorization:authScheme+" "+key,Prefer:"wait=60"},
+      body:JSON.stringify({version:model,input:{prompt}}),
+      signal:AbortSignal.timeout(90000)
+    });
+    let r=await request("Bearer");
+    if(r.status===401)r=await request("Token");
+    const text=await r.text();let body={};try{body=JSON.parse(text)}catch{body={raw:text}}
+    if(!r.ok)throw new Error("HTTP "+r.status+": "+text.slice(0,700));
+    let candidate=findMediaCandidate(body,"image");
+    if(candidate){
+      const resolved=await resolveGeneratedMedia(candidate,"image");
+      return {...resolved,model,provider:"replicate-direct"};
+    }
+    const id=String(body.id||"").trim(),getUrl=String(body?.urls?.get||"").trim();
+    if(!id&&!getUrl)throw new Error("Replicate nu a returnat rezultat sau ID de predicție.");
+    const deadline=Date.now()+4*60*1000;
+    let state=body;
+    while(Date.now()<deadline){
+      const status=String(state?.status||"").toLowerCase();
+      if(/failed|canceled|cancelled/.test(status))throw new Error("Replicate: "+String(state?.error||status));
+      candidate=findMediaCandidate(state,"image");
+      if(candidate){
+        const resolved=await resolveGeneratedMedia(candidate,"image");
+        return {...resolved,model,provider:"replicate-direct"};
+      }
+      await new Promise(r=>setTimeout(r,2500));
+      const pollUrl=getUrl||("https://api.replicate.com/v1/predictions/"+encodeURIComponent(id));
+      const pr=await fetch(pollUrl,{headers:{Authorization:"Bearer "+key},signal:AbortSignal.timeout(15000)});
+      const pt=await pr.text();try{state=JSON.parse(pt)}catch{state={raw:pt}}
+      if(!pr.ok)throw new Error("Replicate status HTTP "+pr.status+": "+pt.slice(0,500));
+    }
+    throw new Error("Replicate nu a finalizat imaginea în intervalul permis.");
+  }
+
+  async function openRouterImageIsFree(cfg,model){
+    const key=directOpenRouterKey(cfg);if(!key||!model)return false;
+    const parts=String(model).split("/");if(parts.length<2)return false;
+    const author=encodeURIComponent(parts.shift()),slug=parts.map(encodeURIComponent).join("/");
+    try{
+      const r=await fetch("https://openrouter.ai/api/v1/images/models/"+author+"/"+slug+"/endpoints",{
+        headers:{Authorization:"Bearer "+key},
+        signal:AbortSignal.timeout(12000)
+      });
+      if(!r.ok)return false;
+      const data=await r.json();
+      const endpoints=Array.isArray(data?.endpoints)?data.endpoints:[];
+      return endpoints.some(ep=>{
+        const pricing=Array.isArray(ep?.pricing)?ep.pricing:[];
+        return pricing.length>0&&pricing.every(p=>Number(p?.cost_usd||0)<=0);
+      });
+    }catch{return false}
+  }
+
+  function imageProviderOrder(cfg){
+    const known=["openrouter","pollinations","fal","replicate","stability","openai"];
+    const configured=String(cfg.imageProviderOrder||"").split(",").map(x=>x.trim().toLowerCase()).filter(x=>known.includes(x));
+    const base=[...new Set([...configured,...known])];
+    const mode=String(cfg.imageProviderMode||"auto");
+    if(mode==="fast")return ["openrouter","fal","pollinations","replicate","stability","openai"];
+    if(mode==="quality")return ["openai","openrouter","stability","fal","replicate","pollinations"];
+    return base;
+  }
+
+  async function directImageAttempts(cfg,prompt,size){
+    const strictFree=cfg.imageCostPolicy==="free_only"||cfg.imageProviderMode==="free";
+    const openRouterModel=String(cfg.openRouterImageModel||"google/gemini-3.1-flash-image").trim();
+    const openRouterFree=strictFree?await openRouterImageIsFree(cfg,openRouterModel):true;
+    const definitions={
+      openai:{label:"OpenAI",configured:!!String(cfg.openAiApiKey||"").trim(),paidRisk:true,run:()=>directOpenAiImage(cfg,prompt,size)},
+      openrouter:{label:"OpenRouter",configured:!!directOpenRouterKey(cfg),paidRisk:!openRouterFree,run:()=>directOpenRouterImage(cfg,prompt)},
+      stability:{label:"Stability AI",configured:!!String(cfg.stabilityApiKey||"").trim(),paidRisk:true,run:()=>directStabilityImage(cfg,prompt)},
+      fal:{label:"fal.ai",configured:!!String(cfg.falApiKey||"").trim(),paidRisk:true,run:()=>directFalImage(cfg,prompt)},
+      replicate:{label:"Replicate",configured:!!String(cfg.replicateApiToken||"").trim(),paidRisk:true,run:()=>directReplicateImage(cfg,prompt)},
+      pollinations:{label:"Pollinations",configured:!!String(cfg.pollinationsApiKey||"").trim(),paidRisk:true,run:()=>directPollinationsImage(cfg,prompt)}
+    };
+    return imageProviderOrder(cfg).map(id=>({id,...definitions[id]})).filter(x=>x.configured&&(!strictFree||!x.paidRisk));
   }
 
   async function directOpenRouterVideo(cfg,prompt,duration,aspectRatio){
