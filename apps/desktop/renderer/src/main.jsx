@@ -1393,7 +1393,7 @@ function ConversationFilesPanel({conversation,onClose}) {
 }
 
 function SettingsModal({onClose,onSaved,user}) {
-  const [cfg,setCfg]=useState(null),[key,setKey]=useState(""),[openAiKey,setOpenAiKey]=useState(""),[openRouterKey,setOpenRouterKey]=useState(""),[pollinationsKey,setPollinationsKey]=useState(""),[cloudflareToken,setCloudflareToken]=useState(""),[hfKey,setHfKey]=useState(""),[togetherKey,setTogetherKey]=useState(""),[stabilityKey,setStabilityKey]=useState(""),[replicateKey,setReplicateKey]=useState(""),[falKey,setFalKey]=useState(""),[githubKey,setGithubKey]=useState(""),[tab,setTab]=useState("general"),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState(""),[toolStatus,setToolStatus]=useState("");
+  const [cfg,setCfg]=useState(null),[key,setKey]=useState(""),[openAiKey,setOpenAiKey]=useState(""),[openRouterKey,setOpenRouterKey]=useState(""),[cerebrasKey,setCerebrasKey]=useState(""),[groqKey,setGroqKey]=useState(""),[geminiKey,setGeminiKey]=useState(""),[mistralKey,setMistralKey]=useState(""),[nvidiaKey,setNvidiaKey]=useState(""),[cohereKey,setCohereKey]=useState(""),[pollinationsKey,setPollinationsKey]=useState(""),[cloudflareToken,setCloudflareToken]=useState(""),[hfKey,setHfKey]=useState(""),[togetherKey,setTogetherKey]=useState(""),[stabilityKey,setStabilityKey]=useState(""),[replicateKey,setReplicateKey]=useState(""),[falKey,setFalKey]=useState(""),[githubKey,setGithubKey]=useState(""),[tab,setTab]=useState("general"),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState(""),[toolStatus,setToolStatus]=useState("");
   useEffect(()=>{Promise.all([window.AIStoica.getConfig(),window.AIStoica.systemStatus()]).then(([c,s])=>{setCfg(c);setStatus(s)})},[]);
   if(!cfg)return null;
   async function save(){await window.AIStoica.setConfig({
@@ -1401,6 +1401,12 @@ function SettingsModal({onClose,onSaved,user}) {
     apiKey:key||cfg.apiKey,
     openAiApiKey:openAiKey||cfg.openAiApiKey,
     openRouterApiKey:openRouterKey||cfg.openRouterApiKey,
+    cerebrasApiKey:cerebrasKey||cfg.cerebrasApiKey,
+    groqApiKey:groqKey||cfg.groqApiKey,
+    geminiApiKey:geminiKey||cfg.geminiApiKey,
+    mistralApiKey:mistralKey||cfg.mistralApiKey,
+    nvidiaApiKey:nvidiaKey||cfg.nvidiaApiKey,
+    cohereApiKey:cohereKey||cfg.cohereApiKey,
     pollinationsApiKey:pollinationsKey||cfg.pollinationsApiKey,
     cloudflareApiToken:cloudflareToken||cfg.cloudflareApiToken,
     hfToken:hfKey||cfg.hfToken,
@@ -1416,6 +1422,7 @@ function SettingsModal({onClose,onSaved,user}) {
     <div className="settingsBody"><div className="settingsNav">
       <button className={tab==="general"?"active":""} onClick={()=>setTab("general")}><SlidersHorizontal size={17}/> General</button>
       <button className={tab==="ai"?"active":""} onClick={()=>setTab("ai")}><Bot size={17}/> AI & OmniRoute</button>
+      <button className={tab==="chatapis"?"active":""} onClick={()=>setTab("chatapis")}><PlugZap size={17}/> API-uri AI</button>
       <button className={tab==="images"?"active":""} onClick={()=>setTab("images")}><ImageIcon size={17}/> Poze</button>
       <button className={tab==="voice"?"active":""} onClick={()=>setTab("voice")}><Volume2 size={17}/> Voce și microfon</button>
       <button className={tab==="account"?"active":""} onClick={()=>setTab("account")}><User size={17}/> Cont și date</button>
@@ -1437,6 +1444,57 @@ function SettingsModal({onClose,onSaved,user}) {
         <button type="button" className="secondary testMicBtn" onClick={testServer}>Testează serverul</button>{toolStatus&&<div className="micStatus">{toolStatus}</div>}
       </details>
       <p className="settingsHelp">Când ceri o poză sau un videoclip, AI Stoica trebuie să returneze fișierul real în chat cu buton Download. Nu mai înlocuiește o generare eșuată cu SVG sau cu un răspuns text.</p><label>Comandă OmniRoute<input value={cfg.omniCommand||"omniroute.cmd"} onChange={e=>setCfg({...cfg,omniCommand:e.target.value})}/></label><div className="toggleRow"><div><b>Pornește OmniRoute automat</b><span>Dacă serviciul cade, AI Stoica încearcă să îl repornească.</span></div><input type="checkbox" checked={!!cfg.autoStartOmniRoute} onChange={e=>setCfg({...cfg,autoStartOmniRoute:e.target.checked})}/></div><div className="statusGrid"><div><span>Gateway local</span><b>{status?.gatewayRunning?"Conectat":"Indisponibil"}</b></div><div><span>OmniRoute</span><b>{status?.omniRunning?"Conectat":"Indisponibil"}</b></div></div></>}
+      {tab==="chatapis"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><PlugZap size={22}/></div><div><h3>API-uri AI</h3><p>Fallback direct pentru chat când OmniRoute nu răspunde.</p></div></div>
+        <div className="toggleRow"><div><b>Fallback direct pe API-uri</b><span>Owner-ul poate continua conversația direct prin providerii configurați dacă OmniRoute e indisponibil.</span></div><input type="checkbox" checked={cfg.directChatEnabled!==false} onChange={e=>setCfg({...cfg,directChatEnabled:e.target.checked})}/></div>
+        <label>Protecție costuri<select value={cfg.directChatCostPolicy||"free_only"} onChange={e=>setCfg({...cfg,directChatCostPolicy:e.target.value})}><option value="free_only">Doar provideri fără cost direct</option><option value="allow_paid">Permite și OpenAI</option></select></label>
+        <label>Ordine fallback<input value={cfg.directChatProviderOrder||"cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai"} onChange={e=>setCfg({...cfg,directChatProviderOrder:e.target.value})}/></label>
+        <p className="settingsHelp">Ordinea este inspirată din fișierele tale. Dacă lipsește cheia, apare 429/404/503 sau providerul nu răspunde, AI Stoica continuă cu următorul.</p>
+
+        <div className="providerGroup"><b>Cerebras</b><small>OpenAI-compatible.</small></div>
+        <label>Cerebras API key<input type="password" value={cerebrasKey} onChange={e=>setCerebrasKey(e.target.value)} placeholder={cfg.cerebrasApiKey?"Cheie salvată — lasă gol pentru a o păstra":"csk-..."}/></label>
+        <label>Model Cerebras<input value={cfg.cerebrasModel||"gpt-oss-120b"} onChange={e=>setCfg({...cfg,cerebrasModel:e.target.value})}/></label>
+
+        <div className="providerGroup"><b>Groq</b><small>OpenAI-compatible, inferență rapidă.</small></div>
+        <label>Groq API key<input type="password" value={groqKey} onChange={e=>setGroqKey(e.target.value)} placeholder={cfg.groqApiKey?"Cheie salvată — lasă gol pentru a o păstra":"gsk_..."}/></label>
+        <label>Model Groq<input value={cfg.groqModel||"llama-3.3-70b-versatile"} onChange={e=>setCfg({...cfg,groqModel:e.target.value})}/></label>
+
+        <div className="providerGroup"><b>Gemini</b><small>Încearcă modelele în ordine până găsește cotă disponibilă.</small></div>
+        <label>Gemini API key<input type="password" value={geminiKey} onChange={e=>setGeminiKey(e.target.value)} placeholder={cfg.geminiApiKey?"Cheie salvată — lasă gol pentru a o păstra":"AIza..."}/></label>
+        <label>Modele Gemini · separate prin virgulă<input value={cfg.geminiModels||"gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite"} onChange={e=>setCfg({...cfg,geminiModels:e.target.value})}/></label>
+
+        <div className="providerGroup"><b>Mistral</b><small>OpenAI-compatible.</small></div>
+        <label>Mistral API key<input type="password" value={mistralKey} onChange={e=>setMistralKey(e.target.value)} placeholder={cfg.mistralApiKey?"Cheie salvată — lasă gol pentru a o păstra":"API key"}/></label>
+        <label>Model Mistral<input value={cfg.mistralModel||"mistral-small-latest"} onChange={e=>setCfg({...cfg,mistralModel:e.target.value})}/></label>
+
+        <div className="providerGroup"><b>NVIDIA</b><small>NVIDIA API / NIM, format OpenAI-compatible.</small></div>
+        <label>NVIDIA API key<input type="password" value={nvidiaKey} onChange={e=>setNvidiaKey(e.target.value)} placeholder={cfg.nvidiaApiKey?"Cheie salvată — lasă gol pentru a o păstra":"nvapi-..."}/></label>
+        <label>Model NVIDIA<input value={cfg.nvidiaModel||"meta/llama-3.3-70b-instruct"} onChange={e=>setCfg({...cfg,nvidiaModel:e.target.value})}/></label>
+
+        <div className="providerGroup"><b>GitHub Models</b><small>Folosește tokenul GitHub salvat; tokenul trebuie să aibă acces la Models.</small></div>
+        <label>GitHub token<input type="password" value={githubKey} onChange={e=>setGithubKey(e.target.value)} placeholder={cfg.githubToken?"Token salvat — lasă gol pentru a-l păstra":"github_pat_..."}/></label>
+        <label>Model GitHub<input value={cfg.githubModelsModel||"openai/gpt-4.1-mini"} onChange={e=>setCfg({...cfg,githubModelsModel:e.target.value})}/></label>
+
+        <div className="providerGroup"><b>OpenRouter</b><small>AUTO_FREE caută automat primul model :free disponibil.</small></div>
+        <label>OpenRouter API key<input type="password" value={openRouterKey} onChange={e=>setOpenRouterKey(e.target.value)} placeholder={cfg.openRouterApiKey?"Cheie salvată — lasă gol pentru a o păstra":"sk-or-..."}/></label>
+        <label>Model OpenRouter<input value={cfg.openRouterChatModel||"AUTO_FREE"} onChange={e=>setCfg({...cfg,openRouterChatModel:e.target.value})}/></label>
+
+        <div className="providerGroup"><b>Cloudflare Workers AI</b><small>Folosește același Account ID și token ca secțiunea Poze.</small></div>
+        <label>Cloudflare Account ID<input value={cfg.cloudflareAccountId||""} onChange={e=>setCfg({...cfg,cloudflareAccountId:e.target.value})}/></label>
+        <label>Cloudflare API Token<input type="password" value={cloudflareToken} onChange={e=>setCloudflareToken(e.target.value)} placeholder={cfg.cloudflareApiToken?"Token salvat — lasă gol pentru a-l păstra":"API Token"}/></label>
+        <label>Model Cloudflare<input value={cfg.cloudflareChatModel||"@cf/meta/llama-3.3-70b-instruct-fp8-fast"} onChange={e=>setCfg({...cfg,cloudflareChatModel:e.target.value})}/></label>
+
+        <div className="providerGroup"><b>Cohere</b><small>Compatibility API.</small></div>
+        <label>Cohere API key<input type="password" value={cohereKey} onChange={e=>setCohereKey(e.target.value)} placeholder={cfg.cohereApiKey?"Cheie salvată — lasă gol pentru a o păstra":"API key"}/></label>
+        <label>Model Cohere<input value={cfg.cohereModel||"command-a-03-2025"} onChange={e=>setCfg({...cfg,cohereModel:e.target.value})}/></label>
+
+        <div className="providerGroup"><b>Hugging Face</b><small>Router OpenAI-compatible; folosește tokenul HF din secțiunea Poze.</small></div>
+        <label>Hugging Face token<input type="password" value={hfKey} onChange={e=>setHfKey(e.target.value)} placeholder={cfg.hfToken?"Token salvat — lasă gol pentru a-l păstra":"hf_..."}/></label>
+        <label>Model Hugging Face<input value={cfg.huggingFaceChatModel||"meta-llama/Llama-3.3-70B-Instruct"} onChange={e=>setCfg({...cfg,huggingFaceChatModel:e.target.value})}/></label>
+
+        <div className="providerGroup"><b>OpenAI</b><small>Inclus, dar blocat implicit de protecția de costuri.</small></div>
+        <label>OpenAI API key<input type="password" value={openAiKey} onChange={e=>setOpenAiKey(e.target.value)} placeholder={cfg.openAiApiKey?"Cheie salvată — lasă gol pentru a o păstra":"sk-..."}/></label>
+        <label>Modele OpenAI · separate prin virgulă<input value={cfg.openAiChatModels||"gpt-5-mini,gpt-5-nano"} onChange={e=>setCfg({...cfg,openAiChatModels:e.target.value})}/></label>
+      </>}
       {tab==="images"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><ImageIcon size={22}/></div><div><h3>Poze</h3><p>Generare imagini, API-uri, modele și fallback automat.</p></div></div>
         <label>Model generare imagini <span className="optional">opțional</span><input value={cfg.imageModel||""} onChange={e=>setCfg({...cfg,imageModel:e.target.value})} placeholder="Auto — primul model de imagine disponibil"/></label>
 <details className="mediaProviderSettings" open><summary>Providere imagini · multi-API și fallback</summary>
