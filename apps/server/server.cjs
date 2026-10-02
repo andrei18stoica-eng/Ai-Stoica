@@ -68,16 +68,18 @@ async function migrate() {
     [OWNER_EMAIL]
   );
 
-  // Older installations initialized paid_ai_enabled=false even when Owner never disabled it.
-  // Upgrade only that untouched default. An explicit Owner choice is preserved via audit_log.
-  const [paidSetting, paidChoice] = await Promise.all([
-    pool.query("SELECT value FROM system_settings WHERE key='paid_ai_enabled'"),
-    pool.query("SELECT 1 FROM audit_log WHERE action='admin.paid_ai' LIMIT 1")
-  ]);
-  if (paidSetting.rows[0]?.value === false && paidChoice.rowCount === 0) {
+  // One-time transition: paid AI is Owner-only by default.
+  // The Owner may later enable paid AI for normal accounts from Control Center.
+  const ownerPaidOnlyFlag = await pool.query("SELECT value FROM system_settings WHERE key='owner_paid_only_v1_applied'");
+  if (ownerPaidOnlyFlag.rows[0]?.value !== true) {
     await pool.query(
       `INSERT INTO system_settings(key,value,updated_at)
-       VALUES('paid_ai_enabled','true'::jsonb,NOW())
+       VALUES('paid_ai_enabled','false'::jsonb,NOW())
+       ON CONFLICT(key) DO UPDATE SET value='false'::jsonb,updated_at=NOW()`
+    );
+    await pool.query(
+      `INSERT INTO system_settings(key,value,updated_at)
+       VALUES('owner_paid_only_v1_applied','true'::jsonb,NOW())
        ON CONFLICT(key) DO UPDATE SET value='true'::jsonb,updated_at=NOW()`
     );
   }
