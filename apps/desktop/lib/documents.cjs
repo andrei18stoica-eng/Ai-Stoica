@@ -191,14 +191,29 @@ function excelColumnName(index) {
   while(n>0){const r=(n-1)%26;out=String.fromCharCode(65+r)+out;n=Math.floor((n-1)/26);}
   return out;
 }
+function xlsxNumericValue(raw) {
+  if(typeof raw==="number")return Number.isFinite(raw)?raw:null;
+  const text=String(raw??"").trim();
+  if(!text||/^0\d+/.test(text))return null;
+  if(/^-?\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(text)){
+    const n=Number(text.replace(/\./g,"").replace(",","."));
+    return Number.isFinite(n)?n:null;
+  }
+  if(/^-?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(text)){
+    const n=Number(text.replace(/,/g,""));
+    return Number.isFinite(n)?n:null;
+  }
+  if(/^-?(?:0|[1-9]\d*)(?:[.,]\d+)?$/.test(text)){
+    const n=Number(text.replace(",","."));
+    return Number.isFinite(n)?n:null;
+  }
+  return null;
+}
 function xlsxCellXml(value,row,col,style=0) {
   const ref=excelColumnName(col)+(row+1);
   const raw=value==null?"":value;
-  const text=String(raw).trim();
-  if(typeof raw==="number" || (/^-?(?:0|[1-9]\d*)(?:[.,]\d+)?$/.test(text) && !/^0\d+/.test(text))){
-    const n=Number(text.replace(",","."));
-    if(Number.isFinite(n)) return `<c r="${ref}" s="${style}"><v>${n}</v></c>`;
-  }
+  const n=xlsxNumericValue(raw);
+  if(n!==null) return `<c r="${ref}" s="${style}"><v>${n}</v></c>`;
   return `<c r="${ref}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(raw)}</t></is></c>`;
 }
 async function createXlsxBytes(title, content) {
