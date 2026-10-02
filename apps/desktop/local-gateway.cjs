@@ -2274,7 +2274,9 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const baseOrder=[...new Set([...configured,...known])];
     const requested=String(requestedModel||"").trim();
     const requestedProvider=(requested.split("/")[0]||"").toLowerCase();
-    const order=known.includes(requestedProvider)?[requestedProvider,...baseOrder.filter(x=>x!==requestedProvider)]:baseOrder;
+    const order=requestedProvider==="openai"
+      ?["openai","gemini",...baseOrder.filter(x=>x!=="openai"&&x!=="gemini")]
+      :known.includes(requestedProvider)?[requestedProvider,...baseOrder.filter(x=>x!==requestedProvider)]:baseOrder;
     const result=[];
 
     const push=(provider,baseUrl,key,models,{label=provider,paidRisk=false,headers={}}={})=>{
