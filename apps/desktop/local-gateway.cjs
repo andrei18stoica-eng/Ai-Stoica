@@ -1255,6 +1255,14 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const configured=String(kind==="image"?cfg.imageModel||"":cfg.videoModel||"").trim();
     const rows=await mediaCatalog(cfg,kind);
     const byId=new Map(rows.map(row=>[row.id.toLowerCase(),row]));
+    if(ownerRequest(req)&&kind==="image"){
+      for(const known of ["openai/gpt-image-2.5-flare","openai/gpt-image-2.5-sunburst","openai/gpt-image-2"]){
+        if(!byId.has(known.toLowerCase())){
+          const row=mediaModelRow({id:known,provider:"openai",type:"image"},kind,true);
+          rows.push(row);byId.set(known.toLowerCase(),row);
+        }
+      }
+    }
     if(configured&&!byId.has(configured.toLowerCase())){
       const row=mediaModelRow({id:configured},kind,true);
       if(row){rows.unshift(row);byId.set(configured.toLowerCase(),row)}
