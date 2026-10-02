@@ -6,6 +6,8 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
+const { spawn } = require("child_process");
 const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 const fontkitModule = require("@pdf-lib/fontkit");
 const fontkit = fontkitModule.default || fontkitModule;
@@ -565,6 +567,182 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.use(helmet({ crossOriginResourcePolicy: false }));
   app.use(cors({ origin: true, credentials: false }));
   app.use(express.json({ limit: "64mb" }));
+
+  const toolRunsDir = path.join(dataDir, "tool-runs");
+  fs.mkdirSync(toolRunsDir, { recursive: true });
+
+  function ownerOnlyLocal(req,res,next){
+    if(ownerRequest(req))return next();
+    return res.status(403).json({error:"Rularea de cod și accesul la server sunt rezervate Owner-ului."});
+  }
+
+  function decodeHtml(value){
+    return String(value||"")
+      .replace(/<script[\\s\\S]*?<\\/script>/gi," ")
+      .replace(/<style[\\s\\S]*?<\\/style>/gi," ")
+      .replace(/<[^>]+>/g," ")
+      .replace(/&nbsp;/gi," ")
+      .replace(/&amp;/gi,"&")
+      .replace(/&quot;/gi,'"')
+      .replace(/&#39;|&apos;/gi,"'")
+      .replace(/&lt;/gi,"<")
+      .replace(/&gt;/gi,">")
+      .replace(/&#(\\d+);/g,(_m,n)=>String.fromCodePoint(Number(n)||32))
+      .replace(/&#x([0-9a-f]+);/gi,(_m,n)=>String.fromCodePoint(parseInt(n,16)||32))
+      .replace(/\\s+/g," ").trim();
+  }
+  function publicWebUrl(raw){
+    try{
+      let value=String(raw||"").trim();
+      if(value.startsWith("//"))value="https:"+value;
+      const u=new URL(value);
+      if(/duckduckgo\\.com$/i.test(u.hostname)&&u.pathname.startsWith("/l/")&&u.searchParams.get("uddg"))return publicWebUrl(decodeURIComponent(u.searchParams.get("uddg")));
+      if(!["http:","https:"].includes(u.protocol))return "";
+      const h=u.hostname.toLowerCase();
+      if(h==="localhost"||h==="::1"||/^127\\./.test(h)||/^10\\./.test(h)||/^192\\.168\\./.test(h)||/^169\\.254\\./.test(h))return "";
+      const m=h.match(/^172\\.(\\d+)\\./);if(m&&Number(m[1])>=16&&Number(m[1])<=31)return "";
+      return u.toString();
+    }catch{return ""}
+  }
+  async function pageExcerpt(url,maxChars=2600){
+    const safe=publicWebUrl(url);if(!safe)return "";
+    try{
+      const r=await fetch(safe,{redirect:"follow",headers:{"User-Agent":"AI-Stoica/0.7 (+desktop assistant)","Accept":"text/html,text/plain;q=0.9,*/*;q=0.5"},signal:AbortSignal.timeout(9000)});
+      if(!r.ok)return "";
+      const ctype=String(r.headers.get("content-type")||"");
+      if(!/text\\/|json|xml|html/i.test(ctype))return "";
+      const text=await r.text();
+      return decodeHtml(text).slice(0,maxChars);
+    }catch{return ""}
+  }
+  async function liveWebSearch(query,maxResults=5){
+    const q=String(query||"").trim().slice(0,700);if(!q)return [];
+    const results=[];
+    try{
+      const r=await fetch("https://html.duckduckgo.com/html/?q="+encodeURIComponent(q),{
+        headers:{"User-Agent":"Mozilla/5.0 AI-Stoica/0.7","Accept":"text/html"},
+        signal:AbortSignal.timeout(12000)
+      });
+      const html=await r.text();
+      const re=/<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\\s\\S]*?)<\\/a>/gi;
+      let m;const seen=new Set();
+      while((m=re.exec(html))&&results.length<maxResults){
+        const url=publicWebUrl(m[1]);if(!url||seen.has(url))continue;seen.add(url);
+        const title=decodeHtml(m[2])||new URL(url).hostname;
+        results.push({title,url});
+      }
+    }catch{}
+    if(!results.length){
+      try{
+        const r=await fetch("https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&utf8=1&srlimit="+Math.min(5,maxResults)+"&srsearch="+encodeURIComponent(q),{signal:AbortSignal.timeout(9000)});
+        const data=await r.json();
+        for(const x of data?.query?.search||[]){
+          const url="https://en.wikipedia.org/wiki/"+encodeURIComponent(String(x.title||"").replace(/ /g,"_"));
+          results.push({title:String(x.title||"Wikipedia"),url,snippet:decodeHtml(x.snippet||"")});
+        }
+      }catch{}
+    }
+    const enriched=await Promise.all(results.slice(0,maxResults).map(async x=>({...x,excerpt:x.snippet||await pageExcerpt(x.url)})));
+    return enriched;
+  }
+  function shouldUseLiveWeb(text){
+    const t=String(text||"").toLowerCase();
+    return /\\b(azi|acum|actual|actuale|recent|recentă|recente|ultim|ultima|latest|news|știri|stiri|internet|online|caută|cauta|verifică|verifica|preț|pret|vreme|scor|program|orar|versiune|release|documentație|documentatie|api|model nou|2026)\\b/.test(t);
+  }
+  function projectContext(db,userId,projectId,latestText){
+    if(!projectId)return "";
+    const words=[...new Set(normalizeMemoryText(latestText).split(/\\s+/).filter(x=>x.length>=4))].slice(0,30);
+    const rows=db.conversations.filter(x=>x.userId===userId&&x.projectId===projectId).map(conv=>{
+      const sample=(conv.messages||[]).slice(-8).map(m=>textFromContent(m.content)).join(" ");
+      const hay=normalizeMemoryText((conv.title||"")+" "+sample);
+      const score=words.reduce((n,w)=>n+(hay.includes(w)?1:0),0);
+      return {conv,score};
+    }).sort((a,b)=>b.score-a.score||(b.conv.updatedAt||0)-(a.conv.updatedAt||0)).slice(0,6);
+    let out="";
+    for(const row of rows){
+      const conv=row.conv;
+      const msgs=(conv.messages||[]).slice(-4).map(m=>(m.role==="assistant"?"AI Stoica":"Utilizator")+": "+textFromContent(m.content).slice(0,1800)).join("\\n");
+      const block="Conversație proiect: "+(conv.title||"fără titlu")+"\\n"+msgs+"\\n\\n";
+      if(out.length+block.length>18000)break;
+      out+=block;
+    }
+    return out.trim();
+  }
+  function githubSearchWords(text){
+    const stop=new Set(["acest","aceasta","pentru","vreau","care","este","sunt","face","faci","facem","codul","fisier","fișier","problema","eroare","github","repo","repository","with","from","that","this","function","const"]);
+    return [...new Set(String(text||"").match(/[A-Za-z0-9_.-]{4,}/g)||[])].filter(x=>!stop.has(x.toLowerCase())).sort((a,b)=>b.length-a.length).slice(0,3);
+  }
+  function shouldUseGithub(text){
+    return /\\b(github|repository|repo|cod|code|bug|eroare|build|component|funcție|functie|endpoint|react|node|python|server|api|fișier|fisier)\\b/i.test(String(text||""));
+  }
+  async function githubCodeContext(cfg,text){
+    const repo=String(cfg.githubRepo||"").trim(),token=String(cfg.githubToken||"").trim();
+    if(!repo||!token||!shouldUseGithub(text))return "";
+    const headers={Authorization:"Bearer "+token,Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","User-Agent":"AI-Stoica"};
+    const words=githubSearchWords(text);if(!words.length)return "";
+    const found=new Map();
+    for(const word of words){
+      try{
+        const r=await fetch("https://api.github.com/search/code?q="+encodeURIComponent(word+" repo:"+repo),{headers,signal:AbortSignal.timeout(10000)});
+        if(!r.ok)continue;
+        const data=await r.json();
+        for(const item of data.items||[])if(item?.path&&!found.has(item.path))found.set(item.path,item);
+      }catch{}
+      if(found.size>=5)break;
+    }
+    let out="";
+    for(const item of [...found.values()].slice(0,4)){
+      try{
+        const r=await fetch(item.url,{headers,signal:AbortSignal.timeout(10000)});if(!r.ok)continue;
+        const data=await r.json();let source="";
+        if(data?.content&&data?.encoding==="base64")source=Buffer.from(String(data.content).replace(/\\n/g,""),"base64").toString("utf8");
+        if(!source&&data?.download_url)source=await pageExcerpt(data.download_url,9000);
+        const block="GitHub "+repo+"/"+item.path+"\\n"+source.slice(0,9000)+"\\n\\n";
+        if(out.length+block.length>26000)break;out+=block;
+      }catch{}
+    }
+    return out.trim();
+  }
+  function spawnCapture(command,args,{cwd,timeout=15000,env={}}={}){
+    return new Promise((resolve,reject)=>{
+      let stdout="",stderr="",timedOut=false,settled=false;
+      const child=spawn(command,args,{cwd,windowsHide:true,shell:false,env:{...process.env,...env}});
+      const cap=(value)=>String(value||"").slice(0,120000);
+      child.stdout?.on("data",d=>{stdout=cap(stdout+d.toString())});
+      child.stderr?.on("data",d=>{stderr=cap(stderr+d.toString())});
+      child.once("error",e=>{if(!settled){settled=true;reject(e)}});
+      const timer=setTimeout(()=>{timedOut=true;try{child.kill()}catch{}},timeout);
+      child.once("close",code=>{clearTimeout(timer);if(settled)return;settled=true;resolve({code:Number(code??-1),stdout,stderr,timedOut})});
+    });
+  }
+  async function executeCode(language,code){
+    const lang=String(language||"").toLowerCase(),source=String(code||"");
+    if(!source.trim())throw new Error("Codul este gol.");
+    if(source.length>100000)throw new Error("Codul este prea mare pentru o rulare interactivă.");
+    const runDir=path.join(toolRunsDir,crypto.randomUUID());fs.mkdirSync(runDir,{recursive:true});
+    try{
+      if(["js","javascript","node","jsx"].includes(lang)){
+        const file=path.join(runDir,"main.js");fs.writeFileSync(file,source,"utf8");
+        return {...await spawnCapture(process.execPath,[file],{cwd:runDir,timeout:20000,env:{ELECTRON_RUN_AS_NODE:"1"}}),language:"javascript"};
+      }
+      if(["py","python","python3"].includes(lang)){
+        const file=path.join(runDir,"main.py");fs.writeFileSync(file,source,"utf8");
+        const commands=process.platform==="win32"?[["py",["-3",file]],["python",[file]]]:[["python3",[file]],["python",[file]]];
+        let last;
+        for(const pair of commands){try{return {...await spawnCapture(pair[0],pair[1],{cwd:runDir,timeout:20000}),language:"python"}}catch(e){last=e}}
+        throw last||new Error("Python nu este instalat.");
+      }
+      throw new Error("AI Stoica poate rula direct JavaScript/Node și Python.");
+    }finally{try{fs.rmSync(runDir,{recursive:true,force:true})}catch{}}
+  }
+  async function sshRun(cfg,command,timeout=30000){
+    const host=String(cfg.serverHost||"").trim(),user=String(cfg.serverUser||"root").trim()||"root";
+    if(!host)throw new Error("Serverul SSH nu este configurat în Setări.");
+    const args=["-o","BatchMode=yes","-o","StrictHostKeyChecking=accept-new","-o","ConnectTimeout=8","-p",String(Math.max(1,Math.min(65535,Number(cfg.serverPort||22))))];
+    const key=String(cfg.serverKeyPath||"").trim();if(key)args.push("-i",key);
+    args.push(user+"@"+host,String(command||"echo AI_STOICA_SERVER_OK"));
+    return await spawnCapture("ssh",args,{timeout});
+  }
 
   function sign(user) { return jwt.sign({ sub: user.id, email: user.email }, secret); }
   function cloudBase() {
