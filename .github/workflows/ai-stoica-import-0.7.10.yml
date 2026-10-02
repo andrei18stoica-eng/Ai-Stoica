@@ -33,11 +33,19 @@ jobs:
           shas = [
               "8450aa831e640eceb2345681e5e1fd84a49eff7d",
               "b00e66e86c9ca5fcac63b8906e42cdadb0e48e9e",
-              "7a59f593c11de7794fa7723820837a425e3c9269",
-              "fcb4d0272a9153dbf3d4781d2a5fa6e6a8474f72",
-              "1b7684fb2ef674b6beee3e3ea2fec5cde4fc450e",
-              "e1a1f799449aa32fa2ee885474bf08c9f50ad68a",
-              "a18026fe75e2630f5c10b572d977034a83982b68",
+              "28ab41168bf27fdd57e202687e70eeb1c3f0987b",
+              "62244cd5c45120b9dd342ad9c52ac6270e5e9626",
+              "b859ef7dc7aa16e8612f71a96e8759382927079e",
+              "d55e314342c860eb65f23f6ffa00d04c22dcbb18",
+              "083b34035560076b5b45649c85ddcbbea0adab7e",
+              "4a1c95462656109517db0541b2aa9582f013ceda",
+              "8adb41a887521ed04f5b8c7d5d58ff05465bde60",
+              "60f0d8f4d3f0811e64779fa61b3760d114e70148",
+              "61376b44eba761b45d6d9ebbe086307d11044b0e",
+              "b86a9dcb4549e743a56d26d0cbbc7c391d90d245",
+              "34f6f3e2322f5edb3ffe743536a4c545bc04d67f",
+              "f067a26c87a8277b130eb237668408f9d6c9fc59",
+              "c2e994675c50e1439f456e42fc148e2a67d166ca",
           ]
           out_path = "/tmp/AI_Stoica_0.7.10_complet.zip"
           with open(out_path, "wb") as out:
