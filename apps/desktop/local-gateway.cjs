@@ -1173,28 +1173,32 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const submit=await fetch("https://openrouter.ai/api/v1/videos",{
       method:"POST",headers,
       body:JSON.stringify({model,prompt,duration:Math.max(1,Math.min(15,Number(duration||4))),resolution:"720p",aspect_ratio:String(aspectRatio||"16:9"),generate_audio:false}),
-      signal:AbortSignal.timeout(30000)
+      signal:AbortSignal.timeout(60000)
     });
     const text=await submit.text();let job={};try{job=JSON.parse(text)}catch{}
     if(!submit.ok)throw new Error(`HTTP ${submit.status}: ${text.slice(0,700)}`);
     const jobId=String(job.id||job.data?.id||"");if(!jobId)throw new Error("OpenRouter nu a returnat ID-ul generării video.");
-    const deadline=Date.now()+5*60*1000;
+    const pollingRaw=String(job.polling_url||job.data?.polling_url||"").trim();
+    const pollingUrl=pollingRaw?new URL(pollingRaw,"https://openrouter.ai").toString():`https://openrouter.ai/api/v1/videos/${encodeURIComponent(jobId)}`;
+    const deadline=Date.now()+8*60*1000;
+    let body=job;
     while(Date.now()<deadline){
-      await new Promise(r=>setTimeout(r,3000));
-      const status=await fetch(`https://openrouter.ai/api/v1/videos/${encodeURIComponent(jobId)}`,{headers:{Authorization:`Bearer ${key}`},signal:AbortSignal.timeout(15000)});
-      const st=await status.text();let body={};try{body=JSON.parse(st)}catch{}
-      if(!status.ok)throw new Error(`Status video HTTP ${status.status}: ${st.slice(0,500)}`);
       const state=String(body.status||body.state||body.data?.status||"").toLowerCase();
-      if(/fail|error|cancel|reject/.test(state))throw new Error(`Generarea video OpenRouter a eșuat: ${st.slice(0,500)}`);
+      if(/fail|error|cancel|reject|expired/.test(state))throw new Error(`Generarea video OpenRouter a eșuat: ${JSON.stringify(body).slice(0,700)}`);
       if(/complete|succeed|done|finished/.test(state)){
-        const file=await fetch(`https://openrouter.ai/api/v1/videos/${encodeURIComponent(jobId)}/content?index=0`,{headers:{Authorization:`Bearer ${key}`},signal:AbortSignal.timeout(120000)});
+        const unsigned=body.unsigned_urls||body.data?.unsigned_urls||[];
+        const downloadUrl=Array.isArray(unsigned)&&unsigned[0]?new URL(String(unsigned[0]),"https://openrouter.ai").toString():`https://openrouter.ai/api/v1/videos/${encodeURIComponent(jobId)}/content?index=0`;
+        const file=await fetch(downloadUrl,{headers:{Authorization:`Bearer ${key}`},signal:AbortSignal.timeout(180000)});
         const resolved=await fetchBinaryOrCandidate(file,"video");
         return {...resolved,model,provider:"openrouter-direct"};
       }
+      await new Promise(r=>setTimeout(r,6000));
+      const status=await fetch(pollingUrl,{headers:{Authorization:`Bearer ${key}`},signal:AbortSignal.timeout(20000)});
+      const st=await status.text();try{body=JSON.parse(st)}catch{body={status:"unknown",raw:st}}
+      if(!status.ok)throw new Error(`Status video HTTP ${status.status}: ${st.slice(0,500)}`);
     }
-    throw new Error("Generarea video OpenRouter nu s-a finalizat în 5 minute.");
+    throw new Error("Generarea video OpenRouter nu s-a finalizat în intervalul permis.");
   }
-
   async function directPollinationsVideo(cfg,prompt,duration){
     const key=String(cfg.pollinationsApiKey||"").trim();if(!key)return null;
     const model=String(cfg.pollinationsVideoModel||"google/veo-3.1-fast").trim();
