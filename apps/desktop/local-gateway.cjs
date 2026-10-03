@@ -545,15 +545,18 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(!decision?.allowed)throw policyFailure(decision?.reason||"Modelul nu este permis pentru acest cont.",403);
     return decision;
   }
+  let omniEntriesLast=[];
   async function omniModelEntries(cfg) {
     const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/, "")}/models`,{
       headers:cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{},
-      signal:AbortSignal.timeout(9000)
+      signal:AbortSignal.timeout(20000)
     });
     const text=await r.text();
     if(!r.ok)throw policyFailure(`OmniRoute models HTTP ${r.status}: ${text.slice(0,300)}`,502);
     let parsed;try{parsed=JSON.parse(text)}catch{throw policyFailure("OmniRoute a returnat o listă de modele invalidă.",502)}
-    return Array.isArray(parsed)?parsed:(Array.isArray(parsed?.data)?parsed.data:[]);
+    const list=Array.isArray(parsed)?parsed:(Array.isArray(parsed?.data)?parsed.data:[]);
+    if(list.length)omniEntriesLast=list;
+    return list;
   }
   async function allowedOmniEntries(context, entries) {
     const rows=(Array.isArray(entries)?entries:[]).map(entry=>{
@@ -839,7 +842,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.get("/api/models", auth, async (req, res) => {
     const cfg = getOmniConfig();
     let entries=[],omniError="";
-    try{entries=await omniModelEntries(cfg)}catch(e){omniError=roError(e)}
+    try{entries=await omniModelEntries(cfg)}catch(e){omniError=roError(e);entries=omniEntriesLast}
     const manualModels=entries.filter(x=>!isSmartAlias(typeof x==="string"?x:x?.id));
     let filtered=manualModels,policyError="";
     if(cloudBase()){
