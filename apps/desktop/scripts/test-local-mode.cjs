@@ -30,9 +30,9 @@ async function main(){
   };
   const gateway=startLocalGateway({dataDir,port,host:"127.0.0.1",getOmniConfig:()=>cfg});
   const base="http://127.0.0.1:"+port;
-  const realFetch=global.fetch;
+  const realFetch=globalThis.fetch;
   const png=Buffer.from("89504e470d0a1a0a0000000d4948445200000001000000010806000000","hex");
-  global.fetch=async (url,init)=>{
+  globalThis.fetch=async (url,init)=>{
     const target=String(url);
     if(target==="https://api.groq.com/openai/v1/chat/completions"){
       return new Response(JSON.stringify({choices:[{message:{content:"LOCAL_GROQ_OK"}}]}),{status:200,headers:{"content-type":"application/json"}});
@@ -113,7 +113,7 @@ async function main(){
 
     console.log("LOCAL_MODE_TESTS_PASSED");
   } finally {
-    global.fetch=realFetch;
+    globalThis.fetch=realFetch;
     await gateway.close();
     fs.rmSync(dataDir,{recursive:true,force:true});
   }

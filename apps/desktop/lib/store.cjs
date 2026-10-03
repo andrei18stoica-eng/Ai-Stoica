@@ -1,4 +1,4 @@
-// Local data store for AI Stoica (accounts, conversations, memory, library, plugins, automations).
+// Local data store for AI Stoica (accounts, conversations, memory, library, plugins, automations, designs).
 //
 // All requests share ONE in-memory copy of the data, so two actions saving at the same time
 // can no longer overwrite each other's changes. Every save is atomic (temp file + rename) and
@@ -7,7 +7,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const COLLECTIONS = ["users", "conversations", "projects", "assistants", "memories", "library", "plugins", "automations"];
+const COLLECTIONS = ["users", "conversations", "projects", "assistants", "memories", "library", "plugins", "automations", "designs"];
 
 function emptyDb() {
   return Object.fromEntries(COLLECTIONS.map((k) => [k, []]));

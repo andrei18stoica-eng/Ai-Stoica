@@ -1,4 +1,4 @@
-# AI Stoica v0.7.11 — verificare
+# AI Stoica v0.7.13 — verificare
 
 Verificări automate în GitHub Actions:
 
@@ -11,6 +11,8 @@ Verificări automate în GitHub Actions:
   - `test-local-mode.cjs` – mod local fără Cloud, blocarea site-urilor străine, sesiuni;
   - `test-document-export.cjs` – export PDF, Word, PowerPoint, Excel și celelalte formate;
   - `test-0711-regressions.cjs` – reparațiile 0.7.11: automatizări și fus orar, blocarea adreselor interne, fișiere foarte mari, caractere de control, sume în Excel, CSV, memorie, erori JSON, permisiuni și Owner, deconectare, imagini din Bibliotecă, conturi și limite de autentificare.
+  - `test-0712-models.cjs` – toate modelele providerilor configurați și combinațiile OmniRoute apar în listă și pot fi folosite; modelele vechi implicite se actualizează.
+  - `test-0713-gateway.cjs` – Scheduled (istoric, duplicare), pluginuri după nume, memorie între conversații, Design (generare, versiuni, previzualizare cu token), Pollinations fără cheie, mesajul pentru video, întrebările de clarificare;
   - `test-0711-upgrade.cjs` – trecerea de la 0.7.10: pluginuri din rețeaua locală pe PC, limita de autentificare per email, primul login Cloud păstrează contul și conversațiile locale.
 - **Build AI Stoica Windows**: aceleași teste pe Windows, apoi installerul + `latest.yml` + `.blockmap` în Releases.
 - **AI Stoica Server Check**: `apps/server` (politica AI și contractul HTTP) + Docker.
