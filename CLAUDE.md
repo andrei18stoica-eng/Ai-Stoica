@@ -12,7 +12,7 @@ AI Stoica (Stoica Enterprises AI) este o platformă AI proprie, multi-model: cha
 
 GitHub (`andrei18stoica-eng/Ai-Stoica`, privat) este atelierul: cod, versiuni, teste, build, Releases. Producția rulează pe serverul Hetzner. Aplicația nu depinde de GitHub la fiecare mesaj.
 
-Versiune curentă: **0.7.11**.
+Versiune curentă: **0.7.13** (în lucru; ultima publicată: 0.7.11). Nu a existat 0.7.12 în repo.
 
 ## Structura
 
@@ -35,7 +35,7 @@ Folderul `gateway/` (0.4.1) a fost șters în 0.7.11 și nu trebuie să reapară
 1. workflow-urile YAML (chei duplicate);
 2. aceeași versiune peste tot;
 3. `gateway/` absent;
-4. desktop: `node --check`, `npm run build:ui`, toate `scripts/test-*.cjs` (10 teste);
+4. desktop: `node --check`, `npm run build:ui`, toate `scripts/test-*.cjs` (11 teste);
 5. server: `npm test`;
 6. Cloudflare: `npm test` și `npm run check`.
 
@@ -71,8 +71,10 @@ Nu rulează local: Mobile (`expo-doctor`, `expo export`), build-ul Windows și D
 
 ## Stare curentă (2026-10-03)
 
+- **0.7.13** (ramura de lucru): 0.7.11 + reparația publicării Windows (vezi mai jos) + lista de modele OmniRoute mai fiabilă (PR #29) + acest ghid și scripturile de verificare (PR #28). Rămâne de făcut: PR, verificări verzi în GitHub, merge, Release `v0.7.13`, apoi potrivirea `sha512`.
+
 - 0.7.11 este pe `main` (PR #27, merge commit `67aedad`), peste baza `7fe0dc2`, unde conflictele cu PR #21–#26 au fost rezolvate.
 - După deblocarea GitHub Actions, toate cele 6 verificări de pe `main` au trecut: Build AI Stoica Windows, ZIP complet Windows, Desktop, Server, Cloudflare, Mobile.
 - Release-ul `v0.7.11` este publicat (tag pe `67aedad`): `.exe`, `.blockmap`, `latest.yml` și ZIP-ul complet.
-- **Problemă deschisă:** `.exe` din Release vine din „Build AI Stoica Windows”, dar `latest.yml` și `.blockmap` au fost rescrise de workflow-ul ZIP, care face alt build. `sha512` și dimensiunea din `latest.yml` nu se potrivesc cu `.exe` (verificat), deci actualizarea automată de la 0.7.10 ar fi respinsă. Cauza: ambele workflow-uri urcă `latest.yml` și `.blockmap` cu `--clobber`. Reparația: metadata să fie publicată doar de „Build AI Stoica Windows”, apoi Release-ul refăcut.
+- **Reparat în 0.7.13 (de confirmat după publicare):** în `v0.7.11`, `.exe` din Release vine din „Build AI Stoica Windows”, dar `latest.yml` și `.blockmap` au fost rescrise de workflow-ul ZIP, care face alt build. `sha512` și dimensiunea din `latest.yml` nu se potrivesc cu `.exe` (verificat), deci actualizarea automată de la 0.7.10 ar fi respinsă. Cauza: ambele workflow-uri urcă `latest.yml` și `.blockmap` cu `--clobber`. Reparația din 0.7.13: workflow-ul ZIP urcă doar ZIP-ul, metadata o publică numai „Build AI Stoica Windows”; `apps/desktop/scripts/test-release-workflows.cjs` păzește regula. `v0.7.11` rămâne cu metadata nepotrivită; aplicațiile se mută la 0.7.13 (la nevoie, instalare manuală o dată).
 - Deploy-ul pe Hetzner, DNS-ul `api.aistoica.ro` și HTTPS-ul cap-coadă nu sunt verificate din repo.

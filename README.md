@@ -1,6 +1,12 @@
-# AI Stoica 0.7.11 — Stoica Enterprises AI
+# AI Stoica 0.7.13 — Stoica Enterprises AI
 
 Asistent AI pentru Windows (plus aplicație mobilă) cu chat, proiecte, asistenți, memorie, bibliotecă de fișiere, pluginuri, automatizări, generare de imagini și video, export PDF/Word/PowerPoint/Excel și panou de Owner.
+
+## Noutăți 0.7.13
+
+- **Actualizarea automată Windows funcționează cu adevărat:** în Release, `latest.yml` și `.blockmap` vin acum din același build ca `.exe`. Înainte, workflow-ul ZIP le rescria cu un alt build, `sha512` nu se mai potrivea, iar aplicațiile 0.7.10/0.7.11 respingeau actualizarea. Un test (`test-release-workflows.cjs`) păzește regula.
+- **Lista de modele din „Alege AI” e mai fiabilă:** OmniRoute are 20 s să răspundă (nu 9), iar dacă tot nu răspunde se păstrează ultima listă reușită. Când Owner-ul ascunde modele, selectorul arată câte sunt ascunse.
+- **Pentru dezvoltare:** `CLAUDE.md`, `docs/PROIECT_AI_STOICA.md`, `docs/PUBLICARE_RELEASE.md` și `scripts/verifica-local.sh` (aceleași verificări ca în GitHub, pe calculator).
 
 ## Noutăți 0.7.11 (reparații)
 
@@ -18,7 +24,7 @@ Asistent AI pentru Windows (plus aplicație mobilă) cu chat, proiecte, asisten�
 - **Telefon (Cloudflare):** butoane PDF/DOCX/PPTX, defilare automată, butonul Înapoi pe Android, tastatura nu mai acoperă câmpul de scris; Worker-ul are migrarea `0005`, cod de configurare Owner (`OWNER_SETUP_CODE`) și deconectare reală.
 - **Server Hetzner și `apps/cloud`:** erori JSON corecte, parole cu orice caractere în baza de date, Owner prin `AI_STOICA_OWNER_EMAIL`, containere care nu mai rulează ca root.
 
-Pași după actualizare: vezi „Pași pentru Owner după 0.7.11” mai jos.
+Pași după actualizare: vezi „Pași pentru Owner după 0.7.13” mai jos.
 
 ## Noutăți 0.7.10
 
@@ -49,12 +55,12 @@ Pași după actualizare: vezi „Pași pentru Owner după 0.7.11” mai jos.
 | `renderer/src/main.jsx` | interfața |
 | `scripts/test-*.cjs` | teste rulate automat de GitHub la fiecare modificare |
 
-## Pași pentru Owner după 0.7.11
+## Pași pentru Owner după 0.7.13
 
 1. **Cloudflare (aplicația de telefon):** în `apps/cloudflare` rulează migrările (`npx wrangler d1 migrations apply ai-stoica --remote`, include `0005`), setează secretele `OWNER_EMAIL` și `OWNER_SETUP_CODE`, publică Worker-ul și creează imediat contul Owner (cu codul de configurare). Detalii în `apps/cloudflare/README.md`.
 2. **Telefon:** în `apps/mobile/eas.json` înlocuiește `https://ai-stoica.SUBDOMENIUL-TAU.workers.dev` cu adresa Worker-ului tău (sau folosește `eas env:create`), apoi pornește „Build AI Stoica Mobile with EAS”.
 3. **Server Hetzner:** în `.env` păstrează `OWNER_EMAIL` și `OWNER_INITIAL_PASSWORD`; la actualizare rulează `deploy/hetzner/update.sh`.
-4. **Windows:** după ce apare release-ul v0.7.11 (cu `latest.yml`), aplicațiile 0.7.10 cu „Actualizări automate” pornite se actualizează singure la următoarea pornire. Dacă nu se întâmplă, instalează 0.7.11 o dată de mână.
+4. **Windows:** după ce apare release-ul v0.7.13 (cu `latest.yml`), aplicațiile cu „Actualizări automate” pornite se actualizează singure la următoarea pornire. Aplicațiile 0.7.10 și 0.7.11 au primit un `latest.yml` care nu se potrivea cu `.exe`: dacă nu se actualizează, instalează 0.7.13 o dată de mână, de aici înainte actualizările vin singure.
 
 ---
 

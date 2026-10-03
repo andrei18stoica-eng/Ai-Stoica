@@ -48,7 +48,8 @@ GitHub nu este AI Stoica: după instalare, serverul are propria copie a codului 
 - **Rezultat:** PR #27, merge commit `67aedad` pe `main`.
 - **Verificat:** PR #27 a fost îmbinat cu verificările blocate de facturare (la cererea Owner-ului). După deblocare, toate cele 6 verificări de pe `main` au trecut: Build AI Stoica Windows, ZIP Windows, Desktop, Server, Cloudflare, Mobile. Local trecuseră deja testele desktop, serverul, Worker-ul și build-ul interfeței.
 - **Release:** `v0.7.11` e publicat (tag pe `67aedad`) cu `.exe`, `.blockmap`, `latest.yml` și ZIP.
-- **Problemă deschisă:** `latest.yml` și `.blockmap` din Release provin dintr-un alt build decât `.exe` (le-a rescris workflow-ul ZIP). `sha512` nu se potrivește, deci actualizarea automată de la 0.7.10 ar fi respinsă până se repară publicarea.
+- **Defect găsit în `v0.7.11`:** `latest.yml` și `.blockmap` din Release provin dintr-un alt build decât `.exe` (le-a rescris workflow-ul ZIP). `sha512` nu se potrivește, deci actualizarea automată de la 0.7.10 ar fi respinsă.
+- **0.7.13:** workflow-ul ZIP nu mai urcă metadata (doar ZIP-ul), iar un test păzește regula. Nu a existat 0.7.12 în repo. Rămâne de confirmat după publicare: `sha512` din `latest.yml` = `sha512` al `.exe` din Release `v0.7.13`.
 
 Schimbare față de Cloudflare 0.7.10: Owner-ul Worker-ului se creează și se resetează cu `OWNER_SETUP_CODE`, nu cu `OWNER_INITIAL_PASSWORD`.
 
@@ -121,7 +122,7 @@ Nu se poate afirma „0.7.11 e terminat și toate funcțiile merg perfect”.
 
 Nu se adaugă funcții noi până nu e stabilă baza:
 
-1. Repararea publicării: un singur workflow să urce `.exe`, `latest.yml` și `.blockmap`, apoi Release-ul `v0.7.11` refăcut și potrivirea `sha512` verificată (vezi `docs/PUBLICARE_RELEASE.md`).
+1. Publicarea lui 0.7.13 (cu reparația de publicare) și potrivirea `sha512` verificată (vezi `docs/PUBLICARE_RELEASE.md`).
 2. Verificarea efectivă a aplicației: instalare, pornire din tray, microfon, automatizări, actualizare automată de la 0.7.10.
 3. HTTPS cap-coadă pe `api.aistoica.ro` și deploy-ul 0.7.11 pe Hetzner (`update.sh`, apoi `/health`).
 4. PWA pentru iPhone.

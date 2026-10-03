@@ -85,7 +85,7 @@ gh api -H "Accept: application/octet-stream" "repos/$R/releases/assets/$(id late
 gh api -H "Accept: application/octet-stream" "repos/$R/releases/assets/$(id AI_Stoica_Setup_<V>_x64.exe)" | openssl dgst -sha512 -binary | base64 -w0; echo
 ```
 
-Cele două sume `sha512` trebuie să fie identice. Pe 2026-10-03, la `v0.7.11`, nu erau: „Build AI Stoica Windows” a urcat `.exe`, apoi workflow-ul ZIP (alt build) a rescris `latest.yml` și `.blockmap` cu `--clobber`. Un singur workflow ar trebui să publice cele trei fișiere de actualizare.
+Cele două sume `sha512` trebuie să fie identice. Pe 2026-10-03, la `v0.7.11`, nu erau: „Build AI Stoica Windows” a urcat `.exe`, apoi workflow-ul ZIP (alt build) a rescris `latest.yml` și `.blockmap` cu `--clobber`. Din 0.7.13 workflow-ul ZIP urcă doar ZIP-ul, iar cele trei fișiere de actualizare le publică numai „Build AI Stoica Windows” (`apps/desktop/scripts/test-release-workflows.cjs` păzește regula). Dacă sumele tot diferă, verifică ordinea rulărilor și ce a mai urcat în Release.
 
 ## 9. Restul infrastructurii (separat de GitHub)
 
