@@ -1,6 +1,17 @@
-# AI Stoica 0.7.13 — Stoica Enterprises AI
+# AI Stoica 0.7.14 — Stoica Enterprises AI
 
-Asistent AI pentru Windows (plus aplicație mobilă) cu chat, proiecte, asistenți, memorie, bibliotecă de fișiere, pluginuri, automatizări, generare de imagini și video, export PDF/Word/PowerPoint/Excel și panou de Owner.
+Asistent AI pentru Windows, web (aistoica.ro) și telefon cu chat, proiecte, asistenți, memorie, bibliotecă de fișiere, pluginuri, automatizări, generare de imagini și video, export PDF/Word/PowerPoint/Excel și panou de Owner.
+
+## Noutăți 0.7.14 — AI Stoica pe web și ca aplicație pe telefon (gratuit)
+
+- **Site-ul aistoica.ro:** aceeași interfață ca aplicația Windows (chat, proiecte, Bibliotecă, Design, Scheduled, pluginuri, memorie), direct în browser, pe orice calculator sau telefon.
+- **Aplicație pe iPhone și Android, gratuită**, fără App Store și fără Google Play: se instalează din browser și se deschide pe tot ecranul, cu iconița AI Stoica.
+  - **iPhone / iPad:** deschide aistoica.ro în Safari → butonul Distribuie → „Adaugă pe ecranul principal”.
+  - **Android:** deschide aistoica.ro în Chrome → „Instalează aplicația” (butonul apare și în pagina de autentificare).
+  - **Calculator:** în Chrome / Edge, iconița de instalare din bara de adrese.
+- Conturile sunt aceleași ca în aplicația Windows în modul Cloud (serverul Hetzner, cu aprobarea Owner-ului).
+- Aplicația se actualizează singură: interfața vine mereu de pe server, deci o versiune nouă apare la următoarea deschidere.
+- Serverul: serviciul `web` din `deploy/hetzner` (imaginea `apps/cloud`, care construiește și interfața). Pașii sunt în „Site-ul aistoica.ro” mai jos.
 
 ## Noutăți 0.7.13
 
@@ -37,6 +48,17 @@ Asistent AI pentru Windows (plus aplicație mobilă) cu chat, proiecte, asisten�
 - **Server Hetzner și `apps/cloud`:** erori JSON corecte, parole cu orice caractere în baza de date, Owner prin `AI_STOICA_OWNER_EMAIL`, containere care nu mai rulează ca root.
 
 Pași după actualizare: vezi „Pași pentru Owner după 0.7.11” mai jos.
+
+## Site-ul aistoica.ro (versiunea web și aplicația de telefon)
+
+Pe serverul Hetzner (`/opt/ai-stoica`), o singură dată:
+
+1. **DNS:** la firma unde e cumpărat domeniul, adaugă o înregistrare **A** pentru `aistoica.ro` cu IP-ul serverului (același ca la `api.aistoica.ro`). Opțional, și `www.aistoica.ro`.
+2. În `deploy/hetzner/.env`: `AI_STOICA_WEB_DOMAIN=aistoica.ro`, `COMPOSE_PROFILES=edge,web` și cel puțin o cheie AI (de exemplu `GROQ_API_KEY` sau `GEMINI_API_KEY`, gratuite). Cheile stau doar în `.env` pe server.
+3. `cd /opt/ai-stoica/deploy/hetzner && docker compose up -d --build web caddy`, apoi `curl http://127.0.0.1:8788/health`.
+4. Deschide https://aistoica.ro, creează contul (sau intră cu contul Owner) și aprobă din panoul Owner conturile noi.
+
+La actualizări, `sudo bash /opt/ai-stoica/deploy/hetzner/update.sh` reconstruiește și site-ul.
 
 ## Noutăți 0.7.10
 

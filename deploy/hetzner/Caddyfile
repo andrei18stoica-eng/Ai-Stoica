@@ -9,3 +9,18 @@
     X-Frame-Options "DENY"
   }
 }
+
+# Web version and installable phone app (PWA), served by the "web" service (profile "web").
+# Until AI_STOICA_WEB_DOMAIN is set in .env this block only answers on web.localhost.
+{$AI_STOICA_WEB_DOMAIN:web.localhost} {
+  encode zstd gzip
+  reverse_proxy web:8787
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "no-referrer"
+    # SAMEORIGIN: the web interface shows Design previews from this same address in a frame.
+    X-Frame-Options "SAMEORIGIN"
+  }
+}

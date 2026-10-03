@@ -98,7 +98,7 @@ function roError(e){
   return msg||"Eroare necunoscută.";
 }
 
-function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig: readOmniConfig, onAutomationResult, encryptSecret, decryptSecret, streamIdleMs, streamTotalMs }) {
+function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig: readOmniConfig, onAutomationResult, encryptSecret, decryptSecret, streamIdleMs, streamTotalMs, webDir }) {
   // The configuration is read many times per request; one read is reused for 2 seconds.
   let configMemo = null, configMemoAt = 0;
   const getOmniConfig = () => { const now = Date.now(); if (!configMemo || now - configMemoAt > 2000) { configMemo = (typeof readOmniConfig === "function" ? readOmniConfig() : null) || {}; configMemoAt = now; } return configMemo; };
@@ -153,16 +153,22 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   const allowedOrigins=new Set(["null","file://","http://localhost:5173","http://127.0.0.1:5173",`http://127.0.0.1:${port}`,`http://localhost:${port}`]);
   const originAllowed=(origin)=>!origin||allowedOrigins.has(String(origin))||/^(file|app):/i.test(String(origin));
   const loopbackOnly=["127.0.0.1","localhost","::1"].includes(String(host));
+  // Web version (webDir set, e.g. apps/cloud behind Caddy): the interface is served by this same address,
+  // so requests from the service's own origin are allowed too. Without webDir (Windows) nothing changes.
+  const sameOrigin=(req)=>{
+    if(!webDir||!req.headers.origin)return false;
+    try{return new URL(String(req.headers.origin)).host===String(req.headers.host||"").toLowerCase()}catch{return false}
+  };
   app.use((req,res,next)=>{
     const hostName=String(req.headers.host||"").toLowerCase().replace(/:\d+$/,"").replace(/^\[|\]$/g,"");
     if(loopbackOnly&&hostName&&!["127.0.0.1","localhost","::1"].includes(hostName))return res.status(403).json({error:"Cerere blocată: adresă necunoscută."});
-    if(!originAllowed(req.headers.origin)&&!(req.method==="GET"&&/^\/api\/designs\/[^/]+\/preview$/.test(req.path))){
+    if(!originAllowed(req.headers.origin)&&!sameOrigin(req)&&!(req.method==="GET"&&/^\/api\/designs\/[^/]+\/preview$/.test(req.path))){
       logError(`Blocked request from origin ${String(req.headers.origin).slice(0,200)} to ${req.method} ${req.path}`);
       return res.status(403).json({error:"Cerere blocată: provine din afara aplicației AI Stoica."});
     }
     next();
   });
-  app.use(cors({ origin:(origin,cb)=>cb(null,originAllowed(origin)), credentials: false }));
+  app.use(cors((req,cb)=>cb(null,{ origin:originAllowed(req.headers.origin)||sameOrigin(req), credentials: false })));
   const jsonParser = express.json({ limit: loopbackHost ? "64mb" : "16mb" });
   const RAW_UPLOADS = new Set(["/api/library/upload", "/api/files"]);
   app.use((req,res,next)=>req.method==="POST"&&RAW_UPLOADS.has(req.path)?next():jsonParser(req,res,next));
@@ -2961,9 +2967,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const n=Number(raw);
     return Number.isInteger(n)&&d.versions.some(v=>v.n===n)?n:null;
   }
-  function previewBase(){
+  function previewBase(req){
     const base=String(getOmniConfig().publicUrl||"").trim().replace(/\/+$/,"");
-    return /^https?:\/\//i.test(base)?base:`http://127.0.0.1:${server.address()?.port||port}`;
+    if(/^https?:\/\//i.test(base))return base;
+    // Web version: the preview is loaded from the same address as the page.
+    if(webDir&&req?.headers?.host)return `${req.protocol}://${req.headers.host}`;
+    return `http://127.0.0.1:${server.address()?.port||port}`;
   }
   async function generateDesignHtml(req,messages,signal){
     const requested=(typeof req.body?.model==="string"?req.body.model.trim().slice(0,200):"")||String(getOmniConfig().model||"").trim();
@@ -3027,7 +3036,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const d=findDesign(req);if(!d)return notFoundDesign(res);
     const v=designVersion(d,req.query.v);if(v==null)return res.status(404).json({error:"Versiunea cerută nu există."});
     const t=previewToken(secret,d.userId,d.id,v);
-    res.json({data:{url:`${previewBase()}/api/designs/${d.id}/preview?v=${v}&t=${encodeURIComponent(t)}`,v,expiresAt:Number(t.split(".")[0])}});
+    res.json({data:{url:`${previewBase(req)}/api/designs/${d.id}/preview?v=${v}&t=${encodeURIComponent(t)}`,v,expiresAt:Number(t.split(".")[0])}});
   });
   // Loaded by the Design page's sandboxed iframe: no Authorization header, the signed token is the permission.
   app.get("/api/designs/:id/preview", async (req,res) => {
@@ -3154,6 +3163,17 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       }
     }finally{automationBusy=false;}
   },30000);
+
+  if(webDir){
+    // Web version and installable phone app (PWA): the same React interface as the Windows app, served at "/".
+    // The policy matches the page's own <meta> policy, with the page's own address as gateway and Design preview frame.
+    const WEB_CSP="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; frame-src 'self'; frame-ancestors 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'";
+    app.use(express.static(webDir,{index:"index.html",setHeaders:(res,file)=>{
+      res.set("Content-Security-Policy",WEB_CSP);
+      // Vite puts a content hash in every file under assets/; everything else (index.html, sw.js, manifest) must be re-checked so updates arrive.
+      res.set("Cache-Control",/[\\/]assets[\\/]/.test(file)?"public, max-age=31536000, immutable":"no-cache");
+    }}));
+  }
 
   // C9: every answer is JSON, also for unknown addresses and malformed requests (no HTML, no stack traces).
   app.use((req,res)=>res.status(404).json({error:"Această adresă nu există în serviciul AI Stoica."}));

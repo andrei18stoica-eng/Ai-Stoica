@@ -856,3 +856,9 @@ body:has(.modalBackdrop) #aiStoicaToasts{top:auto;bottom:18px}
 .topbar{z-index:15}
 .pageModal .pageSearch input:not([type=checkbox]){border:0;background:transparent;padding:0;box-shadow:none;border-radius:0}
 .memoryToolbar .secondary,.memoryToolbar .dangerButton,.memoryPage .memoryAdd .primary{font-size:13px}
+
+/* Web version and installable phone app (PWA) */
+.installApp{display:flex;align-items:center;justify-content:center;gap:8px}
+.installHint{margin-top:12px;padding:9px 10px;border:1px solid #243248;border-radius:9px;background:#0a1018;color:#9cabbf;font-size:11.5px;line-height:1.5;text-align:center}
+.installHint b{color:#dfe8f4}
+@supports(height:100dvh){.appShell,.mainArea,.authShell,.loadingScreen{height:100dvh}}

@@ -1,0 +1,5 @@
+# Docker images are built from the repository root (apps/cloud, apps/server): never send local installs or builds.
+.git
+**/node_modules
+apps/desktop/dist
+apps/desktop/release
