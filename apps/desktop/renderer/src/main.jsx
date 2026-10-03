@@ -395,16 +395,21 @@ function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,convers
 
 const MODEL_PROVIDERS=[["cerebras","Cerebras"],["groq","Groq"],["gemini","Gemini"],["mistral","Mistral"],["nvidia","NVIDIA"],["github","GitHub Models"],["openrouter","OpenRouter"],["cloudflare","Cloudflare Workers AI"],["cohere","Cohere"],["huggingface","Hugging Face"],["openai","OpenAI"]];
 // Combinations (names without "provider/") first, then one group per direct provider, then the rest of OmniRoute.
+const COMBO_CACHE_KEY="aiStoicaComboModelsV1";
+let COMBO_IDS=new Set(storage.json(COMBO_CACHE_KEY,[])||[]);
 function groupModels(list){
   const groups=new Map();
   const add=(key,name,x,opts)=>{if(!groups.has(key))groups.set(key,{name,items:[],...opts});groups.get(key).items.push(x)};
   for(const x of list){
     const id=String(x||"");
-    if(!id.includes("/")){add("combo","Combinații OmniRoute",id,{combo:true,short:v=>v});continue;}
+    if(COMBO_IDS.has(id)||!id.includes("/")){add("combo","Combinații OmniRoute",id,{combo:true,short:v=>v});continue;}
     const prefix=id.split("/")[0].toLowerCase(),known=MODEL_PROVIDERS.find(([k])=>k===prefix);
     if(known)add(known[0],known[1],id,{short:v=>v.slice(prefix.length+1)});
     else add("omni","Alte modele OmniRoute",id,{short:v=>v});
   }
+  // Your own combinations ("Ai principal" …) before OmniRoute's automatic auto/* ones.
+  const combo=groups.get("combo");
+  if(combo)combo.items=[...combo.items.filter(v=>!/^auto\//i.test(v)),...combo.items.filter(v=>/^auto\//i.test(v))];
   const order=["combo",...MODEL_PROVIDERS.map(([k])=>k),"omni"];
   return order.filter(k=>groups.has(k)).map(k=>groups.get(k));
 }
@@ -444,7 +449,7 @@ function ModelPicker({model,onSelect,models,onRefresh,refreshing,policyEnforced,
         {!list.length&&<div className="modelEmpty">Nu există modele disponibile. {policyEnforced?"Cere Owner-ului acces la cel puțin un model.":IS_WEB?"Owner-ul serverului trebuie să adauge o cheie AI (în fișierul .env de pe server).":"Pornește OmniRoute sau adaugă o cheie API în Setări."}</div>}
         {list.length>0&&!filtered.length&&<div className="modelEmpty">Nu am găsit modelul căutat.</div>}
       </div>
-      <div className="modelPickerFoot">{refreshing?"Actualizez lista de modele…":policyEnforced?"Owner-ul stabilește ce modele sunt disponibile pentru contul tău."+(deniedCount>0?` ${plural(deniedCount,"model OmniRoute este ascuns","modele OmniRoute sunt ascunse")} de Owner.`:""):"Modelele vin din OmniRoute și din API-urile configurate pe acest PC."}</div>
+      <div className="modelPickerFoot">{refreshing?"Actualizez lista de modele…":policyEnforced?"Owner-ul stabilește ce modele sunt disponibile pentru contul tău."+(deniedCount>0?` ${plural(deniedCount,"model OmniRoute este ascuns","modele OmniRoute sunt ascunse")} de Owner.`:""):(IS_WEB?"Modelele vin din OmniRoute și din API-urile configurate pe server.":"Modelele vin din OmniRoute și din API-urile configurate pe acest PC.")}</div>
     </div>}
     </div>
   </div>;
@@ -460,7 +465,7 @@ function Header({deniedCount,onMenu,model,onSelectModel,models,onRefreshModels,r
     <button className="iconOnly menuBtn" onClick={onMenu} aria-label="Afișează sau ascunde meniul" title="Meniu"><Menu size={20}/></button>
     <ModelPicker model={model} onSelect={onSelectModel} models={models} onRefresh={onRefreshModels} refreshing={refreshingModels} policyEnforced={policyEnforced} deniedCount={deniedCount}/>
     <div className="topSpacer"/>
-    {showOmni&&<div className={cx("connection",omni?"ok":"bad")} title={omni?"OmniRoute răspunde.":"OmniRoute nu răspunde. Chatul continuă prin API-urile directe configurate, dacă există."}>{omni?<Wifi size={15}/>:<WifiOff size={15}/>} {omni?"OmniRoute conectat":"OmniRoute oprit"}</div>}
+    {showOmni&&<div className={cx("connection",omni===true?"ok":"bad")} title={omni===true?"OmniRoute răspunde.":omni==="key"?"OmniRoute rulează, dar cere cheia API: creează una în OmniRoute → API Manager și pune-o în Setări → AI & OmniRoute. Până atunci chatul folosește API-urile directe.":"OmniRoute nu răspunde. Chatul continuă prin API-urile directe configurate, dacă există."}>{omni===true?<Wifi size={15}/>:<WifiOff size={15}/>} {omni===true?"OmniRoute conectat":omni==="key"?"OmniRoute cere cheie API":"OmniRoute oprit"}</div>}
     <button className="topAction" onClick={onShare} disabled={!current} title="Copiază conversația în clipboard"><Share2 size={16}/> Copiază conversația</button>
     <div className="moreWrap" ref={moreRef}>
       <button className="iconOnly" onClick={()=>{setMore(v=>!v);setMoveOpen(false)}} aria-label="Opțiuni conversație" title="Opțiuni conversație" aria-haspopup="menu" aria-expanded={more}><MoreHorizontal size={20}/></button>
@@ -1045,17 +1050,18 @@ function ConversationFilesPanel({conversation,onClose}) {
   </ToolShell>;
 }
 function ProviderTestBox() {
-  const [state,setState]=useState({busy:false,data:null,media:[],error:""});
+  const [state,setState]=useState({busy:false,data:null,media:[],omni:null,error:""});
   async function run(){
-    setState({busy:true,data:null,media:[],error:""});
-    try{const d=await api("/api/providers/test",{method:"POST",body:"{}"});setState({busy:false,data:d.data||[],media:d.media||[],error:""})}
-    catch(e){setState({busy:false,data:null,media:[],error:e.message})}
+    setState({busy:true,data:null,media:[],omni:null,error:""});
+    try{const d=await api("/api/providers/test",{method:"POST",body:"{}"});setState({busy:false,data:d.data||[],media:d.media||[],omni:d.omni||null,error:""})}
+    catch(e){setState({busy:false,data:null,media:[],omni:null,error:e.message})}
   }
   return <div className="providerTest">
     <div className="providerTestHead"><div><b>Testează cheile</b><span>Verifică fiecare API salvat. Salvează setările înainte de test.</span></div>
       <button className="secondary" onClick={run} disabled={state.busy}>{state.busy?"Se testează…":"Testează acum"}</button></div>
     {state.error&&<div className="providerRow bad"><X size={15}/><span>{state.error}</span></div>}
-    {state.data&&!state.data.length&&<div className="providerRow bad"><X size={15}/><span>Nu ai nicio cheie de chat salvată. Adaugă de exemplu o cheie Gemini sau Groq și salvează.</span></div>}
+    {state.omni&&<div className={cx("providerRow",state.omni.ok?"good":"bad")}>{state.omni.ok?<Check size={15}/>:<X size={15}/>}<b>OmniRoute</b><span>{state.omni.ok?`${state.omni.models} modele, ${state.omni.combos} combinații · ${(state.omni.ms/1000).toFixed(1)} s`:state.omni.error}</span></div>}
+    {state.data&&!state.data.length&&!state.omni?.ok&&<div className="providerRow bad"><X size={15}/><span>Nu ai nicio cheie de chat salvată. Adaugă de exemplu o cheie Gemini sau Groq și salvează.</span></div>}
     {(state.data||[]).map(x=><div key={x.provider} className={cx("providerRow",x.ok?"good":"bad")}>{x.ok?<Check size={15}/>:<X size={15}/>}<b>{x.label}</b><span>{x.model}{x.ok?` · ${(x.ms/1000).toFixed(1)} s`:` · ${x.error||("HTTP "+x.status)}`}{x.paid?" · cu plată":""}</span></div>)}
     {state.data&&state.media.length>0&&<div className="providerMedia">Imagini și video (nu se generează la test, pentru a nu consuma credite): {state.media.map(m=>`${m.label} ${m.configured?"✓":"—"}`).join(" · ")}</div>}
   </div>;
@@ -1178,6 +1184,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <p className="settingsHelp">Cu Cloud API configurat, conturile, aprobările și permisiunile sunt gestionate central de Owner. Lasă câmpul gol pentru folosire doar pe acest PC.</p>
         <label>Adresa OmniRoute<input value={cfg.baseUrl||""} onChange={e=>set({baseUrl:e.target.value})}/></label>
         <KeyField label="Cheie API OmniRoute" name="apiKey" placeholder="Cheie OmniRoute" {...keyProps}/>
+        <p className="settingsHelp">OmniRoute 3.8 nu răspunde fără cheie. Creeaz-o în OmniRoute: <button type="button" className="linkBtn" onClick={()=>openLink(String(cfg.baseUrl||"http://127.0.0.1:20128/v1").replace(/\/v1\/?$/,"")+"/dashboard/api-manager")}>API Manager → Create API Key</button>, lipește-o aici și apasă „Testează cheile”.</p>
         <label><span className="labelLine">Model preferat <span className="optional">folosit când nu ai ales altul în lista de sus</span></span><input value={cfg.model||""} onChange={e=>set({model:e.target.value})} placeholder="Ex. gemini/gemini-3.5-flash"/></label>
         <label><span className="labelLine">Model generare imagini <span className="optional">opțional</span></span><input value={cfg.imageModel||""} onChange={e=>set({imageModel:e.target.value})} placeholder="Automat — primul model de imagine disponibil"/></label>
         <details className="mediaProviderSettings"><summary>Internet live, GitHub{isOwner?" și server":""}</summary>
@@ -1198,7 +1205,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <p className="settingsHelp">Când ceri o poză sau un videoclip, AI Stoica returnează fișierul real în chat, cu buton de descărcare.</p>
         <label>Comandă OmniRoute<input value={cfg.omniCommand||"omniroute.cmd"} onChange={e=>set({omniCommand:e.target.value})}/></label>
         <label className="toggleRow"><div><b>Pornește OmniRoute automat</b><span>Dacă serviciul cade, AI Stoica încearcă să îl repornească.</span></div><input type="checkbox" checked={!!cfg.autoStartOmniRoute} onChange={e=>set({autoStartOmniRoute:e.target.checked})}/></label>
-        <div className="statusGrid"><div><span>Serviciul AI Stoica</span><b>{status?.gatewayRunning?"Pornit":"Indisponibil"}</b></div><div><span>OmniRoute</span><b>{status?.omniRunning?"Conectat":"Indisponibil"}</b></div></div>
+        <div className="statusGrid"><div><span>Serviciul AI Stoica</span><b>{status?.gatewayRunning?"Pornit":"Indisponibil"}</b></div><div><span>OmniRoute</span><b>{status?.omniRunning?"Conectat":status?.omniInstalled===false?"Neinstalat — npm install -g omniroute":"Indisponibil"}</b></div></div>
       </>}
       {tab==="chatapis"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><Plug size={22}/></div><div><h3>API-uri AI</h3><p>Folosite direct pentru chat când OmniRoute nu răspunde.</p></div></div>
         <ProviderTestBox/>
@@ -1418,7 +1425,7 @@ function App() {
   const currentGen=currentId?generations[currentId]:null;
   const busy=!!currentGen;
   const machineSettingsAllowed=isOwner||cloudConfigured===false;
-  const showFirstRun=!IS_WEB&&!!user&&!boot&&modelsChecked&&!firstRunDismissed&&!refreshingModels&&models.length===0&&!omni&&(isOwner||cloudConfigured===false);
+  const showFirstRun=!IS_WEB&&!!user&&!boot&&modelsChecked&&!firstRunDismissed&&!refreshingModels&&models.length===0&&omni!==true&&(isOwner||cloudConfigured===false);
   function finishFirstRun(){storage.set(FIRST_RUN_KEY,"1");setFirstRunDismissed(true)}
   function setResponseMode(m){setResponseModeState(m);storage.set(RESPONSE_MODE_KEY,m)}
 
@@ -1445,6 +1452,7 @@ function App() {
     try{
       const ms=await api("/api/models");
       const live=uniqueModels((ms.manualModels||ms.data||[]).map(x=>typeof x==="string"?x:x?.id));
+      if(Array.isArray(ms.combos)){COMBO_IDS=new Set(ms.combos.map(String));storage.set(COMBO_CACHE_KEY,JSON.stringify([...COMBO_IDS]));}
       const enforced=ms.policyEnforced===true;
       const merged=enforced?live:uniqueModels([...live,...cachedModels()]);
       setModelPolicyEnforced(enforced);setDeniedModels(enforced?Number(ms.deniedCount)||0:0);setModels(merged);storage.set(MODEL_CACHE_KEY,JSON.stringify(merged));
@@ -1533,7 +1541,7 @@ function App() {
     let stopped=false;
     async function poll(){
       if(document.hidden)return;
-      try{const r=await fetch(`${GATEWAY}/health`,{signal:AbortSignal.timeout(7000)});const h=await r.json();if(stopped)return;setOmni(!!h.omni);setCloudConfigured(!!h.cloudConfigured)}
+      try{const r=await fetch(`${GATEWAY}/health`,{signal:AbortSignal.timeout(7000)});const h=await r.json();if(stopped)return;setOmni(h.omni?true:h.omniNeedsKey?"key":false);setCloudConfigured(!!h.cloudConfigured)}
       catch{if(!stopped)setOmni(false)}
     }
     poll();

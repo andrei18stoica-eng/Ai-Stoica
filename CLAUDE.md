@@ -35,7 +35,7 @@ Folderul `gateway/` (0.4.1) a fost șters în 0.7.11 și nu trebuie să reapară
 1. workflow-urile YAML (chei duplicate);
 2. aceeași versiune peste tot;
 3. `gateway/` absent;
-4. desktop: `node --check`, `npm run build:ui`, toate `scripts/test-*.cjs` (14 teste);
+4. desktop: `node --check`, `npm run build:ui`, toate `scripts/test-*.cjs` (16 teste);
 5. server: `npm test`;
 6. Cloudflare: `npm test` și `npm run check`.
 
@@ -72,6 +72,7 @@ Nu rulează local: Mobile (`expo-doctor`, `expo export`), build-ul Windows și D
 ## Stare curentă (2026-10-03)
 
 - **0.7.14** (PR #30): versiunea web (aistoica.ro) și aplicația PWA + reparația publicării Windows + lista de modele din PR #29 + acest ghid (PR #28), peste 0.7.13 de pe `main`. Rămâne: verificări verzi, merge, Release `v0.7.14` cu potrivirea `sha512`, apoi pe server DNS-ul `aistoica.ro`, `.env` și `docker compose up -d --build web caddy`.
+- OmniRoute 3.8 cere cheie de client pe `/v1/*` (401 fără ea): `/health` raportează `omniNeedsKey`; combinațiile se recunosc după `owned_by: "combo"`. Watchdog-ul Windows e în `lib/omniwatch.cjs` (testat de `test-omniwatch.cjs`). Furnizorii fără credite (402/quota) sunt mutați la coada listei 1 oră (`providerCooldown` în `local-gateway.cjs`).
 - Web: `local-gateway.cjs` servește interfața doar când primește `webDir` (`apps/cloud/server.cjs`); fără `webDir` (Windows) comportamentul e neschimbat. `test-web-mode.cjs` și workflow-ul „AI Stoica Web Check” păzesc asta.
 
 - 0.7.11 este pe `main` (PR #27, merge commit `67aedad`), peste baza `7fe0dc2`, unde conflictele cu PR #21–#26 au fost rezolvate.

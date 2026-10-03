@@ -79,6 +79,9 @@ services:
     environment:
       REDIS_URL: redis://omniroute-redis:6379
       OMNIROUTE_WS_BRIDGE_SECRET: ${OMNIROUTE_WS_BRIDGE_SECRET:-}
+      # Dashboard password from the first start. The image requires a client API key on /v1 (REQUIRE_API_KEY=true):
+      # create it in the dashboard (API Manager) and put it in OMNIROUTE_API_KEY.
+      INITIAL_PASSWORD: ${OMNIROUTE_INITIAL_PASSWORD:-}
       PORT: "20128"
     volumes:
       - omniroute-data:/app/data

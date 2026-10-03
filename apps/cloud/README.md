@@ -45,7 +45,7 @@ Dashboard-ul OmniRoute rămâne privat. De pe calculator deschide un tunel SSH c
 
 Apoi deschide local `http://127.0.0.1:20128`, conectează furnizorii și configurează modelele/combos.
 
-Dacă endpoint-ul OmniRoute cere cheie API, setează cheia în `OMNIROUTE_API_KEY` din `.env` și repornește:
+Imaginea Docker OmniRoute 3.8 cere cheie API de client (`REQUIRE_API_KEY=true`): fără ea răspunde 401 și AI Stoica arată „OmniRoute cere cheie API”. Creeaz-o în panou → **API Manager** → **Create API Key** (parola panoului: `OMNIROUTE_INITIAL_PASSWORD`), pune-o în `OMNIROUTE_API_KEY` din `.env` și repornește:
 `docker compose up -d`
 
 Pentru o versiune fixă OmniRoute setează `OMNIROUTE_VERSION` (de exemplu `3.8.51`); `latest` urmează automat ultima versiune stabilă publicată.

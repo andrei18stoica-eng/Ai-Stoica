@@ -16,6 +16,19 @@ Asistent AI pentru Windows, web (aistoica.ro) și telefon cu chat, proiecte, asi
 - **Lista de modele** păstrează ultima listă OmniRoute reușită când OmniRoute nu răspunde, iar selectorul arată câte modele a ascuns Owner-ul.
 - **Pentru dezvoltare:** `CLAUDE.md`, `docs/PROIECT_AI_STOICA.md`, `docs/PUBLICARE_RELEASE.md` și `scripts/verifica-local.sh`.
 
+### OmniRoute reparat (verificat cu OmniRoute 3.8.51 real)
+
+- **Cauza principală:** OmniRoute 3.8 refuză cererile fără **cheie API de client** (răspunde 401), iar AI Stoica arăta doar „OmniRoute oprit” și o listă goală. Acum bara de sus spune **„OmniRoute cere cheie API”**, iar mesajul explică unde se creează cheia (vezi „OmniRoute pe Windows” mai jos).
+- **Combinațiile** („Ai principal”, `auto/best-coding` etc.) sunt recunoscute după marcajul OmniRoute (`owned_by: combo`) și apar primele în listă. Toate modelele, gratuite și plătite, apar pentru Owner.
+- **Setări → API-uri AI → „Testează cheile”** verifică și OmniRoute: câte modele și combinații are sau ce lipsește.
+- Când o combinație eșuează, mesajul spune ce furnizor din ea a picat și de ce. Chatul trece în continuare automat la API-urile directe.
+- **Online nonstop pe Windows:** watchdog-ul repornește OmniRoute și când procesul rămâne blocat (portul deschis, dar fără răspuns 90 de secunde). Spune clar dacă OmniRoute nu e instalat și nu mai pornește un OmniRoute local când adresa lui e pe server. „Repornește OmniRoute” din tray îl repornește cu adevărat.
+
+### Imagini, video și chat: trecere automată când se termină creditele
+
+- Când un furnizor răspunde că nu mai are credite (402, „insufficient credits”, „quota”), AI Stoica trece imediat la următorul. **Ține minte o oră** că a rămas fără credite, așa că următoarele imagini merg direct la ceilalți (la limită de viteză, 429: 2 minute). Rămâne totuși ultimul în listă, deci o cerere nu pică doar din cauza asta.
+- La fel pentru video și pentru chatul pe API-uri directe.
+
 ## Noutăți 0.7.13
 
 - **Scheduled** (fostele Automatizări): listă ca la Claude, program scris în cuvinte, detalii cu istoricul rulărilor, Rulează acum, Editează, Duplică, Șterge.
@@ -52,13 +65,24 @@ Asistent AI pentru Windows, web (aistoica.ro) și telefon cu chat, proiecte, asi
 
 Pași după actualizare: vezi „Pași pentru Owner după 0.7.14” mai jos.
 
+## OmniRoute pe Windows (cheia API)
+
+OmniRoute 3.8 nu mai răspunde fără cheie de client. O singură dată:
+
+1. Deschide panoul OmniRoute: http://127.0.0.1:20128 → **API Manager** → **Create API Key** și copiază cheia (`sk-…`).
+2. AI Stoica → **Setări → AI & OmniRoute → Cheie API OmniRoute**: lipește cheia și salvează.
+3. **Setări → API-uri AI → „Testează cheile”**: rândul OmniRoute trebuie să arate câte modele și combinații are.
+4. Ca să apară și modelele plătite, în OmniRoute → Settings dezactivează „Hide paid models”, dacă e pornit.
+
 ## Site-ul aistoica.ro (versiunea web și aplicația de telefon)
 
 Pe serverul Hetzner (`/opt/ai-stoica`), o singură dată:
 
 1. **DNS:** la firma unde e cumpărat domeniul, adaugă o înregistrare **A** pentru `aistoica.ro` cu IP-ul serverului (același ca la `api.aistoica.ro`). Opțional, și `www.aistoica.ro`.
 2. În `deploy/hetzner/.env`: `AI_STOICA_WEB_DOMAIN=aistoica.ro`, `COMPOSE_PROFILES=edge,web`, un `OMNIROUTE_WS_BRIDGE_SECRET` aleator și **aceleași chei ca în aplicația Windows** (Setări → API-uri AI) — atunci site-ul are aceleași modele: Cerebras, Groq, Gemini, Mistral, NVIDIA, GitHub Models, Cloudflare, Cohere, Hugging Face, plus cheile pentru imagini și video. Cheile stau doar în `.env` pe server.
-3. **OmniRoute** pornește odată cu site-ul. Ca să ai aceleași combinații ca pe Windows („Ai principal” etc.), deschide-i panoul printr-un tunel SSH (`ssh -L 20128:127.0.0.1:20128 root@IP_SERVER`, apoi http://127.0.0.1:20128) și conectează aceiași furnizori.
+3. **OmniRoute** pornește odată cu site-ul (pune și `OMNIROUTE_INITIAL_PASSWORD` în `.env`). Ca să ai aceleași combinații ca pe Windows („Ai principal” etc.), deschide-i panoul printr-un tunel SSH (`ssh -L 20128:127.0.0.1:20128 root@IP_SERVER`, apoi http://127.0.0.1:20128) și conectează aceiași furnizori.
+   - **Aceleași furnizori și combinații ca pe PC:** pe PC, în panoul OmniRoute → **Settings → System & Storage → Export Database** (fișier `.sqlite`). Pe server, prin tunel, intră în panou și alege **Import Database** cu fișierul. Am testat: combinațiile, cheile API ale OmniRoute și parola de admin trec pe server. Dacă un furnizor arată eroare după import, pune-i din nou cheia în OmniRoute.
+   - **Cheia API:** după import merge aceeași cheie ca pe PC; altfel creeaz-o în **API Manager**. Pune-o în `.env` la `OMNIROUTE_API_KEY`, fără ea site-ul nu vede OmniRoute.
 4. `cd /opt/ai-stoica/deploy/hetzner && docker compose up -d --build web caddy`, apoi `curl http://127.0.0.1:8788/health`.
 5. Deschide https://aistoica.ro, creează contul (sau intră cu contul Owner) și aprobă din panoul Owner conturile noi.
 
