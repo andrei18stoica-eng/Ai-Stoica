@@ -1,3 +1,5 @@
+const fs = require("fs");
+const path = require("path");
 const { startLocalGateway } = require("./local-gateway.cjs");
 
 const port = Number(process.env.PORT || 8787);
@@ -40,15 +42,21 @@ function getOmniConfig() {
 
 if (!env("AI_STOICA_OWNER_EMAIL")) console.warn("[AI Stoica] AI_STOICA_OWNER_EMAIL is not set: no account on this server is Owner (GitHub Solve, code run and server tools stay locked).");
 
+// The Docker image builds the web interface into ./web; with it, https://domain/ is AI Stoica in the browser
+// and can be installed as an app on iPhone and Android (PWA). AI_STOICA_WEB=false turns it off.
+const webDir = path.join(__dirname, "web");
+const webEnabled = env("AI_STOICA_WEB").toLowerCase() !== "false" && fs.existsSync(path.join(webDir, "index.html"));
+
 const gateway = startLocalGateway({
   dataDir,
   port,
   host,
   serviceName: "AI Stoica Cloud Gateway",
-  getOmniConfig
+  getOmniConfig,
+  webDir: webEnabled ? webDir : undefined
 });
 
-console.log(`AI Stoica Cloud Gateway listening on ${host}:${port}`);
+console.log(`AI Stoica Cloud Gateway listening on ${host}:${port}${webEnabled ? " (web interface on)" : ""}`);
 
 async function shutdown(signal) {
   console.log(`Received ${signal}; shutting down AI Stoica Cloud Gateway...`);

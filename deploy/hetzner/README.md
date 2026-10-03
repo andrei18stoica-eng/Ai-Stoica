@@ -80,3 +80,20 @@ Do not expose PostgreSQL port 5432.
 Do not expose API port 8787 directly.
 Secrets stay only in `.env` on the server.
 The API container runs as the unprivileged `node` user.
+
+## Web: aistoica.ro and the free phone app (PWA)
+
+The `web` service (profile `web`) runs the AI Stoica service with the web interface (image `apps/cloud`, which also builds the React interface). Its accounts, approval and permissions come from the `api` service, so they are the same accounts as the Windows app in cloud mode. Caddy serves it at `AI_STOICA_WEB_DOMAIN` with HTTPS.
+
+1. DNS: an **A** record for `aistoica.ro` pointing to this server (the same IP as `api.aistoica.ro`).
+2. In `.env`: `AI_STOICA_WEB_DOMAIN=aistoica.ro`, `COMPOSE_PROFILES=edge,web`, and at least one AI key (`GROQ_API_KEY`, `GEMINI_API_KEY`, `CEREBRAS_API_KEY` or Cloudflare are free).
+3. Start it:
+
+```bash
+docker compose up -d --build web caddy
+curl http://127.0.0.1:8788/health
+```
+
+The web service is bound to `127.0.0.1:8788` only; Caddy is the public entry point. Its data (conversations, Library, memory) is in the `web-data` volume. `update.sh` rebuilds it whenever the `web` profile is active.
+
+On phones the site installs as an app for free: Safari → Share → "Add to Home Screen" on iPhone, Chrome → "Install app" on Android.

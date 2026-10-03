@@ -15,8 +15,9 @@ import {
   FIRST_RUN_KEY, SIDEBAR_COLLAPSED_KEY, ACCOUNT_KEYS, storage, cleanGatewayUrl, GATEWAY, setGatewayUrl, toast, isAuthLost, apiError, authHeaders, api,
   deniedMessage, AccessContext, useAccess, uploadFileToLibrary, formatBytes, plural, cx, uid, writeClipboardText, openLink, downloadGeneratedFile,
   downloadLibraryFile, fmtTime, mediaKind, kindLabel, fetchLibraryBlob, modalStack, useModal, useDismiss, ToolShell, Modal, Markdown, useAuthedBlobUrl,
-  isHttpUrl, setAuthLostHandler
+  isHttpUrl, setAuthLostHandler, IS_WEB
 } from "./core.jsx";
+import { InstallApp } from "./install.jsx";
 import { ScheduledPage } from "./pages/Scheduled.jsx";
 import { PluginsPage } from "./pages/Plugins.jsx";
 import { MemoryPage, PreferenceSwitches } from "./pages/Memory.jsx";
@@ -300,7 +301,7 @@ function AuthScreen({ onAuth, notice:initialNotice="" }) {
     <form className="authCard" onSubmit={submit}>
       <div className="authTabs" role="tablist"><button type="button" role="tab" aria-selected={mode==="login"} className={mode==="login"?"active":""} onClick={()=>{setMode("login");setError("");}}>Autentificare</button><button type="button" role="tab" aria-selected={mode==="register"} className={mode==="register"?"active":""} onClick={()=>{setMode("register");setError("");setNotice("");}}>Creează cont</button></div>
       <h2>{mode==="login"?"Bine ai revenit":"Creează contul AI Stoica"}</h2>
-      <p className="muted">{mode==="register"?(cloud?"Conturile noi trebuie aprobate de Owner înainte de prima utilizare.":"Contul se creează pe acest calculator și îl poți folosi imediat."):"Folosește emailul contului tău AI Stoica."}</p>
+      <p className="muted">{mode==="register"?(cloud?"Conturile noi trebuie aprobate de Owner înainte de prima utilizare.":IS_WEB?"Contul se creează pe serverul AI Stoica.":"Contul se creează pe acest calculator și îl poți folosi imediat."):"Folosește emailul contului tău AI Stoica."}</p>
       {mode==="register"&&<label>Nume<input value={name} onChange={e=>setName(e.target.value)} placeholder="Numele tău" autoComplete="name"/></label>}
       <label>Email<input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="nume@email.ro" required autoComplete="email"/></label>
       <label>Parolă<input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder={mode==="register"?"Minimum 10 caractere":"Parola contului"} required minLength={mode==="register"?10:undefined} autoComplete={mode==="register"?"new-password":"current-password"}/></label>
@@ -308,7 +309,8 @@ function AuthScreen({ onAuth, notice:initialNotice="" }) {
       {error&&<div className="authError" role="alert">{error}</div>}
       {networkIssue&&GATEWAY!==DEFAULT_GATEWAY&&<button type="button" className="secondary wideBtn" onClick={resetGateway}>Folosește serviciul local implicit</button>}
       <button className="primaryWide" disabled={busy}>{busy?"Se procesează…":mode==="login"?"Intră în AI Stoica":(cloud?"Trimite cererea de acces":"Creează contul")}</button>
-      <div className="localNote">{cloud?"Owner-ul controlează aprobarea conturilor și permisiunile serviciilor AI.":"Conturile și conversațiile sunt păstrate pe acest calculator."}</div>
+      <div className="localNote">{cloud?"Owner-ul controlează aprobarea conturilor și permisiunile serviciilor AI.":IS_WEB?"Conturile și conversațiile sunt păstrate pe serverul AI Stoica.":"Conturile și conversațiile sunt păstrate pe acest calculator."}</div>
+      <InstallApp/>
     </form>
   </div>;
 }
@@ -439,7 +441,7 @@ function ModelPicker({model,onSelect,models,onRefresh,refreshing,policyEnforced,
             {x===model&&<Check size={16}/>}
           </button>)}
         </div>)}
-        {!list.length&&<div className="modelEmpty">Nu există modele disponibile. {policyEnforced?"Cere Owner-ului acces la cel puțin un model.":"Pornește OmniRoute sau adaugă o cheie API în Setări."}</div>}
+        {!list.length&&<div className="modelEmpty">Nu există modele disponibile. {policyEnforced?"Cere Owner-ului acces la cel puțin un model.":IS_WEB?"Owner-ul serverului trebuie să adauge o cheie AI (în fișierul .env de pe server).":"Pornește OmniRoute sau adaugă o cheie API în Setări."}</div>}
         {list.length>0&&!filtered.length&&<div className="modelEmpty">Nu am găsit modelul căutat.</div>}
       </div>
       <div className="modelPickerFoot">{refreshing?"Actualizez lista de modele…":policyEnforced?"Owner-ul stabilește ce modele sunt disponibile pentru contul tău."+(deniedCount>0?` ${plural(deniedCount,"model OmniRoute este ascuns","modele OmniRoute sunt ascunse")} de Owner.`:""):"Modelele vin din OmniRoute și din API-urile configurate pe acest PC."}</div>
@@ -1113,7 +1115,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
   const mounted=useRef(true);
   useEffect(()=>()=>{mounted.current=false},[]);
   useEffect(()=>{
-    if(!window.AIStoica?.getConfig){setError("Setările sunt disponibile doar în aplicația AI Stoica pentru Windows.");return;}
+    if(!window.AIStoica?.getConfig){setError(IS_WEB?"Cheile AI și OmniRoute le configurează Owner-ul pe server. Aici poți schimba preferințele contului tău.":"Setările sunt disponibile doar în aplicația AI Stoica pentru Windows.");return;}
     Promise.all([window.AIStoica.getConfig(),window.AIStoica.systemStatus?.().catch(()=>null)])
       .then(([c,s])=>{if(mounted.current){setCfg(c||{});setStatus(s)}})
       .catch(e=>{if(mounted.current)setError("Nu am putut citi setările: "+e.message)});
@@ -1416,7 +1418,7 @@ function App() {
   const currentGen=currentId?generations[currentId]:null;
   const busy=!!currentGen;
   const machineSettingsAllowed=isOwner||cloudConfigured===false;
-  const showFirstRun=!!user&&!boot&&modelsChecked&&!firstRunDismissed&&!refreshingModels&&models.length===0&&!omni&&(isOwner||cloudConfigured===false);
+  const showFirstRun=!IS_WEB&&!!user&&!boot&&modelsChecked&&!firstRunDismissed&&!refreshingModels&&models.length===0&&!omni&&(isOwner||cloudConfigured===false);
   function finishFirstRun(){storage.set(FIRST_RUN_KEY,"1");setFirstRunDismissed(true)}
   function setResponseMode(m){setResponseModeState(m);storage.set(RESPONSE_MODE_KEY,m)}
 

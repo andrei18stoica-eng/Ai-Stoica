@@ -51,6 +51,47 @@ services:
       timeout: 5s
       retries: 10
 
+  # Web version and installable phone app (PWA): the AI Stoica service with the web interface (apps/cloud image).
+  # Accounts, approval and permissions come from the api service above (same accounts as the Windows app in cloud mode).
+  # Turned on by the "web" profile, e.g. COMPOSE_PROFILES=edge,web in .env; served by Caddy at AI_STOICA_WEB_DOMAIN.
+  web:
+    profiles: ["web"]
+    build:
+      context: ../..
+      dockerfile: apps/cloud/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      PORT: "8787"
+      HOST: "0.0.0.0"
+      DATA_DIR: /data
+      AI_STOICA_CLOUD_API_URL: http://api:8787
+      AI_STOICA_OWNER_EMAIL: ${OWNER_EMAIL}
+      AI_STOICA_TRUST_PROXY: ${TRUST_PROXY_HOPS:-1}
+      AI_STOICA_DEFAULT_MODEL: ${AI_STOICA_DEFAULT_MODEL:-}
+      OMNIROUTE_BASE_URL: ${OMNIROUTE_BASE_URL:-}
+      OMNIROUTE_API_KEY: ${OMNIROUTE_API_KEY:-}
+      CEREBRAS_API_KEY: ${CEREBRAS_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+    volumes:
+      - web-data:/data
+    ports:
+      - "127.0.0.1:8788:8787"
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8787/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
   caddy:
     image: caddy:2-alpine
     profiles: ["edge"]
@@ -60,6 +101,7 @@ services:
         condition: service_healthy
     environment:
       AI_STOICA_DOMAIN: ${AI_STOICA_DOMAIN}
+      AI_STOICA_WEB_DOMAIN: ${AI_STOICA_WEB_DOMAIN:-}
     ports:
       - "80:80"
       - "443:443"
@@ -71,5 +113,6 @@ services:
 
 volumes:
   postgres-data:
+  web-data:
   caddy-data:
   caddy-config:

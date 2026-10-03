@@ -6,6 +6,7 @@
     Strict-Transport-Security "max-age=31536000; includeSubDomains"
     X-Content-Type-Options "nosniff"
     Referrer-Policy "no-referrer"
-    X-Frame-Options "DENY"
+    # SAMEORIGIN: the web interface shows Design previews from this same address in a frame.
+    X-Frame-Options "SAMEORIGIN"
   }
 }
