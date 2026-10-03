@@ -1,16 +1,15 @@
 name: AI Stoica - Descarcare Windows
 
 on:
+  # Manual only: "Build AI Stoica Windows" already publishes every push to main.
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "apps/desktop/**"
-      - ".github/workflows/ai-stoica-windows-download.yml"
 
 permissions:
   contents: write
+
+concurrency:
+  group: ai-stoica-release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build-windows-download:
@@ -42,21 +41,10 @@ jobs:
           node --check preload.cjs
           node --check local-gateway.cjs
 
-      - name: Testeaza permisiunile AI
+      - name: Run all desktop tests
         working-directory: apps/desktop
-        run: node scripts/test-ai-access-enforcement.cjs
-
-      - name: Testeaza regresiile de infrastructura
-        working-directory: apps/desktop
-        run: node scripts/test-infrastructure-regressions.cjs
-
-      - name: Testeaza generarea imagini si video
-        working-directory: apps/desktop
-        run: node scripts/test-media-generation.cjs
-
-      - name: Testeaza uneltele Owner
-        working-directory: apps/desktop
-        run: node scripts/test-owner-tools.cjs
+        shell: bash
+        run: for t in scripts/test-*.cjs; do echo "::group::$t"; node "$t"; echo "::endgroup::"; done
 
       - name: Construieste AI Stoica pentru Windows
         working-directory: apps/desktop
@@ -69,22 +57,16 @@ jobs:
         run: |
           $version = $env:AI_STOICA_VERSION
           $tag = "v$version"
-          $releaseDir = "apps/desktop/release"
-          $installer = Join-Path $releaseDir "AI_Stoica_Setup_${version}_x64.exe"
-          $latest = Join-Path $releaseDir "latest.yml"
-          $blockmap = "$installer.blockmap"
-          foreach ($file in @($installer,$latest,$blockmap)) {
-            if (!(Test-Path $file)) {
-              Write-Error "Lipsește fișierul necesar pentru auto-update: $file"
-              exit 1
-            }
-          }
-
+          $dir = "apps/desktop/release"
+          $installer = "$dir/AI_Stoica_Setup_${version}_x64.exe"
+          # latest.yml + .blockmap are what the in-app auto-update reads; without them updates never arrive.
+          $files = @($installer, "$dir/latest.yml") + @(Get-ChildItem "$dir/*.blockmap" | ForEach-Object { $_.FullName })
+          foreach ($f in $files) { if (!(Test-Path $f)) { Write-Error "Lipseste fisierul de release: $f"; exit 1 } }
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $installer $latest $blockmap --clobber
+            gh release upload $tag @files --clobber
           } else {
-            gh release create $tag $installer $latest $blockmap --title "AI Stoica $version" --notes "AI Stoica principal pentru Windows."
+            gh release create $tag @files --title "AI Stoica $version" --notes "AI Stoica $version pentru Windows. Instaleaza AI_Stoica_Setup_${version}_x64.exe; versiunile instalate se actualizeaza automat."
           }
 
       - name: Incarca installerul ca Artifact

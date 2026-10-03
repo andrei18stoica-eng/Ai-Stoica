@@ -1,6 +1,6 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.7.10",
+  "version": "0.7.11",
   "private": true,
   "description": "AI Stoica 0.7.10 - local free APIs without Cloud, safer automations, visible errors, multi-provider video APIs with Pollinations OpenRouter Gemini Veo fal Replicate, cost guard, multi-AI chat and media fallback",
   "main": "main.cjs",

@@ -467,7 +467,12 @@
   .thinkingActivityHead{grid-template-columns:24px minmax(0,1fr) auto 20px}
   .memorySummary{grid-template-columns:1fr 1fr 1fr}
 }
-\n\n/* v0.6.15 — keep composer writable while generating + visible Stop control */\n.stopButton{background:#f1f1f1;color:#111;cursor:pointer}\n.stopButton:hover{background:#fff}\n.stopButton svg{width:15px;height:15px}\n.composerLine textarea:not(:disabled){pointer-events:auto;user-select:text}\n
+
+/* v0.6.15 — keep composer writable while generating + visible Stop control */
+.stopButton{background:#f1f1f1;color:#111;cursor:pointer}
+.stopButton:hover{background:#fff}
+.stopButton svg{width:15px;height:15px}
+.composerLine textarea:not(:disabled){pointer-events:auto;user-select:text}
 
 /* AI Stoica 0.7.1 — ChatGPT-inspired response modes and tool composer */
 .composerModeRow{display:flex;gap:6px;align-items:center;padding:4px 10px 0}
@@ -542,3 +547,119 @@
 .settingsSectionIcon{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:#101b29;border:1px solid #263a52;color:#62adff}
 .providerTest{margin:14px 0;border:1px solid #233249;background:#0a1018;border-radius:13px;padding:12px;display:grid;gap:8px}.providerTestHead{display:flex;align-items:center;gap:12px}.providerTestHead>div{flex:1}.providerTestHead b,.providerTestHead span{display:block}.providerTestHead span{color:#718197;font-size:11px;margin-top:3px}.providerRow{display:flex;align-items:center;gap:8px;border-radius:9px;padding:8px 10px;font-size:12px;border:1px solid #233249}.providerRow b{white-space:nowrap}.providerRow span{color:#8d9bb0;min-width:0;overflow:hidden;text-overflow:ellipsis}.providerRow.good{border-color:#1d5a43;color:#71d09b}.providerRow.bad{border-color:#5a2a33;color:#ff8b9b}.providerMedia{color:#718197;font-size:11px;line-height:1.5}
 .firstRun{width:min(560px,94vw)}.firstRunSteps{margin:6px 0 12px;padding-left:20px;display:grid;gap:14px}.firstRunSteps li{display:grid;gap:7px}.firstRunSteps li b{font-size:14px}.firstRunSteps li span{color:#7d8da2;font-size:12px}.firstRunSteps .primary,.firstRunSteps .secondary{width:fit-content}.firstRunSteps input{border:1px solid #26354a;background:#080d14;color:white;border-radius:10px;padding:11px 12px;outline:0}.linkBtn{border:0;background:transparent;color:#6daeff;cursor:pointer;padding:0;text-decoration:underline}
+
+/* AI Stoica 0.7.11 — accesibilitate, notificări, permisiuni, arhivă și corecturi de afișare */
+.crashScreen{height:100vh;background:#05070b;color:#e9eef7;display:grid;place-items:center;font-family:"Segoe UI",sans-serif;padding:24px}
+.crashScreen>div{max-width:720px}
+.crashScreen h1{margin-top:0}
+.crashScreen p{color:#9ba9bc;line-height:1.6}
+.crashScreen pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:40vh;overflow:auto;background:#0d131d;border:1px solid #26354a;border-radius:12px;padding:14px;color:#ffb0b8}
+#aiStoicaToasts{position:fixed;right:18px;bottom:18px;z-index:1000;display:grid;gap:8px;width:min(420px,calc(100vw - 36px));pointer-events:none}
+.aiToast{pointer-events:auto;display:flex;align-items:flex-start;gap:10px;padding:11px 12px;border-radius:12px;font-size:13px;line-height:1.45;box-shadow:0 18px 50px #000a;border:1px solid #5a2a33;background:#22121a;color:#ffd5db;animation:toastIn .16s ease-out}
+.aiToast.ok{border-color:#1d5a43;background:#0f2219;color:#c7f0d8}
+.aiToast.info{border-color:#2b4a6d;background:#0f1a28;color:#d5e6fb}
+.aiToast span{flex:1;white-space:pre-wrap;overflow-wrap:anywhere}
+.aiToast button{border:0;background:transparent;color:inherit;font-size:18px;line-height:1;cursor:pointer;opacity:.7;padding:0 2px}
+.aiToast button:hover{opacity:1}
+@keyframes toastIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+:focus-visible{outline:2px solid #4fa2ff;outline-offset:2px}
+.userText{white-space:pre-wrap;overflow-wrap:anywhere}
+.userBubble,.assistantBody,.assistantBody p,.assistantBody li,.assistantBody a,.memoryItem p,.lastResult,.automationInfo p{overflow-wrap:anywhere}
+.assistantBody :not(pre)>code{overflow-wrap:anywhere;white-space:pre-wrap}
+.assistantBody a{color:#6daeff;cursor:pointer}
+.tableWrap{overflow-x:auto;margin:14px 0;max-width:100%}
+.tableWrap table{margin:0}
+.codeBlock{position:relative;margin:0 0 14px}
+.codeBlock pre{margin:0}
+.codeCopy{position:absolute;top:8px;right:8px;z-index:1;display:flex;align-items:center;gap:5px;border:1px solid #2a3a50;background:#101925;color:#9fb2c9;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer;opacity:.75}
+.codeBlock:hover .codeCopy,.codeCopy:focus-visible{opacity:1}
+.codeCopy:hover{color:#fff;background:#172334}
+.errorMessage .assistantBody{color:#ffc7cf}
+.stoppedNote{font-size:11px;color:#8a98ab;font-style:italic;margin:4px 0 6px}
+.formatTag{font-size:9px;font-weight:800}
+.messageActions button:disabled{opacity:.35;cursor:default}
+.locked{opacity:.5}
+.locked:hover{opacity:.7}
+.lockIcon{margin-left:auto;opacity:.8;flex:0 0 auto}
+.sideRow{display:grid;grid-template-columns:minmax(0,1fr) 26px;align-items:center;border-radius:8px}
+.sideRow .sideItem{min-width:0}
+.sideLabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sideEdit{opacity:0;border:0;background:transparent;color:#7d8da2;width:24px;height:24px;border-radius:6px;display:grid;place-items:center;cursor:pointer}
+.sideRow:hover .sideEdit,.sideRow.active .sideEdit,.sideEdit:focus-visible{opacity:1}
+.sideEdit:hover{background:#18222f;color:#fff}
+.sideEmpty{color:#5f6d80;font-size:11px;padding:6px 9px 8px;line-height:1.45}
+.historyBusy{display:inline-block;width:7px;height:7px;border-radius:50%;background:#4fa2ff;margin-right:7px;vertical-align:middle;animation:pulse 1s infinite}
+.archivedBlock{margin-top:10px;border-top:1px solid #151d29;padding-top:6px}
+.archivedToggle{width:100%;display:flex;align-items:center;gap:7px;border:0;background:transparent;color:#7d8a9c;font-size:11px;padding:7px 9px;border-radius:8px;cursor:pointer}
+.archivedToggle:hover{background:#101722;color:#c5cfdd}
+.archivedToggle svg:last-child{margin-left:auto;transition:transform .15s}
+.archivedToggle svg.open{transform:rotate(180deg)}
+.archivedRow .historyItem{color:#8b97a8!important}
+.menuNote{display:block;padding:10px;color:#7d8a9c;font-size:12px}
+.topAction:disabled{opacity:.4;cursor:default}
+.topAction:disabled:hover{background:transparent;color:#9ba9bc}
+.modeDivider{width:1px;height:16px;background:rgba(255,255,255,.12);margin:0 2px}
+.modeChip.media.active{background:#16365c;border-color:#2f6db1;color:#dcecff}
+.dropHint{padding:10px 14px 0;color:#8ec4ff;font-size:12px}
+.composerCard.dragOver{border-color:#2f6db1;box-shadow:0 0 0 2px #2f6db155,0 16px 50px #0008}
+.trayThumb{width:22px;height:22px;object-fit:cover;border-radius:5px}
+.mentionMenu button.active{background:#142033}
+.inlineAttachments .messageMedia span,.inlineAttachments .messageMedia b{border:0;padding:0;font-size:inherit}
+.messageMedia.image img{display:block;max-width:100%;max-height:320px;border-radius:9px;object-fit:contain;background:#05080c}
+.fileChip button{border:0;background:transparent;color:#8fc4ff;padding:0 0 0 3px;cursor:pointer;display:grid;place-items:center}
+.mediaPlaceholder{padding:28px 14px;text-align:center;color:#7b8ca1;font-size:12px;background:#080d14}
+.mediaPlaceholder.small{padding:12px;border-radius:9px}
+.generatedDownload:disabled,.generatedMediaBar button:disabled{opacity:.6;cursor:default}
+.inlineError{margin:10px 0;border:1px solid #5a2a33;background:#22121a;color:#ffb3bf;border-radius:10px;padding:9px 11px;font-size:12px;line-height:1.45}
+.emptyState.small{min-height:90px;font-size:12px;text-align:center;padding:12px}
+.libraryCard{grid-template-columns:42px minmax(0,1fr) auto}
+.libraryActions{display:flex;align-items:center;gap:6px}
+.smallIcon{width:32px;height:32px}
+.libraryFilters{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px}
+.chipRow{display:flex;gap:6px;flex-wrap:wrap}
+.filterChip{border:1px solid #2b3b50;background:#0e151f;color:#9fb0c5;border-radius:999px;padding:6px 11px;font-size:12px;cursor:pointer}
+.filterChip.active{background:#16365c;border-color:#2f6db1;color:#fff}
+.librarySearch{flex:1;min-width:200px;margin:0}
+.primary:disabled,.secondary:disabled,.smallBtn:disabled,.dangerButton:disabled,.iconDanger:disabled,.iconOnly:disabled{opacity:.5;cursor:default}
+.pluginResult.ok{border-color:#1d5a43;color:#9be0b9}
+.pluginResult.error{border-color:#5a2a33;color:#ffb3bf}
+.pluginResult.info{border-color:#2b4a6d;color:#cfe2f8}
+.stoicaSectionTitle.linkish{cursor:pointer}
+.stoicaSectionTitle.linkish:hover{color:#fff}
+h3.stoicaSectionTitle{margin:0}
+.stoicaInstalledIcon.more span{font-size:11px}
+.stoicaSkillCard.locked>svg{color:#a0a8b3}
+.apiOnlyTag{font-style:normal;color:#9a8f7c}
+.oauthBox{display:grid;gap:10px;border:1px solid #2b3038;border-radius:12px;padding:12px}
+.oauthBox code{font-size:11px;overflow-wrap:anywhere;color:#d7dce3}
+.claudeToggle:disabled{opacity:.5;cursor:default}
+.inlineField{display:flex;align-items:center;gap:6px;color:#8d9bb0;font-size:12px}
+.inlineField input{width:72px}
+.keyRow{display:flex;gap:8px;align-items:center}
+.keyRow input{flex:1;min-width:0}
+.dangerSmall{border-color:#4d2730!important;color:#e47d8d!important;background:#1b1015!important}
+.settingsPane label.toggleRow{display:flex;gap:12px;margin:0;color:inherit;font-size:inherit;cursor:pointer}
+.settingsLoading{padding:40px 10px;text-align:center;color:#8d9bb0}
+.settingsButtons{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.settingsButtons button{display:flex;align-items:center;gap:6px}
+.pushLeft{margin-right:auto}
+.githubModal{width:min(820px,94vw);max-height:88vh;overflow:auto}
+.githubResult{margin-top:16px;display:grid;gap:10px}
+.proposalPreview{max-height:320px;overflow:auto;background:#080d14;border:1px solid #223146;border-radius:10px;padding:12px;font-size:12px;white-space:pre;color:#d6e0ec;margin:0}
+.proposalPreview.error{white-space:pre-wrap;color:#ffb3bf;border-color:#5a2a33;max-height:160px}
+.loadErrorBanner{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 20px 0;padding:9px 12px;border:1px solid #5a2a33;background:#22121a;color:#ffc7cf;border-radius:10px;font-size:12px;z-index:6}
+.loadErrorBanner span{flex:1;min-width:200px}
+.loadErrorBanner button{border:1px solid #6b3340;background:#2c1620;color:#fff;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px}
+.updateBanner{display:flex;align-items:center;gap:4px;padding:4px!important;cursor:default!important}
+.updateInstall{border:0;background:transparent;color:#fff;cursor:pointer;padding:4px 8px;font:inherit}
+.updateClose{border:0;background:#ffffff1a;color:#fff;width:24px;height:24px;border-radius:7px;display:grid;place-items:center;cursor:pointer}
+.wideBtn{width:100%;margin-top:10px}
+@media(max-height:780px){.welcome{margin-top:3vh}.welcome .brandMark{width:68px;height:68px;margin-bottom:14px;border-radius:18px}.welcome h1{font-size:30px}.welcome p{font-size:13px;line-height:1.5;margin:10px 0 0}.chatScroll{padding-top:20px}}
+html,body{overflow:hidden}
+.sidebar{height:100vh;min-height:0;overflow:hidden}
+.sideScroll{flex:1 1 auto;min-height:0}
+.formatTag{white-space:nowrap;letter-spacing:-.02em}
+.messageActions button:has(.formatTag){width:auto;min-width:30px;padding:0 5px}
+.labelLine{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.labelLine .optional{font-size:10px;color:#6f7d90;font-weight:400;text-align:right}
+#aiStoicaToasts{top:72px;bottom:auto}

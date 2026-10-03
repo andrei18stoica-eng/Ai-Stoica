@@ -19,6 +19,16 @@ function normalizeDb(data) {
   return out;
 }
 
+// Antivirus and search indexers on Windows briefly lock files; retry the rename instead of failing the save.
+function renameWithRetry(from, to) {
+  for (let attempt = 0; ; attempt++) {
+    try { return fs.renameSync(from, to); } catch (e) {
+      if (attempt >= 6 || !["EPERM", "EBUSY", "EACCES"].includes(e.code)) throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40 * (attempt + 1));
+    }
+  }
+}
+
 function createStore(dataDir) {
   const file = path.join(dataDir, "ai-stoica-data.json");
   const backup = `${file}.bak`;
@@ -46,7 +56,9 @@ function createStore(dataDir) {
   }
   function load() {
     let base=emptyDb();
-    if (fs.existsSync(file)) {
+    if (!fs.existsSync(file)) {
+      try { base=normalizeDb(JSON.parse(fs.readFileSync(backup, "utf8"))); } catch {}
+    } else {
       try { base=normalizeDb(JSON.parse(fs.readFileSync(file, "utf8"))); }
       catch {
         try { fs.copyFileSync(file, `${file}.corrupt-${Date.now()}`); } catch {}
@@ -70,7 +82,7 @@ function createStore(dataDir) {
     const tmp=`${target}.tmp`;
     if(backupTarget&&fs.existsSync(target)){try{fs.copyFileSync(target,backupTarget)}catch{}}
     fs.writeFileSync(tmp,JSON.stringify(value,null,2),"utf8");
-    fs.renameSync(tmp,target);
+    renameWithRetry(tmp,target);
   }
   function write(data) {
     if (data && data !== cache) cache = normalizeDb(data);
@@ -97,4 +109,4 @@ function createStore(dataDir) {
   return { read, write, file, conversationDir };
 }
 
-module.exports = { createStore, emptyDb, normalizeDb, COLLECTIONS };
+module.exports = { createStore, emptyDb, normalizeDb, renameWithRetry, COLLECTIONS };

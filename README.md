@@ -1,6 +1,24 @@
-# AI Stoica 0.7.10 — Stoica Enterprises AI
+# AI Stoica 0.7.11 — Stoica Enterprises AI
 
 Asistent AI pentru Windows (plus aplicație mobilă) cu chat, proiecte, asistenți, memorie, bibliotecă de fișiere, pluginuri, automatizări, generare de imagini și video, export PDF/Word/PowerPoint/Excel și panou de Owner.
+
+## Noutăți 0.7.11 (reparații)
+
+- **Imagine și Video au butoane proprii** lângă „Rapid/Gândire”. O întrebare obișnuită („Creează un script pentru un video de TikTok”) primește răspuns text, nu mai pornește generarea.
+- **Întrebările despre formate primesc răspuns, nu fișier.** Fișierul se face doar la comandă („Fă-mi un PDF cu…”), iar textul rămâne vizibil deasupra lui.
+- **Actualizarea automată funcționează:** release-ul conține acum și `latest.yml` și `.blockmap`. Setări → General → „Caută actualizări acum”.
+- **Conversațiile cu poze nu se mai blochează:** pozele rămân în Bibliotecă, iar conversația păstrează doar trimiterea la ele.
+- **Permisiunile din panoul Owner se aplică toate** (automatizări, pluginuri, încărcare fișiere, documente, Deep Research, web, GitHub, imagini, video), și în aplicație, și în serviciul local.
+- **Owner pe PC:** Setări → Cont și date → „Email Owner pe acest PC”. Codul rulează doar din butonul „Rulează”, nu automat.
+- **Automatizări sigure:** zilele și orele sunt verificate, se calculează în fusul tău orar, „Rulează acum” nu mai strică programarea.
+- **Linkurile** din răspunsuri se deschid în browser, nu în fereastra aplicației.
+- **Interfață:** Escape închide ferestrele, listă „Arhivate”, redenumire/ștergere proiecte și asistenți, poți schimba conversația cât timp AI-ul răspunde, mesaje de eroare clare în română, confirmări înainte de ștergere.
+- **Fișiere:** PDF-urile și documentele foarte mari nu mai pot bloca aplicația; CSV-urile din contabilitate (Windows-1250) se citesc corect; Excel păstrează sumele românești („1.500,50”).
+- **Securitate:** pluginurile nu mai pot accesa adrese interne; sesiunea se închide real la „Deconectare”; limită la încercările de autentificare; cheile pluginurilor sunt criptate.
+- **Telefon (Cloudflare):** butoane PDF/DOCX/PPTX, defilare automată, butonul Înapoi pe Android, tastatura nu mai acoperă câmpul de scris; Worker-ul are migrarea `0005`, cod de configurare Owner (`OWNER_SETUP_CODE`) și deconectare reală.
+- **Server Hetzner și `apps/cloud`:** erori JSON corecte, parole cu orice caractere în baza de date, Owner prin `AI_STOICA_OWNER_EMAIL`, containere care nu mai rulează ca root.
+
+Pași după actualizare: vezi „Pași pentru Owner după 0.7.11” mai jos.
 
 ## Noutăți 0.7.10
 
@@ -26,10 +44,17 @@ Asistent AI pentru Windows (plus aplicație mobilă) cu chat, proiecte, asisten�
 | `lib/memory.cjs` | memorie: ce se reține și căutarea relevantă |
 | `lib/extract.cjs` | citirea textului din fișierele din Bibliotecă |
 | `lib/documents.cjs` | export PDF, Word, PowerPoint, Excel, CSV, JSON, HTML etc. |
+| `lib/schedule.cjs` | calculul orei următoarei rulări pentru automatizări (cu fus orar) |
+| `lib/netguard.cjs` | blochează accesul pluginurilor la adrese interne |
 | `renderer/src/main.jsx` | interfața |
 | `scripts/test-*.cjs` | teste rulate automat de GitHub la fiecare modificare |
 
-Notă: `package-lock.json` lipsește încă. Pentru build-uri identice, generează-l o dată în `apps/desktop` (instalarea pachetelor cu npm) și urcă fișierul rezultat.
+## Pași pentru Owner după 0.7.11
+
+1. **Cloudflare (aplicația de telefon):** în `apps/cloudflare` rulează migrările (`npx wrangler d1 migrations apply ai-stoica --remote`, include `0005`), setează secretele `OWNER_EMAIL` și `OWNER_SETUP_CODE`, publică Worker-ul și creează imediat contul Owner (cu codul de configurare). Detalii în `apps/cloudflare/README.md`.
+2. **Telefon:** în `apps/mobile/eas.json` înlocuiește `https://ai-stoica.SUBDOMENIUL-TAU.workers.dev` cu adresa Worker-ului tău (sau folosește `eas env:create`), apoi pornește „Build AI Stoica Mobile with EAS”.
+3. **Server Hetzner:** în `.env` păstrează `OWNER_EMAIL` și `OWNER_INITIAL_PASSWORD`; la actualizare rulează `deploy/hetzner/update.sh`.
+4. **Windows:** după ce apare release-ul v0.7.11 (cu `latest.yml`), aplicațiile 0.7.10 cu „Actualizări automate” pornite se actualizează singure la următoarea pornire. Dacă nu se întâmplă, instalează 0.7.11 o dată de mână.
 
 ---
 
@@ -55,7 +80,7 @@ Versiunea 0.4.1 reproiectează AI Stoica după conceptul de interfață definit 
 
 ## Important despre cont și sincronizare
 
-Pe Windows, aplicația pornește un **Gateway local** la `http://127.0.0.1:8787`. Conturile și conversațiile sunt salvate local pe PC. Același cod de Gateway din folderul `gateway/` poate fi publicat ulterior pe un server HTTPS pentru sincronizare Windows + iPhone/iPad/Android din orice rețea.
+Pe Windows, aplicația pornește un **Gateway local** la `http://127.0.0.1:8787`. Conturile și conversațiile sunt salvate local pe PC. Pentru sincronizare între PC-uri folosește serverul Hetzner (`apps/server` + `deploy/hetzner`); telefonul folosește Worker-ul Cloudflare (`apps/cloudflare`).
 
 Pentru sincronizare reală între dispozitive, Gateway-ul trebuie să fie disponibil permanent la o adresă HTTPS. Nu expune direct porturile 8787 sau 20128 pe internet.
 
@@ -65,34 +90,34 @@ Pentru sincronizare reală între dispozitive, Gateway-ul trebuie să fie dispon
 2. Verifică existența `.github/workflows/windows-build.yml`.
 3. Intră la **Actions → Build AI Stoica Windows**.
 4. Workflow-ul pornește automat după push pe `main`; sau folosește **Run workflow**.
-5. La final descarcă artifact-ul Windows din pagina workflow-ului.
+5. La final installerul apare în **Releases** (cu `latest.yml` pentru actualizarea automată).
 6. Rulează `AI_Stoica_Setup_<versiune>_x64.exe`.
 
 ## Prima pornire
 
 1. Creează un cont cu email și parolă.
 2. Intră la **Setări**.
-3. Base URL: `http://127.0.0.1:20128/v1`
-4. Introdu cheia API OmniRoute.
-5. Model/combo: `Ai principal`
-6. Lasă active **Pornește OmniRoute automat** și **Pornește AI Stoica cu Windows**.
+3. Cel mai simplu: urmează ghidul de la prima pornire și pune o cheie Gemini gratuită (Setări → API-uri AI → „Testează cheile”).
+4. Opțional, cu OmniRoute: Base URL `http://127.0.0.1:20128/v1`, cheia API OmniRoute și modelul ales din listă.
+5. Pentru drepturi de Owner pe acest PC: Setări → Cont și date → „Email Owner pe acest PC”, apoi deconectează-te și intră din nou.
+6. Lasă active **Pornește OmniRoute automat** și **Pornește AI Stoica cu Windows** dacă vrei să ruleze în fundal.
 
 AI Stoica rămâne în tray când închizi fereastra și verifică periodic dacă OmniRoute funcționează.
 
 ## iPhone / Android
 
-Aplicația mobilă are autentificare prin email și folosește `EXPO_PUBLIC_GATEWAY_URL`. Pentru teste pe telefon trebuie să setezi URL-ul unui Gateway AI Stoica accesibil telefonului. Pentru App Store, recomandarea este Gateway HTTPS găzduit permanent.
+Aplicația mobilă are autentificare prin email și se conectează la Worker-ul Cloudflare (`apps/cloudflare`). Adresa vine din `EXPO_PUBLIC_GATEWAY_URL`: pentru build-urile EAS se pune în `apps/mobile/eas.json` (sau cu `eas env:create`), nu în secretele GitHub, pentru că EAS construiește pe serverele Expo.
 
-Exemplu `.env` mobil:
+Exemplu `.env` pentru teste locale cu Expo:
 
 ```env
-EXPO_PUBLIC_GATEWAY_URL=https://gateway.exemplu.ro
-EXPO_PUBLIC_DEFAULT_MODEL=Ai principal
+EXPO_PUBLIC_GATEWAY_URL=https://ai-stoica.SUBDOMENIUL-TAU.workers.dev
+EXPO_PUBLIC_DEFAULT_MODEL=AI Stoica Performance Max
 ```
 
-## Gateway separat
+## Server propriu (Docker)
 
-Folderul `gateway/` conține serverul pentru autentificare, conversații, proiecte, asistenți și proxy OmniRoute. Configurează variabilele din `.env.example`. Pentru publicare pe internet folosește HTTPS, firewall și stocare persistentă; înainte de utilizare publică se recomandă trecerea bazei JSON la PostgreSQL.
+Vechiul folder `gateway/` (versiunea 0.4.1, fără limitări de securitate) a fost scos în 0.7.11. Pentru un server propriu folosește `apps/cloud` (același serviciu ca în aplicația Windows, în Docker, cu HTTPS prin Caddy) — vezi `apps/cloud/README.md`.
 
 
 ## Logo oficial

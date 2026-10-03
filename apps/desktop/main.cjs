@@ -20,7 +20,12 @@ let gateway;
 let watchdog;
 let lastSpawn = 0;
 
+const SECRET_KEYS = ["apiKey","openAiApiKey","openRouterApiKey","cerebrasApiKey","groqApiKey","geminiApiKey","mistralApiKey","nvidiaApiKey","cohereApiKey","pollinationsApiKey","cloudflareApiToken","hfToken","togetherApiKey","stabilityApiKey","replicateApiToken","falApiKey","githubToken"];
+const MASK = "••••••••";
 function configPath() { return path.join(app.getPath("userData"), "config.json"); }
+function logError(line) {
+  try { fs.appendFileSync(path.join(app.getPath("userData"), "ai-stoica-errors.log"), `[${new Date().toISOString()}] ${line}\n`); } catch {}
+}
 function defaults() {
   return {
     gatewayUrl: "http://127.0.0.1:8787",
@@ -97,42 +102,34 @@ function defaults() {
   };
 }
 function loadConfig() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(configPath(), "utf8"));
-    function secret(name){
-      const encrypted=raw[name+"Encrypted"];
-      if(encrypted&&safeStorage.isEncryptionAvailable()){
-        try{return safeStorage.decryptString(Buffer.from(encrypted,"base64"))}catch{}
-      }
-      return typeof raw[name]==="string"?raw[name]:"";
+  let raw;
+  try { raw = JSON.parse(fs.readFileSync(configPath(), "utf8")); }
+  catch (e) {
+    if (fs.existsSync(configPath())) {
+      // Moved aside once (not copied on every read), then the last good copy is put back in its place.
+      try { fs.renameSync(configPath(), configPath().replace(/\.json$/, `.corrupt-${Date.now()}.json`)); } catch {}
+      try { raw = JSON.parse(fs.readFileSync(configPath() + ".bak", "utf8")); fs.copyFileSync(configPath() + ".bak", configPath()); } catch { raw = null; }
+      logError(`Config unreadable: ${e.message}${raw ? " (restored from backup)" : ""}`);
     }
-    const apiKey=secret("apiKey");
-    const openAiApiKey=secret("openAiApiKey");
-    const openRouterApiKey=secret("openRouterApiKey");
-    const cerebrasApiKey=secret("cerebrasApiKey");
-    const groqApiKey=secret("groqApiKey");
-    const geminiApiKey=secret("geminiApiKey");
-    const mistralApiKey=secret("mistralApiKey");
-    const nvidiaApiKey=secret("nvidiaApiKey");
-    const cohereApiKey=secret("cohereApiKey");
-    const pollinationsApiKey=secret("pollinationsApiKey");
-    const cloudflareApiToken=secret("cloudflareApiToken");
-    const hfToken=secret("hfToken");
-    const togetherApiKey=secret("togetherApiKey");
-    const stabilityApiKey=secret("stabilityApiKey");
-    const replicateApiToken=secret("replicateApiToken");
-    const falApiKey=secret("falApiKey");
-    const githubToken=secret("githubToken");
-    const cfg={ ...defaults(), ...raw, apiKey, openAiApiKey, openRouterApiKey, cerebrasApiKey, groqApiKey, geminiApiKey, mistralApiKey, nvidiaApiKey, cohereApiKey, pollinationsApiKey, cloudflareApiToken, hfToken, togetherApiKey, stabilityApiKey, replicateApiToken, falApiKey, githubToken };
-    if(/^ai[ _-]*(principal|stoica)$/i.test(String(cfg.model||"").trim()))cfg.model="";
-    // Migrare 0.6.14: instalațiile vechi pornesc implicit pe profilul Video Rapid.
-    if(!raw.videoMode){
-      cfg.videoMode="fast";
-      cfg.videoModel="bytedance/seedance-2.0-fast";
-      cfg.openRouterVideoModel="bytedance/seedance-2.0-fast";
+    if (!raw || typeof raw !== "object") return defaults();
+  }
+  function secret(name){
+    const encrypted=raw[name+"Encrypted"];
+    if(encrypted&&safeStorage.isEncryptionAvailable()){
+      try{return safeStorage.decryptString(Buffer.from(encrypted,"base64"))}catch{}
     }
-    return cfg;
-  } catch { return defaults(); }
+    return typeof raw[name]==="string"?raw[name]:"";
+  }
+  const cfg={ ...defaults(), ...raw };
+  for (const name of SECRET_KEYS) { cfg[name] = secret(name); delete cfg[name + "Encrypted"]; }
+  if(/^ai[ _-]*(principal|stoica)$/i.test(String(cfg.model||"").trim()))cfg.model="";
+  // Migrare 0.6.14: instalațiile vechi pornesc implicit pe profilul Video Rapid.
+  if(!raw.videoMode){
+    cfg.videoMode="fast";
+    cfg.videoModel="bytedance/seedance-2.0-fast";
+    cfg.openRouterVideoModel="bytedance/seedance-2.0-fast";
+  }
+  return cfg;
 }
 function saveConfig(input) {
   const old = loadConfig();
@@ -184,33 +181,25 @@ function saveConfig(input) {
     serverHost: String(cfg.serverHost || "").trim(),
     serverPort: Math.max(1, Math.min(65535, Number(cfg.serverPort || 22))),
     serverUser: String(cfg.serverUser || "root").trim() || "root",
-    serverKeyPath: String(cfg.serverKeyPath || "").trim()
+    serverKeyPath: String(cfg.serverKeyPath || "").trim(),
+    ownerEmail: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(cfg.ownerEmail || "").trim()) ? String(cfg.ownerEmail).trim().toLowerCase() : ""
   };
-  function storeSecret(name,value){
-    if(!value)return;
-    if(safeStorage.isEncryptionAvailable())stored[name+"Encrypted"]=safeStorage.encryptString(value).toString("base64");
-    else stored[name]=value;
+  for (const name of SECRET_KEYS) {
+    const value = String(cfg[name] || "");
+    if (!value || value === MASK) continue;
+    if (safeStorage.isEncryptionAvailable()) stored[name + "Encrypted"] = safeStorage.encryptString(value).toString("base64");
+    else stored[name] = value;
   }
-  storeSecret("apiKey",cfg.apiKey);
-  storeSecret("openAiApiKey",cfg.openAiApiKey);
-  storeSecret("openRouterApiKey",cfg.openRouterApiKey);
-  storeSecret("cerebrasApiKey",cfg.cerebrasApiKey);
-  storeSecret("groqApiKey",cfg.groqApiKey);
-  storeSecret("geminiApiKey",cfg.geminiApiKey);
-  storeSecret("mistralApiKey",cfg.mistralApiKey);
-  storeSecret("nvidiaApiKey",cfg.nvidiaApiKey);
-  storeSecret("cohereApiKey",cfg.cohereApiKey);
-  storeSecret("pollinationsApiKey",cfg.pollinationsApiKey);
-  storeSecret("cloudflareApiToken",cfg.cloudflareApiToken);
-  storeSecret("hfToken",cfg.hfToken);
-  storeSecret("togetherApiKey",cfg.togetherApiKey);
-  storeSecret("stabilityApiKey",cfg.stabilityApiKey);
-  storeSecret("replicateApiToken",cfg.replicateApiToken);
-  storeSecret("falApiKey",cfg.falApiKey);
-  storeSecret("githubToken",cfg.githubToken);
   fs.mkdirSync(path.dirname(configPath()), { recursive: true });
-  fs.writeFileSync(configPath(), JSON.stringify(stored, null, 2), "utf8");
-  app.setLoginItemSettings({ openAtLogin: !!cfg.startWithWindows, args: ["--background"] });
+  const tmp = configPath() + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(stored, null, 2), "utf8");
+  if (fs.existsSync(configPath())) { try { fs.copyFileSync(configPath(), configPath() + ".bak"); } catch {} }
+  for (let i = 0; ; i++) {
+    // Windows antivirus/indexer can hold the file for a moment.
+    try { fs.renameSync(tmp, configPath()); break; }
+    catch (e) { if (i >= 5 || !["EPERM", "EBUSY", "EACCES"].includes(e.code)) throw e; const until = Date.now() + 60 * (i + 1); while (Date.now() < until) {} }
+  }
+  try { app.setLoginItemSettings({ openAtLogin: !!cfg.startWithWindows, args: ["--background"] }); } catch {}
   return cfg;
 }
 
@@ -250,26 +239,9 @@ async function ensureOmniRoute() {
 }
 
 function publicConfig(cfg=loadConfig()) {
-  return {
-    ...cfg,
-    apiKey: cfg.apiKey ? "••••••••" : "",
-    openAiApiKey: cfg.openAiApiKey ? "••••••••" : "",
-    openRouterApiKey: cfg.openRouterApiKey ? "••••••••" : "",
-    cerebrasApiKey: cfg.cerebrasApiKey ? "••••••••" : "",
-    groqApiKey: cfg.groqApiKey ? "••••••••" : "",
-    geminiApiKey: cfg.geminiApiKey ? "••••••••" : "",
-    mistralApiKey: cfg.mistralApiKey ? "••••••••" : "",
-    nvidiaApiKey: cfg.nvidiaApiKey ? "••••••••" : "",
-    cohereApiKey: cfg.cohereApiKey ? "••••••••" : "",
-    pollinationsApiKey: cfg.pollinationsApiKey ? "••••••••" : "",
-    cloudflareApiToken: cfg.cloudflareApiToken ? "••••••••" : "",
-    hfToken: cfg.hfToken ? "••••••••" : "",
-    togetherApiKey: cfg.togetherApiKey ? "••••••••" : "",
-    stabilityApiKey: cfg.stabilityApiKey ? "••••••••" : "",
-    replicateApiToken: cfg.replicateApiToken ? "••••••••" : "",
-    falApiKey: cfg.falApiKey ? "••••••••" : "",
-    githubToken: cfg.githubToken ? "••••••••" : ""
-  };
+  const out = { ...cfg };
+  for (const name of SECRET_KEYS) out[name] = cfg[name] ? MASK : "";
+  return out;
 }
 
 async function systemStatus() {
@@ -298,7 +270,17 @@ function createWindow(show = true) {
   mainWindow.once("ready-to-show", reveal);
   const revealTimer = setTimeout(reveal, 3500);
 
-  mainWindow.webContents.on("did-fail-load", (_e, code, desc) => {
+  const EXTERNAL = /^(https?:|mailto:)/i;
+  const openOutside = (url) => { if (EXTERNAL.test(String(url || ""))) shell.openExternal(String(url)).catch(() => {}); };
+  // Links never replace the app window: web pages open in the system browser and never get the AI Stoica bridge.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => { openOutside(url); return { action: "deny" }; });
+  mainWindow.webContents.on("will-navigate", (e, url) => {
+    if (url !== mainWindow.webContents.getURL()) { e.preventDefault(); openOutside(url); }
+  });
+  mainWindow.webContents.on("will-attach-webview", (e) => e.preventDefault());
+
+  mainWindow.webContents.on("did-fail-load", (_e, code, desc, _url, isMainFrame) => {
+    if (!isMainFrame || code === -3) return;
     const safe = String(desc || "eroare necunoscută").replace(/[<>&]/g, "");
     mainWindow.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(
       `<!doctype html><html><body style="margin:0;background:#05070b;color:#e9eef7;font-family:Segoe UI,sans-serif;display:grid;place-items:center;height:100vh">
@@ -338,17 +320,12 @@ function createWindow(show = true) {
   });
 
   mainWindow.webContents.on("render-process-gone", (_e, details) => {
-    try {
-      fs.appendFileSync(path.join(app.getPath("userData"), "ai-stoica-errors.log"),
-        `[${new Date().toISOString()}] Renderer stopped: ${details.reason} / ${details.exitCode}\n`);
-    } catch {}
+    logError(`Renderer stopped: ${details.reason} / ${details.exitCode}`);
+    if (details.reason !== "clean-exit" && !isQuitting) setTimeout(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.reload(); }, 1000);
   });
 
   mainWindow.loadFile(path.join(__dirname, "dist", "index.html")).catch((e) => {
-    try {
-      fs.appendFileSync(path.join(app.getPath("userData"), "ai-stoica-errors.log"),
-        `[${new Date().toISOString()}] loadFile failed: ${e.stack || e.message}\n`);
-    } catch {}
+    logError(`loadFile failed: ${e.stack || e.message}`);
     reveal();
   });
 
@@ -358,73 +335,76 @@ function createWindow(show = true) {
   });
 }
 
+function showMain() {
+  if (!mainWindow || mainWindow.isDestroyed()) { createWindow(true); return; }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show(); mainWindow.focus();
+}
+
+function newerVersion(a, b) {
+  const pa = String(a || "").split(/[.-]/).map((x) => parseInt(x, 10) || 0), pb = String(b || "").split(/[.-]/).map((x) => parseInt(x, 10) || 0);
+  for (let i = 0; i < 3; i++) { if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0); }
+  return false;
+}
+
 function createTray() {
   let icon = nativeImage.createFromPath(path.join(__dirname, "build", "icon.ico"));
   if (icon.isEmpty()) icon = nativeImage.createEmpty();
   tray = new Tray(icon);
   tray.setToolTip("AI Stoica — rulează în fundal");
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: "Deschide AI Stoica", click: () => { mainWindow.show(); mainWindow.focus(); } },
+    { label: "Deschide AI Stoica", click: showMain },
     { label: "Repornește OmniRoute", click: async () => { lastSpawn = 0; await ensureOmniRoute(); } },
     { type: "separator" },
     { label: "Închide complet", click: () => { isQuitting = true; app.quit(); } }
   ]));
-  tray.on("double-click", () => { mainWindow.show(); mainWindow.focus(); });
+  tray.on("double-click", showMain);
+  tray.on("click", showMain);
 }
 
 // IPC handlers are registered before the window loads, so the interface never calls a handler that does not exist yet.
 function registerIpcHandlers() {
   ipcMain.handle("config:get", () => publicConfig(loadConfig()));
   ipcMain.handle("config:set", async (_e, input) => {
-    const current=loadConfig(),next={...(input||{})};
-    for(const name of ["apiKey","openAiApiKey","openRouterApiKey","cerebrasApiKey","groqApiKey","geminiApiKey","mistralApiKey","nvidiaApiKey","cohereApiKey","pollinationsApiKey","cloudflareApiToken","hfToken","togetherApiKey","stabilityApiKey","replicateApiToken","falApiKey","githubToken"]){
-      if(!next[name]||next[name]==="••••••••")next[name]=current[name]||"";
-    }
-    const cfg2=saveConfig(next);ensureOmniRoute().catch(()=>{});return {ok:true,config:publicConfig(cfg2)};
+    try {
+      const current=loadConfig(),next={...(input&&typeof input==="object"?input:{})};
+      for(const name of SECRET_KEYS){
+        if(next[name]==="__CLEAR__")next[name]="";
+        else if(!next[name]||next[name]===MASK)next[name]=current[name]||"";
+        else next[name]=String(next[name]).trim();
+      }
+      const cfg2=saveConfig(next);ensureOmniRoute().catch(()=>{});return {ok:true,config:publicConfig(cfg2)};
+    } catch (e) { logError(`Config save failed: ${e.message}`); return { ok:false, error:"Setările nu au putut fi salvate: " + e.message }; }
   });
   ipcMain.handle("system:status", () => systemStatus());
   ipcMain.handle("system:ensure-omni", () => ensureOmniRoute());
-  ipcMain.handle("system:set-startup", (_e, enabled) => { const cfg2 = saveConfig({ startWithWindows: !!enabled }); return { ok: true, enabled: cfg2.startWithWindows }; });
   ipcMain.handle("clipboard:write-text", (_e, value) => {
     try {
-      clipboard.writeText(String(value ?? ""));
+      clipboard.writeText(String(value ?? "").slice(0, 5_000_000));
       return { ok: true };
     } catch (e) { return { ok: false, error: e.message }; }
-  });
-  ipcMain.handle("clipboard:read-text", () => {
-    try { return { ok: true, text: clipboard.readText() }; }
-    catch (e) { return { ok: false, text: "", error: e.message }; }
   });
   ipcMain.handle("system:open-external", async (_e, rawUrl) => {
     try {
       const url = new URL(String(rawUrl || ""));
-      if (!["http:", "https:"].includes(url.protocol)) return { ok: false, error: "Protocol nepermis." };
+      if (!["http:", "https:", "mailto:"].includes(url.protocol)) return { ok: false, error: "Se pot deschide doar linkuri web (http/https) sau email." };
       await shell.openExternal(url.toString());
       return { ok: true };
-    } catch (e) { return { ok: false, error: e.message }; }
-  });
-  ipcMain.handle("external:open", async (_e, rawUrl) => {
-    try {
-      const url = new URL(String(rawUrl || ""));
-      if (!["http:", "https:"].includes(url.protocol)) throw new Error("Protocol nepermis.");
-      await shell.openExternal(url.toString());
-      return { ok: true };
-    } catch (e) { return { ok: false, error: e.message }; }
+    } catch (e) { return { ok: false, error: "Linkul nu a putut fi deschis: " + e.message }; }
   });
   ipcMain.handle("update:check", async () => {
-    try { const result = await autoUpdater.checkForUpdates(); return { ok: true, version: result?.updateInfo?.version || null }; }
-    catch (e) { return { ok: false, error: e.message }; }
+    if (!app.isPackaged) return { ok: false, error: "Actualizările funcționează doar în aplicația instalată." };
+    try {
+      const result = await autoUpdater.checkForUpdates();
+      const version = result?.updateInfo?.version || null;
+      const available = typeof result?.isUpdateAvailable === "boolean" ? result.isUpdateAvailable : newerVersion(version, app.getVersion());
+      return { ok: true, version, current: app.getVersion(), available };
+    } catch (e) { return { ok: false, error: e.message }; }
   });
-  ipcMain.on("update:install", () => autoUpdater.quitAndInstall());
+  ipcMain.on("update:install", () => { isQuitting = true; autoUpdater.quitAndInstall(); });
 }
 
-app.on("second-instance", () => {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
-  }
-});
+app.on("second-instance", () => { if (app.isReady()) showMain(); });
 
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;
@@ -441,41 +421,30 @@ app.whenReady().then(async () => {
     if (!(await isPortOpen(8787))) {
       gateway = startLocalGateway({
         dataDir: app.getPath("userData"), port: 8787, getOmniConfig: loadConfig,
+        encryptSecret: (value) => safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(String(value)).toString("base64") : null,
+        decryptSecret: (value) => safeStorage.decryptString(Buffer.from(String(value), "base64")),
         onAutomationResult: ({title,body}) => {
           try{
             if(Notification.isSupported())new Notification({title:`AI Stoica · ${title||"Automatizare"}`,body:String(body||"").slice(0,500)}).show();
           }catch{}
         }
       });
-      gateway?.server?.on?.("error", (e) => {
-        try {
-          fs.appendFileSync(path.join(app.getPath("userData"), "ai-stoica-errors.log"),
-            `[${new Date().toISOString()}] Gateway error: ${e.stack || e.message}\n`);
-        } catch {}
-      });
+      gateway?.server?.on?.("error", (e) => logError(`Gateway error: ${e.stack || e.message}`));
     }
   } catch (e) {
-    try {
-      fs.appendFileSync(path.join(app.getPath("userData"), "ai-stoica-errors.log"),
-        `[${new Date().toISOString()}] Gateway startup failed: ${e.stack || e.message}\n`);
-    } catch {}
+    logError(`Gateway startup failed: ${e.stack || e.message}`);
   }
   createTray();
   ensureOmniRoute().catch(() => {});
   watchdog = setInterval(() => ensureOmniRoute().catch(() => {}), 30000);
 
   autoUpdater.autoDownload = true;
-  autoUpdater.on("error", (e) => {
-    try {
-      fs.appendFileSync(path.join(app.getPath("userData"), "ai-stoica-errors.log"),
-        `[${new Date().toISOString()}] Update error: ${e?.message || e}\n`);
-    } catch {}
-  });
-  if (cfg.autoUpdate !== false) autoUpdater.checkForUpdatesAndNotify().catch(() => {});
-  autoUpdater.on("update-downloaded", () => mainWindow?.webContents.send("update-ready"));
+  autoUpdater.on("error", (e) => logError(`Update error: ${e?.message || e}`));
+  autoUpdater.on("update-downloaded", () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("update-ready"); });
+  if (cfg.autoUpdate !== false && app.isPackaged) autoUpdater.checkForUpdatesAndNotify().catch(() => {});
 
 });
 
-app.on("before-quit", () => { isQuitting = true; if (watchdog) clearInterval(watchdog); });
+app.on("before-quit", () => { isQuitting = true; if (watchdog) clearInterval(watchdog); try { gateway?.close?.(); } catch {} });
 app.on("window-all-closed", () => {});
-app.on("activate", () => { if (mainWindow) mainWindow.show(); });
+app.on("activate", () => { if (app.isReady()) showMain(); });

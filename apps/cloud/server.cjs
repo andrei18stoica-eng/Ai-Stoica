@@ -1,21 +1,44 @@
-const path = require("path");
 const { startLocalGateway } = require("./local-gateway.cjs");
 
 const port = Number(process.env.PORT || 8787);
 const host = process.env.HOST || "0.0.0.0";
 const dataDir = process.env.DATA_DIR || "/data";
+const env = name => String(process.env[name] || "").trim();
+
+// "Ai principal"/"AI Stoica" are automatic-routing names that the gateway refuses (409); an empty model lets the gateway choose.
+function defaultModel() {
+  const value = env("AI_STOICA_DEFAULT_MODEL") || env("AI_STOICA_MODEL");
+  return /^ai[ _-]*(principal|stoica)$/i.test(value) ? "" : value;
+}
+
+const DIRECT_KEYS = {
+  cerebrasApiKey: "CEREBRAS_API_KEY", groqApiKey: "GROQ_API_KEY", geminiApiKey: "GEMINI_API_KEY",
+  openAiApiKey: "OPENAI_API_KEY", openRouterApiKey: "OPENROUTER_API_KEY", mistralApiKey: "MISTRAL_API_KEY",
+  cloudflareAccountId: "CLOUDFLARE_ACCOUNT_ID", cloudflareApiToken: "CLOUDFLARE_API_TOKEN"
+};
 
 function getOmniConfig() {
+  const model = defaultModel();
   return {
-    baseUrl: String(process.env.OMNIROUTE_BASE_URL || "http://omniroute:20128/v1").replace(/\/+$/, ""),
-    apiKey: process.env.OMNIROUTE_API_KEY || "",
-    model: process.env.AI_STOICA_MODEL || "cerebras/gpt-oss-120b",
-    speechModel: process.env.AI_STOICA_SPEECH_MODEL || "openai/whisper-1",
-    speechLanguage: process.env.AI_STOICA_SPEECH_LANGUAGE || "ro",
+    baseUrl: (env("OMNIROUTE_BASE_URL") || "http://omniroute:20128/v1").replace(/\/+$/, ""),
+    apiKey: env("OMNIROUTE_API_KEY"),
+    model,
+    defaultModel: model,
+    speechModel: env("AI_STOICA_SPEECH_MODEL") || "openai/whisper-1",
+    speechLanguage: env("AI_STOICA_SPEECH_LANGUAGE") || "ro",
     // Public server: only the first account can sign up unless AI_STOICA_OPEN_REGISTRATION=true.
-    allowRegistration: String(process.env.AI_STOICA_OPEN_REGISTRATION || "").toLowerCase() === "true"
+    allowRegistration: env("AI_STOICA_OPEN_REGISTRATION").toLowerCase() === "true",
+    ownerEmail: env("AI_STOICA_OWNER_EMAIL").toLowerCase(),
+    controlApiUrl: env("AI_STOICA_CLOUD_API_URL").replace(/\/+$/, ""),
+    githubToken: env("AI_STOICA_GITHUB_TOKEN"),
+    githubRepo: env("AI_STOICA_GITHUB_REPO"),
+    githubBranch: env("AI_STOICA_GITHUB_BRANCH") || "main",
+    trustProxy: Number(env("AI_STOICA_TRUST_PROXY") || 1),
+    ...Object.fromEntries(Object.entries(DIRECT_KEYS).map(([key, name]) => [key, env(name)]))
   };
 }
+
+if (!env("AI_STOICA_OWNER_EMAIL")) console.warn("[AI Stoica] AI_STOICA_OWNER_EMAIL is not set: no account on this server is Owner (GitHub Solve, code run and server tools stay locked).");
 
 const gateway = startLocalGateway({
   dataDir,
@@ -29,6 +52,8 @@ console.log(`AI Stoica Cloud Gateway listening on ${host}:${port}`);
 
 async function shutdown(signal) {
   console.log(`Received ${signal}; shutting down AI Stoica Cloud Gateway...`);
+  const force = setTimeout(() => process.exit(1), 10000);
+  force.unref();
   try { await gateway.close(); } finally { process.exit(0); }
 }
 

@@ -17,11 +17,37 @@ const DATABASE_URL = process.env.DATABASE_URL;
 // Optional but recommended: when set, the Owner account is created by the server itself at startup
 // and nobody can claim the Owner e-mail through the public registration form.
 const OWNER_INITIAL_PASSWORD = String(process.env.OWNER_INITIAL_PASSWORD || "");
+const MIN_PASSWORD = 8;
 
-if (!DATABASE_URL) throw new Error("DATABASE_URL is required");
+const MSG = {
+  email: "Adresa de email nu este validă.",
+  password: `Parola trebuie să aibă cel puțin ${MIN_PASSWORD} caractere.`,
+  passwordLong: "Parola poate avea cel mult 256 de caractere.",
+  name: "Numele poate avea cel mult 100 de caractere.",
+  exists: "Există deja un cont cu acest email.",
+  credentials: "Email sau parolă incorectă.",
+  pending: "Contul așteaptă aprobarea Owner-ului.",
+  inactive: "Contul nu este activ.",
+  tooMany: "Prea multe încercări. Așteaptă 15 minute și încearcă din nou.",
+  auth: "Autentificare necesară.",
+  session: "Sesiune invalidă sau expirată.",
+  ownerOnly: "Acces rezervat Owner.",
+  userMissing: "Utilizator inexistent."
+};
+
+if (!DATABASE_URL && !process.env.PGHOST) throw new Error("DATABASE_URL or PGHOST/PGUSER/PGPASSWORD/PGDATABASE is required");
 if (!OWNER_EMAIL) throw new Error("OWNER_EMAIL is required");
+if (OWNER_INITIAL_PASSWORD && OWNER_INITIAL_PASSWORD.length < MIN_PASSWORD) throw new Error(`OWNER_INITIAL_PASSWORD must have at least ${MIN_PASSWORD} characters`);
 
-const pool = new Pool({ connectionString: DATABASE_URL, max: Number(process.env.PG_POOL_MAX || 10) });
+const pool = new Pool({
+  ...(DATABASE_URL ? { connectionString: DATABASE_URL } : {}),
+  max: Number(process.env.PG_POOL_MAX || 10),
+  connectionTimeoutMillis: 10000,
+  idleTimeoutMillis: 30000,
+  statement_timeout: 30000,
+  query_timeout: 35000
+});
+pool.on("error", e => console.error("[AI Stoica] PostgreSQL:", e.message));
 
 const DEFAULT_USER_PERMISSIONS = {
   chat: true,
@@ -42,6 +68,19 @@ const DEFAULT_USER_PERMISSIONS = {
   openai: false,
   anthropic: false
 };
+const OWNER_PERMISSIONS = { ...DEFAULT_USER_PERMISSIONS, video_generation: true, deep_research: true, automations: true, plugins: true, github_access: true, openai: true, anthropic: true, openrouter: true };
+
+function httpError(status, message) { const e = new Error(message); e.status = status; e.expose = true; return e; }
+function toBool(value) {
+  if (value === true || value === false) return value;
+  if (value === "true" || value === 1 || value === "1") return true;
+  if (value === "false" || value === 0 || value === "0") return false;
+  return undefined;
+}
+function intQuery(value, def, min, max) {
+  const n = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
+}
 
 async function loadAiContext(user) {
   const [permissionsRow, paidRow, combinationsRow] = await Promise.all([
@@ -61,14 +100,18 @@ function normalizeEmail(v) { return String(v || "").trim().toLowerCase(); }
 function randomToken() { return crypto.randomBytes(32).toString("hex"); }
 function sha256(v) { return crypto.createHash("sha256").update(String(v)).digest("hex"); }
 function id() { return crypto.randomUUID(); }
-function clientIp(req) { return String(req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim(); }
+// req.ip honours "trust proxy" (TRUST_PROXY_HOPS), so a client cannot fake its address with headers.
+function clientIp(req) { return String(req.ip || req.socket?.remoteAddress || "").slice(0, 80); }
+function isOwnerRow(row) { return row?.role === "owner" && normalizeEmail(row.email) === OWNER_EMAIL; }
+
+// Same cost as real hashes, so unknown e-mails take as long as wrong passwords.
+const DUMMY_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString("hex"), 12);
 
 async function ensureOwnerAccount() {
   if (!OWNER_INITIAL_PASSWORD) {
     console.warn("[AI Stoica] OWNER_INITIAL_PASSWORD is not set: until the Owner registers, anyone who knows OWNER_EMAIL could register it.");
     return;
   }
-  if (OWNER_INITIAL_PASSWORD.length < 10) throw new Error("OWNER_INITIAL_PASSWORD must have at least 10 characters");
   const existing = await pool.query("SELECT id FROM users WHERE lower(email)=lower($1)", [OWNER_EMAIL]);
   if (existing.rowCount) return;
   const userId = id();
@@ -78,20 +121,49 @@ async function ensureOwnerAccount() {
   );
   await pool.query(
     "INSERT INTO user_permissions(user_id,permissions) VALUES($1,$2::jsonb) ON CONFLICT(user_id) DO NOTHING",
-    [userId, JSON.stringify({ ...DEFAULT_USER_PERMISSIONS, video_generation:true, deep_research:true, automations:true, plugins:true, github_access:true, openai:true, anthropic:true })]
+    [userId, JSON.stringify(OWNER_PERMISSIONS)]
   );
   await audit(userId, "owner.bootstrap", userId, {});
   console.log("[AI Stoica] Owner account created from OWNER_INITIAL_PASSWORD. You can remove the variable now.");
 }
 
+// Every .sql file in migrations/ runs once, in name order, under an advisory lock (safe with several replicas).
+async function runMigrations() {
+  const dir = path.join(__dirname, "migrations");
+  const files = fs.readdirSync(dir).filter(f => f.endsWith(".sql")).sort();
+  const client = await pool.connect();
+  try {
+    await client.query("SELECT pg_advisory_lock(731107)");
+    await client.query("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
+    const done = new Set((await client.query("SELECT version FROM schema_migrations")).rows.map(r => r.version));
+    for (const file of files) {
+      if (done.has(file)) continue;
+      await client.query("BEGIN");
+      try {
+        await client.query(fs.readFileSync(path.join(dir, file), "utf8"));
+        await client.query("INSERT INTO schema_migrations(version) VALUES($1)", [file]);
+        await client.query("COMMIT");
+        console.log("[AI Stoica] Migration applied:", file);
+      } catch (e) {
+        await client.query("ROLLBACK");
+        throw e;
+      }
+    }
+  } finally {
+    await client.query("SELECT pg_advisory_unlock(731107)").catch(() => {});
+    client.release();
+  }
+}
+
 async function migrate() {
-  const sql = fs.readFileSync(path.join(__dirname, "migrations", "001_initial.sql"), "utf8");
-  await pool.query(sql);
+  await runMigrations();
   await ensureOwnerAccount();
   await pool.query(
     "UPDATE users SET role='owner', status='active', approved_at=COALESCE(approved_at,NOW()) WHERE lower(email)=lower($1)",
     [OWNER_EMAIL]
   );
+  // An Owner role left from a previous OWNER_EMAIL grants nothing anymore.
+  await pool.query("UPDATE users SET role='user', updated_at=NOW() WHERE role='owner' AND lower(email)<>lower($1)", [OWNER_EMAIL]);
 
   // One-time transition: paid AI is Owner-only by default.
   // The Owner may later enable paid AI for normal accounts from Control Center.
@@ -139,6 +211,15 @@ async function notify(userId, type, title, body = "") {
     [id(), userId, type, title, body]
   );
 }
+// Login notices are sent at most once per hour per account (and per watched account for the Owner).
+async function notifyThrottled(userId, type, title, body, key = "") {
+  if (!userId) return;
+  const recent = await pool.query(
+    "SELECT 1 FROM notifications WHERE user_id=$1 AND type=$2 AND ($3='' OR body LIKE $4) AND created_at>NOW()-INTERVAL '1 hour' LIMIT 1",
+    [userId, type, key, "%" + key + "%"]
+  );
+  if (!recent.rowCount) await notify(userId, type, title, body);
+}
 
 async function ownerUserId() {
   const q = await pool.query("SELECT id FROM users WHERE lower(email)=lower($1) LIMIT 1", [OWNER_EMAIL]);
@@ -161,19 +242,25 @@ function publicUser(row) {
     id: row.id,
     email: row.email,
     name: row.name,
-    role: row.role,
+    role: isOwnerRow(row) ? "owner" : "user",
     status: row.status,
     createdAt: row.created_at,
     approvedAt: row.approved_at,
     lastLoginAt: row.last_login_at
   };
 }
+function inactiveBody(status) { return { error: status === "pending" ? MSG.pending : MSG.inactive, status }; }
+async function permissionsFor(user) {
+  if (isOwnerRow(user)) return { ...OWNER_PERMISSIONS };
+  const p = await pool.query("SELECT permissions FROM user_permissions WHERE user_id=$1", [user.id]);
+  return { ...DEFAULT_USER_PERMISSIONS, ...(p.rows[0]?.permissions || {}) };
+}
 
 async function auth(req, res, next) {
   try {
     const raw = String(req.headers.authorization || "");
-    if (!raw.startsWith("Bearer ")) return res.status(401).json({ error: "Autentificare necesară." });
-    const tokenHash = sha256(raw.slice(7));
+    if (!raw.startsWith("Bearer ")) return res.status(401).json({ error: MSG.auth });
+    const tokenHash = sha256(raw.slice(7).trim());
     const q = await pool.query(
       `SELECT u.*, s.token_hash
        FROM sessions s
@@ -182,8 +269,9 @@ async function auth(req, res, next) {
       [tokenHash]
     );
     const user = q.rows[0];
-    if (!user) return res.status(401).json({ error: "Sesiune invalidă sau expirată." });
-    if (user.status !== "active") return res.status(403).json({ error: "Contul nu este activ.", status: user.status });
+    if (!user) return res.status(401).json({ error: MSG.session });
+    if (user.status !== "active") return res.status(403).json(inactiveBody(user.status));
+    if (user.role === "owner" && !isOwnerRow(user)) user.role = "user";
     req.user = user;
     req.sessionTokenHash = tokenHash;
     next();
@@ -193,12 +281,12 @@ async function auth(req, res, next) {
 }
 
 function ownerOnly(req, res, next) {
-  if (req.user?.role !== "owner") return res.status(403).json({ error: "Acces rezervat Owner." });
+  if (!isOwnerRow(req.user)) return res.status(403).json({ error: MSG.ownerOnly });
   next();
 }
 
 const app = express();
-app.set("trust proxy", 1);
+app.set("trust proxy", intQuery(process.env.TRUST_PROXY_HOPS, 1, 0, 10));
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(cors({
   origin(origin, cb) {
@@ -209,16 +297,14 @@ app.use(cors({
   }
 }));
 app.use(express.json({ limit: "4mb" }));
-app.use(rateLimit({ windowMs: 60_000, limit: Number(process.env.RATE_LIMIT_PER_MINUTE || 120), standardHeaders: "draft-8", legacyHeaders: false }));
-// Password guessing protection: at most 20 failed sign-in / sign-up attempts per IP every 15 minutes.
-const authLimiter = rateLimit({
-  windowMs: 15 * 60_000,
-  limit: Number(process.env.AUTH_ATTEMPTS_PER_15_MIN || 20),
-  skipSuccessfulRequests: true,
-  standardHeaders: "draft-8",
-  legacyHeaders: false,
-  message: { error: "Prea multe încercări. Așteaptă 15 minute și încearcă din nou." }
-});
+const limiterDefaults = { standardHeaders: "draft-8", legacyHeaders: false, message: { error: MSG.tooMany } };
+// The desktop gateway validates its session on every request, so /auth/me has its own, larger budget.
+app.use(rateLimit({ ...limiterDefaults, windowMs: 60_000, limit: Number(process.env.RATE_LIMIT_PER_MINUTE || 120), skip: req => req.path === "/auth/me" || req.path === "/health" }));
+const meLimiter = rateLimit({ ...limiterDefaults, windowMs: 60_000, limit: Number(process.env.AUTH_ME_PER_MINUTE || 600) });
+// Password guessing protection: at most 20 failed sign-in attempts per IP every 15 minutes.
+const authLimiter = rateLimit({ ...limiterDefaults, windowMs: 15 * 60_000, limit: Number(process.env.AUTH_ATTEMPTS_PER_15_MIN || 20), skipSuccessfulRequests: true });
+// Successful sign-ups count too, so nobody can flood the Owner with access requests.
+const registerLimiter = rateLimit({ ...limiterDefaults, windowMs: 60 * 60_000, limit: Number(process.env.REGISTRATIONS_PER_HOUR || 10) });
 
 app.get("/health", async (_req, res, next) => {
   try {
@@ -227,16 +313,18 @@ app.get("/health", async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
-app.post("/auth/register", authLimiter, async (req, res, next) => {
+app.post("/auth/register", registerLimiter, authLimiter, async (req, res, next) => {
   try {
     const email = normalizeEmail(req.body?.email);
     const password = String(req.body?.password || "");
     const name = String(req.body?.name || "").trim() || email.split("@")[0];
-    if (!/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ error: "Email invalid." });
-    if (password.length < 10) return res.status(400).json({ error: "Parola trebuie să aibă minimum 10 caractere." });
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: MSG.email });
+    if (password.length < MIN_PASSWORD) return res.status(400).json({ error: MSG.password });
+    if (password.length > 256) return res.status(400).json({ error: MSG.passwordLong });
+    if (name.length > 100) return res.status(400).json({ error: MSG.name });
 
     const existing = await pool.query("SELECT id FROM users WHERE email=$1", [email]);
-    if (existing.rowCount) return res.status(409).json({ error: "Contul există deja." });
+    if (existing.rowCount) return res.status(409).json({ error: MSG.exists });
 
     if (email === OWNER_EMAIL && OWNER_INITIAL_PASSWORD) {
       return res.status(403).json({ error: "Contul Owner este creat de server. Autentifică-te cu parola configurată." });
@@ -257,11 +345,12 @@ app.post("/auth/register", authLimiter, async (req, res, next) => {
       );
       await client.query(
         "INSERT INTO user_permissions(user_id,permissions) VALUES($1,$2::jsonb)",
-        [userId, JSON.stringify(isOwner ? { ...DEFAULT_USER_PERMISSIONS, video_generation:true, deep_research:true, automations:true, plugins:true, github_access:true, openai:true, anthropic:true } : DEFAULT_USER_PERMISSIONS)]
+        [userId, JSON.stringify(isOwner ? OWNER_PERMISSIONS : DEFAULT_USER_PERMISSIONS)]
       );
       await client.query("COMMIT");
     } catch (e) {
       await client.query("ROLLBACK");
+      if (e.code === "23505") return res.status(409).json({ error: MSG.exists });
       throw e;
     } finally {
       client.release();
@@ -283,7 +372,7 @@ app.post("/auth/register", authLimiter, async (req, res, next) => {
 
     const token = await createSession(req, userId);
     const q = await pool.query("SELECT * FROM users WHERE id=$1", [userId]);
-    res.status(201).json({ token, user: publicUser(q.rows[0]) });
+    res.status(201).json({ token, user: publicUser(q.rows[0]), permissions: await permissionsFor(q.rows[0]) });
   } catch (e) { next(e); }
 });
 
@@ -293,30 +382,26 @@ app.post("/auth/login", authLimiter, async (req, res, next) => {
     const password = String(req.body?.password || "");
     const q = await pool.query("SELECT * FROM users WHERE email=$1", [email]);
     const user = q.rows[0];
-    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
-      return res.status(401).json({ error: "Email sau parolă incorectă." });
-    }
-    if (user.status !== "active") {
-      return res.status(403).json({ error: "Contul nu este activ.", status: user.status });
-    }
+    const ok = await bcrypt.compare(password, user?.password_hash || DUMMY_HASH);
+    if (!user || !ok) return res.status(401).json({ error: MSG.credentials });
+    if (user.status !== "active") return res.status(403).json(inactiveBody(user.status));
     if (email === OWNER_EMAIL && user.role !== "owner") {
-      await pool.query("UPDATE users SET role='owner', status='active', approved_at=COALESCE(approved_at,NOW()) WHERE id=$1", [user.id]);
+      await pool.query("UPDATE users SET role='owner', approved_at=COALESCE(approved_at,NOW()) WHERE id=$1", [user.id]);
       user.role = "owner";
-      user.status = "active";
     }
     await pool.query("UPDATE users SET last_login_at=NOW(), updated_at=NOW() WHERE id=$1", [user.id]);
     const token = await createSession(req, user.id);
     const ip = clientIp(req);
     await audit(user.id, "user.login", user.id, { ip });
 
-    await notify(user.id, "login", "Autentificare AI Stoica", `Te-ai autentificat la AI Stoica de la adresa ${ip || "necunoscută"}.`);
-    if (user.role !== "owner") {
+    await notifyThrottled(user.id, "login", "Autentificare AI Stoica", `Te-ai autentificat la AI Stoica de la adresa ${ip || "necunoscută"}.`);
+    if (!isOwnerRow(user)) {
       const ownerId = await ownerUserId();
-      if (ownerId) await notify(ownerId, "user_login", "Utilizator conectat", `${user.name} (${user.email}) s-a autentificat. IP: ${ip || "necunoscut"}.`);
+      if (ownerId) await notifyThrottled(ownerId, "user_login", "Utilizator conectat", `${user.name} (${user.email}) s-a autentificat. IP: ${ip || "necunoscut"}.`, `(${user.email})`);
     }
 
-    const refreshed = await pool.query("SELECT * FROM users WHERE id=$1", [user.id]);
-    res.json({ token, user: publicUser(refreshed.rows[0] || user) });
+    const refreshed = (await pool.query("SELECT * FROM users WHERE id=$1", [user.id])).rows[0] || user;
+    res.json({ token, user: publicUser(refreshed), permissions: await permissionsFor(refreshed) });
   } catch (e) { next(e); }
 });
 
@@ -327,51 +412,57 @@ app.post("/auth/logout", auth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-app.get("/auth/me", auth, async (req, res, next) => {
+app.get("/auth/me", meLimiter, auth, async (req, res, next) => {
   try {
-    const p = await pool.query("SELECT permissions FROM user_permissions WHERE user_id=$1", [req.user.id]);
-    res.json({ user: publicUser(req.user), permissions: { ...DEFAULT_USER_PERMISSIONS, ...(p.rows[0]?.permissions || {}) } });
+    await pool.query("UPDATE sessions SET expires_at=$2 WHERE token_hash=$1", [req.sessionTokenHash, new Date(Date.now() + SESSION_TTL_DAYS * 86400000)]);
+    res.json({ user: publicUser(req.user), permissions: await permissionsFor(req.user) });
   } catch (e) { next(e); }
 });
 
-app.get("/api/admin/users", auth, ownerOnly, async (_req, res, next) => {
+app.get("/api/admin/users", auth, ownerOnly, async (req, res, next) => {
   try {
+    const limit = intQuery(req.query?.limit, 500, 1, 1000), offset = intQuery(req.query?.offset, 0, 0, 1e9);
     const q = await pool.query(
       `SELECT u.id,u.email,u.name,u.role,u.status,u.created_at,u.approved_at,u.last_login_at,
               COALESCE(p.permissions,'{}'::jsonb) AS permissions,
               (SELECT COUNT(*)::int FROM sessions s WHERE s.user_id=u.id AND s.expires_at>NOW()) AS active_sessions
        FROM users u
        LEFT JOIN user_permissions p ON p.user_id=u.id
-       ORDER BY u.created_at DESC`
+       ORDER BY u.created_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
     );
-    res.json({ data: q.rows.map(row=>({...row,permissions:{...DEFAULT_USER_PERMISSIONS,...(row.permissions||{})}})) });
+    res.json({ data: q.rows.map(row => ({ ...row, role: isOwnerRow(row) ? "owner" : "user", permissions: { ...DEFAULT_USER_PERMISSIONS, ...(row.permissions || {}) } })) });
   } catch (e) { next(e); }
 });
 
+async function adminTarget(targetId) {
+  const target = await pool.query("SELECT * FROM users WHERE id=$1", [targetId]);
+  if (!target.rowCount) throw httpError(404, MSG.userMissing);
+  return target.rows[0];
+}
+
 app.patch("/api/admin/users/:id/status", auth, ownerOnly, async (req, res, next) => {
   try {
-    const targetId = req.params.id;
     const status = String(req.body?.status || "");
     if (!["pending","active","rejected","suspended","blocked"].includes(status)) {
       return res.status(400).json({ error: "Status invalid." });
     }
-    const target = await pool.query("SELECT * FROM users WHERE id=$1", [targetId]);
-    if (!target.rowCount) return res.status(404).json({ error: "Utilizator inexistent." });
-    if (target.rows[0].role === "owner") return res.status(400).json({ error: "Contul Owner nu poate fi blocat din aplicație." });
+    const target = await adminTarget(req.params.id);
+    if (isOwnerRow(target)) return res.status(400).json({ error: "Contul Owner nu poate fi blocat din aplicație." });
 
     await pool.query(
       `UPDATE users
        SET status=$1,
+           role='user',
            approved_at=CASE WHEN $1='active' THEN COALESCE(approved_at,NOW()) ELSE approved_at END,
            approved_by=CASE WHEN $1='active' THEN $2 ELSE approved_by END,
            updated_at=NOW()
        WHERE id=$3`,
-      [status, req.user.id, targetId]
+      [status, req.user.id, target.id]
     );
-    if (["rejected","suspended","blocked"].includes(status)) {
-      await pool.query("DELETE FROM sessions WHERE user_id=$1", [targetId]);
-    }
-    await audit(req.user.id, "admin.user_status", targetId, { status });
+    if (status !== "active") await pool.query("DELETE FROM sessions WHERE user_id=$1", [target.id]);
+    await audit(req.user.id, "admin.user_status", target.id, { status });
     const statusLabels = {
       active: "Cont aprobat",
       pending: "Cont în așteptare",
@@ -379,40 +470,43 @@ app.patch("/api/admin/users/:id/status", auth, ownerOnly, async (req, res, next)
       suspended: "Cont suspendat",
       blocked: "Cont blocat"
     };
-    await notify(targetId, "account_status", statusLabels[status] || "Status cont actualizat", `Statusul contului tău AI Stoica este acum: ${status}.`);
-    const updated = await pool.query("SELECT * FROM users WHERE id=$1", [targetId]);
+    await notify(target.id, "account_status", statusLabels[status], `Statusul contului tău AI Stoica: ${statusLabels[status]}.`);
+    const updated = await pool.query("SELECT * FROM users WHERE id=$1", [target.id]);
     res.json({ user: publicUser(updated.rows[0]) });
   } catch (e) { next(e); }
 });
 
 app.patch("/api/admin/users/:id/permissions", auth, ownerOnly, async (req, res, next) => {
   try {
-    const targetId = req.params.id;
-    const target = await pool.query("SELECT * FROM users WHERE id=$1", [targetId]);
-    if (!target.rowCount) return res.status(404).json({ error: "Utilizator inexistent." });
-    if (target.rows[0].role === "owner") return res.status(400).json({ error: "Permisiunile Owner sunt complete și nu se restricționează aici." });
+    const input = req.body?.permissions;
+    if (!input || typeof input !== "object" || Array.isArray(input)) return res.status(400).json({ error: "Lipsește obiectul „permissions”." });
+    const target = await adminTarget(req.params.id);
+    if (isOwnerRow(target)) return res.status(400).json({ error: "Permisiunile Owner sunt complete și nu se restricționează aici." });
 
-    const current = await pool.query("SELECT permissions FROM user_permissions WHERE user_id=$1", [targetId]);
-    const nextPermissions = { ...(current.rows[0]?.permissions || DEFAULT_USER_PERMISSIONS) };
-    for (const [k,v] of Object.entries(req.body?.permissions || {})) {
-      if (Object.prototype.hasOwnProperty.call(DEFAULT_USER_PERMISSIONS, k)) nextPermissions[k] = Boolean(v);
+    const current = await pool.query("SELECT permissions FROM user_permissions WHERE user_id=$1", [target.id]);
+    const nextPermissions = { ...DEFAULT_USER_PERMISSIONS, ...(current.rows[0]?.permissions || {}) };
+    for (const [k, v] of Object.entries(input)) {
+      if (!Object.hasOwn(DEFAULT_USER_PERMISSIONS, k)) continue;
+      const value = toBool(v);
+      if (typeof value !== "boolean") return res.status(400).json({ error: `Permisiunea „${k}” trebuie să fie true sau false.` });
+      nextPermissions[k] = value;
     }
     await pool.query(
       `INSERT INTO user_permissions(user_id,permissions,updated_at)
        VALUES($1,$2::jsonb,NOW())
        ON CONFLICT(user_id) DO UPDATE SET permissions=EXCLUDED.permissions, updated_at=NOW()`,
-      [targetId, JSON.stringify(nextPermissions)]
+      [target.id, JSON.stringify(nextPermissions)]
     );
-    await audit(req.user.id, "admin.permissions", targetId, { permissions: nextPermissions });
+    await audit(req.user.id, "admin.permissions", target.id, { permissions: nextPermissions });
     res.json({ permissions: nextPermissions });
   } catch (e) { next(e); }
 });
 
 app.post("/api/admin/users/:id/sessions/revoke", auth, ownerOnly, async (req, res, next) => {
   try {
-    const targetId = req.params.id;
-    await pool.query("DELETE FROM sessions WHERE user_id=$1", [targetId]);
-    await audit(req.user.id, "admin.sessions_revoke", targetId, {});
+    const target = await adminTarget(req.params.id);
+    await pool.query("DELETE FROM sessions WHERE user_id=$1", [target.id]);
+    await audit(req.user.id, "admin.sessions_revoke", target.id, {});
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
@@ -453,7 +547,7 @@ app.post("/api/notifications/read-all", auth, async (req, res, next) => {
 
 app.get("/api/admin/audit", auth, ownerOnly, async (req, res, next) => {
   try {
-    const limit = Math.min(200, Math.max(1, Number(req.query?.limit || 100)));
+    const limit = intQuery(req.query?.limit, 100, 1, 200);
     const q = await pool.query(
       `SELECT a.id,a.action,a.details,a.created_at,
               actor.email AS actor_email,target.email AS target_email
@@ -478,7 +572,8 @@ app.get("/api/admin/ai", auth, ownerOnly, async (_req, res, next) => {
 
 app.patch("/api/admin/ai", auth, ownerOnly, async (req, res, next) => {
   try {
-    const enabled = Boolean(req.body?.paidAiEnabled);
+    const enabled = toBool(req.body?.paidAiEnabled);
+    if (typeof enabled !== "boolean") return res.status(400).json({ error: "Câmpul „paidAiEnabled” trebuie să fie true sau false." });
     await pool.query(
       `INSERT INTO system_settings(key,value,updated_at)
        VALUES('paid_ai_enabled',$1::jsonb,NOW())
@@ -527,16 +622,48 @@ app.get("/api/ai/catalog", auth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+app.use((_req, res) => res.status(404).json({ error: "Endpoint inexistent." }));
+
 app.use((err, _req, res, _next) => {
-  console.error(err);
-  res.status(500).json({ error: "Eroare internă AI Stoica." });
+  const status = Number.isInteger(err?.status) && err.status >= 400 && err.status < 600 ? err.status : 500;
+  if (status >= 500) console.error(err);
+  let message = "Eroare internă AI Stoica.";
+  if (err?.type === "entity.parse.failed") message = "Corpul cererii nu este JSON valid.";
+  else if (err?.type === "entity.too.large") message = "Cererea depășește limita de 4 MB.";
+  else if (status < 500 && err?.expose && err.message) message = err.message;
+  else if (status < 500) message = "Cerere invalidă.";
+  if (res.headersSent) return;
+  res.status(status).json({ error: message });
 });
+
+async function cleanup() {
+  await pool.query("DELETE FROM sessions WHERE expires_at<=NOW()");
+  await pool.query("DELETE FROM notifications WHERE created_at<NOW()-INTERVAL '90 days'");
+  await pool.query(
+    `DELETE FROM notifications n USING (
+       SELECT id FROM (SELECT id,ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) AS rn FROM notifications) x WHERE x.rn>500
+     ) old WHERE n.id=old.id`
+  );
+}
+
+let server = null;
+async function shutdown(signal) {
+  console.log(`[AI Stoica] ${signal}: closing the server...`);
+  const force = setTimeout(() => process.exit(1), 10000);
+  force.unref();
+  try {
+    if (server) await new Promise(resolve => server.close(resolve));
+    await pool.end();
+  } finally { process.exit(0); }
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
 
 (async () => {
   await migrate();
-  await pool.query("DELETE FROM sessions WHERE expires_at<=NOW()");
-  setInterval(() => { pool.query("DELETE FROM sessions WHERE expires_at<=NOW()").catch(() => {}); }, 60 * 60 * 1000).unref();
-  app.listen(PORT, HOST, () => console.log(`AI Stoica Server listening on ${HOST}:${PORT}`));
+  await cleanup();
+  setInterval(() => { cleanup().catch(e => console.error("[AI Stoica] cleanup:", e.message)); }, 60 * 60 * 1000).unref();
+  server = app.listen(PORT, HOST, () => console.log(`AI Stoica Server listening on ${HOST}:${PORT}`));
 })().catch(err => {
   console.error("AI Stoica Server failed to start:", err);
   process.exit(1);

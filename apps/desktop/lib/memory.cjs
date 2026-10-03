@@ -66,14 +66,20 @@ function memoryCategory(text) {
   return "detaliu";
 }
 
+const EXPLICIT_MEMORY = /(^|[^a-z])(tine minte|retine|memoreaza|noteaza(-ti)?|sa nu uiti|nu uita|remember|keep in mind)([^a-z]|$)/;
+const REQUEST_START = /^(te rog[, ]+)?(fa|fa-mi|faceti|scrie|scrie-mi|genereaza|creeaza|da-mi|trimite|spune|spune-mi|explica|explica-mi|rezuma|rezuma-mi|tradu|traduce|calculeaza|cauta|verifica|arata|arata-mi|ajuta|ajuta-ma|poti|puteti|as vrea|vreau (sa|un|o|niste)|ce|cum|cand|unde|cine|care|de ce|cat|cati|cate)([^a-z]|$)/;
+const DURABLE_FACT = /(^|[^a-z])(prefer|imi place|nu imi place|nu-mi place|ma numesc|numele meu|locuiesc|stau in|sunt din|sunt de profesie|lucrez (la|ca|in|pentru)|firma mea|compania mea|afacerea mea|proiectul meu|am decis|decizia (mea|noastra)|de acum (inainte|incolo)|intotdeauna|mereu sa|niciodata sa|folosesc (mereu|de obicei|zilnic)|obiectivul meu|scopul meu|limba mea|stilul meu|vreau ca (ai stoica|tu|raspunsurile|raspunsul)|raspunde(-mi)? (mereu|intotdeauna|doar|numai))([^a-z]|$)/;
+
+// Only explicit requests ("ține minte …") and first-person durable facts or preferences are kept.
+// Questions, one-off requests and long pasted text are not memories.
 function durableMemoryCandidate(userText) {
   const clean = String(userText || "").trim();
   if (clean.length < 12) return "";
   const t = normalizeMemoryText(clean);
-  const explicit = /tine minte|retine|remember|sa nu uiti/.test(t);
-  const durable = /\b(prefer|vreau|nu vreau|folosesc|am decis|lucrez|proiect|obiectiv|format|program|domeniu|server|model|masina|liceu|clasa|firma|primarie)\b/.test(t);
-  if (!explicit && !durable) return "";
-  return clean.slice(0, 1800);
+  if (EXPLICIT_MEMORY.test(t)) return clean.slice(0, 1800);
+  if (clean.includes("?") || clean.length > 600) return "";
+  if (REQUEST_START.test(t)) return "";
+  return DURABLE_FACT.test(t) ? clean.slice(0, 1800) : "";
 }
 
 function addMemory(db, userId, text, source = "conversation", extra = {}) {
@@ -122,36 +128,50 @@ function embeddingProvider(cfg) {
 }
 
 function cosine(a, b) {
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length || !a.length) return 0;
+  if (!a || !b || typeof a.length !== "number" || a.length !== b.length || !a.length) return 0;
   let dot = 0, na = 0, nb = 0;
   for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
   return na && nb ? dot / Math.sqrt(na * nb) : 0;
 }
 
+const MAX_VECTORS = 5000;
+const MAX_NEW_PER_SEARCH = 256;
+
+// Vectors are stored once per memory (Float32, base64), never for questions. Vectors of deleted
+// memories are dropped on save, and the file is written at most once every 2 seconds.
 function createEmbeddingIndex(dataDir) {
   const file = path.join(dataDir, "memory-embeddings.json");
-  let cache = null;
-  let dirty = false;
-  let disabledUntil = 0;
+  let cache = null, dirty = false, disabledUntil = 0, saveTimer = null, knownIds = null;
+  const queryCache = new Map();
 
   function load() {
     if (cache) return cache;
-    try { cache = JSON.parse(fs.readFileSync(file, "utf8")) || {}; } catch { cache = {}; }
+    try {
+      const raw = JSON.parse(fs.readFileSync(file, "utf8"));
+      cache = raw && raw.version === 2 && raw.items && typeof raw.items === "object" ? raw.items : {};
+      if (!(raw && raw.version === 2)) dirty = true;
+    } catch { cache = {}; }
     return cache;
   }
-  function save() {
-    if (!dirty) return;
+  function encode(vec) { return Buffer.from(new Float32Array(vec).buffer).toString("base64"); }
+  function decode(s) { const b = Buffer.from(String(s || ""), "base64"); return new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.length - (b.length % 4))); }
+  function hashFor(provider, text) { return crypto.createHash("sha1").update(provider.id + ":" + provider.model + ":" + String(text)).digest("hex"); }
+  function writeNow() {
+    saveTimer = null;
+    if (!dirty || !cache) return;
     try {
-      const keys = Object.keys(cache);
-      const maxEntries = 5000;
-      if (keys.length > maxEntries) for (const k of keys.slice(0, keys.length - maxEntries)) delete cache[k];
-      fs.writeFileSync(`${file}.tmp`, JSON.stringify(cache), "utf8");
+      if (knownIds) for (const id of Object.keys(cache)) if (!knownIds.has(id)) delete cache[id];
+      const ids = Object.keys(cache);
+      if (ids.length > MAX_VECTORS) for (const id of ids.sort((a, b) => (cache[a].t || 0) - (cache[b].t || 0)).slice(0, ids.length - MAX_VECTORS)) delete cache[id];
+      fs.writeFileSync(`${file}.tmp`, JSON.stringify({ version: 2, items: cache }), "utf8");
       fs.renameSync(`${file}.tmp`, file);
       dirty = false;
     } catch {}
   }
-  function keyFor(provider, text) {
-    return provider.id + ":" + provider.model + ":" + crypto.createHash("sha1").update(String(text)).digest("hex");
+  function scheduleSave() {
+    if (saveTimer) return;
+    saveTimer = setTimeout(writeNow, 2000);
+    saveTimer.unref?.();
   }
   async function embed(provider, texts) {
     const r = await fetch(provider.url, {
@@ -160,59 +180,61 @@ function createEmbeddingIndex(dataDir) {
       body: JSON.stringify({ model: provider.model, input: texts }),
       signal: AbortSignal.timeout(8000)
     });
-    if (!r.ok) throw new Error(`Embeddings HTTP ${r.status}`);
+    if (!r.ok) { try { await r.body?.cancel(); } catch {} throw Object.assign(new Error(`Embeddings HTTP ${r.status}`), { status: r.status }); }
     const data = await r.json();
     const rows = Array.isArray(data?.data) ? data.data : [];
     return rows.sort((a, b) => (a.index || 0) - (b.index || 0)).map((x) => x.embedding);
   }
-  async function vectorsFor(provider, texts, { cacheWrites=true } = {}) {
+  async function queryVector(provider, query) {
+    const key = hashFor(provider, query);
+    if (queryCache.has(key)) { const v = queryCache.get(key); queryCache.delete(key); queryCache.set(key, v); return v; }
+    const [v] = await embed(provider, [query]);
+    if (!Array.isArray(v)) return null;
+    queryCache.set(key, v);
+    if (queryCache.size > 200) queryCache.delete(queryCache.keys().next().value);
+    return v;
+  }
+  async function memoryVectors(provider, mine) {
     const store = load();
-    const out = new Array(texts.length);
-    const missing = [];
-    texts.forEach((t, i) => {
-      const hit = store[keyFor(provider, t)];
-      if (hit) out[i] = hit; else missing.push(i);
-    });
+    const missing = mine.filter((m) => !store[m.id] || store[m.id].h !== hashFor(provider, m.text)).slice(0, MAX_NEW_PER_SEARCH);
     for (let start = 0; start < missing.length; start += 64) {
       const batch = missing.slice(start, start + 64);
-      const vectors = await embed(provider, batch.map((i) => String(texts[i]).slice(0, 4000)));
-      batch.forEach((idx, j) => {
-        if (Array.isArray(vectors[j])) {
-          out[idx] = vectors[j];
-          if(cacheWrites){ store[keyFor(provider, texts[idx])] = vectors[j]; dirty = true; }
-        }
-      });
+      const vectors = await embed(provider, batch.map((m) => String(m.text).slice(0, 4000)));
+      batch.forEach((m, j) => { if (Array.isArray(vectors[j])) { store[m.id] = { h: hashFor(provider, m.text), v: encode(vectors[j]), t: m.createdAt || Date.now() }; dirty = true; } });
     }
-    save();
-    return out;
+    if (dirty) scheduleSave();
+    return mine.map((m) => (store[m.id] && store[m.id].h === hashFor(provider, m.text) ? decode(store[m.id].v) : null));
   }
 
   // Combines word matching with meaning-based similarity. Falls back silently.
   async function search(cfg, db, userId, query, limit = 8) {
+    knownIds = new Set(db.memories.map((m) => m.id));
     const keyword = memoryMatches(db, userId, query, limit);
     const provider = embeddingProvider(cfg);
     const mine = db.memories.filter((m) => m.userId === userId);
     if (!provider || !String(query || "").trim() || !mine.length || Date.now() < disabledUntil || cfg?.semanticMemoryEnabled === false) return keyword;
     try {
-      const [queryVector] = await vectorsFor(provider, [String(query).slice(0, 4000)], {cacheWrites:false});
-      const vectors = await vectorsFor(provider, mine.map((m) => m.text));
+      const qv = await queryVector(provider, String(query).slice(0, 4000));
+      if (!qv) return keyword;
+      const vectors = await memoryVectors(provider, mine);
       const words = tokenize(query);
       const scored = mine.map((m, i) => {
-        const semantic = cosine(queryVector, vectors[i]);
-        const score = semantic * 10 + keywordScore(m.text, words) + (m.pinned ? 3 : 0);
-        return { m, score, semantic };
+        const semantic = cosine(qv, vectors[i]);
+        return { m, semantic, score: semantic * 10 + keywordScore(m.text, words) + (m.pinned ? 3 : 0) };
       }).filter((x) => x.semantic >= 0.45 || x.m.pinned || keyword.includes(x.m))
         .sort((a, b) => b.score - a.score)
         .slice(0, limit)
         .map((x) => x.m);
       return scored.length ? scored : keyword;
-    } catch {
-      disabledUntil = Date.now() + 10 * 60 * 1000;
+    } catch (e) {
+      if ([401, 403, 429].includes(e?.status)) disabledUntil = Date.now() + 10 * 60 * 1000;
       return keyword;
     }
   }
 
-  return { search };
+  function flush() { if (saveTimer) { clearTimeout(saveTimer); writeNow(); } }
+
+  return { search, flush };
 }
 
 module.exports = {
