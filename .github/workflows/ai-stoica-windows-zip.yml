@@ -120,15 +120,14 @@ jobs:
           $version = $env:AI_STOICA_VERSION
           $tag = "v$version"
           $zip = "AI_Stoica_Windows_${version}_COMPLET.zip"
-          $releaseDir = "apps/desktop/release"
-          $latest = Join-Path $releaseDir "latest.yml"
-          $installer = Join-Path $releaseDir "AI_Stoica_Setup_${version}_x64.exe"
-          $blockmap = "$installer.blockmap"
+          # Only the ZIP goes to the Release. latest.yml and the .blockmap are published by "Build AI Stoica Windows"
+          # together with the .exe from the same build; this job builds again, so its hashes would not match that .exe
+          # and electron-updater would reject the update.
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $zip $latest $blockmap --clobber
+            gh release upload $tag $zip --clobber
           } else {
-            gh release create $tag $zip $latest $blockmap --title "AI Stoica $version" --notes "AI Stoica principal pentru Windows."
+            gh release create $tag $zip --title "AI Stoica $version" --notes "AI Stoica principal pentru Windows."
           }
 
       - name: Incarca ZIP ca Artifact
