@@ -14,13 +14,16 @@ function normalizeKey(value) {
 function providerSignals(model) {
   const raw = String(model || "").toLowerCase().trim();
   const found = new Set();
+  // GPT-OSS is open-weight and never billed by OpenAI: "openai/gpt-oss-…" is Groq's name, "gpt-oss-…" Cerebras'.
+  if (/^openai\/gpt[-_. ]?oss/.test(raw)) return ["groq"];
+  if (/^gpt[-_. ]?oss/.test(raw)) return ["cerebras"];
   const first = raw.split("/")[0];
   const prefixMap = {
     openai:"openai", anthropic:"anthropic", claude:"anthropic",
     google:"gemini", gemini:"gemini", cerebras:"cerebras", groq:"groq",
     cloudflare:"cloudflare", "@cf":"cloudflare", openrouter:"openrouter"
   };
-  if (prefixMap[first]) return [prefixMap[first]];
+  if (Object.hasOwn(prefixMap, first)) return [prefixMap[first]];
 
   if (/openai|chatgpt/i.test(raw)) found.add("openai");
   if (!/gpt[-_. ]?oss/i.test(raw) && /(^|[\s_.:-])gpt(?:[\s_.:-]|\d)|(^|[\s_.:-])o[134](?:[\s_.:-]|$)/i.test(raw)) found.add("openai");
@@ -36,11 +39,7 @@ function providerSignals(model) {
 
 function isManagedPaidAlias(model) {
   const n = normalizeKey(model);
-  return n === "ai principal" ||
-    n === "ai stoica" ||
-    n === "aistoica" ||
-    n.startsWith("ai principal ") ||
-    n.startsWith("ai stoica ");
+  return n === "ai principal" || n === "ai stoica" || n === "aistoica";
 }
 
 function comboForModel(combinations, model) {

@@ -3,11 +3,12 @@
     "name": "AI Stoica",
     "slug": "ai-stoica",
     "scheme": "aistoica",
-    "version": "0.6.0",
+    "version": "0.7.11",
     "orientation": "portrait",
     "icon": "./icon.png",
     "userInterfaceStyle": "dark",
     "updates": {
+      "enabled": false,
       "fallbackToCacheTimeout": 0
     },
     "ios": {
@@ -15,7 +16,8 @@
       "bundleIdentifier": "ro.stoica.aistoica",
       "config": {
         "usesNonExemptEncryption": false
-      }
+      },
+      "requireFullScreen": true
     },
     "android": {
       "package": "ro.stoica.aistoica",
@@ -39,6 +41,9 @@
       "image": "./splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#05070b"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
     }
   }
 }

@@ -1,6 +1,6 @@
 # Oracle Cloud Always Free — AI Stoica 24/7
 
-Acest ghid pornește AI Stoica Gateway + OmniRoute + Redis + HTTPS pe un VM Oracle Cloud Ubuntu.
+Acest ghid pornește AI Stoica Gateway + OmniRoute + Redis + HTTPS pe un VM Oracle Cloud Ubuntu, pentru aplicația desktop. Aplicația de telefon folosește Worker-ul Cloudflare (vezi pasul 8).
 
 ## 1. Creează VM-ul
 
@@ -62,13 +62,17 @@ Editează `.env`:
 
 ```env
 AI_STOICA_DOMAIN=203.0.113.10.sslip.io
+AI_STOICA_OWNER_EMAIL=emailul-tau@exemplu.ro
 OMNIROUTE_BASE_URL=http://omniroute:20128/v1
 OMNIROUTE_API_KEY=
-AI_STOICA_MODEL=Ai principal
+AI_STOICA_DEFAULT_MODEL=
 AI_STOICA_SPEECH_MODEL=openai/whisper-1
 AI_STOICA_SPEECH_LANGUAGE=ro
+AI_STOICA_OPEN_REGISTRATION=false
 OMNIROUTE_WS_BRIDGE_SECRET=SECRETUL_GENERAT_MAI_SUS
 ```
+
+`AI_STOICA_DEFAULT_MODEL` gol înseamnă că Gateway-ul alege modelul; poți pune un id exact din OmniRoute (de exemplu `groq/openai/gpt-oss-120b`). Nu folosi „Ai principal”: selectarea automată este dezactivată și Gateway-ul ar refuza cererile. Celelalte variabile opționale sunt descrise în `.env.example`.
 
 ## 6. Pornește serviciile
 
@@ -84,6 +88,8 @@ https://DOMENIU/health
 
 Containerele folosesc `restart: unless-stopped`, deci repornesc automat după reboot.
 
+Creează imediat contul tău cu e-mailul din `AI_STOICA_OWNER_EMAIL`: cât timp `AI_STOICA_OPEN_REGISTRATION=false`, după primul cont nu se mai pot crea altele.
+
 ## 7. Configurează OmniRoute
 
 Dashboard-ul OmniRoute rămâne privat. Creează de pe PC un tunel SSH:
@@ -98,22 +104,22 @@ Apoi deschide pe PC:
 http://127.0.0.1:20128
 ```
 
-Configurează furnizorii și combo-ul `Ai principal`.
+Conectează furnizorii și modelele. În aplicația desktop fiecare utilizator alege manual modelul dintre cele disponibile.
 
-## 8. Leagă aplicația mobilă
+## 8. Aplicația mobilă
 
-În Expo/EAS și în build-ul mobil setează:
+Telefonul NU se leagă de acest Gateway: aplicația mobilă folosește Worker-ul Cloudflare (`apps/cloudflare`), care are încărcarea de fișiere, exportul și aprobarea conturilor de care are nevoie. Publică Worker-ul după `apps/cloudflare/README.md`, apoi pune adresa lui în `apps/mobile/eas.json`:
 
 ```env
-EXPO_PUBLIC_GATEWAY_URL=https://DOMENIU
-EXPO_PUBLIC_DEFAULT_MODEL=Ai principal
+EXPO_PUBLIC_GATEWAY_URL=https://ai-stoica.<subdomain>.workers.dev
+EXPO_PUBLIC_DEFAULT_MODEL=AI Stoica Performance Max
 ```
 
-Același URL este folosit de iPhone, iPad și Android.
+Detalii în `apps/mobile/README.md`. Același URL este folosit de iPhone, iPad și Android.
 
 ## 9. Build iOS
 
-Pentru instalare pe iPhone/iPad este necesară semnarea Apple. După conectarea proiectului la Expo/EAS și Apple Developer:
+Pentru instalare pe iPhone/iPad este necesară semnarea Apple. După conectarea proiectului la Expo/EAS și Apple Developer (și după ce ai pus adresa Worker-ului în `eas.json`):
 
 ```bash
 cd apps/mobile

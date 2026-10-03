@@ -47,4 +47,11 @@ const disabledCtx=ctx({permissions:{openai:true,anthropic:true}});
 disabledCtx.combinations=[...combos,{id:"disabled-paid",name:"Disabled Paid",providers:["openai"],paid_required:true,enabled:false}];
 expect(!allowed(disabledCtx,"disabled-paid"),"Disabled combination must stay blocked even when provider permission exists");
 
+expect(allowed(ctx({paidEnabled:false}),"openai/gpt-oss-120b"),"Groq-named GPT-OSS is a free open-weight model, not paid OpenAI");
+expect(!allowed(ctx({paidEnabled:false,permissions:{groq:false}}),"openai/gpt-oss-120b"),"Groq-named GPT-OSS obeys the Groq permission");
+expect(allowed(ctx({paidEnabled:false}),"gpt-oss-120b"),"Bare GPT-OSS (Cerebras naming) is free");
+expect(!allowed(ctx(),"openai/gpt-5-oss-like"),"Real OpenAI models stay paid");
+expect(!allowed(ctx(),"constructor/x"),"Prototype keys are not providers");
+expect(evaluateModelAccess(ctx({role:"owner"}),"constructor/x").providers.every(p=>typeof p==="string"),"Providers are always strings");
+expect(evaluateModelAccess(ctx(),"AI Stoica Performance Max").source==="unknown","Only the exact legacy alias names count as the paid managed alias");
 console.log("AI_POLICY_TESTS_PASSED");

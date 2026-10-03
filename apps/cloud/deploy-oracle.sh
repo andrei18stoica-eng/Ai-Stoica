@@ -22,8 +22,19 @@ if [ -z "${OMNIROUTE_WS_BRIDGE_SECRET:-}" ] || [ "$OMNIROUTE_WS_BRIDGE_SECRET" =
   exit 1
 fi
 
+if [ -z "${AI_STOICA_OWNER_EMAIL:-}" ]; then
+  echo "Atenție: AI_STOICA_OWNER_EMAIL nu este setat; niciun cont nu va fi Owner pe acest server."
+fi
+
+case "${AI_STOICA_DEFAULT_MODEL:-}" in
+  [Aa][Ii]" "[Pp]rincipal|[Aa][Ii]" "[Ss]toica)
+    echo "AI_STOICA_DEFAULT_MODEL nu poate fi „${AI_STOICA_DEFAULT_MODEL}” (selectarea automată este dezactivată). Lasă-l gol sau pune un id exact din OmniRoute."
+    exit 1
+    ;;
+esac
+
 echo "Pornesc/actualizez AI Stoica Cloud..."
-docker compose pull
+docker compose pull --ignore-buildable 2>/dev/null || docker compose pull redis omniroute caddy data-permissions
 docker compose up -d --build --remove-orphans
 
 echo

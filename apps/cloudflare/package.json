@@ -1,13 +1,14 @@
 {
   "name": "ai-stoica-cloudflare",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "check": "wrangler deploy --dry-run",
     "deploy": "wrangler deploy",
-    "db:init": "wrangler d1 migrations apply ai-stoica --remote"
+    "db:init": "wrangler d1 migrations apply ai-stoica --remote",
+    "test": "node scripts/test-worker.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.44.0"

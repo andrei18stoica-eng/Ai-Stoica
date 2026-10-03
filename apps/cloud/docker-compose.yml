@@ -12,7 +12,8 @@ services:
       retries: 5
 
   omniroute:
-    image: diegosouzapw/omniroute:latest
+    # Set OMNIROUTE_VERSION in .env to a fixed release (for example 3.8.51) so an upstream update cannot change the server unexpectedly.
+    image: diegosouzapw/omniroute:${OMNIROUTE_VERSION:-latest}
     restart: unless-stopped
     stop_grace_period: 40s
     depends_on:
@@ -27,33 +28,66 @@ services:
     ports:
       - "127.0.0.1:20128:20128"
 
+  # The gateway runs as the unprivileged "node" user; this one-shot step hands it the data volume
+  # (needed once for volumes created by versions that ran as root).
+  data-permissions:
+    image: node:22-bookworm-slim
+    user: root
+    command: ["chown", "-R", "node:node", "/data"]
+    volumes:
+      - ai-stoica-data:/data
+    restart: "no"
+
   gateway:
     build:
       context: ../..
       dockerfile: apps/cloud/Dockerfile
     restart: unless-stopped
     depends_on:
-      - omniroute
+      data-permissions:
+        condition: service_completed_successfully
+      omniroute:
+        condition: service_started
     environment:
       PORT: "8787"
       HOST: "0.0.0.0"
       DATA_DIR: /data
       OMNIROUTE_BASE_URL: ${OMNIROUTE_BASE_URL:-http://omniroute:20128/v1}
       OMNIROUTE_API_KEY: ${OMNIROUTE_API_KEY:-}
-      AI_STOICA_MODEL: ${AI_STOICA_MODEL:-cerebras/gpt-oss-120b}
+      AI_STOICA_OWNER_EMAIL: ${AI_STOICA_OWNER_EMAIL:-}
+      AI_STOICA_DEFAULT_MODEL: ${AI_STOICA_DEFAULT_MODEL:-}
       AI_STOICA_SPEECH_MODEL: ${AI_STOICA_SPEECH_MODEL:-openai/whisper-1}
       AI_STOICA_SPEECH_LANGUAGE: ${AI_STOICA_SPEECH_LANGUAGE:-ro}
       AI_STOICA_OPEN_REGISTRATION: ${AI_STOICA_OPEN_REGISTRATION:-false}
+      AI_STOICA_CLOUD_API_URL: ${AI_STOICA_CLOUD_API_URL:-}
+      AI_STOICA_GITHUB_TOKEN: ${AI_STOICA_GITHUB_TOKEN:-}
+      AI_STOICA_GITHUB_REPO: ${AI_STOICA_GITHUB_REPO:-}
+      AI_STOICA_GITHUB_BRANCH: ${AI_STOICA_GITHUB_BRANCH:-main}
+      AI_STOICA_TRUST_PROXY: ${AI_STOICA_TRUST_PROXY:-1}
+      CEREBRAS_API_KEY: ${CEREBRAS_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
     volumes:
       - ai-stoica-data:/data
     ports:
       - "127.0.0.1:8787:8787"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
 
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     depends_on:
-      - gateway
+      gateway:
+        condition: service_healthy
     environment:
       AI_STOICA_DOMAIN: ${AI_STOICA_DOMAIN}
     ports:

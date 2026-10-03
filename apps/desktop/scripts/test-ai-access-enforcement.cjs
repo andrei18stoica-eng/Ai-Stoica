@@ -78,21 +78,28 @@ async function main(){
     expect(Array.isArray(models.manualModels)&&models.manualModels.length===1,"Manual selector must expose only Owner-permitted models");
     expect(models.manualModels[0].id==="groq/llama-3.3-70b-versatile","Groq permitted model missing from manual catalog");
 
+    // "Ai principal" exists in OmniRoute as a combo: it is used as is and the Owner policy still applies.
     r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"Ai principal",messages:[{role:"user",content:"Spune-mi pe scurt ce este un API."}]})});
-    expect(r.status===409,"Automatic AI alias must be disabled");
-    expect(omniChatCalls===0,"Disabled automatic AI alias reached OmniRoute");
+    expect(r.status===403,"The OmniRoute combo behind the alias must still pass the Owner policy");
+    expect(omniChatCalls===0,"Denied alias reached OmniRoute");
+
+    // "AI Stoica" has no combo in OmniRoute: it maps to the configured default model instead of failing with 409.
+    r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"AI Stoica",messages:[{role:"user",content:"test"}]})});
+    let body=await r.json();
+    expect(r.ok&&body?.choices?.[0]?.message?.content==="ok groq/llama-3.3-70b-versatile","Alias must map to the configured default model: "+JSON.stringify(body));
+    expect(omniChatCalls===1,"Mapped alias did not reach OmniRoute");
 
     r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"openai/gpt-5",messages:[{role:"user",content:"test"}]})});
     expect(r.status===403,"OpenAI model must be rejected for normal account");
-    expect(omniChatCalls===0,"Denied OpenAI request reached OmniRoute");
+    expect(omniChatCalls===1,"Denied OpenAI request reached OmniRoute");
 
     r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"groq/llama-3.3-70b-versatile",messages:[{role:"user",content:"test"}]})});
     expect(r.ok,"Permitted Groq model should work");
-    expect(omniChatCalls===1,"Permitted Groq request did not reach OmniRoute");
+    expect(omniChatCalls===2,"Permitted Groq request did not reach OmniRoute");
 
     r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"mystery-model",messages:[{role:"user",content:"test"}]})});
     expect(r.status===403,"Unknown model must fail closed");
-    expect(omniChatCalls===1,"Unknown denied model reached OmniRoute");
+    expect(omniChatCalls===2,"Unknown denied model reached OmniRoute");
 
     console.log("DESKTOP_AI_ACCESS_ENFORCEMENT_TESTS_PASSED");
   } finally {

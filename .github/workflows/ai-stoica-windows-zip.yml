@@ -15,12 +15,12 @@ on:
       - "apps/desktop/**"
       - ".github/workflows/ai-stoica-windows-zip.yml"
 
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('zip-pr-{0}', github.ref) || format('ai-stoica-release-{0}', github.ref) }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   build-zip:
@@ -52,25 +52,10 @@ jobs:
           node --check preload.cjs
           node --check local-gateway.cjs
 
-      - name: Testeaza generarea de fisiere
+      - name: Run all desktop tests
         working-directory: apps/desktop
-        run: node scripts/test-document-export.cjs
-
-      - name: Testeaza blocarea modelelor nepermise
-        working-directory: apps/desktop
-        run: node scripts/test-ai-access-enforcement.cjs
-
-      - name: Testeaza regresiile de infrastructura
-        working-directory: apps/desktop
-        run: node scripts/test-infrastructure-regressions.cjs
-
-      - name: Testeaza generarea media reala
-        working-directory: apps/desktop
-        run: node scripts/test-media-generation.cjs
-
-      - name: Testeaza uneltele Owner
-        working-directory: apps/desktop
-        run: node scripts/test-owner-tools.cjs
+        shell: bash
+        run: for t in scripts/test-*.cjs; do echo "::group::$t"; node "$t"; echo "::endgroup::"; done
 
       - name: Construieste AI Stoica Windows
         working-directory: apps/desktop

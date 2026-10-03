@@ -30,7 +30,6 @@ jobs:
     env:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       EXPO_PUBLIC_GATEWAY_URL: ${{ secrets.EXPO_PUBLIC_GATEWAY_URL }}
-      EXPO_PUBLIC_DEFAULT_MODEL: ""
 
     steps:
       - name: Checkout
@@ -45,7 +44,8 @@ jobs:
         shell: bash
         run: |
           test -n "$EXPO_TOKEN" || { echo "Missing GitHub secret EXPO_TOKEN"; exit 1; }
-          test -n "$EXPO_PUBLIC_GATEWAY_URL" || { echo "Missing GitHub secret EXPO_PUBLIC_GATEWAY_URL"; exit 1; }
+          # The server address comes from the optional GitHub secret EXPO_PUBLIC_GATEWAY_URL, otherwise from eas.json "env" (or `eas env:create`).
+          if [ -z "$EXPO_PUBLIC_GATEWAY_URL" ] && grep -q "SUBDOMENIU" eas.json; then echo "Set EXPO_PUBLIC_GATEWAY_URL in apps/mobile/eas.json (or as a GitHub secret) before building."; exit 1; fi
 
       - name: Install dependencies
         run: npm install --legacy-peer-deps
@@ -68,11 +68,8 @@ jobs:
           const profile=process.env.EAS_PROFILE;
           data.build=data.build||{};
           data.build[profile]=data.build[profile]||{};
-          data.build[profile].env={
-            ...(data.build[profile].env||{}),
-            EXPO_PUBLIC_GATEWAY_URL:process.env.EXPO_PUBLIC_GATEWAY_URL,
-            EXPO_PUBLIC_DEFAULT_MODEL:process.env.EXPO_PUBLIC_DEFAULT_MODEL||""
-          };
+          data.build[profile].env={...(data.build[profile].env||{})};
+          if(process.env.EXPO_PUBLIC_GATEWAY_URL)data.build[profile].env.EXPO_PUBLIC_GATEWAY_URL=process.env.EXPO_PUBLIC_GATEWAY_URL;
           if(!data.build[profile].env.EXPO_PUBLIC_GATEWAY_URL)throw new Error("EXPO_PUBLIC_GATEWAY_URL lipsește");
           fs.writeFileSync(file,JSON.stringify(data,null,2)+"\n");
           console.log("EAS profile",profile,"configured with gateway",data.build[profile].env.EXPO_PUBLIC_GATEWAY_URL);

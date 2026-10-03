@@ -26,15 +26,22 @@ services:
     environment:
       PORT: "8787"
       HOST: "0.0.0.0"
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # Separate PG* variables (read by node-postgres) work with any character in the password; a URL would need it percent-encoded.
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
       OWNER_EMAIL: ${OWNER_EMAIL}
       OWNER_INITIAL_PASSWORD: ${OWNER_INITIAL_PASSWORD:-}
       AUTH_ATTEMPTS_PER_15_MIN: ${AUTH_ATTEMPTS_PER_15_MIN:-20}
       SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
       PG_POOL_MAX: ${PG_POOL_MAX:-10}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-120}
+      AUTH_ME_PER_MINUTE: ${AUTH_ME_PER_MINUTE:-600}
+      REGISTRATIONS_PER_HOUR: ${REGISTRATIONS_PER_HOUR:-10}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
-      PAID_AI_ENABLED: "false"
     ports:
       - "127.0.0.1:8787:8787"
     mem_limit: 512m
