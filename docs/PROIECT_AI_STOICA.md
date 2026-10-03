@@ -46,8 +46,9 @@ GitHub nu este AI Stoica: după instalare, serverul are propria copie a codului 
 - După `e205278`, `main` a primit PR #19–#26 (lock-ul desktop, protecția ramurii, audituri desktop/core, actualizare automată Windows, mobile și cloud, Cloudflare, generare explicită de fișiere, paginare conversații), ajungând la `7fe0dc2`.
 - Patch-ul 0.7.11 fusese făcut pe `e205278` și nu se aplica curat. A fost rebazat pe `7fe0dc2`: unde 0.7.11 și PR #21–#26 rezolvau aceeași problemă s-a luat varianta 0.7.11; din `main` au rămas cititorul Access, stocarea conversațiilor în fișiere separate, secretul opțional `EXPO_PUBLIC_GATEWAY_URL` și `package-lock.json`.
 - **Rezultat:** PR #27, merge commit `67aedad` pe `main`.
-- **Neverificat:** verificările din GitHub n-au rulat (joburi blocate de facturare). Local au trecut cele 10 teste desktop, serverul, Worker-ul și build-ul interfeței. Mobile și build-ul Windows nu au rulat nicăieri.
-- **Lipsește:** Release-ul `v0.7.11` (installer + `latest.yml` + `.blockmap`).
+- **Verificat:** PR #27 a fost îmbinat cu verificările blocate de facturare (la cererea Owner-ului). După deblocare, toate cele 6 verificări de pe `main` au trecut: Build AI Stoica Windows, ZIP Windows, Desktop, Server, Cloudflare, Mobile. Local trecuseră deja testele desktop, serverul, Worker-ul și build-ul interfeței.
+- **Release:** `v0.7.11` e publicat (tag pe `67aedad`) cu `.exe`, `.blockmap`, `latest.yml` și ZIP.
+- **Problemă deschisă:** `latest.yml` și `.blockmap` din Release provin dintr-un alt build decât `.exe` (le-a rescris workflow-ul ZIP). `sha512` nu se potrivește, deci actualizarea automată de la 0.7.10 ar fi respinsă până se repară publicarea.
 
 Schimbare față de Cloudflare 0.7.10: Owner-ul Worker-ului se creează și se resetează cu `OWNER_SETUP_CODE`, nu cu `OWNER_INITIAL_PASSWORD`.
 
@@ -108,11 +109,11 @@ Ultima verificare declarată: rolurile Owner/User existau și contul Owner era a
 
 ## 10. Ce e confirmat și ce nu
 
-**Confirmat (din repo și teste locale, 2026-10-03):** codul 0.7.11 pe `main`; testele desktop, serverul, Worker-ul și build-ul interfeței trec local; versiune identică în toate fișierele.
+**Confirmat (2026-10-03):** codul 0.7.11 pe `main`; cele 6 verificări de pe `main` trec în GitHub (inclusiv Mobile și build-ul Windows); Release-ul `v0.7.11` există cu fișierele așteptate; versiune identică în toate fișierele.
 
 **Declarat, neverificat din repo:** serverul Hetzner și deploy-ul din `/opt/ai-stoica`, containerele healthy, DNS-ul `api.aistoica.ro`, rolurile și contul Owner, configurația OmniRoute de pe producție, cheile API configurate.
 
-**Neconfirmat:** CI-ul pe 0.7.11 (n-a rulat), build-ul Windows și Release-ul, verificarea Mobile, HTTPS cap-coadă, memoria și automatizările în producție, PWA.
+**Neconfirmat sau defect:** actualizarea automată (metadata din Release nu se potrivește cu `.exe`, vezi secțiunea 4), instalarea și pornirea efectivă pe Windows, HTTPS cap-coadă, memoria și automatizările în producție, PWA.
 
 Nu se poate afirma „0.7.11 e terminat și toate funcțiile merg perfect”.
 
@@ -120,9 +121,8 @@ Nu se poate afirma „0.7.11 e terminat și toate funcțiile merg perfect”.
 
 Nu se adaugă funcții noi până nu e stabilă baza:
 
-1. Deblocarea GitHub Actions (facturare / spațiu de artifacte; vezi `docs/PUBLICARE_RELEASE.md`).
-2. Re-rularea tuturor verificărilor pe `main` și build-ul Windows → Release `v0.7.11`.
-3. Verificarea efectivă a aplicației: pornire din tray, microfon, automatizări, actualizare automată de la 0.7.10.
-4. HTTPS cap-coadă pe `api.aistoica.ro` și deploy-ul 0.7.11 pe Hetzner (`update.sh`, apoi `/health`).
-5. PWA pentru iPhone.
-6. Abia apoi funcții noi, într-o versiune următoare, cu aceeași procedură.
+1. Repararea publicării: un singur workflow să urce `.exe`, `latest.yml` și `.blockmap`, apoi Release-ul `v0.7.11` refăcut și potrivirea `sha512` verificată (vezi `docs/PUBLICARE_RELEASE.md`).
+2. Verificarea efectivă a aplicației: instalare, pornire din tray, microfon, automatizări, actualizare automată de la 0.7.10.
+3. HTTPS cap-coadă pe `api.aistoica.ro` și deploy-ul 0.7.11 pe Hetzner (`update.sh`, apoi `/health`).
+4. PWA pentru iPhone.
+5. Abia apoi funcții noi, într-o versiune următoare, cu aceeași procedură.

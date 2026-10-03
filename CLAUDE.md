@@ -65,12 +65,14 @@ Nu rulează local: Mobile (`expo-doctor`, `expo export`), build-ul Windows și D
 - „GitHub verde” nu înseamnă „aplicația merge”: au existat ecrane negre cu CI verde. Verifică și runtime-ul.
 - Codul din GitHub nu e codul de pe server: la deploy rulează `deploy/hetzner/update.sh` și verifică `/health`.
 - Joburi care pică în câteva secunde, fără pași: citește adnotarea check-run-ului. Pe 2026-10-03 era „spending limit / plată eșuată”. Vezi secțiunea despre facturare din `docs/PUBLICARE_RELEASE.md`.
-- `ai-stoica-windows-zip.yml` publică în Release când e pornit manual (`workflow_dispatch`); pe PR doar construiește.
+- `ai-stoica-windows-zip.yml` publică în Release când e pornit manual (`workflow_dispatch`) și la push pe `main`; pe PR doar construiește.
+- După fiecare Release compară `sha512` al `.exe` cu cel din `latest.yml` (comenzile sunt în `docs/PUBLICARE_RELEASE.md`). Fără potrivire, actualizarea automată nu funcționează.
 - Un workflow cu aceeași cheie de două ori (de exemplu `concurrency:`) e invalid și nu pornește deloc.
 
 ## Stare curentă (2026-10-03)
 
 - 0.7.11 este pe `main` (PR #27, merge commit `67aedad`), peste baza `7fe0dc2`, unde conflictele cu PR #21–#26 au fost rezolvate.
-- Verificările CI **nu au rulat** pe acest cod: joburile erau blocate de facturare. Local au trecut toate testele desktop, serverul, Worker-ul și build-ul interfeței.
-- Release-ul `v0.7.11` **nu există încă**. Trebuie rulat „Build AI Stoica Windows” pe `main` după deblocarea Actions, apoi re-rulate toate verificările pe `main`.
+- După deblocarea GitHub Actions, toate cele 6 verificări de pe `main` au trecut: Build AI Stoica Windows, ZIP complet Windows, Desktop, Server, Cloudflare, Mobile.
+- Release-ul `v0.7.11` este publicat (tag pe `67aedad`): `.exe`, `.blockmap`, `latest.yml` și ZIP-ul complet.
+- **Problemă deschisă:** `.exe` din Release vine din „Build AI Stoica Windows”, dar `latest.yml` și `.blockmap` au fost rescrise de workflow-ul ZIP, care face alt build. `sha512` și dimensiunea din `latest.yml` nu se potrivesc cu `.exe` (verificat), deci actualizarea automată de la 0.7.10 ar fi respinsă. Cauza: ambele workflow-uri urcă `latest.yml` și `.blockmap` cu `--clobber`. Reparația: metadata să fie publicată doar de „Build AI Stoica Windows”, apoi Release-ul refăcut.
 - Deploy-ul pe Hetzner, DNS-ul `api.aistoica.ro` și HTTPS-ul cap-coadă nu sunt verificate din repo.

@@ -76,6 +76,17 @@ gh release view v<V> --json assets --jq '.assets[].name'
 
 Trebuie să conțină `AI_Stoica_Setup_<V>_x64.exe`, `latest.yml` și `AI_Stoica_Setup_<V>_x64.exe.blockmap`. Fără `latest.yml` și `.blockmap`, actualizarea automată nu ajunge la utilizatori. Workflow-ul ZIP mai adaugă `AI_Stoica_Windows_<V>_COMPLET.zip`.
 
+**Verifică și potrivirea.** `latest.yml` și `.blockmap` trebuie să vină din același build ca `.exe`; altfel `electron-updater` respinge actualizarea (sha512 diferit):
+
+```bash
+R=andrei18stoica-eng/Ai-Stoica
+id() { gh api "repos/$R/releases/tags/v<V>" --jq ".assets[]|select(.name==\"$1\")|.id"; }
+gh api -H "Accept: application/octet-stream" "repos/$R/releases/assets/$(id latest.yml)" | grep -E '^(sha512|path|version)|size'
+gh api -H "Accept: application/octet-stream" "repos/$R/releases/assets/$(id AI_Stoica_Setup_<V>_x64.exe)" | openssl dgst -sha512 -binary | base64 -w0; echo
+```
+
+Cele două sume `sha512` trebuie să fie identice. Pe 2026-10-03, la `v0.7.11`, nu erau: „Build AI Stoica Windows” a urcat `.exe`, apoi workflow-ul ZIP (alt build) a rescris `latest.yml` și `.blockmap` cu `--clobber`. Un singur workflow ar trebui să publice cele trei fișiere de actualizare.
+
 ## 9. Restul infrastructurii (separat de GitHub)
 
 - **Hetzner:** `sudo bash /opt/ai-stoica/deploy/hetzner/update.sh`, apoi `curl http://127.0.0.1:8787/health`.
@@ -107,7 +118,7 @@ gh api "repos/$R/actions/artifacts?per_page=100" --paginate \
 gh api -X DELETE "repos/$R/actions/artifacts/<id>"
 ```
 
-Pe 2026-10-03 s-au șters 67 de artifacte și a rămas unul (0.7.10). Joburile tot nu porneau imediat după, deci cauza exactă n-a putut fi confirmată din API: pagina Billing e vizibilă doar proprietarului, iar GitHub poate recalcula consumul în câteva ore. Ca să nu se acumuleze din nou, workflow-urile păstrează artifactele 7 zile (`retention-days: 7`).
+Pe 2026-10-03 s-au șters 67 de artifacte și a rămas unul (0.7.10). Joburile tot nu au pornit după ștergere. S-au deblocat mai târziu în aceeași zi, după ce proprietarul a intervenit în setările de facturare; cauza exactă nu a fost comunicată, deci spațiul nu e dovedit ca vinovat. Pentru ca artifactele să nu se acumuleze, workflow-urile le păstrează 7 zile (`retention-days: 7`).
 
 ## Reguli
 
