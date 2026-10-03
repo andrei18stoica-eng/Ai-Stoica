@@ -29,9 +29,9 @@ async function main(){
   };
   const gateway=startLocalGateway({dataDir,port,host:"127.0.0.1",getOmniConfig:()=>cfg});
   const base="http://127.0.0.1:"+port;
-  const realFetch=global.fetch;
+  const realFetch=globalThis.fetch;
   let cerebrasCalls=0,groqCalls=0;
-  global.fetch=async (url,init)=>{
+  globalThis.fetch=async (url,init)=>{
     const target=String(url);
     if(target==="https://api.cerebras.ai/v1/chat/completions"){
       cerebrasCalls++;
@@ -99,7 +99,7 @@ async function main(){
 
     console.log("OWNER_TOOLS_TESTS_PASSED");
   } finally {
-    global.fetch=realFetch;
+    globalThis.fetch=realFetch;
     await gateway.close();
     fs.rmSync(dataDir,{recursive:true,force:true});
   }

@@ -4,9 +4,21 @@ Asistent AI pentru Windows (plus aplicație mobilă) cu chat, proiecte, asisten�
 
 ## Noutăți 0.7.13
 
-- **Actualizarea automată Windows funcționează cu adevărat:** în Release, `latest.yml` și `.blockmap` vin acum din același build ca `.exe`. Înainte, workflow-ul ZIP le rescria cu un alt build, `sha512` nu se mai potrivea, iar aplicațiile 0.7.10/0.7.11 respingeau actualizarea. Un test (`test-release-workflows.cjs`) păzește regula.
-- **Lista de modele din „Alege AI” e mai fiabilă:** OmniRoute are 20 s să răspundă (nu 9), iar dacă tot nu răspunde se păstrează ultima listă reușită. Când Owner-ul ascunde modele, selectorul arată câte sunt ascunse.
-- **Pentru dezvoltare:** `CLAUDE.md`, `docs/PROIECT_AI_STOICA.md`, `docs/PUBLICARE_RELEASE.md` și `scripts/verifica-local.sh` (aceleași verificări ca în GitHub, pe calculator).
+- **Scheduled** (fostele Automatizări): listă ca la Claude, program scris în cuvinte, detalii cu istoricul rulărilor, Rulează acum, Editează, Duplică, Șterge.
+- **Pluginuri**: tab-urile Instalate / Director / Creează plugin; când scrii numele unui plugin activ în chat (sau @nume), AI Stoica îl folosește.
+- **Memorie între conversații** (automată, se poate opri): când pomenești un subiect într-un chat nou, AI Stoica găsește ce ați discutat în celelalte conversații.
+- **Bibliotecă** refăcută: filtre Documente / Poze / Video / Audio / Design, căutare, sortare, previzualizare, trage-și-lasă.
+- **Design**: descrii un site, un afiș, o prezentare, un CV…, AI Stoica face macheta HTML, o vezi pe desktop/tabletă/telefon, o modifici în versiuni și o descarci.
+- Butoanele **Poză** și **Video**; pozele merg și fără nicio cheie (Pollinations fără cheie). Pentru video e nevoie de o cheie: nu există un API video gratuit.
+- **Întrebări de clarificare** cu variante de răspuns pe care dai click, ca la Claude (se pot opri din Setări sau Memorie).
+- Verificare de suprapuneri la 980×680, 1280×800, 1440×900 și 1920×1080; reparate: bara laterală strânsă, bannerul de actualizare, notificările peste dialoguri.
+
+## Noutăți 0.7.12
+
+- **Toate modelele, într-o singură listă:** fiecare provider configurat aduce toate modelele lui gratuite (Groq, Cerebras, Gemini, Mistral, NVIDIA, GitHub Models, Cloudflare, Cohere, Hugging Face), iar lista de sus le grupează pe provideri.
+- **Combinațiile OmniRoute** („Ai principal” și orice altă combinație) apar primele în listă și pot fi alese direct.
+- **Setări → API-uri AI:** fiecare provider are butonul „Ia cheia gratuită”, care deschide pagina unde se creează cheia. Câmpurile de modele acceptă liste separate prin virgulă.
+- Modelele vechi implicite se actualizează singure. Modelul NVIDIA `meta/llama-3.3-70b-instruct` nu mai există la NVIDIA și a fost înlocuit.
 
 ## Noutăți 0.7.11 (reparații)
 
@@ -52,6 +64,7 @@ Pași după actualizare: vezi „Pași pentru Owner după 0.7.13” mai jos.
 | `lib/documents.cjs` | export PDF, Word, PowerPoint, Excel, CSV, JSON, HTML etc. |
 | `lib/schedule.cjs` | calculul orei următoarei rulări pentru automatizări (cu fus orar) |
 | `lib/netguard.cjs` | blochează accesul pluginurilor la adrese interne |
+| `lib/providers.cjs` | modelele gratuite ale fiecărui provider și paginile de unde se iau cheile |
 | `renderer/src/main.jsx` | interfața |
 | `scripts/test-*.cjs` | teste rulate automat de GitHub la fiecare modificare |
 

@@ -1,7 +1,5 @@
-import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
   Menu, Plus, Search, Folder, Bot, Settings, LogOut, Share2, MoreHorizontal,
   Paperclip, Mic, ArrowUp, Copy, ThumbsUp, ThumbsDown, RotateCcw, X,
@@ -9,114 +7,27 @@ import {
   CalendarClock, Plug, Library, Brain, Upload, Trash2, Play, Pin, PinOff,
   FileText, Image as ImageIcon, HardDrive, ToggleLeft, ToggleRight,
   Compass, Map as MapIcon, Globe2, Archive, ArchiveRestore, ExternalLink, SlidersHorizontal, Volume2,
-  PanelTopOpen, ShieldCheck, UserCheck, Download, Lock, Pencil, Video
+  PanelTopOpen, ShieldCheck, UserCheck, Download, Lock, Pencil, Palette, Clapperboard
 } from "lucide-react";
 import "./styles.css";
+import {
+  DEFAULT_GATEWAY, TOKEN_KEY, USER_KEY, PERMISSIONS_KEY, MODEL_CACHE_KEY, MODEL_SELECTED_KEY, MANUAL_MODEL_KEY, RESPONSE_MODE_KEY, GITHUB_BACKUP_KEY,
+  FIRST_RUN_KEY, SIDEBAR_COLLAPSED_KEY, ACCOUNT_KEYS, storage, cleanGatewayUrl, GATEWAY, setGatewayUrl, toast, isAuthLost, apiError, authHeaders, api,
+  deniedMessage, AccessContext, useAccess, uploadFileToLibrary, formatBytes, plural, cx, uid, writeClipboardText, openLink, downloadGeneratedFile,
+  downloadLibraryFile, fmtTime, mediaKind, kindLabel, fetchLibraryBlob, modalStack, useModal, useDismiss, ToolShell, Modal, Markdown, useAuthedBlobUrl,
+  isHttpUrl, setAuthLostHandler
+} from "./core.jsx";
+import { ScheduledPage } from "./pages/Scheduled.jsx";
+import { PluginsPage } from "./pages/Plugins.jsx";
+import { MemoryPage, PreferenceSwitches } from "./pages/Memory.jsx";
+import { LibraryPage } from "./pages/Library.jsx";
+import { DesignPage } from "./pages/Design.jsx";
+import { splitQuestions, QuestionCard, QuestionsPending } from "./questions.jsx";
 
-const DEFAULT_GATEWAY = "http://127.0.0.1:8787";
-const GATEWAY_KEY = "aiStoicaGatewayUrlV1";
-const TOKEN_KEY = "aiStoicaAuthTokenV3";
-const USER_KEY = "aiStoicaUserV3";
-const PERMISSIONS_KEY = "aiStoicaPermissionsV1";
-const MODEL_CACHE_KEY = "aiStoicaModelsV1";
-const MODEL_SELECTED_KEY = "aiStoicaSelectedModelV1";
-const MANUAL_MODEL_KEY = "aiStoicaManualModelV1";
-const RESPONSE_MODE_KEY = "ai-stoica-response-mode";
-const GITHUB_BACKUP_KEY = "ai-stoica-last-github-backup";
-const FIRST_RUN_KEY = "ai-stoica-first-run-done";
-const SIDEBAR_COLLAPSED_KEY = "aiStoicaSidebarCollapsedV1";
-const ACCOUNT_KEYS = [TOKEN_KEY,USER_KEY,PERMISSIONS_KEY,MODEL_CACHE_KEY,MODEL_SELECTED_KEY,MANUAL_MODEL_KEY,GITHUB_BACKUP_KEY,"aiStoicaSmartRouterDefaultV1","aiStoicaAutoRouterEnabledV1"];
-const OAUTH_REDIRECT_PATH = "/api/plugins/oauth/callback";
-
-const storage = {
-  get(key,fallback=""){try{const v=localStorage.getItem(key);return v===null?fallback:v}catch{return fallback}},
-  set(key,value){try{localStorage.setItem(key,value)}catch{}},
-  remove(key){try{localStorage.removeItem(key)}catch{}},
-  json(key,fallback=null){try{const v=JSON.parse(localStorage.getItem(key)||"null");return v===null?fallback:v}catch{return fallback}}
-};
-
-function cleanGatewayUrl(url){
-  const s=String(url||"").trim().replace(/\/+$/,"");
-  return /^https?:\/\/[^\s/?#]+$/i.test(s)?s:"";
-}
-let GATEWAY = cleanGatewayUrl(storage.get(GATEWAY_KEY)) || DEFAULT_GATEWAY;
-function setGatewayUrl(url){
-  GATEWAY=cleanGatewayUrl(url)||DEFAULT_GATEWAY;
-  storage.set(GATEWAY_KEY,GATEWAY);
-}
 let DICTATION_LANG = "ro";
 const SPEECH_LOCALES = {ro:"ro-RO",en:"en-US",fr:"fr-FR"};
 function speechLocale(){return SPEECH_LOCALES[DICTATION_LANG]||"ro-RO";}
 
-function toast(message,kind="error"){
-  const text=String(message||"").trim();if(!text)return;
-  try{if(typeof window.aiStoicaToast==="function"){window.aiStoicaToast(text,kind);return;}}catch{}
-  alert(text);
-}
-
-let authLostHandler = null;
-function isAuthLost(status,message){
-  return status===401||(status===403&&/Contul nu este activ|așteaptă aprobarea|asteapta aprobarea/i.test(String(message||"")));
-}
-function httpMessage(status){
-  if(status===413)return "Fișierul sau mesajul este prea mare pentru serviciul AI Stoica (HTTP 413).";
-  if(status===404)return "Serviciul AI Stoica nu a găsit resursa cerută (HTTP 404).";
-  if(status>=500)return `Serviciul AI Stoica a întâmpinat o eroare (HTTP ${status}).`;
-  return `Cererea nu a reușit (HTTP ${status}).`;
-}
-function errorFromBody(text,status){
-  let data=null;try{data=text?JSON.parse(text):null}catch{}
-  const e=data&&typeof data==="object"?data.error:null;
-  if(typeof e==="string"&&e.trim())return e.trim();
-  if(e&&typeof e==="object")return String(e.message||JSON.stringify(e)).slice(0,600);
-  return httpMessage(status);
-}
-function apiError(status,text,path=""){
-  const message=errorFromBody(text,status);
-  const err=new Error(message);err.status=status;
-  if(isAuthLost(status,message)&&!/^\/auth\/(login|register|logout)/.test(path)&&storage.get(TOKEN_KEY)&&authLostHandler)authLostHandler(message);
-  return err;
-}
-function authHeaders(extra={}){const token=storage.get(TOKEN_KEY);return {...(token?{Authorization:`Bearer ${token}`}:{}),...extra};}
-async function api(path, options = {}) {
-  const r = await fetch(`${GATEWAY}${path}`, {...options,headers:authHeaders({"Content-Type":"application/json",...(options.headers||{})})});
-  const text = await r.text();
-  if (!r.ok) throw apiError(r.status,text,path);
-  if (!text) return {};
-  try { return JSON.parse(text); } catch { throw new Error(`Răspuns invalid de la serviciul AI Stoica (HTTP ${r.status}).`); }
-}
-async function authedFetch(path,init={}){
-  const r=await fetch(`${GATEWAY}${path}`,{...init,headers:authHeaders(init.headers||{})});
-  if(!r.ok){const text=await r.text().catch(()=>"");throw apiError(r.status,text,path);}
-  return r;
-}
-
-const PERMISSION_LABELS = {image_generation:"Generare imagini",video_generation:"Generare video",document_generation:"Fișiere descărcabile",file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",automations:"Automatizări",plugins:"Pluginuri",github_access:"GitHub"};
-function deniedMessage(key){return `Funcția „${PERMISSION_LABELS[key]||key}” este dezactivată de Owner pentru contul tău.`;}
-const AccessContext = React.createContext({can:()=>true,deny:()=>{},isOwner:false});
-function useAccess(){return useContext(AccessContext);}
-
-async function uploadFileToLibrary(file) {
-  const r=await authedFetch("/api/library/upload",{
-    method:"POST",
-    headers:{"Content-Type":"application/octet-stream","X-File-Name":encodeURIComponent(file.name||"fisier"),"X-File-Type":file.type||"application/octet-stream","X-File-Size":String(file.size||0)},
-    body:file
-  });
-  const text=await r.text();let data={};
-  try{data=text?JSON.parse(text):{}}catch{throw new Error("Răspuns invalid la încărcarea fișierului.")}
-  if(!data?.data?.id)throw new Error("Serviciul nu a confirmat salvarea fișierului.");
-  return data.data;
-}
-function formatBytes(n){
-  const v=Number(n||0);if(v<1024)return `${v} B`;
-  if(v<1024**2)return `${(v/1024).toFixed(v<10240?1:0)} KB`;
-  if(v<1024**3)return `${(v/1024**2).toFixed(v<10*1024**2?1:0)} MB`;
-  return `${(v/1024**3).toFixed(2)} GB`;
-}
-function plural(n,one,many){
-  const v=Math.abs(Number(n)||0),de=v>=20&&(v%100===0||v%100>=20);
-  return `${v} ${v===1?one:(de?"de ":"")+many}`;
-}
 
 class ErrorBoundary extends React.Component {
   constructor(props){super(props);this.state={error:null};}
@@ -137,8 +48,6 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-function cx(...v) { return v.filter(Boolean).join(" "); }
-function uid() { return `${Date.now().toString(36)}${Math.random().toString(36).slice(2,8)}`; }
 function titleFrom(text) {
   const s = String(text || "").replace(/\s+/g, " ").trim();
   return s.length > 48 ? `${s.slice(0,48)}…` : (s || "Conversație nouă");
@@ -197,56 +106,6 @@ function friendlyError(raw){
   return `${friendly}\n\n_Detalii tehnice: ${msg.slice(0,600)}_`;
 }
 
-async function writeClipboardText(value) {
-  const text=String(value??"");
-  if(!text) return false;
-  try {
-    const result=await window.AIStoica?.writeClipboardText?.(text);
-    if(result?.ok) return true;
-  } catch {}
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {}
-  try {
-    const helper=document.createElement("textarea");
-    helper.value=text;
-    helper.setAttribute("readonly","");
-    helper.style.position="fixed";
-    helper.style.opacity="0";
-    helper.style.pointerEvents="none";
-    document.body.appendChild(helper);
-    helper.select();
-    const ok=document.execCommand("copy");
-    helper.remove();
-    return !!ok;
-  } catch { return false; }
-}
-function openLink(href){
-  const url=String(href||"").trim();
-  if(!/^(https?:|mailto:)/i.test(url)){toast("Acest link nu poate fi deschis din AI Stoica.");return;}
-  if(!window.AIStoica?.openExternal){window.open(url,"_blank","noopener,noreferrer");return;}
-  Promise.resolve(window.AIStoica.openExternal(url)).then(r=>{if(r&&r.ok===false)toast(r.error||"Nu am putut deschide linkul în browser.")}).catch(e=>toast("Nu am putut deschide linkul: "+e.message));
-}
-
-async function saveBlobDownload(blob,name) {
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  a.href=url;a.download=name||"AI-Stoica-fisier";
-  document.body.appendChild(a);a.click();a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),4000);
-}
-async function downloadGeneratedFile(file) {
-  if(!file?.id)throw new Error("Fișierul nu mai este disponibil.");
-  const r=await authedFetch(`/api/files/${file.id}`);
-  await saveBlobDownload(await r.blob(),file.name||"AI-Stoica-fisier");
-}
-async function downloadLibraryFile(file) {
-  const id=file?.libraryId||file?.id;
-  if(!id)throw new Error("Fișierul nu mai este disponibil.");
-  const r=await authedFetch(`/api/library/${id}/content`);
-  await saveBlobDownload(await r.blob(),file.name||"AI-Stoica-fisier");
-}
 function safeFileTitle(value){return String(value||"AI Stoica").replace(/[\\/:*?"<>|]+/g," ").replace(/\s+/g," ").trim().slice(0,90)||"AI Stoica";}
 async function exportMessageFile(message,format,title) {
   const d=await api("/api/export",{method:"POST",body:JSON.stringify({format,title:safeFileTitle(title),content:messageText(message)})});
@@ -274,6 +133,14 @@ function requestedDocumentFormat(value){
   if(!found)return null;
   const onlyFormat=new RegExp("^(in |ca )?("+found[0]+"|word|powerpoint|excel|markdown|python|javascript|typescript|jupyter|notebook)( te rog)?[.!]?$");
   return (FILE_VERB.test(t)||onlyFormat.test(t))?found[0]:null;
+}
+function answerFormat(answerText,messages){
+  const request=[...messages].reverse().find(m=>m.role==="user");
+  const original=request?requestedDocumentFormat(messageText(request)):null;
+  if(!original)return null;
+  const t=normalizeIntent(answerText);
+  const hit=FORMAT_CANDIDATES.find(([,re])=>re.test(t));
+  return hit?hit[0]:/\bdocument\b/.test(t)?"docx":original;
 }
 function standaloneExportRequest(value){
   const t=normalizeIntent(value).replace(/[^a-z0-9.\s-]/g," ").replace(/\s+/g," ").trim();
@@ -303,27 +170,6 @@ function groupLabel(ts) {
   if (days <= 7) return "Ultimele 7 zile";
   if (days <= 30) return "Ultimele 30 de zile";
   return "Mai vechi";
-}
-function fmtTime(ts) {
-  if (!ts) return "—";
-  try { return new Date(ts).toLocaleString("ro-RO"); } catch { return "—"; }
-}
-function mediaKind(mime,name="") {
-  const m=String(mime||"").toLowerCase(),n=String(name||"").toLowerCase();
-  if(m.startsWith("audio/")||/\.(mp3|m4a|aac|wav|ogg|oga|flac|opus|weba)$/i.test(n))return "audio";
-  if(m.startsWith("video/")||/\.(mp4|mov|m4v|webm|avi|mkv|mpeg|mpg)$/i.test(n))return "video";
-  if(m.startsWith("image/")||/\.(png|jpe?g|webp|gif|heic|heif|bmp)$/i.test(n))return "image";
-  if(m.startsWith("text/")||/\.(txt|md|csv|json|js|ts|py|html|css|xml|yaml|yml)$/i.test(n))return "text";
-  return "file";
-}
-const KIND_LABELS={image:"Imagine",audio:"Audio",video:"Video",text:"Text",document:"Document",file:"Fișier",stored:"Fișier"};
-function kindLabel(kind,mime="",name=""){
-  if((kind==="file"||kind==="document")&&(/pdf|word|officedocument|presentation|spreadsheet|msword|excel/i.test(String(mime))||/\.(pdf|docx?|pptx?|xlsx?)$/i.test(String(name))))return "Document";
-  return KIND_LABELS[kind]||"Fișier";
-}
-async function fetchLibraryBlob(id) {
-  const r=await authedFetch(`/api/library/${id}/content`);
-  return await r.blob();
 }
 async function extractVideoFrames(blob,count=4) {
   if(typeof document==="undefined")return [];
@@ -415,97 +261,13 @@ function toProviderMessages(messages,extra={}){
   }).filter(Boolean);
 }
 
-const modalStack=[];
-const FOCUSABLE='a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
-function useModal(onClose){
-  const ref=useRef(null),closeRef=useRef(onClose),downRef=useRef(false);
-  closeRef.current=onClose;
-  useEffect(()=>{
-    const token={};modalStack.push(token);
-    const previous=document.activeElement,node=ref.current;
-    const items=()=>node?[...node.querySelectorAll(FOCUSABLE)].filter(el=>el.getClientRects().length):[];
-    const timer=setTimeout(()=>{if(node&&!node.contains(document.activeElement))(items()[0]||node).focus?.()},0);
-    function onKey(e){
-      if(modalStack[modalStack.length-1]!==token)return;
-      if(e.key==="Escape"){e.preventDefault();e.stopPropagation();closeRef.current?.();return;}
-      if(e.key!=="Tab"||!node)return;
-      const list=items();if(!list.length){e.preventDefault();node.focus?.();return;}
-      const first=list[0],last=list[list.length-1],active=document.activeElement;
-      if(!node.contains(active)){e.preventDefault();first.focus();}
-      else if(e.shiftKey&&active===first){e.preventDefault();last.focus();}
-      else if(!e.shiftKey&&active===last){e.preventDefault();first.focus();}
-    }
-    window.addEventListener("keydown",onKey,true);
-    return()=>{
-      clearTimeout(timer);window.removeEventListener("keydown",onKey,true);
-      const i=modalStack.indexOf(token);if(i>=0)modalStack.splice(i,1);
-      try{if(previous&&document.contains(previous))previous.focus()}catch{}
-    };
-  },[]);
-  const backdropProps={
-    onMouseDown:e=>{downRef.current=e.target===e.currentTarget},
-    onClick:e=>{if(downRef.current&&e.target===e.currentTarget)closeRef.current?.();downRef.current=false}
-  };
-  return {ref,backdropProps};
-}
-function useDismiss(open,onClose,ref){
-  const closeRef=useRef(onClose);closeRef.current=onClose;
-  useEffect(()=>{
-    if(!open)return;
-    const down=e=>{if(ref.current&&!ref.current.contains(e.target))closeRef.current?.()};
-    const key=e=>{if(e.key==="Escape")closeRef.current?.()};
-    document.addEventListener("mousedown",down);window.addEventListener("keydown",key);
-    return()=>{document.removeEventListener("mousedown",down);window.removeEventListener("keydown",key)};
-  },[open]);
-}
-function ToolShell({title,subtitle,label,onClose,children}) {
-  const {ref,backdropProps}=useModal(onClose);
-  return <div className="modalBackdrop" {...backdropProps}><div className="toolModal" ref={ref} role="dialog" aria-modal="true" aria-label={title||label||"Panou"} tabIndex={-1}><div className="toolHead"><div><h2>{title}</h2>{subtitle&&<p>{subtitle}</p>}</div><button className="iconOnly" onClick={onClose} aria-label="Închide" title="Închide"><X size={20}/></button></div>{children}</div></div>;
-}
-function Modal({title,subtitle,onClose,className="modal",children}) {
-  const {ref,backdropProps}=useModal(onClose);
-  return <div className="modalBackdrop" {...backdropProps}><div className={className} ref={ref} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}>
-    <div className="modalHead"><div><h2>{title}</h2>{subtitle&&<p>{subtitle}</p>}</div><button className="iconOnly" onClick={onClose} aria-label="Închide" title="Închide"><X size={20}/></button></div>
-    {children}
-  </div></div>;
-}
-
-function CodeBlock({children,...props}) {
-  const ref=useRef(null),timer=useRef(null),[copied,setCopied]=useState(false);
-  useEffect(()=>()=>clearTimeout(timer.current),[]);
-  async function copy(){
-    const ok=await writeClipboardText(ref.current?.innerText||"");
-    if(!ok){toast("Nu am putut copia codul în clipboard.");return;}
-    setCopied(true);clearTimeout(timer.current);timer.current=setTimeout(()=>setCopied(false),1400);
-  }
-  return <div className="codeBlock"><button type="button" className="codeCopy" onClick={copy} aria-label="Copiază codul">{copied?<Check size={13}/>:<Copy size={13}/>}<span>{copied?"Copiat":"Copiază"}</span></button><pre ref={ref} {...props}>{children}</pre></div>;
-}
-const REMARK_PLUGINS=[remarkGfm];
-const MD_COMPONENTS={
-  a({node,href,children,...props}){return <a {...props} href={href} title={href} rel="noreferrer noopener" onClick={e=>{e.preventDefault();if(!String(href||"").startsWith("#"))openLink(href)}}>{children}</a>;},
-  table({node,...props}){return <div className="tableWrap"><table {...props}/></div>;},
-  pre({node,children,...props}){return <CodeBlock {...props}>{children}</CodeBlock>;}
-};
-function Markdown({text}){return <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MD_COMPONENTS}>{String(text||"")}</ReactMarkdown>;}
-function useAuthedBlobUrl(path){
-  const [state,setState]=useState({src:"",failed:false});
-  useEffect(()=>{
-    let active=true,url="";
-    setState({src:"",failed:false});
-    if(!path)return()=>{};
-    (async()=>{try{const r=await authedFetch(path);const blob=await r.blob();if(!active)return;url=URL.createObjectURL(blob);setState({src:url,failed:false})}catch{if(active)setState({src:"",failed:true})}})();
-    return()=>{active=false;if(url)URL.revokeObjectURL(url)};
-  },[path]);
-  return state;
-}
 function cachedModels() {
   const v=storage.json(MODEL_CACHE_KEY,[]);
-  return Array.isArray(v)?v.filter(x=>typeof x==="string"&&x&&!isSmartAlias(x)):[];
+  return Array.isArray(v)?v.filter(x=>typeof x==="string"&&x):[];
 }
 function uniqueModels(values) {
   return [...new Set((values||[]).map(x=>String(x||"").trim()).filter(Boolean))];
 }
-function isSmartAlias(value){return /^ai[ _-]*(principal|stoica)$/i.test(String(value||"").trim());}
 
 function AuthScreen({ onAuth, notice:initialNotice="" }) {
   const [mode,setMode]=useState("login"),[name,setName]=useState(""),[email,setEmail]=useState(""),[password,setPassword]=useState(""),[error,setError]=useState(""),[notice,setNotice]=useState(initialNotice),[busy,setBusy]=useState(false),[cloud,setCloud]=useState(null),[networkIssue,setNetworkIssue]=useState(false);
@@ -531,7 +293,7 @@ function AuthScreen({ onAuth, notice:initialNotice="" }) {
   function resetGateway(){setGatewayUrl(DEFAULT_GATEWAY);Promise.resolve(window.AIStoica?.setConfig?.({gatewayUrl:DEFAULT_GATEWAY})).catch(()=>{});setNetworkIssue(false);setError("");setNotice("Am revenit la serviciul local implicit. Încearcă din nou autentificarea.");}
   return <div className="authShell"><div className="authGlow"/>
     <div className="authBrand"><img src="./stoica-enterprises-ai-768.webp" alt="Stoica Enterprises AI"/><h1>AI Stoica</h1><p>Stoica Enterprises AI</p>
-      <div className="authFeature"><Sparkles size={17}/> Chat AI profesional, memorie, fișiere și automatizări.</div>
+      <div className="authFeature"><Sparkles size={17}/> Chat AI profesional, memorie, fișiere, design și sarcini programate.</div>
       <div className="authFeature"><Wifi size={17}/> Conectare prin OmniRoute sau prin API-uri directe.</div>
       <div className="authFeature"><User size={17}/> {cloud?"Cont personal cu aprobare Owner.":"Cont personal protejat cu parolă."}</div>
     </div>
@@ -553,7 +315,7 @@ function AuthScreen({ onAuth, notice:initialNotice="" }) {
 
 function BrandMark({small=false}) { return <div className={cx("brandMark",small&&"small")}><img src="./stoica-enterprises-ai-mark.webp" alt="AI Stoica"/></div>; }
 
-const TOOL_ITEMS=[["explore",Compass,"Explorează",null],["automations",CalendarClock,"Automatizări","automations"],["plugins",Plug,"Pluginuri","plugins"],["library",Library,"Bibliotecă",null],["memory",Brain,"Memorie",null]];
+const TOOL_ITEMS=[["explore",Compass,"Explorează",null],["automations",CalendarClock,"Scheduled","automations"],["plugins",Plug,"Pluginuri","plugins"],["library",Library,"Bibliotecă",null],["design",Palette,"Design","document_generation"],["memory",Brain,"Memorie",null]];
 function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,conversations,currentId,busyIds,onSelect,onDeleteConversation,onUnarchive,onNew,selectedProject,setSelectedProject,activeAssistantId,onUseAssistant,onNewProject,onNewAssistant,onEditProject,onEditAssistant,onTool,onSettings,onLogout}) {
   const {can,isOwner}=useAccess();
   const [showArchived,setShowArchived]=useState(false);
@@ -629,13 +391,28 @@ function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,convers
   </aside>;
 }
 
+const MODEL_PROVIDERS=[["cerebras","Cerebras"],["groq","Groq"],["gemini","Gemini"],["mistral","Mistral"],["nvidia","NVIDIA"],["github","GitHub Models"],["openrouter","OpenRouter"],["cloudflare","Cloudflare Workers AI"],["cohere","Cohere"],["huggingface","Hugging Face"],["openai","OpenAI"]];
+// Combinations (names without "provider/") first, then one group per direct provider, then the rest of OmniRoute.
+function groupModels(list){
+  const groups=new Map();
+  const add=(key,name,x,opts)=>{if(!groups.has(key))groups.set(key,{name,items:[],...opts});groups.get(key).items.push(x)};
+  for(const x of list){
+    const id=String(x||"");
+    if(!id.includes("/")){add("combo","Combinații OmniRoute",id,{combo:true,short:v=>v});continue;}
+    const prefix=id.split("/")[0].toLowerCase(),known=MODEL_PROVIDERS.find(([k])=>k===prefix);
+    if(known)add(known[0],known[1],id,{short:v=>v.slice(prefix.length+1)});
+    else add("omni","Alte modele OmniRoute",id,{short:v=>v});
+  }
+  const order=["combo",...MODEL_PROVIDERS.map(([k])=>k),"omni"];
+  return order.filter(k=>groups.has(k)).map(k=>groups.get(k));
+}
 function ModelPicker({model,onSelect,models,onRefresh,refreshing,policyEnforced,deniedCount=0}) {
   const [open,setOpen]=useState(false),[query,setQuery]=useState("");
   const ref=useRef(null),listRef=useRef(null);
   useDismiss(open,()=>setOpen(false),ref);
   useEffect(()=>{if(!open)setQuery("")},[open]);
   useEffect(()=>{if(open)setTimeout(()=>{const el=ref.current?.querySelector(".modelSearch input")||listRef.current?.querySelector(".modelOption.active")||listRef.current?.querySelector(".modelOption");el?.focus()},0)},[open]);
-  const list=(policyEnforced?uniqueModels(models):uniqueModels([model,...models])).filter(x=>!isSmartAlias(x));
+  const list=policyEnforced?uniqueModels(models):uniqueModels([model,...models]);
   const filtered=list.filter(x=>!query||x.toLowerCase().includes(query.toLowerCase()));
   function onListKey(e){
     if(e.key!=="ArrowDown"&&e.key!=="ArrowUp")return;
@@ -654,11 +431,14 @@ function ModelPicker({model,onSelect,models,onRefresh,refreshing,policyEnforced,
       <div className="modelPickerHead"><div><b>Alege AI-ul</b><span>Schimbarea se aplică acestei conversații.</span></div><button className="modelRefresh" onClick={async e=>{e.stopPropagation();await onRefresh?.()}} disabled={refreshing} title="Actualizează lista de modele" aria-label="Actualizează lista de modele"><RotateCcw size={14} className={refreshing?"spin":""}/></button></div>
       {list.length>7&&<div className="modelSearch"><Search size={14}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Caută model" aria-label="Caută model"/></div>}
       <div className="modelPickerList" role="listbox" ref={listRef}>
-        {filtered.map(x=><button key={x} className={cx("modelOption",x===model&&"active")} onClick={()=>{onSelect(x);setOpen(false)}} role="option" aria-selected={x===model}>
-          <span className="modelOptionIcon"><Sparkles size={15}/></span>
-          <span className="modelOptionCopy"><b>{x}</b><small>{x===model?"Selectat acum":"Folosește acest AI"}</small></span>
-          {x===model&&<Check size={16}/>}
-        </button>)}
+        {groupModels(filtered).map(g=><div className="modelGroup" key={g.name} role="group" aria-label={g.name}>
+          <div className="modelGroupName">{g.name}</div>
+          {g.items.map(x=><button key={x} className={cx("modelOption",x===model&&"active")} onClick={()=>{onSelect(x);setOpen(false)}} role="option" aria-selected={x===model}>
+            <span className="modelOptionIcon"><Sparkles size={15}/></span>
+            <span className="modelOptionCopy"><b>{g.short(x)}</b><small>{x===model?"Selectat acum":g.combo?"Combinație OmniRoute":"Folosește acest AI"}</small></span>
+            {x===model&&<Check size={16}/>}
+          </button>)}
+        </div>)}
         {!list.length&&<div className="modelEmpty">Nu există modele disponibile. {policyEnforced?"Cere Owner-ului acces la cel puțin un model.":"Pornește OmniRoute sau adaugă o cheie API în Setări."}</div>}
         {list.length>0&&!filtered.length&&<div className="modelEmpty">Nu am găsit modelul căutat.</div>}
       </div>
@@ -816,7 +596,7 @@ function guessCodeLanguage(code,className){
   if(cls)return cls;
   return /^\s*(def |import \w|from \S+ import |print\(|class \w+:|if __name__)/m.test(String(code||""))?"python":"javascript";
 }
-function ConversationView({conversation,busy,busyStage,busySteps,onRegenerate,onRate,onCodeResult,canRunCode}) {
+function ConversationView({conversation,busy,busyStage,busySteps,onRegenerate,onRate,onCodeResult,canRunCode,onAnswer,onOpenSettings}) {
   const {isOwner}=useAccess();
   const [contextMenu,setContextMenu]=useState(null),[running,setRunning]=useState(false);
   useEffect(()=>{
@@ -855,16 +635,23 @@ function ConversationView({conversation,busy,busyStage,busySteps,onRegenerate,on
     }catch(e){toast("Rulare cod: "+e.message)}
     finally{setRunning(false)}
   }
-  if(!conversation||!conversation.messages?.length)return <div className="welcome"><BrandMark/><h1>Cu ce lucrăm astăzi?</h1><p>Întreabă orice. AI Stoica poate folosi memoria, internetul, contextul proiectului, biblioteca, pluginurile și automatizările tale.{isOwner?" Ca Owner, poți rula cod direct din blocurile de cod (clic dreapta pe cod).":""}</p></div>;
+  if(!conversation||!conversation.messages?.length)return <div className="welcome"><BrandMark/><h1>Cu ce lucrăm astăzi?</h1><p>Întreabă orice. AI Stoica poate folosi memoria, internetul, contextul proiectului, biblioteca, pluginurile și sarcinile programate (Scheduled).{isOwner?" Ca Owner, poți rula cod direct din blocurile de cod (clic dreapta pe cod).":""}</p></div>;
   const lastIndex=conversation.messages.length-1;
   return <div className="messagesColumn">
     {conversation.messages.map((m,i)=>{
       if(m.role==="user")return <div key={m.id||i} className="userRow"><div className="userMessageWrap"><div className="userBubble copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}><div className="userText">{messageText(m)}</div>{m.attachments?.length>0&&<div className="inlineAttachments mediaAttachments">{m.attachments.map((a,j)=><MediaAttachment key={a.libraryId||j} attachment={a}/>)}</div>}</div><div className="userMessageActions"><CopyMessageButton message={m}/></div></div></div>;
       if(m.role!=="assistant")return null;
       const text=String(m.content||(m.attachmentOnly?m.artifactSource||"":"")).trim();
+      const questions=!m.error&&!m.mediaKind?splitQuestions(text,m.streaming):null;
+      const nextUser=questions&&!questions.pending?conversation.messages.slice(i+1).find(x=>x.role==="user"):null;
       return <div key={m.id||i} className={cx("assistantBlock",(m.error||m.mediaGenerationError)&&"errorMessage")}><div className="assistantMark" aria-hidden="true">S</div><div className="assistantBody copyByRightClick" onContextMenu={e=>openCopyMenu(e,m)}>
         {m.routeInfo&&<RouteBadge info={m.routeInfo}/>}
-        {text&&<Markdown text={text}/>}
+        {questions?<>
+          {questions.before.trim()&&<Markdown text={questions.before}/>}
+          {questions.pending?<QuestionsPending/>:<QuestionCard key={m.id||i} questions={questions.questions} answeredWith={nextUser?messageText(nextUser):null} disabled={busy} onSubmit={onAnswer}/>}
+          {questions.after?.trim()&&<Markdown text={questions.after}/>}
+        </>:text&&<Markdown text={text}/>}
+        {(m.needsVideoSetup||(m.mediaGenerationError&&m.mediaKind==="video"&&/Setări\s*→\s*Video/.test(text)))&&<button className="secondary videoSetupButton" onClick={()=>onOpenSettings?.("video")}><Settings size={15}/> Deschide Setări → Video</button>}
         {m.stopped&&<div className="stoppedNote">{text?"Răspunsul a fost oprit înainte de final.":"Răspunsul a fost oprit."}</div>}
         {m.attachments?.length>0&&<div className="generatedFiles">{m.attachments.map((a,j)=><GeneratedAttachment key={a.id||j} attachment={a}/>)}</div>}
         {!m.streaming&&text&&<MessageActions message={m} title={conversation.title} disabled={busy} onRegenerate={()=>onRegenerate(i,i<lastIndex)} onRate={v=>onRate(i,v)}/>}
@@ -891,7 +678,9 @@ function TrayChip({attachment,onRemove}) {
   </span>;
 }
 
-function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAttachments,onOpenLibrary,responseMode,setResponseMode,mediaMode,setMediaMode,mentionsVersion}) {
+const VIDEO_PROVIDERS_TEXT="Încearcă pe rând providerii video configurați (Pollinations, OpenRouter, Gemini Veo, fal.ai, Replicate); e nevoie de o cheie și de permisiunea pentru costuri din Setări → Video.";
+function imageProvidersText(policy){return `Încearcă pe rând: Cloudflare și Pollinations (dacă ai cheie), Pollinations fără cheie, Hugging Face${policy?.imagePaid?", apoi providerii cu plată configurați":""}.`;}
+function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAttachments,onOpenLibrary,responseMode,setResponseMode,mediaMode,setMediaMode,mentionsVersion,mediaPolicy}) {
   const {can,deny}=useAccess();
   const ta=useRef(null),fileInput=useRef(null),imageInput=useRef(null),videoInput=useRef(null),audioInput=useRef(null),recorderRef=useRef(null),streamRef=useRef(null),chunksRef=useRef([]),attachRef=useRef(null),mountedRef=useRef(true);
   const [menu,setMenu]=useState(false),[recording,setRecording]=useState(false),[transcribing,setTranscribing]=useState(false),[uploading,setUploading]=useState(0),[mentions,setMentions]=useState([]),[mentionIndex,setMentionIndex]=useState(0),[mentionClosedFor,setMentionClosedFor]=useState(null),[dragOver,setDragOver]=useState(false);
@@ -1048,10 +837,10 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
     setMediaMode(m=>m===kind?null:kind);setMenu(false);setTimeout(()=>ta.current?.focus(),0);
   }
   const uploadLocked=!can("file_upload");
-  const placeholder=uploading?"Se încarcă fișierul…":recording?"Ascult… apasă microfonul pentru oprire":transcribing?"Transcriu vocea…":mediaMode==="image"?"Descrie imaginea pe care vrei s-o creez…":mediaMode==="video"?"Descrie videoclipul pe care vrei să-l creez…":"Mesaj pentru AI Stoica";
-  const hint=uploading?"Fișierul se salvează în Biblioteca AI Stoica (maxim 2 GB per fișier)…":recording?"Microfon activ — vorbește acum":transcribing?"AI Stoica transcrie înregistrarea…":mediaMode==="image"?"Mod Imagine: următorul mesaj generează o imagine. Apasă din nou „Imagine” pentru a renunța.":mediaMode==="video"?"Mod Video: următorul mesaj generează un videoclip. Apasă din nou „Video” pentru a renunța.":"AI Stoica poate greși. Verifică informațiile importante.";
+  const placeholder=uploading?"Se încarcă fișierul…":recording?"Ascult… apasă microfonul pentru oprire":transcribing?"Transcriu vocea…":mediaMode==="image"?"Descrie poza pe care vrei s-o creez…":mediaMode==="video"?"Descrie videoclipul pe care vrei să-l creez…":"Mesaj pentru AI Stoica";
+  const hint=uploading?"Fișierul se salvează în Biblioteca AI Stoica (maxim 2 GB per fișier)…":recording?"Microfon activ — vorbește acum":transcribing?"AI Stoica transcrie înregistrarea…":mediaMode==="image"?"Mod Poză: următorul mesaj creează o imagine. Apasă din nou „Poză” pentru a renunța.":mediaMode==="video"?"Mod Video: următorul mesaj creează un videoclip. Apasă din nou „Video” pentru a renunța.":"AI Stoica poate greși. Verifică informațiile importante.";
   return <div className={cx("composerDock",centered&&"centered")} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
-    {mentionOptions.length>0&&<div className="mentionMenu" role="listbox" aria-label="Pluginuri și automatizări">{mentionOptions.map((x,i)=><button key={x.type+x.trigger+i} role="option" aria-selected={i===mentionIndex} className={cx(i===mentionIndex&&"active")} onMouseDown={e=>e.preventDefault()} onClick={()=>insertMention(x)}><span className={cx("mentionType",x.type)}>{x.type==="plugin"?<Plug size={14}/>:<CalendarClock size={14}/>}</span><span><b>{x.name}</b><small>{x.type==="plugin"?"Plugin":"Automatizare"} · {x.trigger}</small></span></button>)}</div>}
+    {mentionOptions.length>0&&<div className="mentionMenu" role="listbox" aria-label="Pluginuri și sarcini programate">{mentionOptions.map((x,i)=><button key={x.type+x.trigger+i} role="option" aria-selected={i===mentionIndex} className={cx(i===mentionIndex&&"active")} onMouseDown={e=>e.preventDefault()} onClick={()=>insertMention(x)}><span className={cx("mentionType",x.type)}>{x.type==="plugin"?<Plug size={14}/>:<CalendarClock size={14}/>}</span><span><b>{x.name}</b><small>{x.type==="plugin"?"Plugin":"Sarcină programată"} · {x.trigger}</small></span></button>)}</div>}
     <div className={cx("composerCard",dragOver&&"dragOver")}>
       {dragOver&&<div className="dropHint">{uploadLocked?deniedMessage("file_upload"):"Eliberează pentru a atașa fișierele"}</div>}
       {attachments.length>0&&<div className="attachmentTray">{attachments.map((a,i)=><TrayChip key={(a.libraryId||a.name)+i} attachment={a} onRemove={()=>setAttachments(v=>v.filter((_,j)=>j!==i))}/>)}</div>}
@@ -1063,8 +852,8 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
         <div className="attachWrap" ref={attachRef}><button className="composerIcon" onClick={()=>setMenu(v=>!v)} title="Fișiere și unelte" aria-label="Fișiere și unelte" aria-haspopup="menu" aria-expanded={menu}><Plus size={21}/></button>{menu&&<div className="attachMenu" role="menu">
           <button role="menuitem" className={cx(!can("web_search")&&"locked")} onClick={lockedItem("web_search",()=>toolPrompt("Caută pe internet informații actuale despre "))}><Globe2 size={16}/> Căutare web{!can("web_search")&&<Lock size={12} className="lockIcon"/>}</button>
           <button role="menuitem" className={cx(!can("deep_research")&&"locked")} onClick={lockedItem("deep_research",()=>toolPrompt("Fă deep research, verifică mai multe surse și explică-mi complet: "))}><Search size={16}/> Deep Research{!can("deep_research")&&<Lock size={12} className="lockIcon"/>}</button>
-          <button role="menuitem" className={cx(!can("image_generation")&&"locked")} onClick={()=>toggleMedia("image")}><ImageIcon size={16}/> Creează imagine{!can("image_generation")&&<Lock size={12} className="lockIcon"/>}</button>
-          <button role="menuitem" className={cx(!can("video_generation")&&"locked")} onClick={()=>toggleMedia("video")}><Video size={16}/> Creează video{!can("video_generation")&&<Lock size={12} className="lockIcon"/>}</button>
+          <button role="menuitem" className={cx(!can("image_generation")&&"locked")} onClick={()=>toggleMedia("image")}><ImageIcon size={16}/> Creează o poză{!can("image_generation")&&<Lock size={12} className="lockIcon"/>}</button>
+          <button role="menuitem" className={cx(!can("video_generation")&&"locked")} onClick={()=>toggleMedia("video")}><Clapperboard size={16}/> Creează un video{!can("video_generation")&&<Lock size={12} className="lockIcon"/>}</button>
           <div className="menuDivider"/>
           <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>fileInput.current?.click())}><Upload size={16}/> Încarcă orice fișier{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
           <button role="menuitem" onClick={()=>{setMenu(false);onOpenLibrary()}}><Library size={16}/> Alege din Bibliotecă</button>
@@ -1082,418 +871,14 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
       </div>
     </div>
     <div className="composerModeRow">
+      <button className={cx("mediaMake",mediaMode==="image"&&"active",!can("image_generation")&&"locked")} aria-pressed={mediaMode==="image"} title={can("image_generation")?`Poză: următorul mesaj creează o imagine. ${imageProvidersText(mediaPolicy)}`:deniedMessage("image_generation")} onClick={()=>toggleMedia("image")}><ImageIcon size={16}/> Poză</button>
+      <button className={cx("mediaMake",mediaMode==="video"&&"active",!can("video_generation")&&"locked")} aria-pressed={mediaMode==="video"} title={can("video_generation")?`Video: următorul mesaj creează un videoclip. ${VIDEO_PROVIDERS_TEXT}`:deniedMessage("video_generation")} onClick={()=>toggleMedia("video")}><Clapperboard size={16}/> Video</button>
+      <span className="modeDivider" aria-hidden="true"/>
       <button className={cx("modeChip",responseMode==="rapid"&&"active")} aria-pressed={responseMode==="rapid"} onClick={()=>setResponseMode("rapid")}><Sparkles size={13}/> Rapid</button>
       <button className={cx("modeChip",responseMode==="thinking"&&"active")} aria-pressed={responseMode==="thinking"} onClick={()=>setResponseMode("thinking")}><Brain size={13}/> Gândire</button>
-      <span className="modeDivider" aria-hidden="true"/>
-      <button className={cx("modeChip media",mediaMode==="image"&&"active",!can("image_generation")&&"locked")} aria-pressed={mediaMode==="image"} title={can("image_generation")?"Următorul mesaj generează o imagine":deniedMessage("image_generation")} onClick={()=>toggleMedia("image")}><ImageIcon size={13}/> Imagine</button>
-      <button className={cx("modeChip media",mediaMode==="video"&&"active",!can("video_generation")&&"locked")} aria-pressed={mediaMode==="video"} title={can("video_generation")?"Următorul mesaj generează un videoclip":deniedMessage("video_generation")} onClick={()=>toggleMedia("video")}><Video size={13}/> Video</button>
     </div>
     <div className="composerHint" aria-live="polite">{hint}</div>
   </div>;
-}
-
-function libraryCategory(x){const k=mediaKind(x.mime,x.name);return k==="image"||k==="audio"||k==="video"?k:"document";}
-const LIBRARY_FILTERS=[["all","Toate"],["image","Imagini"],["document","Documente"],["audio","Audio"],["video","Video"]];
-function LibraryPanel({onClose,onAttach,initialFilter="all"}) {
-  const {can,deny}=useAccess();
-  const [items,setItems]=useState([]),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState(""),[uploading,setUploading]=useState(false),[attaching,setAttaching]=useState(null),[filter,setFilter]=useState(initialFilter),[query,setQuery]=useState("");
-  const input=useRef(null),mounted=useRef(true);
-  useEffect(()=>()=>{mounted.current=false},[]);
-  async function load(){
-    try{const d=await api("/api/library");if(mounted.current){setItems(d.data||[]);setLoadError("")}}
-    catch(e){if(mounted.current)setLoadError(e.message)}
-    finally{if(mounted.current)setLoading(false)}
-  }
-  useEffect(()=>{load()},[]);
-  async function upload(e){
-    const files=[...(e.target.files||[])];e.target.value="";
-    if(!files.length)return;
-    if(!can("file_upload")){deny("file_upload");return;}
-    setUploading(true);
-    const failed=[];
-    for(const f of files){try{await uploadFileToLibrary(f)}catch(err){failed.push(`${f.name}: ${err.message}`)}}
-    if(failed.length)toast("Încărcare fișier: "+failed.join(" · "));
-    else toast(files.length===1?"Fișierul a fost adăugat în Bibliotecă.":`${plural(files.length,"fișier","fișiere")} adăugate în Bibliotecă.`,"ok");
-    if(mounted.current){setUploading(false);await load();}
-  }
-  async function remove(x){
-    if(!confirm(`Ștergi „${x.name}” din Bibliotecă? Fișierul nu va mai putea fi descărcat nici din conversațiile în care a fost folosit.`))return;
-    try{await api(`/api/library/${x.id}`,{method:"DELETE"});await load()}catch(e){toast("Ștergere: "+e.message)}
-  }
-  async function attach(x){
-    if(attaching)return;
-    setAttaching(x.id);
-    try{const a=await libraryItemToAttachment(x);onAttach?.(a);onClose()}
-    catch(e){toast("Atașare: "+e.message)}
-    finally{if(mounted.current)setAttaching(null)}
-  }
-  const visible=items.filter(x=>(filter==="all"||libraryCategory(x)===filter)&&(!query.trim()||String(x.name||"").toLowerCase().includes(query.trim().toLowerCase())));
-  const uploadLocked=!can("file_upload");
-  return <ToolShell title="Bibliotecă" subtitle="Păstrează fișierele tale și refolosește-le în conversații." onClose={onClose}>
-    <div className="toolActions"><button className={cx("primary",uploadLocked&&"locked")} onClick={()=>uploadLocked?deny("file_upload"):input.current?.click()} disabled={uploading}><Upload size={16}/> {uploading?"Se încarcă…":"Adaugă fișiere"}</button><input ref={input} type="file" multiple hidden onChange={upload}/><span className="toolNote">Maxim 2 GB per fișier. Fișierele sunt păstrate pe acest calculator.</span></div>
-    <div className="libraryFilters">
-      <div className="chipRow" role="tablist">{LIBRARY_FILTERS.map(([k,label])=><button key={k} role="tab" aria-selected={filter===k} className={cx("filterChip",filter===k&&"active")} onClick={()=>setFilter(k)}>{label}</button>)}</div>
-      <div className="memorySearch librarySearch"><Search size={15}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Caută după nume" aria-label="Caută în Bibliotecă"/></div>
-    </div>
-    {loadError&&<div className="inlineError" role="alert">{loadError} <button className="linkBtn" onClick={()=>{setLoading(true);load()}}>Reîncearcă</button></div>}
-    <div className="libraryGrid">{loading?<div className="emptyState"><HardDrive size={30}/>Se încarcă biblioteca…</div>:visible.length===0?<div className="emptyState"><HardDrive size={30}/>{items.length?"Niciun fișier nu corespunde filtrului.":"Biblioteca este goală."}</div>:visible.map(x=>{
-      const cat=libraryCategory(x);
-      return <div className="libraryCard" key={x.id}><div className="fileIcon">{cat==="image"?<ImageIcon size={22}/>:cat==="audio"?<Volume2 size={22}/>:cat==="video"?<Play size={22}/>:<FileText size={22}/>}</div><div className="fileMeta"><b title={x.name}>{x.name}</b><span>{kindLabel(mediaKind(x.mime,x.name),x.mime,x.name)} · {formatBytes(x.size)} · {fmtTime(x.createdAt)}</span></div><div className="libraryActions"><button className="smallBtn" onClick={()=>attach(x)} disabled={!!attaching}>{attaching===x.id?"Se pregătește…":"Folosește"}</button><button className="iconOnly smallIcon" onClick={()=>downloadLibraryFile({libraryId:x.id,name:x.name}).catch(e=>toast(e.message))} aria-label={`Descarcă ${x.name}`} title="Descarcă"><Download size={16}/></button><button className="iconDanger" onClick={()=>remove(x)} aria-label={`Șterge ${x.name}`} title="Șterge"><Trash2 size={16}/></button></div></div>;
-    })}</div>
-    {uploading&&<div className="toolStatus" role="status">Se încarcă fișierul… pentru fișiere mari poate dura.</div>}
-  </ToolShell>;
-}
-
-const MEMORY_SOURCES={manual:"adăugată manual",automatic:"reținută automat",history:"import din istoric",automation:"din automatizare"};
-function MemoryPanel({onClose}) {
-  const [items,setItems]=useState([]),[loading,setLoading]=useState(true),[enabled,setEnabled]=useState(true),[query,setQuery]=useState(""),[text,setText]=useState(""),[summary,setSummary]=useState(null),[busy,setBusy]=useState(""),[error,setError]=useState("");
-  const seq=useRef(0),mounted=useRef(true);
-  useEffect(()=>()=>{mounted.current=false},[]);
-  async function load(q=query){
-    const id=++seq.current;
-    try{
-      const [d,sm]=await Promise.all([api(`/api/memory${q?`?q=${encodeURIComponent(q)}`:""}`),api("/api/memory/summary").catch(()=>({data:null}))]);
-      if(id!==seq.current||!mounted.current)return;
-      setItems(d.data||[]);setEnabled(d.enabled!==false);setSummary(sm.data||null);setError("");
-    }catch(e){if(id===seq.current&&mounted.current)setError(e.message)}
-    finally{if(id===seq.current&&mounted.current)setLoading(false)}
-  }
-  useEffect(()=>{const t=setTimeout(()=>load(query.trim()),query.trim()?300:0);return()=>clearTimeout(t)},[query]);
-  async function run(kind,fn){if(busy)return;setBusy(kind);try{await fn()}catch(e){toast(e.message)}finally{if(mounted.current)setBusy("")}}
-  const toggle=()=>run("toggle",async()=>{const d=await api("/api/memory/toggle",{method:"POST",body:JSON.stringify({enabled:!enabled})});setEnabled(d.enabled!==false)});
-  const add=()=>{if(!text.trim())return;run("add",async()=>{await api("/api/memory",{method:"POST",body:JSON.stringify({text:text.trim(),pinned:true})});setText("");toast("Informația a fost salvată și fixată în memorie.","ok");await load()})};
-  const pin=x=>run("pin",async()=>{await api(`/api/memory/${x.id}`,{method:"PATCH",body:JSON.stringify({pinned:!x.pinned})});await load()});
-  const remove=x=>{if(!confirm("Ștergi această informație din memorie?"))return;run("remove",async()=>{await api(`/api/memory/${x.id}`,{method:"DELETE"});await load()})};
-  const clear=()=>{if(!confirm("Ștergi toate memoriile AI Stoica pentru acest cont? Operația nu poate fi anulată."))return;run("clear",async()=>{await api("/api/memory",{method:"DELETE"});setQuery("");await load("")})};
-  const importHistory=()=>{if(!confirm("Import din istoricul conversațiilor informațiile durabile (preferințe, decizii, detalii de proiect)?"))return;run("import",async()=>{const d=await api("/api/memory/import-history",{method:"POST",body:"{}"});toast(`Am importat ${plural(d.count||0,"informație","informații")} din istoric.`,"ok");await load()})};
-  return <ToolShell title="Memorie" subtitle="Reține automat informațiile durabile și relevante, fără să salveze fiecare replică." onClose={onClose}>
-    <div className="memoryTop"><button className={cx("memoryToggle",enabled&&"on")} onClick={toggle} disabled={!!busy} aria-pressed={enabled}>{enabled?<ToggleRight size={22}/>:<ToggleLeft size={22}/>} Memorie {enabled?"activă":"oprită"}</button><button className="secondary" onClick={importHistory} disabled={!!busy}>{busy==="import"?"Se importă…":"Importă istoricul relevant"}</button><button className="dangerButton" onClick={clear} disabled={!!busy}><Trash2 size={15}/> Șterge tot</button></div>
-    {summary&&<div className="memorySummary">
-      <div><span>Total memorii</span><b>{summary.count||0}</b></div>
-      <div><span>Fixate</span><b>{summary.pinned||0}</b></div>
-      <div><span>Categorii</span><b>{Object.keys(summary.categories||{}).length}</b></div>
-      <small>AI Stoica extrage automat preferințe, decizii și detalii de proiect și le folosește doar când sunt relevante.</small>
-    </div>}
-    <div className="memoryAdd"><textarea value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();add()}}} placeholder="Adaugă manual ceva important pe care AI Stoica să-l țină minte… (Ctrl+Enter salvează)" aria-label="Informație nouă pentru memorie"/><button className="primary" onClick={add} disabled={!text.trim()||!!busy}>{busy==="add"?"Se salvează…":"Salvează și fixează"}</button></div>
-    <div className="memorySearch"><Search size={15}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Caută în memorie" aria-label="Caută în memorie"/></div>
-    {error&&<div className="inlineError" role="alert">{error}</div>}
-    <div className="memoryList">{loading?<div className="emptyState small">Se încarcă memoria…</div>:items.length===0?<div className="emptyState small">{query.trim()?"Nu am găsit nimic pentru această căutare.":"Memoria este goală. AI Stoica va reține automat preferințele și deciziile importante."}</div>:items.map(x=><div className="memoryItem" key={x.id}><button className="pinBtn" onClick={()=>pin(x)} disabled={!!busy} aria-label={x.pinned?"Anulează fixarea":"Fixează informația"} title={x.pinned?"Fixată — apasă pentru a anula":"Fixează"}>{x.pinned?<Pin size={16}/>:<PinOff size={16}/>}</button><div><p>{x.text}</p><span>{x.category||"detaliu"} · {MEMORY_SOURCES[x.source]||x.source||"memorie"} · {fmtTime(x.updatedAt||x.createdAt)}</span></div><button className="iconDanger" onClick={()=>remove(x)} disabled={!!busy} aria-label="Șterge informația" title="Șterge"><Trash2 size={15}/></button></div>)}</div>
-  </ToolShell>;
-}
-
-const PLUGIN_APP_LINKS={
-  "Gmail":"https://mail.google.com/","Google Drive":"https://drive.google.com/","GitHub":"https://github.com/login","Outlook Email":"https://outlook.office.com/mail/",
-  "Adobe":"https://account.adobe.com/","Figma":"https://www.figma.com/login","Canva":"https://www.canva.com/login/","Shopify":"https://admin.shopify.com/",
-  "Atlassian Rovo":"https://id.atlassian.com/login","monday.com":"https://auth.monday.com/","Notion":"https://www.notion.so/login","Google Calendar":"https://calendar.google.com/",
-  "Slack":"https://slack.com/signin","Teams":"https://teams.microsoft.com/","Zoom":"https://zoom.us/signin","Hostinger Mail":"https://mail.hostinger.com/",
-  "Higgsfield":"https://higgsfield.ai/","Runway":"https://app.runwayml.com/","Supabase":"https://supabase.com/dashboard","Render":"https://dashboard.render.com/",
-  "Vercel":"https://vercel.com/login","Railway":"https://railway.com/login","Spotify":"https://open.spotify.com/","HubSpot":"https://app.hubspot.com/login",
-  "PostHog":"https://app.posthog.com/","Amplitude":"https://app.amplitude.com/","Typeform":"https://admin.typeform.com/"
-};
-const PLUGIN_OAUTH={
-  "Gmail":{provider:"google",authUrl:"https://accounts.google.com/o/oauth2/v2/auth",tokenUrl:"https://oauth2.googleapis.com/token",scopes:"openid email https://www.googleapis.com/auth/gmail.readonly",apiUrl:"https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10",method:"GET"},
-  "Google Drive":{provider:"google-drive",authUrl:"https://accounts.google.com/o/oauth2/v2/auth",tokenUrl:"https://oauth2.googleapis.com/token",scopes:"openid email https://www.googleapis.com/auth/drive.readonly",apiUrl:"https://www.googleapis.com/drive/v3/files?pageSize=20&fields=files(id,name,mimeType,modifiedTime,webViewLink)",method:"GET"},
-  "Google Calendar":{provider:"google-calendar",authUrl:"https://accounts.google.com/o/oauth2/v2/auth",tokenUrl:"https://oauth2.googleapis.com/token",scopes:"openid email https://www.googleapis.com/auth/calendar.readonly",apiUrl:"https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=20&singleEvents=true&orderBy=startTime",method:"GET"},
-  "GitHub":{provider:"github",authUrl:"https://github.com/login/oauth/authorize",tokenUrl:"https://github.com/login/oauth/access_token",scopes:"read:user repo",apiUrl:"https://api.github.com/user/repos?sort=updated&per_page=20",method:"GET"},
-  "Outlook Email":{provider:"microsoft-mail",authUrl:"https://login.microsoftonline.com/common/oauth2/v2.0/authorize",tokenUrl:"https://login.microsoftonline.com/common/oauth2/v2.0/token",scopes:"openid profile offline_access Mail.Read",apiUrl:"https://graph.microsoft.com/v1.0/me/messages?$top=10",method:"GET"},
-  "Teams":{provider:"microsoft-teams",authUrl:"https://login.microsoftonline.com/common/oauth2/v2.0/authorize",tokenUrl:"https://login.microsoftonline.com/common/oauth2/v2.0/token",scopes:"openid profile offline_access User.Read Team.ReadBasic.All",apiUrl:"https://graph.microsoft.com/v1.0/me/joinedTeams",method:"GET"},
-  "Slack":{provider:"slack",authUrl:"https://slack.com/oauth/v2/authorize",tokenUrl:"https://slack.com/api/oauth.v2.access",scopes:"channels:read users:read",apiUrl:"https://slack.com/api/conversations.list?limit=100",method:"GET",requiresSecret:true},
-  "Notion":{provider:"notion",authUrl:"https://api.notion.com/v1/oauth/authorize",tokenUrl:"https://api.notion.com/v1/oauth/token",scopes:"",apiUrl:"https://api.notion.com/v1/search",method:"POST",requiresSecret:true},
-  "Spotify":{provider:"spotify",authUrl:"https://accounts.spotify.com/authorize",tokenUrl:"https://accounts.spotify.com/api/token",scopes:"user-read-private user-read-email",apiUrl:"https://api.spotify.com/v1/me",method:"GET"}
-};
-const PLUGIN_CATALOG=[
-  ["Populare","Gmail","Citește și organizează emailurile din Gmail","@gmail","M","gmail"],
-  ["Populare","Google Drive","Documente, foi de calcul și prezentări din Drive","@drive","△","googledrive"],
-  ["Populare","GitHub","Issues, pull requests și depozite de cod","@github","GH","github"],
-  ["Populare","Remote Desktop Commander","Automatizări și control de la distanță","@remote","DC"],
-  ["Populare","Health","Datele tale de sănătate","@health","♥"],
-  ["Populare","Outlook Email","Emailurile din Outlook","@outlook","O","microsoftoutlook"],
-  ["Noi și remarcabile","Adobe","Creează, combină și editează documente și grafică","@adobe","A","adobe"],
-  ["Noi și remarcabile","Figma","Design de interfețe și prototipuri","@figma","F","figma"],
-  ["Noi și remarcabile","MagicPath","Design pe o pânză comună","@magicpath","MP"],
-  ["Noi și remarcabile","Canva","Creează și editează design-uri","@canva","C","canva"],
-  ["Noi și remarcabile","Shopify","Administrează magazinul online","@shopify","S","shopify"],
-  ["Noi și remarcabile","Atlassian Rovo","Jira, Confluence, Loom și altele","@rovo","A","atlassian"],
-  ["Productivitate","Firecrawl","Caută și extrage date de pe web","@firecrawl","🔥"],
-  ["Productivitate","Flaim Fantasy","Analize pentru sporturi fantasy","@flaim","FF"],
-  ["Productivitate","monday.com","Proiecte, sarcini și CRM","@monday","M","mondaydotcom"],
-  ["Productivitate","Notion","Documente și fluxuri de lucru Notion","@notion","N","notion"],
-  ["Productivitate","Google Calendar","Evenimentele din Google Calendar","@calendar","31","googlecalendar"],
-  ["Productivitate","Metricool","Analizează și programează postări","@metricool","∞"],
-  ["Comunicare","Slack","Canale și mesaje Slack","@slack","S","slack"],
-  ["Comunicare","Teams","Echipe și conversații Microsoft Teams","@teams","T","microsoftteams"],
-  ["Comunicare","Zoom","Informații din întâlnirile Zoom","@zoom","Z","zoom"],
-  ["Comunicare","Superhuman Mail","Asistent pentru email și calendar","@superhuman","✉"],
-  ["Comunicare","Hostinger Mail","Emailul găzduit la Hostinger","@hostinger","H","hostinger"],
-  ["Comunicare","Mailopoly Inbox","Caută și trimite emailuri și mesaje","@mailopoly","◇"],
-  ["Creativitate","Higgsfield","Modele AI pentru imagini și video","@higgsfield","HF"],
-  ["Creativitate","Viewmax","Videoclipuri create cu AI","@viewmax","▶"],
-  ["Creativitate","Runway","Generare video cu modele AI","@runway","R","runway"],
-  ["Creativitate","invideo","Videoclipuri de orice durată","@invideo","IV"],
-  ["Instrumente pentru dezvoltatori","Supabase","Administrează și interoghează baze de date","@supabase","S","supabase"],
-  ["Instrumente pentru dezvoltatori","Render","Resursele tale de pe Render","@render","R","render"],
-  ["Instrumente pentru dezvoltatori","WPVibe","Unelte AI pentru WordPress","@wpvibe","WP"],
-  ["Instrumente pentru dezvoltatori","Exa","Căutare web pentru agenți AI","@exa","E"],
-  ["Instrumente pentru dezvoltatori","Vercel","Construiește și publică aplicații web","@vercel","▲","vercel"],
-  ["Instrumente pentru dezvoltatori","Railway","Construiește și publică aplicații","@railway","R","railway"],
-  ["Sănătate","COROS","Antrenamente și date de sănătate","@coros","C","coros"],
-  ["Sănătate","Tredict","Analizează antrenamente și creează planuri","@tredict","T"],
-  ["Sănătate","freddy","Întrebări despre datele tale de sănătate","@freddy","F"],
-  ["Sănătate","Fitness AI Connector","Antrenor AI pentru datele Garmin","@fitness","AI"],
-  ["Sănătate","Calorie Tracker","Urmărește alimentația și caloriile","@calories","CT"],
-  ["Sănătate","LiftTrack","Antrenamente de forță pentru Garmin","@lifttrack","LT"],
-  ["Divertisment","Destiny AI Astrology","Hărți natale și horoscop","@destiny","D"],
-  ["Divertisment","Smart Chess","Joacă șah și învață strategie","@chess","♞"],
-  ["Divertisment","Spotify","Muzică și podcasturi","@spotify","●","spotify"],
-  ["Divertisment","Chessy","Joacă șah cu AI Stoica","@chessy","♘"],
-  ["Divertisment","SoundBreak","Muzică AI alături de artiști","@soundbreak","◉"],
-  ["Divertisment","PocketMind: Texas Hold'em","Poker Texas Hold'em cu AI","@pocketmind","♠"],
-  ["Educație","Consensus","Explorează cercetarea științifică","@consensus","C"],
-  ["Educație","SciSpace","Pentru știință și cercetare","@scispace","S"],
-  ["Educație","Acumen by Talarion","Ține AI-ul la curent cu noutățile","@acumen","T"],
-  ["Educație","Explain Video Generator","Videoclipuri explicative create cu AI","@explain","▶"],
-  ["Educație","Scite","Caută în literatura științifică","@scite","S"],
-  ["Educație","Tarteel","Resurse pentru studiul Coranului","@tarteel","◇"],
-  ["Business și operațiuni","HubSpot","Date și acțiuni din HubSpot","@hubspot","H","hubspot"],
-  ["Business și operațiuni","Windsor.ai","Conectează peste 350 de surse de date","@windsor","W"],
-  ["Business și operațiuni","Adspirer","Creează, lansează și analizează reclame","@adspirer","AD"],
-  ["Business și operațiuni","vidIQ","Statistici și cuvinte cheie YouTube","@vidiq","IQ"],
-  ["Business și operațiuni","Ubersuggest","Cercetare SEO","@ubersuggest","U"],
-  ["Date și analiză","PostHog","Analizează datele produsului","@posthog","PH","posthog"],
-  ["Date și analiză","Helium 10","Datele tale Helium 10","@helium","H10"],
-  ["Date și analiză","Blockscout","Analizează date blockchain","@blockscout","B","blockscout"],
-  ["Date și analiză","Data","Răspunsuri pe baza datelor tale","@data","▥"],
-  ["Date și analiză","Amplitude","Analizează comportamentul utilizatorilor","@amplitude","A","amplitude"],
-  ["Date și analiză","Typeform","Formulare și analiza răspunsurilor","@typeform","T","typeform"],
-  ["Cercetare științifică","Undermind","Găsește și citește articole științifice","@undermind","U"],
-  ["Cercetare științifică","Inductive","Modele ADMET de ultimă generație","@inductive","I"],
-  ["Cercetare științifică","Boltz","Structuri, molecule și proteine","@boltz","B"],
-  ["Cercetare științifică","Tamarind Bio","Design proteic și molecular","@tamarind","TB"],
-  ["Cercetare științifică","Proto","Modele AI pentru biologie","@proto","P"],
-  ["Cercetare științifică","Rowan","Simulări de chimie și biologie","@rowan","R"],
-  ["Securitate","Codex Security","Scanare de securitate pentru cod","@codexsecurity","CS"],
-  ["Securitate","PrivacyHawk","Protejează datele personale","@privacyhawk","PH"],
-  ["Securitate","Soluvery","Auditează permisiunile Google Drive","@soluvery","S"],
-  ["Securitate","Malwarebytes","Verifică linkuri, domenii și numere de telefon","@malwarebytes","M","malwarebytes"],
-  ["Securitate","AJAXX Data Scrubber","Elimină datele personale expuse","@ajaxx","AX"],
-  ["Securitate","Ansvar Gateway","Legi, securitate și conformitate","@ansvar","AI"],
-  ["Altele","Tarot","Citiri de tarot","@tarot","✦"],
-  ["Altele","Astrologic","Hărți natale și horoscop","@astrologic","☾"],
-  ["Altele","Kleinanzeigen","Anunțuri de vânzare din Germania","@kleinanzeigen","K","kleinanzeigen"],
-  ["Altele","Steer Astro","Astrolog AI personal","@steerastro","◎"]
-].map(([group,name,description,trigger,mark,slug])=>({group,name,description,trigger,mark,slug}));
-const PLUGIN_GROUPS=["Populare","Noi și remarcabile","Productivitate","Comunicare","Creativitate","Instrumente pentru dezvoltatori","Sănătate","Divertisment","Educație","Business și operațiuni","Date și analiză","Cercetare științifică","Securitate","Altele"];
-const SKILLS=[
-  {name:"Căutare web",description:"Caută informații actuale și surse online.",mark:"W",perm:"web_search"},
-  {name:"Documente",description:"Generează și lucrează cu PDF, DOCX și PPTX.",mark:"D",perm:"document_generation"},
-  {name:"Cod și GitHub",description:"Analizează cod și lucrează cu GitHub.",mark:"</>",perm:"github_access"},
-  {name:"Imagini",description:"Creează imagini cu AI.",mark:"I",perm:"image_generation"},
-  {name:"Fișiere și date",description:"Analizează fișiere, tabele și documente încărcate.",mark:"∑",perm:"file_upload"},
-  {name:"Automatizări",description:"Rulează sarcini programate și monitorizări.",mark:"A",perm:"automations"}
-];
-function pluginHasIntegration(x){return !!(PLUGIN_APP_LINKS[x.name]||PLUGIN_OAUTH[x.name]);}
-function isHttpUrl(value){try{const u=new URL(String(value||"").trim());return u.protocol==="https:"||u.protocol==="http:"}catch{return false}}
-
-function SetupOverlay({onClose,children}) {
-  const {ref,backdropProps}=useModal(onClose);
-  return <div className="claudeSetupBackdrop" {...backdropProps}><div className="claudeSetupPanel" ref={ref} role="dialog" aria-modal="true" aria-label="Configurare plugin" tabIndex={-1}>{children}</div></div>;
-}
-function ResultNote({result}){return result?<div className={cx("pluginResult claudeResult",result.kind)} role={result.kind==="error"?"alert":"status"}>{result.text}</div>:null;}
-
-function PluginsPanel({onClose}) {
-  const {can}=useAccess();
-  const blank={name:"",description:"",url:"",method:"POST",trigger:"",apiKey:"",auto:false,oauthClientId:"",oauthClientSecret:""};
-  const [items,setItems]=useState([]),[loading,setLoading]=useState(true),[form,setForm]=useState(blank),[result,setResult]=useState(null),[setupResult,setSetupResult]=useState(null),[saving,setSaving]=useState(""),[testing,setTesting]=useState(null);
-  const [topTab,setTopTab]=useState("plugins"),[scope,setScope]=useState("public"),[query,setQuery]=useState(""),[selected,setSelected]=useState(null),[redirectUri,setRedirectUri]=useState("");
-  const oauthTimer=useRef(null),mounted=useRef(true);
-  useEffect(()=>()=>{mounted.current=false;clearInterval(oauthTimer.current)},[]);
-  async function load(){
-    try{const d=await api("/api/plugins");if(mounted.current)setItems(d.data||[])}
-    catch(e){if(mounted.current)setResult({kind:"error",text:"Nu am putut încărca pluginurile: "+e.message})}
-    finally{if(mounted.current)setLoading(false)}
-  }
-  useEffect(()=>{load()},[]);
-  async function add(e){
-    e?.preventDefault?.();
-    if(saving)return;
-    if(!form.name.trim()){setSetupResult({kind:"error",text:"Scrie un nume pentru plugin."});return;}
-    if(!isHttpUrl(form.url)){setSetupResult({kind:"error",text:"Adresa API trebuie să fie un link complet, de exemplu https://exemplu.ro/webhook."});return;}
-    setSaving("api");setSetupResult(null);
-    try{
-      await api("/api/plugins",{method:"POST",body:JSON.stringify({...form,name:form.name.trim(),url:form.url.trim()})});
-      setResult({kind:"ok",text:`${form.name.trim()}: pluginul a fost conectat.`});
-      closeSetup();await load();
-    }catch(err){setSetupResult({kind:"error",text:err.message})}
-    finally{if(mounted.current)setSaving("")}
-  }
-  async function patch(x,p){try{await api(`/api/plugins/${x.id}`,{method:"PATCH",body:JSON.stringify(p)});await load()}catch(e){toast(e.message)}}
-  async function test(x){
-    if(testing)return;setTesting(x.id);
-    try{const d=await api(`/api/plugins/${x.id}/test`,{method:"POST",body:JSON.stringify({message:"Test conexiune AI Stoica"})});setResult({kind:"ok",text:`${x.name}: ${d.result||"conexiune reușită"}`})}
-    catch(e){setResult({kind:"error",text:`${x.name}: eroare — ${e.message}`})}
-    finally{if(mounted.current)setTesting(null)}
-  }
-  async function remove(x){
-    if(!confirm(`Ștergi pluginul „${x.name}”?`))return;
-    try{await api(`/api/plugins/${x.id}`,{method:"DELETE"});await load()}catch(e){toast(e.message)}
-  }
-  async function connectOAuth(){
-    if(!selected?.oauth||saving)return;
-    if(!form.oauthClientId.trim()){setSetupResult({kind:"error",text:"Lipsește OAuth Client ID."});return;}
-    if(selected.oauth.requiresSecret&&!form.oauthClientSecret.trim()){setSetupResult({kind:"error",text:"Acest serviciu necesită și OAuth Client Secret."});return;}
-    setSaving("oauth");setSetupResult(null);
-    try{
-      const d=await api("/api/plugins/oauth/start",{method:"POST",body:JSON.stringify({
-        name:form.name||selected.name,description:form.description||selected.description,trigger:form.trigger||selected.trigger,auto:form.auto,
-        clientId:form.oauthClientId.trim(),clientSecret:form.oauthClientSecret.trim(),...selected.oauth
-      })});
-      if(d.redirectUri)setRedirectUri(d.redirectUri);
-      const opened=await window.AIStoica?.openExternal?.(d.authorizeUrl);
-      if(opened&&!opened.ok)throw new Error(opened.error||"Nu am putut deschide pagina OAuth.");
-      setSetupResult({kind:"info",text:"Autorizarea s-a deschis în browser. Finalizează-o acolo; AI Stoica salvează conexiunea automat."});
-      const name=String(selected.name).toLowerCase(),started=Date.now();
-      clearInterval(oauthTimer.current);
-      oauthTimer.current=setInterval(async()=>{
-        try{
-          const fresh=(await api("/api/plugins")).data||[];
-          const connected=fresh.find(x=>String(x.name).toLowerCase()===name&&x.oauthConnected);
-          if(connected||Date.now()-started>120000){
-            clearInterval(oauthTimer.current);oauthTimer.current=null;
-            if(!mounted.current)return;
-            setItems(fresh);
-            if(connected){setResult({kind:"ok",text:`${connected.name}: conectat cu succes.`});closeSetup();}
-            else setSetupResult({kind:"error",text:"Autorizarea nu a fost finalizată în 2 minute. Încearcă din nou."});
-          }
-        }catch{}
-      },2000);
-    }catch(e){setSetupResult({kind:"error",text:`Eroare OAuth — ${e.message}`})}
-    finally{if(mounted.current)setSaving("")}
-  }
-  function chooseCatalog(x){setSelected({...x,appUrl:PLUGIN_APP_LINKS[x.name]||"",oauth:PLUGIN_OAUTH[x.name]||null});setForm({...blank,name:x.name,description:x.description,trigger:x.trigger});setSetupResult(null);setRedirectUri("")}
-  function closeSetup(){setSelected(null);setForm(blank);setSetupResult(null)}
-  function iconUrl(x){return x.slug?`https://cdn.simpleicons.org/${x.slug}`:null}
-  async function openProviderApp(){
-    const url=selected?.appUrl;
-    if(!url||saving)return;
-    setSaving("direct");
-    try{
-      await api("/api/plugins/direct",{method:"POST",body:JSON.stringify({name:selected.name,description:selected.description,trigger:selected.trigger,appUrl:url})});
-      await load();
-      const r=await window.AIStoica?.openExternal?.(url);
-      if(r&&!r.ok)throw new Error(r.error||"Nu am putut deschide aplicația.");
-      setResult({kind:"ok",text:`${selected.name}: salvat pentru deschidere directă, fără OAuth. Autentifică-te normal în aplicația oficială.`});
-      closeSetup();
-    }catch(e){setSetupResult({kind:"error",text:e.message})}
-    finally{if(mounted.current)setSaving("")}
-  }
-  async function runInstalledPlugin(x){
-    if(x.mode==="direct_app"&&(x.appUrl||x.url)){
-      const r=await window.AIStoica?.openExternal?.(x.appUrl||x.url);
-      setResult(r&&!r.ok?{kind:"error",text:`${x.name}: nu am putut deschide aplicația — ${r.error||"eroare"}`}:{kind:"ok",text:`${x.name}: aplicația a fost deschisă.`});
-      return;
-    }
-    await test(x);
-  }
-  const installedNames=new Set(items.map(x=>String(x.name||"").toLowerCase()));
-  const normalized=query.trim().toLowerCase();
-  const filtered=PLUGIN_CATALOG.filter(x=>!normalized||x.name.toLowerCase().includes(normalized)||x.description.toLowerCase().includes(normalized)||x.group.toLowerCase().includes(normalized));
-  const groups=PLUGIN_GROUPS.map(group=>({group,items:filtered.filter(x=>x.group===group)})).filter(x=>x.items.length);
-  const redirectShown=redirectUri||`${String(GATEWAY).replace(/\/+$/,"")}${OAUTH_REDIRECT_PATH}`;
-  return <ToolShell title="" label="Pluginuri" onClose={onClose}>
-    <div className="stoicaPluginStore">
-      <div className="stoicaPluginTop">
-        <div className="stoicaPluginMainTabs" role="tablist">
-          <button role="tab" aria-selected={topTab==="plugins"} className={topTab==="plugins"?"active":""} onClick={()=>setTopTab("plugins")}>Pluginuri</button>
-          <button role="tab" aria-selected={topTab==="skills"} className={topTab==="skills"?"active":""} onClick={()=>setTopTab("skills")}>Competențe</button>
-        </div>
-        <button className="stoicaAddButton" onClick={()=>chooseCatalog({name:"Plugin personalizat",description:"Conectează orice API, endpoint sau webhook compatibil.",trigger:"@plugin",group:"Personal",mark:"+"})}><Plus size={15}/> Adaugă</button>
-      </div>
-      <div className="stoicaPluginSearch"><Search size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder={topTab==="plugins"?"Caută pluginuri":"Caută competențe"} aria-label="Caută"/></div>
-      <ResultNote result={result}/>
-      {topTab==="plugins"?<>
-        {!!items.length&&<section className="stoicaInstalled">
-          <button className="stoicaSectionTitle linkish" onClick={()=>setScope("personal")}>Instalate ({items.length}) <span>›</span></button>
-          <div className="stoicaInstalledIcons">
-            {items.slice(0,8).map(x=><button key={x.id} className="stoicaInstalledIcon" title={`${x.name} — ${x.mode==="direct_app"?"deschide aplicația":"testează conexiunea"}`} aria-label={x.name} onClick={()=>runInstalledPlugin(x)} disabled={testing===x.id}>
-              <span>{String(x.name||"P").slice(0,2).toUpperCase()}</span>
-            </button>)}
-            {items.length>8&&<button className="stoicaInstalledIcon more" onClick={()=>setScope("personal")} aria-label="Vezi toate pluginurile instalate"><span>+{items.length-8}</span></button>}
-          </div>
-        </section>}
-        <div className="stoicaScopeTabs" role="tablist">
-          <button role="tab" aria-selected={scope==="public"} className={scope==="public"?"active":""} onClick={()=>setScope("public")}>Publice</button>
-          <button role="tab" aria-selected={scope==="personal"} className={scope==="personal"?"active":""} onClick={()=>setScope("personal")}>Personale</button>
-        </div>
-        {scope==="personal"?<div className="stoicaPersonalList">
-          {loading?<div className="stoicaPluginEmpty">Se încarcă pluginurile…</div>:!items.length?<div className="stoicaPluginEmpty">Nu ai încă pluginuri personale configurate. Apasă „Adaugă” pentru a conecta unul.</div>:
-          items.filter(x=>!normalized||String(x.name||"").toLowerCase().includes(normalized)).map(x=><div className="stoicaManageRow" key={x.id}>
-            <div className="stoicaPluginLogo"><span>{String(x.name||"P").slice(0,2).toUpperCase()}</span></div>
-            <div className="stoicaPluginInfo"><b>{x.name}</b><small>{x.description||x.url}</small></div>
-            <button className="smallBtn" onClick={()=>runInstalledPlugin(x)} disabled={testing===x.id}>{x.mode==="direct_app"?"Deschide":testing===x.id?"Se testează…":"Testează"}</button>
-            <button className={cx("claudeToggle",x.enabled&&"on")} role="switch" aria-checked={!!x.enabled} aria-label={`${x.enabled?"Dezactivează":"Activează"} ${x.name}`} title={x.enabled?"Activ":"Oprit"} onClick={()=>patch(x,{enabled:!x.enabled})}><span/></button>
-            <button className="iconDanger" onClick={()=>remove(x)} aria-label={`Șterge ${x.name}`} title="Șterge"><Trash2 size={16}/></button>
-          </div>)}
-        </div>:
-        <div className="stoicaCatalog">
-          {groups.map(({group,items:groupItems})=><section className="stoicaPluginSection" key={group}>
-            <h3 className="stoicaSectionTitle">{group}</h3>
-            <div className="stoicaPluginGrid">
-              {groupItems.map((x,i)=>{
-                const connected=installedNames.has(x.name.toLowerCase());
-                const src=iconUrl(x);
-                return <button className="stoicaPluginCard" key={x.group+x.name+i} onClick={()=>chooseCatalog(x)}>
-                  <span className="stoicaPluginLogo">
-                    {src?<img src={src} alt="" onError={e=>{e.currentTarget.style.display="none";if(e.currentTarget.nextSibling)e.currentTarget.nextSibling.style.display="grid"}}/>:null}
-                    <span style={{display:src?"none":"grid"}}>{x.mark}</span>
-                  </span>
-                  <span className="stoicaPluginInfo"><b>{x.name}</b><small>{x.description}{!pluginHasIntegration(x)&&<em className="apiOnlyTag"> · doar prin API</em>}</small></span>
-                  <span className={cx("stoicaPluginAdd",connected&&"connected")} aria-hidden="true">{connected?<Check size={15}/>:<Plus size={18}/>}</span>
-                </button>;
-              })}
-            </div>
-          </section>)}
-          {!groups.length&&<div className="stoicaPluginEmpty">Nu am găsit pluginul căutat.</div>}
-        </div>}
-      </>:
-      <div className="stoicaSkillsGrid">
-        {SKILLS.filter(x=>!normalized||x.name.toLowerCase().includes(normalized)||x.description.toLowerCase().includes(normalized)).map(x=>{const ok=can(x.perm);return <div className={cx("stoicaSkillCard",!ok&&"locked")} key={x.name} title={ok?"Disponibilă pentru contul tău":deniedMessage(x.perm)}>
-          <span className="stoicaPluginLogo"><span>{x.mark}</span></span>
-          <div><b>{x.name}</b><small>{ok?x.description:"Dezactivată de Owner pentru contul tău."}</small></div>
-          {ok?<Check size={16} aria-label="Disponibilă"/>:<Lock size={15} aria-label="Dezactivată"/>}
-        </div>})}
-      </div>}
-
-      {selected&&<SetupOverlay onClose={closeSetup}>
-          <div className="claudeSetupHead">
-            <div className="claudePluginLogo large">{selected.mark}</div>
-            <div><h3>{selected.name}</h3><p>{selected.description}</p></div>
-            <button className="iconOnly" onClick={closeSetup} aria-label="Închide" title="Închide"><X size={18}/></button>
-          </div>
-          <ResultNote result={setupResult}/>
-          {selected.group!=="Personal"&&!pluginHasIntegration(selected)
-            ?<div className="claudeSetupNotice"><Plug size={16}/><span>AI Stoica nu are încă o conexiune directă pentru {selected.name}. Îl poți conecta doar prin API-ul sau webhook-ul oferit de furnizor, completând câmpurile de mai jos.</span></div>
-            :<div className="claudeSetupNotice"><Plug size={16}/><span>Poți folosi pluginul fără OAuth pentru deschiderea directă a aplicației. OAuth/API este necesar doar când vrei ca AI Stoica să citească sau să modifice date private din acel serviciu.</span></div>}
-          {selected.appUrl&&<div className="pluginDirectConnect">
-            <button className="primary" onClick={openProviderApp} disabled={!!saving}><ExternalLink size={16}/> {saving==="direct"?"Se deschide…":`Conectează fără OAuth și deschide ${selected.name}`}</button>
-            <small>AI Stoica salvează pluginul ca legătură directă și deschide aplicația oficială. Te autentifici normal în browser.</small>
-          </div>}
-          <form className="claudeSetupForm" onSubmit={add}>
-            <label>Nume<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label>
-            {selected.oauth&&<div className="oauthBox">
-              <label>OAuth Client ID<input placeholder="Client ID al aplicației create la furnizor" value={form.oauthClientId} onChange={e=>setForm({...form,oauthClientId:e.target.value})}/></label>
-              <label><span className="labelLine">OAuth Client Secret <span className="optional">{selected.oauth.requiresSecret?"necesar":"opțional / PKCE"}</span></span><input type="password" placeholder="Client Secret" value={form.oauthClientSecret} onChange={e=>setForm({...form,oauthClientSecret:e.target.value})}/></label>
-              <small className="settingsHelp">Adresa de redirecționare pe care trebuie s-o înregistrezi la furnizor: <code>{redirectShown}</code></small>
-              <button type="button" className="secondary pluginOAuthButton" onClick={connectOAuth} disabled={!!saving}><ExternalLink size={15}/> {saving==="oauth"?"Se pregătește…":"Conectează prin OAuth (acces la date)"}</button>
-            </div>}
-            <label>Endpoint / webhook / API personalizat<input placeholder="https://…" value={form.url} onChange={e=>setForm({...form,url:e.target.value})} inputMode="url"/></label>
-            <div className="claudeFormRow"><label>Trigger<input placeholder="@gmail" value={form.trigger} onChange={e=>setForm({...form,trigger:e.target.value})}/></label><label>Metodă<select value={form.method} onChange={e=>setForm({...form,method:e.target.value})}><option>POST</option><option>GET</option></select></label></div>
-            <label><span className="labelLine">Cheie API <span className="optional">opțional</span></span><input type="password" placeholder="Cheie / token" value={form.apiKey} onChange={e=>setForm({...form,apiKey:e.target.value})} autoComplete="off"/></label>
-            <label className="claudeAutoRow"><span><b>Folosește automat</b><small>Permite pluginului să fie inclus automat când este relevant.</small></span><input type="checkbox" checked={form.auto} onChange={e=>setForm({...form,auto:e.target.checked})}/></label>
-            <div className="claudeSetupActions"><button type="button" className="secondary" onClick={closeSetup}>Anulează</button><button className="primary" disabled={!form.name.trim()||!form.url.trim()||!!saving}>{saving==="api"?"Se conectează…":"Conectează API personalizat"}</button></div>
-          </form>
-      </SetupOverlay>}
-    </div>
-  </ToolShell>;
 }
 
 const ADMIN_STATUS_LABELS={pending:"În așteptare",active:"Activ",rejected:"Respins",suspended:"Suspendat",blocked:"Blocat"};
@@ -1503,7 +888,7 @@ function AdminPanel({onClose}) {
     chat:"Chat AI",cerebras:"Cerebras",gemini:"Gemini",groq:"Groq",cloudflare:"Cloudflare AI",
     openrouter:"OpenRouter (poate genera costuri)",image_generation:"Generare imagini",video_generation:"Generare videoclipuri",document_generation:"Fișiere: PDF / Word / PowerPoint / Excel / CSV / ZIP / cod",
     file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",
-    automations:"Automatizări",plugins:"Pluginuri",github_access:"GitHub",openai:"OpenAI (plătit)",anthropic:"Claude / Anthropic (plătit)"
+    automations:"Scheduled (sarcini programate)",plugins:"Pluginuri",github_access:"GitHub",openai:"OpenAI (plătit)",anthropic:"Claude / Anthropic (plătit)"
   };
   const [users,setUsers]=useState([]),[selectedId,setSelectedId]=useState(null),[filter,setFilter]=useState("all");
   const [paidAi,setPaidAi]=useState(false),[auditRows,setAuditRows]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[pending,setPending]=useState({}),[actionBusy,setActionBusy]=useState(false);
@@ -1622,106 +1007,6 @@ function AdminPanel({onClose}) {
   </ToolShell>;
 }
 
-const FREQ_LABELS={once:"O singură dată",hourly:"La fiecare oră",interval:"La fiecare N ore",daily:"Zilnic",weekly:"Săptămânal",selected_days:"În anumite zile",monthly:"Lunar"};
-const DAY_NAMES=["duminică","luni","marți","miercuri","joi","vineri","sâmbătă"];
-const AUTOMATION_STATUS={created:"Creată",updated:"Modificată",delivered:"Rulată",checked_no_change:"Verificată, fără schimbări",error:"Eroare",needs_login:"Așteaptă autentificarea",permission_denied:"Oprită de Owner",disabled_after_errors:"Oprită după erori"};
-function localTimeZone(){try{return Intl.DateTimeFormat().resolvedOptions().timeZone||""}catch{return ""}}
-function describeSchedule(x){
-  const t=x.time||"09:00";
-  switch(x.frequency){
-    case "once":return `O singură dată · ${fmtTime(x.runAt)}`;
-    case "hourly":return "La fiecare oră";
-    case "interval":return `La fiecare ${plural(Number(x.intervalHours||1),"oră","ore")}`;
-    case "weekly":return `Săptămânal, ${DAY_NAMES[Number(x.weekday)]||"luni"} la ${t}`;
-    case "selected_days":return `${(x.days||[]).map(d=>DAY_NAMES[Number(d)]).filter(Boolean).join(", ")||"nicio zi"} la ${t}`;
-    case "monthly":return `Lunar, în ziua ${x.monthday||1} la ${t}`;
-    default:return `Zilnic la ${t}`;
-  }
-}
-function validateAutomation(f){
-  if(!f.title.trim())return "Scrie un titlu pentru automatizare.";
-  if(f.title.trim().length>120)return "Titlul poate avea maximum 120 de caractere.";
-  if(!f.prompt.trim())return "Scrie ce trebuie să facă AI Stoica.";
-  if(f.prompt.trim().length>8000)return "Instrucțiunea poate avea maximum 8000 de caractere.";
-  if(!["hourly","interval","once"].includes(f.frequency)&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(f.time||""))return "Alege o oră validă (00:00–23:59).";
-  if(f.frequency==="interval"&&!(Number.isInteger(Number(f.intervalHours))&&f.intervalHours>=1&&f.intervalHours<=168))return "Intervalul trebuie să fie între 1 și 168 de ore.";
-  if(f.frequency==="monthly"&&!(Number.isInteger(Number(f.monthday))&&f.monthday>=1&&f.monthday<=28))return "Ziua lunii trebuie să fie între 1 și 28.";
-  if(f.frequency==="selected_days"&&!f.days.length)return "Alege cel puțin o zi a săptămânii.";
-  if(f.frequency==="once"){const at=Date.parse(f.runAt||"");if(!Number.isFinite(at))return "Alege data și ora pentru sarcina unică.";if(at<=Date.now()+30000)return "Alege o dată și o oră din viitor.";}
-  return "";
-}
-function AutomationsPanel({onClose,model}) {
-  const blank={title:"",prompt:"",trigger:"",frequency:"daily",time:"09:00",weekday:1,days:[1,2,3,4,5],runAt:"",intervalHours:1,monthday:1,timingMode:"exact_schedule",notify:true};
-  const dayNames=[[1,"L"],[2,"Ma"],[3,"Mi"],[4,"J"],[5,"V"],[6,"S"],[0,"D"]];
-  const [items,setItems]=useState([]),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState(""),[form,setForm]=useState(blank),[formError,setFormError]=useState(""),[saving,setSaving]=useState(false),[running,setRunning]=useState(null),[busyId,setBusyId]=useState(null);
-  const mounted=useRef(true);
-  useEffect(()=>()=>{mounted.current=false},[]);
-  async function load(){
-    try{const d=await api("/api/automations");if(mounted.current){setItems(d.data||[]);setLoadError("")}}
-    catch(e){if(mounted.current)setLoadError(e.message)}
-    finally{if(mounted.current)setLoading(false)}
-  }
-  useEffect(()=>{load();const id=setInterval(()=>{if(!document.hidden)load()},30000);return()=>clearInterval(id)},[]);
-  async function add(e){
-    e.preventDefault();
-    if(saving)return;
-    const problem=validateAutomation(form);
-    if(problem){setFormError(problem);return;}
-    setFormError("");setSaving(true);
-    try{
-      await api("/api/automations",{method:"POST",body:JSON.stringify({...form,title:form.title.trim(),prompt:form.prompt.trim(),trigger:form.trigger.trim(),runAt:form.frequency==="once"?Date.parse(form.runAt):null,model,timeZone:localTimeZone(),enabled:true})});
-      setForm(blank);toast("Automatizarea a fost creată.","ok");await load();
-    }catch(err){setFormError(err.message)}
-    finally{if(mounted.current)setSaving(false)}
-  }
-  async function patch(x,p){
-    if(busyId)return;setBusyId(x.id);
-    try{await api(`/api/automations/${x.id}`,{method:"PATCH",body:JSON.stringify({...p,timeZone:localTimeZone()})});await load()}
-    catch(e){toast(e.message)}
-    finally{if(mounted.current)setBusyId(null)}
-  }
-  async function run(x){
-    if(running)return;setRunning(x.id);
-    try{await api(`/api/automations/${x.id}/run`,{method:"POST",body:"{}"});toast(`„${x.title}” a rulat. Rezultatul este afișat în listă.`,"ok");await load()}
-    catch(e){toast(`„${x.title}”: ${e.message}`)}
-    finally{if(mounted.current)setRunning(null)}
-  }
-  async function remove(x){
-    if(!confirm(`Ștergi automatizarea „${x.title}”?`))return;
-    try{await api(`/api/automations/${x.id}`,{method:"DELETE"});await load()}catch(e){toast(e.message)}
-  }
-  function toggleDay(d){setForm(v=>({...v,days:v.days.includes(d)?v.days.filter(x=>x!==d):[...v.days,d]}))}
-  const watch=form.timingMode==="condition_watch";
-  return <ToolShell title="Automatizări" subtitle="Memento-uri, sarcini recurente și verificări condiționale care rulează în fundal cât AI Stoica este pornit." onClose={onClose}>
-    <div className="automationModeTabs" role="tablist">
-      {[["exact_schedule","La oră exactă"],["flexible_schedule","Flexibil"],["condition_watch","Când se schimbă ceva"]].map(([k,label])=><button key={k} role="tab" aria-selected={form.timingMode===k} className={form.timingMode===k?"active":""} onClick={()=>setForm(v=>({...v,timingMode:k,frequency:k==="condition_watch"&&v.frequency!=="interval"?"hourly":v.frequency}))}>{label}</button>)}
-    </div>
-    <form className="automationForm" onSubmit={add} noValidate>
-      <input placeholder="Titlu, ex. Rezumat zilnic" value={form.title} maxLength={120} onChange={e=>setForm({...form,title:e.target.value})} aria-label="Titlu"/>
-      <input placeholder="Trigger opțional, ex. @rezumat-zilnic" value={form.trigger} onChange={e=>setForm({...form,trigger:e.target.value})} aria-label="Trigger"/>
-      <textarea placeholder={watch?"Ce condiție trebuie verificată și când să te notific?":"Ce trebuie să facă AI Stoica?"} value={form.prompt} maxLength={8000} onChange={e=>setForm({...form,prompt:e.target.value})} aria-label="Instrucțiune"/>
-      <div className="automationRow">
-        <select value={form.frequency} onChange={e=>setForm({...form,frequency:e.target.value})} aria-label="Frecvență">
-          {Object.entries(FREQ_LABELS).map(([k,label])=><option key={k} value={k}>{label}</option>)}
-        </select>
-        {form.frequency==="interval"&&<label className="inlineField">la fiecare<input type="number" min="1" max="168" value={form.intervalHours} onChange={e=>setForm({...form,intervalHours:Math.max(1,Math.min(168,Math.round(Number(e.target.value)||1)))})}/>ore</label>}
-        {!["hourly","interval","once"].includes(form.frequency)&&<input type="time" value={form.time} onChange={e=>setForm({...form,time:e.target.value})} aria-label="Ora"/>}
-        {form.frequency==="once"&&<input type="datetime-local" value={form.runAt} onChange={e=>setForm({...form,runAt:e.target.value})} aria-label="Data și ora"/>}
-        {form.frequency==="weekly"&&<select value={form.weekday} onChange={e=>setForm({...form,weekday:Number(e.target.value)})} aria-label="Ziua săptămânii"><option value={1}>Luni</option><option value={2}>Marți</option><option value={3}>Miercuri</option><option value={4}>Joi</option><option value={5}>Vineri</option><option value={6}>Sâmbătă</option><option value={0}>Duminică</option></select>}
-        {form.frequency==="monthly"&&<label className="inlineField">ziua<input type="number" min="1" max="28" value={form.monthday} onChange={e=>setForm({...form,monthday:Math.max(1,Math.min(28,Math.round(Number(e.target.value)||1)))})}/></label>}
-      </div>
-      {form.frequency==="selected_days"&&<div className="dayPicker">{dayNames.map(([d,n])=><button type="button" key={d} aria-pressed={form.days.includes(d)} aria-label={DAY_NAMES[d]} className={form.days.includes(d)?"active":""} onClick={()=>toggleDay(d)}>{n}</button>)}</div>}
-      <label className="automationNotify"><input type="checkbox" checked={form.notify} onChange={e=>setForm({...form,notify:e.target.checked})}/><span><b>Notifică-mă când are rezultat</b><small>{watch?"La verificările condiționale nu notifică dacă nu s-a schimbat nimic.":"Afișează o notificare desktop când sarcina rulează."}</small></span></label>
-      {formError&&<div className="inlineError" role="alert">{formError}</div>}
-      <button className="primary" disabled={saving}><Plus size={16}/> {saving?"Se creează…":"Creează automatizare"}</button>
-    </form>
-    {loadError&&<div className="inlineError" role="alert">Nu am putut încărca automatizările: {loadError}</div>}
-    <div className="automationList">
-      {loading?<div className="emptyState small">Se încarcă automatizările…</div>:!items.length?<div className="emptyState small">Nu ai încă automatizări. Completează formularul de mai sus pentru a crea prima.</div>:items.map(x=><div className="automationCard" key={x.id}><div className="automationIcon"><CalendarClock size={20}/></div><div className="automationInfo"><b>{x.title}</b><span>{x.timingMode==="condition_watch"?"Monitorizare":x.timingMode==="flexible_schedule"?"Program flexibil":"Program exact"} · {describeSchedule(x)} · următoarea: {x.enabled?fmtTime(x.nextRunAt):"oprită"}</span><p>{x.prompt}</p>{x.lastResult&&<details><summary>{AUTOMATION_STATUS[x.lastStatus]||"Ultimul rezultat"} · {fmtTime(x.lastRunAt)}</summary><div className="lastResult">{x.lastResult}</div></details>}</div><button className="iconOnly" disabled={!!running} onClick={()=>run(x)} title="Rulează acum" aria-label={`Rulează acum ${x.title}`}>{running===x.id?<RotateCcw size={16} className="spin"/>:<Play size={16}/>}</button><button className={cx("claudeToggle",x.enabled&&"on")} role="switch" aria-checked={!!x.enabled} disabled={busyId===x.id} onClick={()=>patch(x,{enabled:!x.enabled})} title={x.enabled?"Activă — apasă pentru a o opri":"Oprită — apasă pentru a o porni"} aria-label={`${x.enabled?"Oprește":"Pornește"} ${x.title}`}><span/></button><button className="iconDanger" onClick={()=>remove(x)} title="Șterge" aria-label={`Șterge ${x.title}`}><Trash2 size={16}/></button></div>)}
-    </div>
-  </ToolShell>;
-}
-
 function ExplorePanel({onClose,assistants,onUseAssistant,onImageMode,onOpenLibrary}) {
   const {can}=useAccess();
   const [mapQuery,setMapQuery]=useState(""),[site,setSite]=useState("");
@@ -1806,6 +1091,10 @@ function FirstRunGuide({onDone,onOpenSettings}) {
   </Modal>;
 }
 
+function ProviderHead({name,id,cfg,children}) {
+  const url=cfg?.providerKeyPages?.[id];
+  return <div className="providerGroup"><div className="providerGroupTop"><b>{name}</b>{url&&<button type="button" className="providerKeyLink" onClick={()=>openLink(url)}>Ia cheia gratuită <ExternalLink size={12}/></button>}</div><small>{children}</small></div>;
+}
 function KeyField({label,name,cfg,keys,setKeys,placeholder,token=false}) {
   const pending=keys[name]||"",clearing=pending==="__CLEAR__",saved=!!cfg?.[name];
   const savedText=token?"Token salvat — lasă gol pentru a-l păstra":"Cheie salvată — lasă gol pentru a o păstra";
@@ -1817,9 +1106,9 @@ function KeyField({label,name,cfg,keys,setKeys,placeholder,token=false}) {
   </span></label>;
 }
 
-function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true}) {
+function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initialTab="general",preferences,onPreferences,prefBusy}) {
   const {isOwner}=useAccess();
-  const [cfg,setCfg]=useState(null),[keys,setKeys]=useState({}),[tab,setTab]=useState("general"),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState(""),[toolStatus,setToolStatus]=useState(""),[error,setError]=useState(""),[saving,setSaving]=useState(false),[updateStatus,setUpdateStatus]=useState("");
+  const [cfg,setCfg]=useState(null),[keys,setKeys]=useState({}),[tab,setTab]=useState(initialTab),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState(""),[toolStatus,setToolStatus]=useState(""),[error,setError]=useState(""),[saving,setSaving]=useState(false),[updateStatus,setUpdateStatus]=useState("");
   const {ref,backdropProps}=useModal(onClose);
   const mounted=useRef(true);
   useEffect(()=>()=>{mounted.current=false},[]);
@@ -1867,12 +1156,13 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true}) {
   const keyProps={cfg,keys,setKeys};
   const tabs=[["general",SlidersHorizontal,"General",true],["ai",Bot,"AI & OmniRoute",machineSettingsAllowed],["chatapis",Plug,"API-uri AI",machineSettingsAllowed],["images",ImageIcon,"Poze",machineSettingsAllowed],["video",Play,"Video",machineSettingsAllowed],["voice",Volume2,"Voce și microfon",true],["account",User,"Cont și date",true]];
   return <div className="modalBackdrop" {...backdropProps}><div className="settingsModal" ref={ref} role="dialog" aria-modal="true" aria-label="Setări AI Stoica" tabIndex={-1}><div className="modalHead"><div><h2>Setări AI Stoica</h2><p>Aplicația, vocea, serviciile AI și actualizările.</p></div><button className="iconOnly" onClick={onClose} aria-label="Închide" title="Închide"><X size={20}/></button></div>
-    {!cfg?<div className="settingsLoading">{error||"Se încarcă setările…"}</div>:<>
+    {!cfg?<div className="settingsLoading">{error||"Se încarcă setările…"}{error&&onPreferences&&<div className="settingsPrefs"><h3>Memorie și conversații</h3><PreferenceSwitches preferences={preferences} onChange={onPreferences} busyKey={prefBusy}/></div>}</div>:<>
     <div className="settingsBody"><div className="settingsNav" role="tablist" aria-orientation="vertical">
       {tabs.filter(t=>t[3]).map(([k,Icon,label])=><button key={k} role="tab" aria-selected={tab===k} className={tab===k?"active":""} onClick={()=>setTab(k)}><Icon size={17}/> {label}</button>)}
     </div>
     <div className="settingsPane">
       {tab==="general"&&<><h3>General</h3>
+        {onPreferences&&<div className="settingsPrefs"><h4>Memorie și conversații</h4><p className="settingsHelp">Se aplică imediat, pentru contul tău.</p><PreferenceSwitches preferences={preferences} onChange={onPreferences} busyKey={prefBusy}/></div>}
         <label className="toggleRow"><div><b>Pornește AI Stoica cu Windows</b><span>Aplicația pornește automat și poate rămâne în fundal.</span></div><input type="checkbox" checked={!!cfg.startWithWindows} onChange={e=>set({startWithWindows:e.target.checked})}/></label>
         <label className="toggleRow"><div><b>Închidere în zona de notificare</b><span>Butonul X ascunde aplicația fără să oprească serviciile.</span></div><input type="checkbox" checked={cfg.closeToTray!==false} onChange={e=>set({closeToTray:e.target.checked})}/></label>
         <label className="toggleRow"><div><b>Actualizări automate</b><span>AI Stoica caută versiuni noi la pornire.</span></div><input type="checkbox" checked={cfg.autoUpdate!==false} onChange={e=>set({autoUpdate:e.target.checked})}/></label>
@@ -1913,41 +1203,41 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true}) {
         <label className="toggleRow"><div><b>Folosește API-urile directe</b><span>Dacă OmniRoute nu răspunde, conversația continuă prin providerii configurați pe acest PC.</span></div><input type="checkbox" checked={cfg.directChatEnabled!==false} onChange={e=>set({directChatEnabled:e.target.checked})}/></label>
         <label>Protecție costuri<select value={cfg.directChatCostPolicy||"free_only"} onChange={e=>set({directChatCostPolicy:e.target.value})}><option value="free_only">Doar provideri fără cost direct</option><option value="allow_paid">Permite și OpenAI</option></select></label>
         <label>Ordinea de încercare<input value={cfg.directChatProviderOrder||"cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai"} onChange={e=>set({directChatProviderOrder:e.target.value})}/></label>
-        <p className="settingsHelp">Dacă lipsește cheia, providerul răspunde cu 429/404/503 sau nu răspunde deloc, AI Stoica încearcă următorul provider din listă.</p>
-        <div className="providerGroup"><b>Cerebras</b><small>Compatibil OpenAI.</small></div>
+        <p className="settingsHelp">Fiecare model din liste apare în lista de modele de sus. Dacă lipsește cheia, providerul răspunde cu 429/404/503 sau nu răspunde deloc, AI Stoica încearcă următorul model, apoi următorul provider.</p>
+        <ProviderHead name="Cerebras" id="cerebras" cfg={cfg}>Compatibil OpenAI.</ProviderHead>
         <KeyField label="Cheie API Cerebras" name="cerebrasApiKey" placeholder="csk-..." {...keyProps}/>
-        <label>Model Cerebras<input value={cfg.cerebrasModel||"gpt-oss-120b"} onChange={e=>set({cerebrasModel:e.target.value})}/></label>
-        <div className="providerGroup"><b>Groq</b><small>Compatibil OpenAI, răspunsuri rapide.</small></div>
+        <label>Modele Cerebras · separate prin virgulă<input value={cfg.cerebrasModel||""} onChange={e=>set({cerebrasModel:e.target.value})}/></label>
+        <ProviderHead name="Groq" id="groq" cfg={cfg}>Compatibil OpenAI, răspunsuri rapide.</ProviderHead>
         <KeyField label="Cheie API Groq" name="groqApiKey" placeholder="gsk_..." {...keyProps}/>
-        <label>Model Groq<input value={cfg.groqModel||"llama-3.3-70b-versatile"} onChange={e=>set({groqModel:e.target.value})}/></label>
-        <div className="providerGroup"><b>Gemini</b><small>Încearcă modelele în ordine până găsește cotă disponibilă.</small></div>
+        <label>Modele Groq · separate prin virgulă<input value={cfg.groqModel||""} onChange={e=>set({groqModel:e.target.value})}/></label>
+        <ProviderHead name="Gemini" id="gemini" cfg={cfg}>Încearcă modelele în ordine până găsește cotă disponibilă.</ProviderHead>
         <KeyField label="Cheie API Gemini" name="geminiApiKey" placeholder="AIza..." {...keyProps}/>
-        <label>Modele Gemini · separate prin virgulă<input value={cfg.geminiModels||"gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite"} onChange={e=>set({geminiModels:e.target.value})}/></label>
-        <div className="providerGroup"><b>Mistral</b><small>Compatibil OpenAI.</small></div>
+        <label>Modele Gemini · separate prin virgulă<input value={cfg.geminiModels||""} onChange={e=>set({geminiModels:e.target.value})}/></label>
+        <ProviderHead name="Mistral" id="mistral" cfg={cfg}>Compatibil OpenAI.</ProviderHead>
         <KeyField label="Cheie API Mistral" name="mistralApiKey" placeholder="Cheie API" {...keyProps}/>
-        <label>Model Mistral<input value={cfg.mistralModel||"mistral-small-latest"} onChange={e=>set({mistralModel:e.target.value})}/></label>
-        <div className="providerGroup"><b>NVIDIA</b><small>NVIDIA API / NIM, compatibil OpenAI.</small></div>
+        <label>Modele Mistral · separate prin virgulă<input value={cfg.mistralModel||""} onChange={e=>set({mistralModel:e.target.value})}/></label>
+        <ProviderHead name="NVIDIA" id="nvidia" cfg={cfg}>NVIDIA API / NIM, compatibil OpenAI.</ProviderHead>
         <KeyField label="Cheie API NVIDIA" name="nvidiaApiKey" placeholder="nvapi-..." {...keyProps}/>
-        <label>Model NVIDIA<input value={cfg.nvidiaModel||"meta/llama-3.3-70b-instruct"} onChange={e=>set({nvidiaModel:e.target.value})}/></label>
-        <div className="providerGroup"><b>GitHub Models</b><small>Folosește tokenul GitHub salvat; tokenul trebuie să aibă acces la Models.</small></div>
+        <label>Modele NVIDIA · separate prin virgulă<input value={cfg.nvidiaModel||""} onChange={e=>set({nvidiaModel:e.target.value})}/></label>
+        <ProviderHead name="GitHub Models" id="github" cfg={cfg}>Token „fine-grained” cu permisiunea Models: Read. Același token e folosit și la GitHub.</ProviderHead>
         <KeyField label="Token GitHub" name="githubToken" placeholder="github_pat_..." token {...keyProps}/>
-        <label>Model GitHub<input value={cfg.githubModelsModel||"openai/gpt-4.1-mini"} onChange={e=>set({githubModelsModel:e.target.value})}/></label>
-        <div className="providerGroup"><b>OpenRouter</b><small>AUTO_FREE caută automat primul model gratuit disponibil.</small></div>
+        <label>Modele GitHub · separate prin virgulă<input value={cfg.githubModelsModel||""} onChange={e=>set({githubModelsModel:e.target.value})}/></label>
+        <ProviderHead name="OpenRouter" id="openrouter" cfg={cfg}>AUTO_FREE caută automat primul model gratuit disponibil.</ProviderHead>
         <KeyField label="Cheie API OpenRouter" name="openRouterApiKey" placeholder="sk-or-..." {...keyProps}/>
         <label>Model OpenRouter<input value={cfg.openRouterChatModel||"AUTO_FREE"} onChange={e=>set({openRouterChatModel:e.target.value})}/></label>
-        <div className="providerGroup"><b>Cloudflare Workers AI</b><small>Același Account ID și token ca la secțiunea Poze.</small></div>
+        <ProviderHead name="Cloudflare Workers AI" id="cloudflare" cfg={cfg}>Token cu șablonul „Workers AI”. Account ID e în dash.cloudflare.com → AI → Workers AI. Același token ca la Poze.</ProviderHead>
         <label>Cloudflare Account ID<input value={cfg.cloudflareAccountId||""} onChange={e=>set({cloudflareAccountId:e.target.value})}/></label>
         <KeyField label="Token API Cloudflare" name="cloudflareApiToken" placeholder="Token API" token {...keyProps}/>
-        <label>Model Cloudflare<input value={cfg.cloudflareChatModel||"@cf/meta/llama-3.3-70b-instruct-fp8-fast"} onChange={e=>set({cloudflareChatModel:e.target.value})}/></label>
-        <div className="providerGroup"><b>Cohere</b><small>API de compatibilitate.</small></div>
+        <label>Modele Cloudflare · separate prin virgulă<input value={cfg.cloudflareChatModel||""} onChange={e=>set({cloudflareChatModel:e.target.value})}/></label>
+        <ProviderHead name="Cohere" id="cohere" cfg={cfg}>API de compatibilitate.</ProviderHead>
         <KeyField label="Cheie API Cohere" name="cohereApiKey" placeholder="Cheie API" {...keyProps}/>
-        <label>Model Cohere<input value={cfg.cohereModel||"command-a-03-2025"} onChange={e=>set({cohereModel:e.target.value})}/></label>
-        <div className="providerGroup"><b>Hugging Face</b><small>Router compatibil OpenAI; același token ca la secțiunea Poze.</small></div>
+        <label>Modele Cohere · separate prin virgulă<input value={cfg.cohereModel||""} onChange={e=>set({cohereModel:e.target.value})}/></label>
+        <ProviderHead name="Hugging Face" id="huggingface" cfg={cfg}>Router compatibil OpenAI; același token ca la secțiunea Poze.</ProviderHead>
         <KeyField label="Token Hugging Face" name="hfToken" placeholder="hf_..." token {...keyProps}/>
-        <label>Model Hugging Face<input value={cfg.huggingFaceChatModel||"meta-llama/Llama-3.3-70B-Instruct"} onChange={e=>set({huggingFaceChatModel:e.target.value})}/></label>
-        <div className="providerGroup"><b>OpenAI</b><small>Inclus, dar blocat implicit de protecția costurilor.</small></div>
+        <label>Modele Hugging Face · separate prin virgulă<input value={cfg.huggingFaceChatModel||""} onChange={e=>set({huggingFaceChatModel:e.target.value})}/></label>
+        <ProviderHead name="OpenAI" id="openai" cfg={cfg}>Inclus, dar blocat implicit de protecția costurilor.</ProviderHead>
         <KeyField label="Cheie API OpenAI" name="openAiApiKey" placeholder="sk-..." {...keyProps}/>
-        <label>Modele OpenAI · separate prin virgulă<input value={cfg.openAiChatModels||"gpt-5-mini,gpt-5-nano"} onChange={e=>set({openAiChatModels:e.target.value})}/></label>
+        <label>Modele OpenAI · separate prin virgulă<input value={cfg.openAiChatModels||""} onChange={e=>set({openAiChatModels:e.target.value})}/></label>
       </>}
       {tab==="images"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><ImageIcon size={22}/></div><div><h3>Poze</h3><p>Generare imagini, API-uri, modele și încercare automată a altui provider.</p></div></div>
         <label><span className="labelLine">Model generare imagini <span className="optional">opțional</span></span><input value={cfg.imageModel||""} onChange={e=>set({imageModel:e.target.value})} placeholder="Automat — primul model de imagine disponibil"/></label>
@@ -2015,7 +1305,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true}) {
       </>}
       {tab==="account"&&<><h3>Cont și date</h3>
         <div className="accountSettingsCard"><div className="accountAvatar big">{(user?.name||user?.email||"S")[0].toUpperCase()}</div><div><b>{user?.name||"Cont AI Stoica"}</b><span>{user?.email}{user?.role==="owner"?" · Owner":""}</span></div></div>
-        <p className="settingsHelp">Conversațiile, memoria, biblioteca, proiectele, pluginurile și automatizările sunt păstrate pe acest calculator.</p>
+        <p className="settingsHelp">Conversațiile, memoria, biblioteca, designurile, proiectele, pluginurile și sarcinile programate sunt păstrate pe acest calculator.</p>
         {machineSettingsAllowed&&<>
           <label><span className="labelLine">Email Owner pe acest PC <span className="optional">opțional</span></span><input type="email" value={cfg.ownerEmail||""} onChange={e=>set({ownerEmail:e.target.value})} placeholder="nume@email.ro" autoComplete="off"/></label>
           <p className="settingsHelp">Contul local cu acest email primește drepturi de Owner: rulare de cod, GitHub Solve, verificare server. Se aplică doar când AI Stoica Cloud nu este configurat. Reautentifică-te după schimbare.</p>
@@ -2108,11 +1398,11 @@ function App() {
   const [models,setModels]=useState(()=>cachedModels()),[modelPolicyEnforced,setModelPolicyEnforced]=useState(false),[refreshingModels,setRefreshingModels]=useState(false),[deniedModels,setDeniedModels]=useState(0),[modelsChecked,setModelsChecked]=useState(false);
   const [currentId,setCurrentId]=useState(null),[model,setModel]=useState(()=>storage.get(MANUAL_MODEL_KEY)||storage.get(MODEL_SELECTED_KEY)||"");
   const [selectedProject,setSelectedProject]=useState(null),[selectedAssistant,setSelectedAssistant]=useState(null);
-  const [draft,setDraft]=useState(""),[attachments,setAttachments]=useState([]),[responseMode,setResponseModeState]=useState(()=>storage.get(RESPONSE_MODE_KEY,"rapid")==="thinking"?"thinking":"rapid"),[mediaMode,setMediaMode]=useState(null);
+  const [draft,setDraft]=useState(""),[attachmentsState,setAttachments]=useState([]),[responseMode,setResponseModeState]=useState(()=>storage.get(RESPONSE_MODE_KEY,"rapid")==="thinking"?"thinking":"rapid"),[mediaModeState,setMediaMode]=useState(null);
   const [generations,setGenerations]=useState({});
   const [search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[sidebarCollapsed,setSidebarCollapsed]=useState(()=>storage.get(SIDEBAR_COLLAPSED_KEY)==="1");
   const [omni,setOmni]=useState(false),[cloudConfigured,setCloudConfigured]=useState(null),[showJumpBottom,setShowJumpBottom]=useState(false);
-  const [settings,setSettings]=useState(false),[entityModal,setEntityModal]=useState(null),[toolPanel,setToolPanel]=useState(null),[filesPanel,setFilesPanel]=useState(false),[githubModal,setGithubModal]=useState(false);
+  const [settings,setSettings]=useState(false),[prefBusy,setPrefBusy]=useState(""),[entityModal,setEntityModal]=useState(null),[toolPanel,setToolPanel]=useState(null),[filesPanel,setFilesPanel]=useState(false),[githubModal,setGithubModal]=useState(false);
   const [updateReady,setUpdateReady]=useState(false),[updateDismissed,setUpdateDismissed]=useState(false);
   const [lastGithubBackup,setLastGithubBackup]=useState(()=>storage.json(GITHUB_BACKUP_KEY,null));
   const [firstRunDismissed,setFirstRunDismissed]=useState(()=>storage.get(FIRST_RUN_KEY)==="1");
@@ -2152,7 +1442,7 @@ function App() {
     if(!silent)setRefreshingModels(true);
     try{
       const ms=await api("/api/models");
-      const live=uniqueModels((ms.manualModels||ms.data||[]).map(x=>typeof x==="string"?x:x?.id)).filter(x=>!isSmartAlias(x));
+      const live=uniqueModels((ms.manualModels||ms.data||[]).map(x=>typeof x==="string"?x:x?.id));
       const enforced=ms.policyEnforced===true;
       const merged=enforced?live:uniqueModels([...live,...cachedModels()]);
       setModelPolicyEnforced(enforced);setDeniedModels(enforced?Number(ms.deniedCount)||0:0);setModels(merged);storage.set(MODEL_CACHE_KEY,JSON.stringify(merged));
@@ -2168,7 +1458,7 @@ function App() {
     }finally{if(!silent)setRefreshingModels(false);setModelsChecked(true)}
   }
   async function chooseModel(next){
-    const value=String(next||"").trim();if(!value||isSmartAlias(value))return;
+    const value=String(next||"").trim();if(!value)return;
     if(modelPolicyEnforced&&!models.includes(value))return;
     setModel(value);storage.set(MANUAL_MODEL_KEY,value);storage.set(MODEL_SELECTED_KEY,value);
     if(current){
@@ -2210,12 +1500,12 @@ function App() {
     setAuthNotice(notice);
   }
   useEffect(()=>{
-    authLostHandler=message=>{
+    setAuthLostHandler(message=>{
       const text=String(message||"").trim();
       const notice=/așteaptă aprobarea|asteapta aprobarea|nu este activ/i.test(text)?text:/^(Autentificare necesară|Sesiune)/i.test(text)||!text?"Sesiunea ta a expirat sau a fost închisă. Autentifică-te din nou.":`${text.replace(/[.!]?$/,".")} Autentifică-te din nou.`;
       logout({skipServer:true,notice});
-    };
-    return()=>{authLostHandler=null};
+    });
+    return()=>setAuthLostHandler(null);
   });
   useEffect(()=>{
     let active=true;
@@ -2275,7 +1565,7 @@ function App() {
     return()=>clearTimeout(id);
   },[currentId]);
   useEffect(()=>{
-    if(current?.model&&!isSmartAlias(current.model)&&(!modelPolicyEnforced||models.includes(current.model))){setModel(current.model);return;}
+    if(current?.model&&(!modelPolicyEnforced||models.includes(current.model))){setModel(current.model);return;}
     if(!current){const manual=storage.get(MANUAL_MODEL_KEY);if(manual&&(!modelPolicyEnforced||models.includes(manual)))setModel(manual);}
   },[currentId,modelPolicyEnforced,models.join("|")]);
 
@@ -2316,7 +1606,7 @@ function App() {
       const payload=toProviderMessages(messages,extra);
       if(!payload.some(m=>m.role==="user"))throw new Error("Mesajul este gol.");
       setGen(convId,{stage:"Verifică memoria, fișierele și contextul relevant…"});
-      const r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:authHeaders({"Content-Type":"application/json"}),body:JSON.stringify({model:effectiveModel,assistantId:baseConv.assistantId||null,projectId:baseConv.projectId||null,responseMode,messages:payload}),signal:controller.signal});
+      const r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:authHeaders({"Content-Type":"application/json"}),body:JSON.stringify({model:effectiveModel,conversationId:baseConv.id||null,assistantId:baseConv.assistantId||null,projectId:baseConv.projectId||null,responseMode,messages:payload}),signal:controller.signal});
       if(!r.ok){const text=await r.text().catch(()=>"");throw apiError(r.status,text,"/api/chat/stream")}
       setGen(convId,{stage:"Așteaptă răspunsul AI-ului ales…"});
       const handleLine=line=>{
@@ -2347,7 +1637,7 @@ function App() {
       for(const line of buf.split(/\r?\n/))handleLine(line);
       if(streamError&&!answer)throw new Error(streamError);
       let note=streamError?`\n\n_Răspunsul a fost întrerupt: ${streamError}_`:"",files=[];
-      if(format){
+      if(format&&!splitQuestions(answer,false)){
         if(!can("document_generation"))note+=`\n\n_${deniedMessage("document_generation")}_`;
         else{
           setGen(convId,{stage:`Creează fișierul ${format.toUpperCase()}…`});
@@ -2395,7 +1685,7 @@ function App() {
         if(reason==="deleted"||reason==="logout"||reason==="replaced")return;
         message=controller.signal.aborted
           ?{...base,content:"",stopped:true}
-          :{...base,content:`Generarea ${kind==="video"?"videoclipului":"imaginii"} nu a reușit: ${friendlyError(e.message)}`,mediaGenerationError:true};
+          :{...base,content:`Generarea ${kind==="video"?"videoclipului":"imaginii"} nu a reușit: ${friendlyError(e.message)}`,mediaGenerationError:true,...(kind==="video"&&/Setări\s*→\s*Video|nevoie de o cheie/i.test(e.message)?{needsVideoSetup:true}:{})};
       }
       const conv={...baseConv,messages:[...messages,message],updatedAt:Date.now()};
       showConversation(conv);
@@ -2406,18 +1696,20 @@ function App() {
       }catch(err){if(!isAuthLost(err.status,err.message))toast("Conversația nu a putut fi salvată: "+err.message)}
     }finally{finishGeneration(convId,controller)}
   }
-  async function send(){
-    const text=draft.trim();
+  async function send(answerText){
+    const answer=typeof answerText==="string";
+    const text=answer?answerText.trim():draft.trim();
+    const attachments=answer?[]:attachmentsState,mediaMode=answer?null:mediaModeState;
     const usable=attachments.filter(a=>a.part||a.parts?.length);
     if(!text&&!usable.length)return;
     if(currentId&&generations[currentId])return;
-    const media=mediaMode||(attachments.length===0?requestedMediaGeneration(text):null);
+    const media=mediaMode||(!answer&&attachments.length===0?requestedMediaGeneration(text):null);
     if(media){
       const perm=media==="video"?"video_generation":"image_generation";
       if(!can(perm)){deny(perm);return}
       if(!text){toast(media==="video"?"Descrie videoclipul pe care vrei să-l creez.":"Descrie imaginea pe care vrei s-o creez.","info");return}
     }
-    const format=media?null:requestedDocumentFormat(text);
+    const format=media?null:answer?answerFormat(text,current?.messages||[]):requestedDocumentFormat(text);
     const userId=uid();
     const parts=[...(text?[{type:"text",text}]:[]),...usable.flatMap(a=>Array.isArray(a.parts)&&a.parts.length?a.parts:[a.part].filter(Boolean))];
     const content=parts.length===1&&parts[0].type==="text"?parts[0].text:parts;
@@ -2427,10 +1719,10 @@ function App() {
     const base=current?{...current}:{title:titleFrom(text||attachments[0]?.name),projectId:selectedProject,assistantId:selectedAssistant,model,messages:[]};
     const conv={...base,title:base.messages?.length?base.title:titleFrom(text||attachments[0]?.name),model,messages:[...(base.messages||[]),userMsg],updatedAt:Date.now()};
     const previous={draft,attachments,mediaMode};
-    setDraft("");setAttachments([]);setMediaMode(null);
+    if(!answer){setDraft("");setAttachments([]);setMediaMode(null);}
     let saved;
     try{saved=await saveConversation(conv)}
-    catch(e){setDraft(previous.draft);setAttachments(previous.attachments);setMediaMode(previous.mediaMode);if(!isAuthLost(e.status,e.message))toast("Mesajul nu a putut fi trimis: "+e.message);return}
+    catch(e){if(!answer){setDraft(previous.draft);setAttachments(previous.attachments);setMediaMode(previous.mediaMode)}if(!isAuthLost(e.status,e.message))toast("Mesajul nu a putut fi trimis: "+e.message);return}
     if(base.archived)patchConversation(saved.id,{archived:false}).catch(()=>{});
     if(media)await generateMediaAssistant(saved,saved.messages||conv.messages,media,text);
     else await streamAssistant(saved,saved.messages||conv.messages,{extra,format});
@@ -2493,6 +1785,7 @@ function App() {
   }
   function openTool(name,filter){
     if(name==="automations"&&!can("automations")){deny("automations");return}
+    if(name==="design"&&!can("document_generation")){deny("document_generation");return}
     if(name==="plugins"&&!can("plugins")){deny("plugins");return}
     if(name==="admin"&&!isOwner)return;
     setSidebar(false);setToolPanel({name,filter});
@@ -2502,6 +1795,23 @@ function App() {
     setToolPanel(null);
   }
   function attachFromLibrary(a){setAttachments(v=>[...v,a])}
+  async function updatePreferences(patch){
+    const before=user?.preferences||{};
+    const apply=prefs=>setUser(u=>{if(!u)return u;const next={...u,preferences:{...(u.preferences||{}),...prefs}};storage.set(USER_KEY,JSON.stringify(next));return next});
+    setPrefBusy(Object.keys(patch)[0]||"");apply(patch);
+    try{
+      let d;
+      try{d=await api("/api/me/preferences",{method:"PATCH",body:JSON.stringify(patch)})}
+      catch(e){
+        if(e.status!==404||!("memoryEnabled" in patch))throw e;
+        const t=await api("/api/memory/toggle",{method:"POST",body:JSON.stringify({enabled:patch.memoryEnabled})});
+        d={data:{preferences:{memoryEnabled:t.enabled!==false}}};
+      }
+      if(d?.data?.preferences)apply(d.data.preferences);
+      return true;
+    }catch(e){apply(before);toast("Setarea nu a putut fi salvată: "+e.message);return false}
+    finally{setPrefBusy("")}
+  }
   async function moveCurrent(projectId){if(!current)return;try{await patchConversation(current.id,{projectId});setSelectedProject(projectId)}catch(e){toast(e.message)}}
   async function archiveConversation(id){
     try{await patchConversation(id,{archived:true});if(currentId===id)setCurrentId(null);toast("Conversația a fost arhivată. O găsești în secțiunea „Arhivate” din bara laterală.","info")}
@@ -2545,18 +1855,19 @@ function App() {
       <Header deniedCount={deniedModels} onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} policyEnforced={modelPolicyEnforced} omni={omni} showOmni={machineSettingsAllowed} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={()=>setGithubModal(true)} onGitHubRollback={githubRollback} hasGitHubBackup={!!lastGithubBackup} onArchive={()=>current&&archiveConversation(current.id)} onUnarchive={()=>current&&unarchiveConversation(current.id)} onDelete={()=>current&&deleteConversation(current.id)}/>
       {loadError&&<div className="loadErrorBanner" role="alert"><span>Nu am putut încărca datele: {loadError}</span><button onClick={()=>loadData()}>Reîncearcă</button>{GATEWAY!==DEFAULT_GATEWAY&&<button onClick={resetGatewayAndReload}>Folosește serviciul local implicit</button>}</div>}
       {updateReady&&!updateDismissed&&<div className="updateBanner" role="status"><button className="updateInstall" onClick={()=>window.AIStoica?.installUpdate?.()}>Actualizare AI Stoica disponibilă — instalează acum</button><button className="updateClose" onClick={()=>setUpdateDismissed(true)} aria-label="Ascunde notificarea" title="Mai târziu"><X size={14}/></button></div>}
-      <div className="chatScroll" ref={chatRef} onScroll={updateChatScrollState}><ConversationView conversation={current} busy={busy} busyStage={currentGen?.stage} busySteps={currentGen?.steps||[]} onRegenerate={regenerate} onRate={rate} canRunCode={isOwner} onCodeResult={text=>setDraft(v=>(v?v+"\n\n":"")+text)}/></div>
+      <div className="chatScroll" ref={chatRef} onScroll={updateChatScrollState}><ConversationView conversation={current} busy={busy} busyStage={currentGen?.stage} busySteps={currentGen?.steps||[]} onRegenerate={regenerate} onRate={rate} canRunCode={isOwner} onCodeResult={text=>setDraft(v=>(v?v+"\n\n":"")+text)} onAnswer={text=>send(text)} onOpenSettings={tab=>setSettings(tab||true)}/></div>
       {showJumpBottom&&hasMessages&&<button className="jumpToLatest" onClick={()=>jumpToLatest({smooth:true})} title="Mergi la ultimul mesaj" aria-label="Mergi la ultimul mesaj"><ChevronDown size={19}/><span>Ultimul mesaj</span></button>}
-      <Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} onStop={stopGeneration} busy={busy} attachments={attachments} setAttachments={setAttachments} onOpenLibrary={()=>openTool("library","all")} responseMode={responseMode} setResponseMode={setResponseMode} mediaMode={mediaMode} setMediaMode={setMediaMode} mentionsVersion={mentionsVersion}/>
+      <Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} onStop={stopGeneration} busy={busy} attachments={attachmentsState} setAttachments={setAttachments} onOpenLibrary={()=>openTool("library","all")} responseMode={responseMode} setResponseMode={setResponseMode} mediaMode={mediaModeState} setMediaMode={setMediaMode} mentionsVersion={mentionsVersion} mediaPolicy={{imagePaid:machineCfgRef.current?.imageCostPolicy==="allow_paid"}}/>
     </main>
-    {settings&&<SettingsModal user={user} machineSettingsAllowed={machineSettingsAllowed} onClose={()=>setSettings(false)} onSaved={cfg=>{machineCfgRef.current={...(machineCfgRef.current||{}),...cfg};setCloudConfigured(!!String(cfg?.controlApiUrl||"").trim());Promise.resolve(window.AIStoica?.ensureOmni?.()).catch(()=>{});setTimeout(()=>loadData(),800)}}/>}
+    {settings&&<SettingsModal user={user} initialTab={typeof settings==="string"?settings:"general"} preferences={user?.preferences} onPreferences={updatePreferences} prefBusy={prefBusy} machineSettingsAllowed={machineSettingsAllowed} onClose={()=>setSettings(false)} onSaved={cfg=>{machineCfgRef.current={...(machineCfgRef.current||{}),...cfg};setCloudConfigured(!!String(cfg?.controlApiUrl||"").trim());Promise.resolve(window.AIStoica?.ensureOmni?.()).catch(()=>{});setTimeout(()=>loadData(),800)}}/>}
     {entityModal&&<EntityModal type={entityModal.type} item={entityModal.item} onClose={()=>setEntityModal(null)} onSave={saveEntity} onDelete={entityModal.item&&!entityModal.item.builtIn?deleteEntity:null}/>}
     {toolPanel?.name==="explore"&&<ExplorePanel onClose={closeTool} assistants={assistants} onUseAssistant={startWithAssistant} onImageMode={startImageMode} onOpenLibrary={filter=>openTool("library",filter)}/>}
-    {toolPanel?.name==="library"&&<LibraryPanel onClose={closeTool} onAttach={attachFromLibrary} initialFilter={toolPanel.filter||"all"}/>}
-    {toolPanel?.name==="memory"&&<MemoryPanel onClose={closeTool}/>}
+    {toolPanel?.name==="library"&&<LibraryPage onClose={closeTool} onAttach={attachFromLibrary} toAttachment={libraryItemToAttachment} initialFilter={toolPanel.filter||"all"} onOpenDesign={id=>openTool("design",id)}/>}
+    {toolPanel?.name==="design"&&can("document_generation")&&<DesignPage onClose={closeTool} model={model} models={models} initialId={toolPanel.filter||null}/>}
+    {toolPanel?.name==="memory"&&<MemoryPage onClose={closeTool} preferences={user?.preferences} onPreferences={updatePreferences} prefBusy={prefBusy}/>}
     {toolPanel?.name==="admin"&&isOwner&&<AdminPanel onClose={closeTool}/>}
-    {toolPanel?.name==="plugins"&&can("plugins")&&<PluginsPanel onClose={closeTool}/>}
-    {toolPanel?.name==="automations"&&can("automations")&&<AutomationsPanel onClose={closeTool} model={model}/>}
+    {toolPanel?.name==="plugins"&&can("plugins")&&<PluginsPage onClose={closeTool}/>}
+    {toolPanel?.name==="automations"&&can("automations")&&<ScheduledPage onClose={closeTool} model={model} models={models}/>}
     {filesPanel&&<ConversationFilesPanel conversation={current} onClose={()=>setFilesPanel(false)}/>}
     {githubModal&&isOwner&&<GithubSolveModal model={model} onClose={()=>setGithubModal(false)} onBackup={saveGithubBackup}/>}
     {showFirstRun&&<FirstRunGuide onOpenSettings={()=>{finishFirstRun();setSettings(true)}} onDone={ok=>{finishFirstRun();if(ok)refreshModels()}}/>}

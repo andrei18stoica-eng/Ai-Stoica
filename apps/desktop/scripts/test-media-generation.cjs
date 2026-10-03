@@ -100,8 +100,8 @@ async function main(){
     getOmniConfig:()=>omniConfig
   });
   const base="http://127.0.0.1:8799";
-  const realFetch=global.fetch;
-  global.fetch=async (url,init)=>{
+  const realFetch=globalThis.fetch;
+  globalThis.fetch=async (url,init)=>{
     const target=String(url);
     if(target==="https://api.stability.ai/v2beta/stable-image/generate/core"){
       return new Response(png,{status:200,headers:{"content-type":"image/png"}});
@@ -247,7 +247,7 @@ async function main(){
     expect(lib.data.some(x=>x.id===video.data.id&&x.kind==="video"),"Video not saved to library");
     console.log("MEDIA_GENERATION_TESTS_PASSED");
   } finally {
-    global.fetch=realFetch;
+    globalThis.fetch=realFetch;
     await gateway.close();
     await closeServer(cloud);
     await closeServer(omni);

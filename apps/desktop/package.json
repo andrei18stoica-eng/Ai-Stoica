@@ -2,7 +2,7 @@
   "name": "ai-stoica-desktop",
   "version": "0.7.13",
   "private": true,
-  "description": "AI Stoica 0.7.13 - local free APIs without Cloud, safer automations, visible errors, multi-provider video APIs with Pollinations OpenRouter Gemini Veo fal Replicate, cost guard, multi-AI chat and media fallback",
+  "description": "AI Stoica 0.7.13 - Scheduled tasks with run history, plugin directory and plugins used by name, memory across chats, restructured Library, new Design section, Poză/Video buttons with a free no-key image provider, clarifying questions with clickable answers; plus 0.7.12 (every free model and OmniRoute combination) and 0.7.11 fixes",
   "main": "main.cjs",
   "repository": {
     "type": "git",
