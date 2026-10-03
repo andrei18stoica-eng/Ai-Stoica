@@ -5,6 +5,7 @@ const net = require("net");
 const { spawn } = require("child_process");
 const { autoUpdater } = require("electron-updater");
 const { startLocalGateway } = require("./local-gateway.cjs");
+const { DIRECT_MODEL_DEFAULTS, PROVIDER_KEY_PAGES, upgradeModelDefaults } = require("./lib/providers.cjs");
 
 if (process.platform === "win32") app.disableHardwareAcceleration();
 
@@ -67,17 +68,7 @@ function defaults() {
     directChatEnabled: true,
     directChatCostPolicy: "free_only",
     directChatProviderOrder: "cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai",
-    cerebrasModel: "gpt-oss-120b",
-    groqModel: "llama-3.3-70b-versatile",
-    geminiModels: "gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite",
-    mistralModel: "mistral-small-latest",
-    nvidiaModel: "meta/llama-3.3-70b-instruct",
-    githubModelsModel: "openai/gpt-4.1-mini",
-    openRouterChatModel: "AUTO_FREE",
-    cloudflareChatModel: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-    cohereModel: "command-a-03-2025",
-    huggingFaceChatModel: "meta-llama/Llama-3.3-70B-Instruct",
-    openAiChatModels: "gpt-5-mini,gpt-5-nano",
+    ...DIRECT_MODEL_DEFAULTS,
     imageProviderMode: "auto",
     imageCostPolicy: "free_only",
     imageProviderOrder: "cloudflare,pollinations,huggingface,together,openrouter,fal,replicate,stability,openai",
@@ -122,7 +113,8 @@ function loadConfig() {
   }
   const cfg={ ...defaults(), ...raw };
   for (const name of SECRET_KEYS) { cfg[name] = secret(name); delete cfg[name + "Encrypted"]; }
-  if(/^ai[ _-]*(principal|stoica)$/i.test(String(cfg.model||"").trim()))cfg.model="";
+  // OmniRoute combinations ("Ai principal" etc.) are valid models since 0.7.12; old single-model defaults become full lists.
+  Object.assign(cfg, upgradeModelDefaults(raw));
   // Migrare 0.6.14: instalațiile vechi pornesc implicit pe profilul Video Rapid.
   if(!raw.videoMode){
     cfg.videoMode="fast";
@@ -135,24 +127,24 @@ function saveConfig(input) {
   const old = loadConfig();
   const cfg = { ...old, ...input };
   const stored = {
-    gatewayUrl: cfg.gatewayUrl || "http://127.0.0.1:8787", controlApiUrl: String(cfg.controlApiUrl || "").trim().replace(/\/+$/,""), baseUrl: cfg.baseUrl, model: /^ai[ _-]*(principal|stoica)$/i.test(String(cfg.model||"").trim())?"":String(cfg.model||"").trim(), omniCommand: cfg.omniCommand,
+    gatewayUrl: cfg.gatewayUrl || "http://127.0.0.1:8787", controlApiUrl: String(cfg.controlApiUrl || "").trim().replace(/\/+$/,""), baseUrl: cfg.baseUrl, model: String(cfg.model||"").trim(), omniCommand: cfg.omniCommand,
     autoStartOmniRoute: !!cfg.autoStartOmniRoute, startWithWindows: !!cfg.startWithWindows,
     closeToTray: cfg.closeToTray !== false, autoUpdate: cfg.autoUpdate !== false,
     speechModel: cfg.speechModel || "openai/whisper-1", speechLanguage: cfg.speechLanguage || "ro",
     directChatEnabled: cfg.directChatEnabled !== false,
     directChatCostPolicy: cfg.directChatCostPolicy==="allow_paid"?"allow_paid":"free_only",
     directChatProviderOrder: String(cfg.directChatProviderOrder || "cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai").trim(),
-    cerebrasModel: String(cfg.cerebrasModel || "gpt-oss-120b").trim(),
-    groqModel: String(cfg.groqModel || "llama-3.3-70b-versatile").trim(),
-    geminiModels: String(cfg.geminiModels || "gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite").trim(),
-    mistralModel: String(cfg.mistralModel || "mistral-small-latest").trim(),
-    nvidiaModel: String(cfg.nvidiaModel || "meta/llama-3.3-70b-instruct").trim(),
-    githubModelsModel: String(cfg.githubModelsModel || "openai/gpt-4.1-mini").trim(),
-    openRouterChatModel: String(cfg.openRouterChatModel || "AUTO_FREE").trim(),
-    cloudflareChatModel: String(cfg.cloudflareChatModel || "@cf/meta/llama-3.3-70b-instruct-fp8-fast").trim(),
-    cohereModel: String(cfg.cohereModel || "command-a-03-2025").trim(),
-    huggingFaceChatModel: String(cfg.huggingFaceChatModel || "meta-llama/Llama-3.3-70B-Instruct").trim(),
-    openAiChatModels: String(cfg.openAiChatModels || "gpt-5-mini,gpt-5-nano").trim(),
+    cerebrasModel: String(cfg.cerebrasModel || DIRECT_MODEL_DEFAULTS.cerebrasModel).trim(),
+    groqModel: String(cfg.groqModel || DIRECT_MODEL_DEFAULTS.groqModel).trim(),
+    geminiModels: String(cfg.geminiModels || DIRECT_MODEL_DEFAULTS.geminiModels).trim(),
+    mistralModel: String(cfg.mistralModel || DIRECT_MODEL_DEFAULTS.mistralModel).trim(),
+    nvidiaModel: String(cfg.nvidiaModel || DIRECT_MODEL_DEFAULTS.nvidiaModel).trim(),
+    githubModelsModel: String(cfg.githubModelsModel || DIRECT_MODEL_DEFAULTS.githubModelsModel).trim(),
+    openRouterChatModel: String(cfg.openRouterChatModel || DIRECT_MODEL_DEFAULTS.openRouterChatModel).trim(),
+    cloudflareChatModel: String(cfg.cloudflareChatModel || DIRECT_MODEL_DEFAULTS.cloudflareChatModel).trim(),
+    cohereModel: String(cfg.cohereModel || DIRECT_MODEL_DEFAULTS.cohereModel).trim(),
+    huggingFaceChatModel: String(cfg.huggingFaceChatModel || DIRECT_MODEL_DEFAULTS.huggingFaceChatModel).trim(),
+    openAiChatModels: String(cfg.openAiChatModels || DIRECT_MODEL_DEFAULTS.openAiChatModels).trim(),
     imageModel: String(cfg.imageModel || "").trim(),
     imageProviderMode: ["auto","fast","quality","free"].includes(String(cfg.imageProviderMode))?String(cfg.imageProviderMode):"auto",
     imageCostPolicy: cfg.imageCostPolicy==="allow_paid"?"allow_paid":"free_only",
@@ -241,6 +233,7 @@ async function ensureOmniRoute() {
 function publicConfig(cfg=loadConfig()) {
   const out = { ...cfg };
   for (const name of SECRET_KEYS) out[name] = cfg[name] ? MASK : "";
+  out.providerKeyPages = PROVIDER_KEY_PAGES;
   return out;
 }
 

@@ -31,15 +31,20 @@ function tokenize(text) {
   return [...new Set((normalizeMemoryText(text).match(/[a-z0-9]{3,}/g) || []).filter((w) => !STOP_WORDS.has(w)))];
 }
 
-function keywordScore(memoryText, words) {
+// score: 2 per whole word found, 1.5 per word found only as another form; matched: how many words were found.
+function keywordMatch(memoryText, words) {
   const hay = normalizeMemoryText(memoryText);
   const hayStems = new Set((hay.match(/[a-z0-9]{3,}/g) || []).map(stem));
-  let score = 0;
+  let score = 0, matched = 0;
   for (const w of words) {
-    if (hay.includes(w)) score += 2;
-    else if (hayStems.has(stem(w))) score += 1.5;
+    if (hay.includes(w)) { score += 2; matched++; }
+    else if (hayStems.has(stem(w))) { score += 1.5; matched++; }
   }
-  return score;
+  return { score, matched };
+}
+
+function keywordScore(memoryText, words) {
+  return keywordMatch(memoryText, words).score;
 }
 
 function memoryMatches(db, userId, query, limit = 10) {
@@ -238,6 +243,6 @@ function createEmbeddingIndex(dataDir) {
 }
 
 module.exports = {
-  normalizeMemoryText, tokenize, stem, keywordScore, memoryMatches, memoryCategory,
+  normalizeMemoryText, tokenize, stem, keywordScore, keywordMatch, memoryMatches, memoryCategory,
   durableMemoryCandidate, addMemory, embeddingProvider, cosine, createEmbeddingIndex
 };
