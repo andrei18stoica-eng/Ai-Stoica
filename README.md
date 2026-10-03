@@ -57,9 +57,10 @@ Pași după actualizare: vezi „Pași pentru Owner după 0.7.14” mai jos.
 Pe serverul Hetzner (`/opt/ai-stoica`), o singură dată:
 
 1. **DNS:** la firma unde e cumpărat domeniul, adaugă o înregistrare **A** pentru `aistoica.ro` cu IP-ul serverului (același ca la `api.aistoica.ro`). Opțional, și `www.aistoica.ro`.
-2. În `deploy/hetzner/.env`: `AI_STOICA_WEB_DOMAIN=aistoica.ro`, `COMPOSE_PROFILES=edge,web` și cel puțin o cheie AI (de exemplu `GROQ_API_KEY` sau `GEMINI_API_KEY`, gratuite). Cheile stau doar în `.env` pe server.
-3. `cd /opt/ai-stoica/deploy/hetzner && docker compose up -d --build web caddy`, apoi `curl http://127.0.0.1:8788/health`.
-4. Deschide https://aistoica.ro, creează contul (sau intră cu contul Owner) și aprobă din panoul Owner conturile noi.
+2. În `deploy/hetzner/.env`: `AI_STOICA_WEB_DOMAIN=aistoica.ro`, `COMPOSE_PROFILES=edge,web`, un `OMNIROUTE_WS_BRIDGE_SECRET` aleator și **aceleași chei ca în aplicația Windows** (Setări → API-uri AI) — atunci site-ul are aceleași modele: Cerebras, Groq, Gemini, Mistral, NVIDIA, GitHub Models, Cloudflare, Cohere, Hugging Face, plus cheile pentru imagini și video. Cheile stau doar în `.env` pe server.
+3. **OmniRoute** pornește odată cu site-ul. Ca să ai aceleași combinații ca pe Windows („Ai principal” etc.), deschide-i panoul printr-un tunel SSH (`ssh -L 20128:127.0.0.1:20128 root@IP_SERVER`, apoi http://127.0.0.1:20128) și conectează aceiași furnizori.
+4. `cd /opt/ai-stoica/deploy/hetzner && docker compose up -d --build web caddy`, apoi `curl http://127.0.0.1:8788/health`.
+5. Deschide https://aistoica.ro, creează contul (sau intră cu contul Owner) și aprobă din panoul Owner conturile noi.
 
 La actualizări, `sudo bash /opt/ai-stoica/deploy/hetzner/update.sh` reconstruiește și site-ul.
 

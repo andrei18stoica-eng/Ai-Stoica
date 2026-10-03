@@ -57,6 +57,17 @@ async function main() {
     const html = fs.readFileSync(path.join(renderer, "index.html"), "utf8");
     expect(html.includes('rel="manifest"') && html.includes("apple-touch-icon") && /frame-src 'self'/.test(html), "index.html must link the manifest and allow its own frames");
     expect(fs.readFileSync(path.join(renderer, "src", "core.jsx"), "utf8").includes("IS_WEB ? window.location.origin"), "web interface must use its own address as gateway");
+    // The web version must have the same models and media providers as Windows: every key in the Windows
+    // settings is read by apps/cloud/server.cjs, and every variable it reads reaches the web service on both servers.
+    const repo = path.join(__dirname, "..", "..", "..");
+    const winKeys = [...new Set(fs.readFileSync(path.join(__dirname, "..", "main.cjs"), "utf8").match(/\b[a-zA-Z]+(?:ApiKey|ApiToken|Token|AccountId)\b/g))];
+    const cloudServer = fs.readFileSync(path.join(repo, "apps", "cloud", "server.cjs"), "utf8");
+    for (const k of winKeys) expect(new RegExp("\\b" + k + "\\s*:").test(cloudServer), "apps/cloud/server.cjs does not read the Windows key " + k);
+    const envNames = [...cloudServer.matchAll(/env\("([A-Z0-9_]+)"\)|:\s*"([A-Z0-9_]+)"/g)].map(m => m[1] || m[2]).filter(n => /_(KEY|TOKEN|ID)$/.test(n));
+    for (const compose of [["apps", "cloud", "docker-compose.yml"], ["deploy", "hetzner", "docker-compose.yml"]]) {
+      const text = fs.readFileSync(path.join(repo, ...compose), "utf8");
+      for (const n of envNames) expect(text.includes(n + ": ${" + n), compose.join("/") + " does not pass " + n + " to the web service");
+    }
     console.log("Web mode checks OK");
   } finally {
     await web.close(); await desk.close();

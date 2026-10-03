@@ -86,13 +86,15 @@ The API container runs as the unprivileged `node` user.
 The `web` service (profile `web`) runs the AI Stoica service with the web interface (image `apps/cloud`, which also builds the React interface). Its accounts, approval and permissions come from the `api` service, so they are the same accounts as the Windows app in cloud mode. Caddy serves it at `AI_STOICA_WEB_DOMAIN` with HTTPS.
 
 1. DNS: an **A** record for `aistoica.ro` pointing to this server (the same IP as `api.aistoica.ro`).
-2. In `.env`: `AI_STOICA_WEB_DOMAIN=aistoica.ro`, `COMPOSE_PROFILES=edge,web`, and at least one AI key (`GROQ_API_KEY`, `GEMINI_API_KEY`, `CEREBRAS_API_KEY` or Cloudflare are free).
+2. In `.env`: `AI_STOICA_WEB_DOMAIN=aistoica.ro`, `COMPOSE_PROFILES=edge,web`, a random `OMNIROUTE_WS_BRIDGE_SECRET` (`openssl rand -hex 32`) and the same AI keys as in the Windows app (Settings → API-uri AI): the web version then lists the same models. Free: Cerebras, Groq, Gemini, Mistral, NVIDIA, GitHub Models (`AI_STOICA_GITHUB_TOKEN`), Cloudflare, Cohere, Hugging Face (`HF_TOKEN`); images and video: Pollinations, fal, Replicate, Together, Stability.
 3. Start it:
 
 ```bash
 docker compose up -d --build web caddy
 curl http://127.0.0.1:8788/health
 ```
+
+The `web` profile also starts OmniRoute (and its Redis), so the OmniRoute combinations ("Ai principal" and the others) are on the web too. Its dashboard stays private: from your PC run `ssh -L 20128:127.0.0.1:20128 root@SERVER_IP`, open `http://127.0.0.1:20128` and connect the same providers and combinations as on Windows.
 
 The web service is bound to `127.0.0.1:8788` only; Caddy is the public entry point. Its data (conversations, Library, memory) is in the `web-data` volume. `update.sh` rebuilds it whenever the `web` profile is active.
 

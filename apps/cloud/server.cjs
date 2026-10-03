@@ -13,10 +13,15 @@ function defaultModel() {
   return /^ai[ _-]*(principal|stoica)$/i.test(value) ? "" : value;
 }
 
+// Every key the Windows app has in Settings → API-uri AI, so the web version lists the same models and media providers.
 const DIRECT_KEYS = {
   cerebrasApiKey: "CEREBRAS_API_KEY", groqApiKey: "GROQ_API_KEY", geminiApiKey: "GEMINI_API_KEY",
   openAiApiKey: "OPENAI_API_KEY", openRouterApiKey: "OPENROUTER_API_KEY", mistralApiKey: "MISTRAL_API_KEY",
-  cloudflareAccountId: "CLOUDFLARE_ACCOUNT_ID", cloudflareApiToken: "CLOUDFLARE_API_TOKEN"
+  nvidiaApiKey: "NVIDIA_API_KEY", cohereApiKey: "COHERE_API_KEY", hfToken: "HF_TOKEN",
+  cloudflareAccountId: "CLOUDFLARE_ACCOUNT_ID", cloudflareApiToken: "CLOUDFLARE_API_TOKEN",
+  // Images and video
+  pollinationsApiKey: "POLLINATIONS_API_KEY", falApiKey: "FAL_API_KEY", replicateApiToken: "REPLICATE_API_TOKEN",
+  togetherApiKey: "TOGETHER_API_KEY", stabilityApiKey: "STABILITY_API_KEY"
 };
 
 function getOmniConfig() {

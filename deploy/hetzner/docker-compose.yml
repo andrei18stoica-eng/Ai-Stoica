@@ -51,6 +51,40 @@ services:
       timeout: 5s
       retries: 10
 
+  # OmniRoute for the web version: the same model router (and combinations such as "Ai principal") as on Windows.
+  # Private: its dashboard is reached only through an SSH tunnel to 127.0.0.1:20128 (see README).
+  omniroute-redis:
+    image: redis:7-alpine
+    profiles: ["web"]
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - omniroute-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 128m
+
+  omniroute:
+    # Set OMNIROUTE_VERSION in .env to a fixed release so an upstream update cannot change the server unexpectedly.
+    image: diegosouzapw/omniroute:${OMNIROUTE_VERSION:-latest}
+    profiles: ["web"]
+    restart: unless-stopped
+    stop_grace_period: 40s
+    depends_on:
+      omniroute-redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://omniroute-redis:6379
+      OMNIROUTE_WS_BRIDGE_SECRET: ${OMNIROUTE_WS_BRIDGE_SECRET:-}
+      PORT: "20128"
+    volumes:
+      - omniroute-data:/app/data
+    ports:
+      - "127.0.0.1:20128:20128"
+
   # Web version and installable phone app (PWA): the AI Stoica service with the web interface (apps/cloud image).
   # Accounts, approval and permissions come from the api service above (same accounts as the Windows app in cloud mode).
   # Turned on by the "web" profile, e.g. COMPOSE_PROFILES=edge,web in .env; served by Caddy at AI_STOICA_WEB_DOMAIN.
@@ -63,6 +97,8 @@ services:
     depends_on:
       api:
         condition: service_healthy
+      omniroute:
+        condition: service_started
     environment:
       PORT: "8787"
       HOST: "0.0.0.0"
@@ -71,8 +107,11 @@ services:
       AI_STOICA_OWNER_EMAIL: ${OWNER_EMAIL}
       AI_STOICA_TRUST_PROXY: ${TRUST_PROXY_HOPS:-1}
       AI_STOICA_DEFAULT_MODEL: ${AI_STOICA_DEFAULT_MODEL:-}
-      OMNIROUTE_BASE_URL: ${OMNIROUTE_BASE_URL:-}
+      OMNIROUTE_BASE_URL: ${OMNIROUTE_BASE_URL:-http://omniroute:20128/v1}
       OMNIROUTE_API_KEY: ${OMNIROUTE_API_KEY:-}
+      AI_STOICA_GITHUB_TOKEN: ${AI_STOICA_GITHUB_TOKEN:-}
+      AI_STOICA_GITHUB_REPO: ${AI_STOICA_GITHUB_REPO:-}
+      AI_STOICA_GITHUB_BRANCH: ${AI_STOICA_GITHUB_BRANCH:-main}
       CEREBRAS_API_KEY: ${CEREBRAS_API_KEY:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
@@ -81,6 +120,14 @@ services:
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
       CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      COHERE_API_KEY: ${COHERE_API_KEY:-}
+      HF_TOKEN: ${HF_TOKEN:-}
+      POLLINATIONS_API_KEY: ${POLLINATIONS_API_KEY:-}
+      FAL_API_KEY: ${FAL_API_KEY:-}
+      REPLICATE_API_TOKEN: ${REPLICATE_API_TOKEN:-}
+      TOGETHER_API_KEY: ${TOGETHER_API_KEY:-}
+      STABILITY_API_KEY: ${STABILITY_API_KEY:-}
     volumes:
       - web-data:/data
     ports:
@@ -114,5 +161,7 @@ services:
 volumes:
   postgres-data:
   web-data:
+  omniroute-data:
+  omniroute-redis-data:
   caddy-data:
   caddy-config:
