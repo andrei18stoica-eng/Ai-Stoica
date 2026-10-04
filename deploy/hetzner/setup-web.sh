@@ -126,6 +126,18 @@ if [ "$new_env" = 1 ]; then
     warn "parola nu este acceptată, încearcă din nou"
   done
   env_set OWNER_INITIAL_PASSWORD "$REPLY"
+elif [ -z "$(env_get OWNER_INITIAL_PASSWORD)" ]; then
+  # Without it the API waits for someone to register OWNER_EMAIL: the first one to do so becomes Owner.
+  echo "    Dacă nu ai încă un cont Owner pe server, îl creez acum (altfel cine știe e-mailul Owner l-ar putea înregistra primul)."
+  ask_secret "Parola contului Owner (minimum 8 caractere, fără spații, ghilimele, \$ sau #; Enter = am deja cont)"
+  if [ -n "$REPLY" ]; then
+    if [ "${#REPLY}" -ge 8 ] && valid_value "$REPLY"; then
+      env_set OWNER_INITIAL_PASSWORD "$REPLY"
+      ok "contul Owner se creează la pornirea API-ului (dacă nu există deja)"
+    else
+      warn "parola nu este acceptată; contul Owner îl faci pe site, imediat după instalare"
+    fi
+  fi
 fi
 if [ -z "$(env_get AI_STOICA_DOMAIN)" ]; then
   ask "Adresa API-ului" "api.aistoica.ro"
@@ -270,8 +282,8 @@ for attempt in 1 2 3; do
 done
 [ -n "$key" ] || warn "fără cheie OmniRoute site-ul folosește doar cheile AI directe; rulează din nou scriptul după ce o ai."
 
-step "8/8 Construiesc și pornesc site-ul (5–10 minute prima dată)"
-docker compose up -d --build web || die "Construirea site-ului a eșuat (eroarea e mai sus)."
+step "8/8 Construiesc și pornesc API-ul și site-ul (5–10 minute prima dată)"
+docker compose up -d --build api web || die "Construirea site-ului a eșuat (eroarea e mai sus)."
 if ! wait_for http://127.0.0.1:8788/health 240; then
   docker compose logs --tail=80 web || true
   die "Site-ul nu a pornit (jurnalul e mai sus)."
