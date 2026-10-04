@@ -78,6 +78,7 @@ try {
     .replace("POSTGRES_PASSWORD=CHANGE_ME_RANDOM", "POSTGRES_PASSWORD=pg-secret-1")
     .replace("OWNER_EMAIL=owner@exemplu.ro", "OWNER_EMAIL=andrei@example.ro"), { mode: 0o600 });
   let r = run([
+    "owner-pass-1", // Owner password: no OWNER_INITIAL_PASSWORD yet, so the API would wait for anyone to register
     "",        // site address [aistoica.ro]
     "",        // OmniRoute version [3.8.51]
     "d",       // paste the keys copied from Windows
@@ -92,9 +93,10 @@ try {
   expect(value("OMNIROUTE_API_KEY") === "sk-good" && value("GROQ_API_KEY") === "gsk_test123" && value("HF_TOKEN") === "hf_a/b+c==&d" && value("CEREBRAS_API_KEY") === "csk-1", "pasted keys must be saved exactly: " + readEnv().split("\n").filter(l => /KEY|TOKEN/.test(l)).join(" | "));
   expect(value("GEMINI_API_KEY") === "" && !readEnv().includes("EVIL_VARIABLE"), "unknown names and values .env cannot hold must be skipped");
   expect(value("POSTGRES_PASSWORD") === "pg-secret-1" && value("OWNER_EMAIL") === "andrei@example.ro", "existing values must stay");
+  expect(value("OWNER_INITIAL_PASSWORD") === "owner-pass-1" && !r.out.includes("owner-pass-1"), "the Owner password must be saved (never printed) so the API creates the Owner");
   expect((fs.statSync(envFile).mode & 0o777) === 0o600, ".env must stay private (600)");
   expect(fs.readdirSync(deploy).some(f => f.startsWith(".env.backup-")), ".env must be backed up first");
-  const order = ["docker compose up -d omniroute", "docker compose up -d --build web", "docker compose up -d caddy"].map(c => r.calls.indexOf(c));
+  const order = ["docker compose up -d omniroute", "docker compose up -d --build api web", "docker compose up -d caddy"].map(c => r.calls.indexOf(c));
   expect(order.every(i => i >= 0) && order[0] < order[1] && order[1] < order[2], "docker commands missing or out of order:\n" + r.calls);
   expect(r.calls.includes("curl https://aistoica.ro/health") && /https:\/\/aistoica\.ro merge/.test(r.out) && /vede OmniRoute/.test(r.out), "site checks missing:\n" + r.out);
   expect(/ssh -L 20129:127\.0\.0\.1:20128 root@178\.104\.117\.42/.test(r.out), "the import tunnel must name this server's public address");
