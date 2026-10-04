@@ -49,6 +49,7 @@ echo "curl $url" >> "$FAKE_LOG"
 case "$url" in
   */api/health) code=200; body='{"ok":true}' ;;
   */v1/models) if [ "$auth" = "Authorization: Bearer sk-good" ]; then code=200; else code=401; fi; body='{}' ;;
+  http://127.0.0.1:8787/health) code=200; body='{"ok":true}' ;;
   http://127.0.0.1:8788/health) code=200; body='{"ok":true,"omni":true,"omniNeedsKey":false}' ;;
   https://*/health) code=200; body='{"ok":true}' ;;
   *) code=404; body='' ;;
@@ -116,6 +117,20 @@ try {
   r = run(["andrei@example.ro", "parola-owner-1", "", "", "n", "", "", ""], { FAKE_DNS_IP: "178.104.117.42" });
   expect(r.status === 0, "setup on a new server failed:\n" + r.out);
   expect(/^[0-9a-f]{64}$/.test(value("POSTGRES_PASSWORD")) && value("OWNER_EMAIL") === "andrei@example.ro" && value("OWNER_INITIAL_PASSWORD") === "parola-owner-1", "new .env not filled: " + readEnv().slice(0, 600));
+
+  // 5. update.sh under sudo on a checkout owned by the deploy user: git runs as that user (its SSH config holds the
+  // GitHub deploy key), never as root; a checkout owned by root keeps plain git.
+  const repoRoot = path.join(root, "repo"); fs.mkdirSync(path.join(repoRoot, "deploy", "hetzner"), { recursive: true });
+  tool("id", `[ "$1" = -u ] && { echo "\${FAKE_UID:-0}"; exit 0; }; exec /usr/bin/id "$@"`);
+  tool("stat", `echo "\${FAKE_OWNER:-aistoica}"`);
+  tool("runuser", `echo "runuser $*" >> "$FAKE_LOG"; while [ "$1" != -- ]; do shift; done; shift; exec "$@"`);
+  tool("git", `echo "git $*" >> "$FAKE_LOG"; exit 0`);
+  const update = (extraEnv) => { fs.writeFileSync(log, ""); const u = spawnSync("bash", [path.join(repo, "deploy", "hetzner", "update.sh")], { encoding: "utf8", timeout: 30000,
+    env: { ...process.env, PATH: bin + path.delimiter + process.env.PATH, FAKE_LOG: log, AI_STOICA_ROOT: repoRoot, ...extraEnv } }); return { status: u.status, out: (u.stdout || "") + (u.stderr || ""), calls: fs.readFileSync(log, "utf8") }; };
+  r = update({});
+  expect(r.status === 0 && r.calls.includes("runuser -u aistoica -- git status --porcelain") && r.calls.includes("runuser -u aistoica -- git pull --ff-only origin main") && r.calls.includes("docker compose up -d --build api"), "update.sh must run git as the checkout owner:\n" + r.out + r.calls);
+  r = update({ FAKE_OWNER: "root" });
+  expect(r.status === 0 && !r.calls.includes("runuser") && r.calls.includes("git pull --ff-only origin main"), "update.sh on a root checkout must use plain git:\n" + r.calls);
   console.log("Hetzner setup script checks OK");
 } finally {
   fs.rmSync(root, { recursive: true, force: true });

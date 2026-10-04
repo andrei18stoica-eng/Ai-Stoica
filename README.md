@@ -85,7 +85,7 @@ OmniRoute 3.8 nu mai răspunde fără cheie de client. O singură dată:
 Pe serverul Hetzner (`/opt/ai-stoica`), o singură dată. **Cel mai simplu (0.7.15):** după DNS (pasul 1), rulează
 
 ```bash
-cd /opt/ai-stoica && git pull && sudo bash deploy/hetzner/setup-web.sh
+sudo bash /opt/ai-stoica/deploy/hetzner/update.sh && sudo bash /opt/ai-stoica/deploy/hetzner/setup-web.sh
 ```
 
 și răspunde la întrebări; cheile le copiezi din Windows cu **Setări → API-uri AI → „Copiază cheile pentru server”** și le lipești când scriptul le cere. Pașii de mai jos sunt ce face scriptul, pentru cine vrea să-i facă de mână:
@@ -98,7 +98,7 @@ cd /opt/ai-stoica && git pull && sudo bash deploy/hetzner/setup-web.sh
 4. `cd /opt/ai-stoica/deploy/hetzner && docker compose up -d --build web caddy`, apoi `curl http://127.0.0.1:8788/health`.
 5. Deschide https://aistoica.ro, creează contul (sau intră cu contul Owner) și aprobă din panoul Owner conturile noi.
 
-La actualizări, `sudo bash /opt/ai-stoica/deploy/hetzner/update.sh` reconstruiește și site-ul.
+La actualizări, `sudo bash /opt/ai-stoica/deploy/hetzner/update.sh` reconstruiește și site-ul. Dacă folderul aparține altui utilizator (pe serverul de producție: `aistoica`, cu cheia de acces la GitHub), `update.sh` rulează `git` ca acel utilizator.
 
 ## Noutăți 0.7.10
 

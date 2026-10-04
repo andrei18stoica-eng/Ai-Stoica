@@ -1,18 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="/opt/ai-stoica"
+ROOT="${AI_STOICA_ROOT:-/opt/ai-stoica}"
 DEPLOY="$ROOT/deploy/hetzner"
 
 cd "$ROOT"
 
-if [[ -n "$(git status --porcelain)" ]]; then
+# The checkout can belong to a deploy user whose SSH config holds the GitHub deploy key (on ai-stoica-prod: user
+# "aistoica", remote "github-ai-stoica:..."). Under sudo, git runs as that user: root has neither the key nor the
+# host alias, and git refuses a repository owned by someone else ("dubious ownership").
+OWNER="$(stat -c %U "$ROOT")"
+repo_git() {
+  if [ "$(id -u)" = 0 ] && [ "$OWNER" != root ]; then runuser -u "$OWNER" -- git "$@"; else git "$@"; fi
+}
+
+if [[ -n "$(repo_git status --porcelain)" ]]; then
   echo "STOP: repository has local changes. Run 'git status --short' and review them first."
   exit 2
 fi
 
 echo "==> Updating AI Stoica from GitHub"
-git pull --ff-only origin main
+repo_git pull --ff-only origin main
 
 cd "$DEPLOY"
 

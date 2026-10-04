@@ -69,6 +69,8 @@ env_set() {
     { print }
     END { if (!done) print k "=" v }' "$ENV_FILE" > "$tmp"
   chmod 600 "$tmp"
+  # Keep the owner of .env (the deploy user on ai-stoica-prod) when the script runs under sudo.
+  chown --reference="$ENV_FILE" "$tmp" 2>/dev/null || true
   mv "$tmp" "$ENV_FILE"
 }
 
