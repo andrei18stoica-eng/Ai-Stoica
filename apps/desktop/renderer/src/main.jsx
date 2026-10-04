@@ -1049,6 +1049,25 @@ function ConversationFilesPanel({conversation,onClose}) {
     <div className="conversationFiles">{files.length===0?<div className="emptyState"><Paperclip size={28}/>Nu există fișiere în această conversație.</div>:files.map((x,i)=><div className="conversationFile" key={i}><FileText size={20}/><div><b>{x.name}</b><span>{x.fromAssistant?"Generat de AI Stoica":"Atașat de tine"} · {kindLabel(x.kind||x.type||mediaKind(x.mime||x.mimeType,x.name),x.mime||x.mimeType,x.name)} · {fmtTime(x.createdAt)}</span></div>{(x.libraryId||x.id)&&<button className="smallBtn" onClick={()=>download(x,i)} disabled={busy!==null}><Download size={14}/> {busy===i?"Se descarcă…":"Descarcă"}</button>}</div>)}</div>
   </ToolShell>;
 }
+// Windows only: Settings shows saved keys masked, so this copies them for the server's setup script (aistoica.ro).
+function ServerKeysBox() {
+  const [state,setState]=useState({busy:false,text:"",bad:false});
+  if(!window.AIStoica?.copyServerKeys)return null;
+  async function run(){
+    setState({busy:true,text:"",bad:false});
+    try{
+      const r=await window.AIStoica.copyServerKeys();
+      const skipped=r?.skipped?.length?` Nu am copiat ${r.skipped.join(", ")}: au caractere pe care serverul nu le acceptă.`:"";
+      setState({busy:false,bad:!r?.ok,text:r?.ok?`Am copiat ${r.count===1?"o cheie":r.count+" chei"} pentru server. Lipește-le când scriptul de pe server îți cere (click dreapta). Se șterg din clipboard în 2 minute.${skipped}`:(r?.error||"Cheile nu au putut fi copiate.")});
+    }catch(e){setState({busy:false,bad:true,text:e.message})}
+  }
+  return <div className="providerTest">
+    <div className="providerTestHead"><div><b>Cheile pentru server</b><span>Copiază cheile salvate pe acest PC, ca site-ul aistoica.ro să aibă aceleași modele.</span></div>
+      <button className="secondary" onClick={run} disabled={state.busy}>{state.busy?"Se copiază…":"Copiază cheile pentru server"}</button></div>
+    {state.text&&<div className={cx("providerRow",state.bad?"bad":"good")}>{state.bad?<X size={15}/>:<Check size={15}/>}<span>{state.text}</span></div>}
+  </div>;
+}
+
 function ProviderTestBox() {
   const [state,setState]=useState({busy:false,data:null,media:[],omni:null,error:""});
   async function run(){
@@ -1209,6 +1228,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
       </>}
       {tab==="chatapis"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><Plug size={22}/></div><div><h3>API-uri AI</h3><p>Folosite direct pentru chat când OmniRoute nu răspunde.</p></div></div>
         <ProviderTestBox/>
+        <ServerKeysBox/>
         <label className="toggleRow"><div><b>Folosește API-urile directe</b><span>Dacă OmniRoute nu răspunde, conversația continuă prin providerii configurați pe acest PC.</span></div><input type="checkbox" checked={cfg.directChatEnabled!==false} onChange={e=>set({directChatEnabled:e.target.checked})}/></label>
         <label>Protecție costuri<select value={cfg.directChatCostPolicy||"free_only"} onChange={e=>set({directChatCostPolicy:e.target.value})}><option value="free_only">Doar provideri fără cost direct</option><option value="allow_paid">Permite și OpenAI</option></select></label>
         <label>Ordinea de încercare<input value={cfg.directChatProviderOrder||"cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai"} onChange={e=>set({directChatProviderOrder:e.target.value})}/></label>

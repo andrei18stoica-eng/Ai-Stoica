@@ -85,6 +85,8 @@ The API container runs as the unprivileged `node` user.
 
 The `web` service (profile `web`) runs the AI Stoica service with the web interface (image `apps/cloud`, which also builds the React interface). Its accounts, approval and permissions come from the `api` service, so they are the same accounts as the Windows app in cloud mode. Caddy serves it at `AI_STOICA_WEB_DOMAIN` with HTTPS.
 
+**Guided setup (0.7.15):** after the DNS record below, `sudo bash /opt/ai-stoica/deploy/hetzner/setup-web.sh` does steps 2–3 and the OmniRoute part: it backs `.env` up, checks DNS and memory (offers a 2 GB swap file on small servers), turns on `edge,web`, generates the OmniRoute secrets, takes the keys pasted from the Windows app (Settings → API-uri AI → "Copiază cheile pentru server"), starts OmniRoute, explains the database import, checks the OmniRoute key, builds the site and checks `/health` and HTTPS. Running it again keeps every value.
+
 1. DNS: an **A** record for `aistoica.ro` pointing to this server (the same IP as `api.aistoica.ro`).
 2. In `.env`: `AI_STOICA_WEB_DOMAIN=aistoica.ro`, `COMPOSE_PROFILES=edge,web`, a random `OMNIROUTE_WS_BRIDGE_SECRET` (`openssl rand -hex 32`) and the same AI keys as in the Windows app (Settings → API-uri AI): the web version then lists the same models. Free: Cerebras, Groq, Gemini, Mistral, NVIDIA, GitHub Models (`AI_STOICA_GITHUB_TOKEN`), Cloudflare, Cohere, Hugging Face (`HF_TOKEN`); images and video: Pollinations, fal, Replicate, Together, Stability.
 3. Start it:

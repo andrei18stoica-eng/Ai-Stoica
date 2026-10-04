@@ -1,6 +1,12 @@
-# AI Stoica 0.7.14 — Stoica Enterprises AI
+# AI Stoica 0.7.15 — Stoica Enterprises AI
 
 Asistent AI pentru Windows, web (aistoica.ro) și telefon cu chat, proiecte, asistenți, memorie, bibliotecă de fișiere, pluginuri, automatizări, generare de imagini și video, export PDF/Word/PowerPoint/Excel și panou de Owner.
+
+## Noutăți 0.7.15 — totul pe serverul Hetzner, mereu online
+
+- **Windows → Setări → API-uri AI → „Copiază cheile pentru server”:** Setările arată cheile salvate doar mascat („••••”), așa că nu puteau fi copiate pentru server. Butonul le copiază pe toate (inclusiv cheia OmniRoute) în formatul cerut de server, fără să le arate pe ecran; clipboard-ul se golește după 2 minute.
+- **Instalarea pe server dintr-o singură comandă:** `sudo bash /opt/ai-stoica/deploy/hetzner/setup-web.sh` face pașii pentru aistoica.ro: copie de siguranță a `.env`, verifică DNS-ul și memoria (oferă swap pe serverele mici), pornește profilurile `edge,web`, generează secretele OmniRoute, primește cheile lipite din Windows, pornește OmniRoute, explică importul bazei de pe PC, verifică cheia OmniRoute, construiește site-ul și verifică `/health` și HTTPS. Se poate rula din nou fără să strice nimic.
+- Aplicația Windows poate folosi direct serverul: **Setări → AI & OmniRoute → Adresa serviciului AI Stoica: `https://aistoica.ro`**, deci merge și când OmniRoute de pe PC e oprit.
 
 ## Noutăți 0.7.14 — AI Stoica pe web și ca aplicație pe telefon (gratuit)
 
@@ -63,7 +69,7 @@ Asistent AI pentru Windows, web (aistoica.ro) și telefon cu chat, proiecte, asi
 - **Telefon (Cloudflare):** butoane PDF/DOCX/PPTX, defilare automată, butonul Înapoi pe Android, tastatura nu mai acoperă câmpul de scris; Worker-ul are migrarea `0005`, cod de configurare Owner (`OWNER_SETUP_CODE`) și deconectare reală.
 - **Server Hetzner și `apps/cloud`:** erori JSON corecte, parole cu orice caractere în baza de date, Owner prin `AI_STOICA_OWNER_EMAIL`, containere care nu mai rulează ca root.
 
-Pași după actualizare: vezi „Pași pentru Owner după 0.7.14” mai jos.
+Pași după actualizare: vezi „Pași pentru Owner după 0.7.15” mai jos.
 
 ## OmniRoute pe Windows (cheia API)
 
@@ -76,7 +82,13 @@ OmniRoute 3.8 nu mai răspunde fără cheie de client. O singură dată:
 
 ## Site-ul aistoica.ro (versiunea web și aplicația de telefon)
 
-Pe serverul Hetzner (`/opt/ai-stoica`), o singură dată:
+Pe serverul Hetzner (`/opt/ai-stoica`), o singură dată. **Cel mai simplu (0.7.15):** după DNS (pasul 1), rulează
+
+```bash
+cd /opt/ai-stoica && git pull && sudo bash deploy/hetzner/setup-web.sh
+```
+
+și răspunde la întrebări; cheile le copiezi din Windows cu **Setări → API-uri AI → „Copiază cheile pentru server”** și le lipești când scriptul le cere. Pașii de mai jos sunt ce face scriptul, pentru cine vrea să-i facă de mână:
 
 1. **DNS:** la firma unde e cumpărat domeniul, adaugă o înregistrare **A** pentru `aistoica.ro` cu IP-ul serverului (același ca la `api.aistoica.ro`). Opțional, și `www.aistoica.ro`.
 2. În `deploy/hetzner/.env`: `AI_STOICA_WEB_DOMAIN=aistoica.ro`, `COMPOSE_PROFILES=edge,web`, un `OMNIROUTE_WS_BRIDGE_SECRET` aleator și **aceleași chei ca în aplicația Windows** (Setări → API-uri AI) — atunci site-ul are aceleași modele: Cerebras, Groq, Gemini, Mistral, NVIDIA, GitHub Models, Cloudflare, Cohere, Hugging Face, plus cheile pentru imagini și video. Cheile stau doar în `.env` pe server.
@@ -118,13 +130,14 @@ La actualizări, `sudo bash /opt/ai-stoica/deploy/hetzner/update.sh` reconstruie
 | `renderer/src/main.jsx` | interfața |
 | `scripts/test-*.cjs` | teste rulate automat de GitHub la fiecare modificare |
 
-## Pași pentru Owner după 0.7.14
+## Pași pentru Owner după 0.7.15
 
 1. **Cloudflare (aplicația de telefon):** în `apps/cloudflare` rulează migrările (`npx wrangler d1 migrations apply ai-stoica --remote`, include `0005`), setează secretele `OWNER_EMAIL` și `OWNER_SETUP_CODE`, publică Worker-ul și creează imediat contul Owner (cu codul de configurare). Detalii în `apps/cloudflare/README.md`.
 2. **Telefon:** în `apps/mobile/eas.json` înlocuiește `https://ai-stoica.SUBDOMENIUL-TAU.workers.dev` cu adresa Worker-ului tău (sau folosește `eas env:create`), apoi pornește „Build AI Stoica Mobile with EAS”.
 3. **Server Hetzner:** în `.env` păstrează `OWNER_EMAIL` și `OWNER_INITIAL_PASSWORD`; la actualizare rulează `deploy/hetzner/update.sh`.
-4. **Windows:** după ce apare release-ul v0.7.14 (cu `latest.yml`), aplicațiile cu „Actualizări automate” pornite se actualizează singure la următoarea pornire. Release-urile v0.7.11 și v0.7.13 au fost publicate fără reparația de mai sus: dacă aplicația nu se actualizează, instalează 0.7.14 o dată de mână, de aici înainte actualizările vin singure.
-5. **Site-ul aistoica.ro:** vezi „Site-ul aistoica.ro” mai sus (DNS, `.env`, `docker compose up -d --build web caddy`).
+4. **Windows:** după ce apare release-ul v0.7.15 (cu `latest.yml`), aplicațiile cu „Actualizări automate” pornite se actualizează singure la următoarea pornire. Release-urile v0.7.11 și v0.7.13 au fost publicate fără reparația de publicare: dacă aplicația nu se actualizează, instalează 0.7.15 o dată de mână, de aici înainte actualizările vin singure.
+5. **Site-ul aistoica.ro:** DNS-ul, apoi `sudo bash deploy/hetzner/setup-web.sh` (vezi „Site-ul aistoica.ro” mai sus).
+6. **Windows pe server:** Setări → AI & OmniRoute → Adresa serviciului AI Stoica: `https://aistoica.ro`, apoi intri cu contul de pe server.
 
 ---
 

@@ -7,6 +7,7 @@ const { autoUpdater } = require("electron-updater");
 const { startLocalGateway } = require("./local-gateway.cjs");
 const { createOmniWatch } = require("./lib/omniwatch.cjs");
 const { DIRECT_MODEL_DEFAULTS, PROVIDER_KEY_PAGES, upgradeModelDefaults } = require("./lib/providers.cjs");
+const { serverEnvLines } = require("./lib/serverenv.cjs");
 
 if (process.platform === "win32") app.disableHardwareAcceleration();
 
@@ -391,6 +392,17 @@ function registerIpcHandlers() {
       clipboard.writeText(String(value ?? "").slice(0, 5_000_000));
       return { ok: true };
     } catch (e) { return { ok: false, error: e.message }; }
+  });
+  // Owner moving to the server (aistoica.ro): copies the saved keys as .env lines for deploy/hetzner/setup-web.sh.
+  // The keys never reach the interface (it only gets the count); the clipboard is cleared after 2 minutes.
+  ipcMain.handle("server-env:copy", () => {
+    try {
+      const { text, count, skipped } = serverEnvLines(loadConfig());
+      if (!count) return { ok: false, error: "Nu ai nicio cheie salvată pe acest PC." };
+      clipboard.writeText(text);
+      setTimeout(() => { try { if (clipboard.readText() === text) clipboard.clear(); } catch {} }, 120000).unref?.();
+      return { ok: true, count, skipped };
+    } catch (e) { return { ok: false, error: "Cheile nu au putut fi copiate: " + e.message }; }
   });
   ipcMain.handle("system:open-external", async (_e, rawUrl) => {
     try {

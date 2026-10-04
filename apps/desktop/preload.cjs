@@ -12,5 +12,6 @@ contextBridge.exposeInMainWorld("AIStoica", {
   openExternal: (url) => ipcRenderer.invoke("system:open-external", url),
   checkUpdate: () => ipcRenderer.invoke("update:check"),
   installUpdate: () => ipcRenderer.send("update:install"),
-  writeClipboardText: (value) => ipcRenderer.invoke("clipboard:write-text", value)
+  writeClipboardText: (value) => ipcRenderer.invoke("clipboard:write-text", value),
+  copyServerKeys: () => ipcRenderer.invoke("server-env:copy")
 });
