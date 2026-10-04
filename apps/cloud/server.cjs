@@ -41,6 +41,11 @@ function getOmniConfig() {
     githubRepo: env("AI_STOICA_GITHUB_REPO"),
     githubBranch: env("AI_STOICA_GITHUB_BRANCH") || "main",
     trustProxy: Number(env("AI_STOICA_TRUST_PROXY") || 1),
+    // The model you choose answers; with AI_STOICA_CHAT_FALLBACK=true the direct APIs answer when it fails.
+    chatFallbackOnFailure: env("AI_STOICA_CHAT_FALLBACK").toLowerCase() === "true",
+    // Optional fixed media models, e.g. codex/gpt-5.6-sol (images through the ChatGPT subscription in OmniRoute).
+    imageModel: env("AI_STOICA_IMAGE_MODEL"),
+    videoModel: env("AI_STOICA_VIDEO_MODEL"),
     ...Object.fromEntries(Object.entries(DIRECT_KEYS).map(([key, name]) => [key, env(name)]))
   };
 }

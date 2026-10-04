@@ -7,7 +7,7 @@ import {
   CalendarClock, Plug, Library, Brain, Upload, Trash2, Play, Pin, PinOff,
   FileText, Image as ImageIcon, HardDrive, ToggleLeft, ToggleRight,
   Compass, Map as MapIcon, Globe2, Archive, ArchiveRestore, ExternalLink, SlidersHorizontal, Volume2,
-  PanelTopOpen, ShieldCheck, UserCheck, Download, Lock, Pencil, Palette, Clapperboard
+  PanelTopOpen, ShieldCheck, UserCheck, Download, Lock, Pencil, Palette, Clapperboard, Eye, Maximize2
 } from "lucide-react";
 import "./styles.css";
 import {
@@ -18,6 +18,7 @@ import {
   isHttpUrl, setAuthLostHandler, IS_WEB
 } from "./core.jsx";
 import { InstallApp } from "./install.jsx";
+import { FileViewer, canView } from "./viewer.jsx";
 import { ScheduledPage } from "./pages/Scheduled.jsx";
 import { PluginsPage } from "./pages/Plugins.jsx";
 import { MemoryPage, PreferenceSwitches } from "./pages/Memory.jsx";
@@ -85,7 +86,7 @@ function routeTaskLabel(task) {
     coding:"Programare",reasoning:"Matematică / logică",legal_analysis:"Analiză juridică",
     long_context:"Document / context lung",research:"Cercetare",creative:"Creativitate",
     vision:"Imagine / viziune",fast:"Răspuns rapid",general:"General",manual:"Model ales manual",
-    "direct-fallback":"API direct",image_generation:"Generare imagine",video_generation:"Generare video"
+    "direct-fallback":"API direct",auto:"Combinația principală (automat)",image_generation:"Generare imagine",video_generation:"Generare video"
   })[task]||"General";
 }
 function RouteBadge({info}) {
@@ -540,31 +541,37 @@ function GeneratedAttachment({attachment}) {
   const kind=attachment?.kind||attachment?.type||(String(attachment?.mimeType||"").startsWith("image/")?"image":String(attachment?.mimeType||"").startsWith("video/")?"video":String(attachment?.mimeType||"").startsWith("audio/")?"audio":"file");
   const media=["image","video","audio"].includes(kind);
   const {src,failed}=useAuthedBlobUrl(media&&attachment?.id?`/api/files/${attachment.id}`:"");
-  const [downloading,setDownloading]=useState(false);
+  const [downloading,setDownloading]=useState(false),[viewing,setViewing]=useState(false);
   async function download(){
     if(downloading)return;setDownloading(true);
     try{await downloadGeneratedFile(attachment)}catch(e){toast(e.message)}finally{setDownloading(false)}
   }
+  const viewer=viewing&&<FileViewer file={{...attachment,libraryId:attachment.id}} onClose={()=>setViewing(false)}/>;
   if(media){
     return <div className={cx("generatedMedia",kind)}>
-      {src?(kind==="image"?<img src={src} alt={attachment.name||"Imagine generată de AI Stoica"}/>:kind==="video"?<video controls preload="metadata" src={src}/>:<audio controls preload="metadata" src={src}/>)
+      {viewer}
+      {src?(kind==="image"?<img src={src} alt={attachment.name||"Imagine generată de AI Stoica"} className="zoomable" onClick={()=>setViewing(true)} title="Deschide pe tot ecranul"/>:kind==="video"?<video controls preload="metadata" src={src}/>:<audio controls preload="metadata" src={src}/>)
         :<div className="mediaPlaceholder">{failed?"Previzualizarea nu este disponibilă. Fișierul a fost probabil șters din Bibliotecă.":"Se încarcă previzualizarea…"}</div>}
-      <div className="generatedMediaBar"><span><b>{attachment.name}</b><small>{(attachment.mimeType||kind).replace(/^.*\//,"").toUpperCase()} · {formatBytes(attachment.size)}{attachment.provider?` · ${attachment.provider}`:""}</small></span><button onClick={download} disabled={downloading}><Download size={17}/> {downloading?"Se descarcă…":"Descarcă"}</button></div>
+      <div className="generatedMediaBar"><span><b>{attachment.name}</b><small>{(attachment.mimeType||kind).replace(/^.*\//,"").toUpperCase()} · {formatBytes(attachment.size)}{attachment.provider?` · ${attachment.provider}`:""}</small></span><button onClick={()=>setViewing(true)} title="Deschide" aria-label={"Deschide "+(attachment.name||"fișierul")}><Maximize2 size={15}/></button><button onClick={download} disabled={downloading}><Download size={17}/> {downloading?"Se descarcă…":"Descarcă"}</button></div>
     </div>;
   }
-  return <button className="generatedDownload" onClick={download} disabled={downloading} title={"Descarcă "+(attachment?.name||"fișierul")}><span className="generatedFileIcon"><FileText size={20}/></span><span className="generatedFileMeta"><b>{attachment?.name}</b><small>{(attachment?.format||attachment?.name?.split(".").pop()||"FIȘIER").toUpperCase()} · {formatBytes(attachment?.size)}</small></span><span className="generatedDownloadAction"><Download size={18}/><em>{downloading?"Se descarcă…":"Descarcă"}</em></span></button>;
+  const openable=canView(attachment);
+  return <>{viewer}<button className="generatedDownload" onClick={openable?()=>setViewing(true):download} disabled={downloading} title={(openable?"Deschide ":"Descarcă ")+(attachment?.name||"fișierul")}><span className="generatedFileIcon"><FileText size={20}/></span><span className="generatedFileMeta"><b>{attachment?.name}</b><small>{(attachment?.format||attachment?.name?.split(".").pop()||"FIȘIER").toUpperCase()} · {formatBytes(attachment?.size)}</small></span><span className="generatedDownloadAction">{openable?<Eye size={18}/>:<Download size={18}/>}<em>{openable?"Deschide":downloading?"Se descarcă…":"Descarcă"}</em></span></button></>;
 }
 
 function MediaAttachment({attachment}) {
   const kind=attachment?.type;
   const isMedia=["image","audio","video"].includes(kind)&&!!attachment?.libraryId;
   const {src,failed}=useAuthedBlobUrl(isMedia?`/api/library/${attachment.libraryId}/content`:"");
+  const [viewing,setViewing]=useState(false);
   async function download(){try{await downloadLibraryFile(attachment)}catch(e){toast(e.message)}}
-  if(!isMedia)return <span className="fileChip"><Paperclip size={12}/>{attachment?.name}{attachment?.libraryId&&<button onClick={download} title="Descarcă" aria-label={`Descarcă ${attachment?.name||"fișierul"}`}><Download size={12}/></button>}</span>;
+  const viewer=viewing&&<FileViewer file={attachment} onClose={()=>setViewing(false)}/>;
+  if(!isMedia)return <span className="fileChip">{viewer}<Paperclip size={12}/>{attachment?.name}{attachment?.libraryId&&canView(attachment)&&<button onClick={()=>setViewing(true)} title="Deschide" aria-label={`Deschide ${attachment?.name||"fișierul"}`}><Eye size={12}/></button>}{attachment?.libraryId&&<button onClick={download} title="Descarcă" aria-label={`Descarcă ${attachment?.name||"fișierul"}`}><Download size={12}/></button>}</span>;
   const Icon=kind==="audio"?Volume2:kind==="video"?Play:ImageIcon;
   return <div className={cx("messageMedia",kind)}>
-    <div className="messageMediaHead"><span><Icon size={15}/><b>{attachment.name}</b></span><button title="Descarcă" aria-label={`Descarcă ${attachment.name}`} onClick={download}><Download size={15}/></button></div>
-    {src?(kind==="image"?<img src={src} alt={attachment.name}/>:kind==="audio"?<audio controls preload="metadata" src={src}/>:<video controls preload="metadata" src={src}/>)
+    {viewer}
+    <div className="messageMediaHead"><span><Icon size={15}/><b>{attachment.name}</b></span><button title="Deschide" aria-label={`Deschide ${attachment.name}`} onClick={()=>setViewing(true)}><Maximize2 size={15}/></button><button title="Descarcă" aria-label={`Descarcă ${attachment.name}`} onClick={download}><Download size={15}/></button></div>
+    {src?(kind==="image"?<img src={src} alt={attachment.name} className="zoomable" onClick={()=>setViewing(true)}/>:kind==="audio"?<audio controls preload="metadata" src={src}/>:<video controls preload="metadata" src={src}/>)
       :<div className="mediaPlaceholder small">{failed?"Fișierul nu mai este disponibil în Bibliotecă.":"Se încarcă…"}</div>}
     {attachment.transcript&&<small>Pista audio a fost transcrisă pentru AI Stoica.</small>}
   </div>;
@@ -1229,7 +1236,8 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
       {tab==="chatapis"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><Plug size={22}/></div><div><h3>API-uri AI</h3><p>Folosite direct pentru chat când OmniRoute nu răspunde.</p></div></div>
         <ProviderTestBox/>
         <ServerKeysBox/>
-        <label className="toggleRow"><div><b>Folosește API-urile directe</b><span>Dacă OmniRoute nu răspunde, conversația continuă prin providerii configurați pe acest PC.</span></div><input type="checkbox" checked={cfg.directChatEnabled!==false} onChange={e=>set({directChatEnabled:e.target.checked})}/></label>
+        <label className="toggleRow"><div><b>Folosește API-urile directe</b><span>Modelele lor apar în listă (Groq, Gemini, Cerebras…). Răspund când le alegi sau când nu ai ales niciun model.</span></div><input type="checkbox" checked={cfg.directChatEnabled!==false} onChange={e=>set({directChatEnabled:e.target.checked})}/></label>
+        <label className="toggleRow"><div><b>Rezervă automată</b><span>Dacă modelul ales nu răspunde, trece singur la API-urile directe. Oprit: răspunde doar modelul ales, iar altfel vezi eroarea.</span></div><input type="checkbox" checked={cfg.chatFallbackOnFailure===true} onChange={e=>set({chatFallbackOnFailure:e.target.checked})}/></label>
         <label>Protecție costuri<select value={cfg.directChatCostPolicy||"free_only"} onChange={e=>set({directChatCostPolicy:e.target.value})}><option value="free_only">Doar provideri fără cost direct</option><option value="allow_paid">Permite și OpenAI</option></select></label>
         <label>Ordinea de încercare<input value={cfg.directChatProviderOrder||"cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai"} onChange={e=>set({directChatProviderOrder:e.target.value})}/></label>
         <p className="settingsHelp">Fiecare model din liste apare în lista de modele de sus. Dacă lipsește cheia, providerul răspunde cu 429/404/503 sau nu răspunde deloc, AI Stoica încearcă următorul model, apoi următorul provider.</p>
@@ -1425,7 +1433,10 @@ function App() {
   const [boot,setBoot]=useState(true),[loadError,setLoadError]=useState(""),[authNotice,setAuthNotice]=useState("");
   const [conversations,setConversations]=useState([]),[projects,setProjects]=useState([]),[assistants,setAssistants]=useState([]);
   const [models,setModels]=useState(()=>cachedModels()),[modelPolicyEnforced,setModelPolicyEnforced]=useState(false),[refreshingModels,setRefreshingModels]=useState(false),[deniedModels,setDeniedModels]=useState(0),[modelsChecked,setModelsChecked]=useState(false);
-  const [currentId,setCurrentId]=useState(null),[model,setModel]=useState(()=>storage.get(MANUAL_MODEL_KEY)||storage.get(MODEL_SELECTED_KEY)||"");
+  const [currentId,setCurrentId]=useState(null),[model,setModel]=useState(()=>storage.get(MANUAL_MODEL_KEY)||"");
+  // The model AI Stoica picked by itself (first in the list: your OmniRoute combination). Unlike a model you chose, it is
+  // replaced as soon as a better one appears, so a direct API picked while OmniRoute was offline does not stay selected.
+  const autoPickRef=useRef("");
   const [selectedProject,setSelectedProject]=useState(null),[selectedAssistant,setSelectedAssistant]=useState(null);
   const [draft,setDraft]=useState(""),[attachmentsState,setAttachments]=useState([]),[responseMode,setResponseModeState]=useState(()=>storage.get(RESPONSE_MODE_KEY,"rapid")==="thinking"?"thinking":"rapid"),[mediaModeState,setMediaMode]=useState(null);
   const [generations,setGenerations]=useState({});
@@ -1477,7 +1488,9 @@ function App() {
       const merged=enforced?live:uniqueModels([...live,...cachedModels()]);
       setModelPolicyEnforced(enforced);setDeniedModels(enforced?Number(ms.deniedCount)||0:0);setModels(merged);storage.set(MODEL_CACHE_KEY,JSON.stringify(merged));
       setModel(prev=>{
-        const pick=[prev,storage.get(MANUAL_MODEL_KEY),machineCfgRef.current?.model].find(x=>x&&merged.includes(x))||merged[0]||"";
+        const chosen=[prev&&prev!==autoPickRef.current?prev:"",storage.get(MANUAL_MODEL_KEY),machineCfgRef.current?.model];
+        const pick=chosen.find(x=>x&&merged.includes(x))||merged[0]||"";
+        autoPickRef.current=chosen.includes(pick)?"":pick;
         if(pick)storage.set(MODEL_SELECTED_KEY,pick);else storage.remove(MODEL_SELECTED_KEY);
         return pick;
       });
@@ -1879,6 +1892,7 @@ function App() {
   const hasMessages=!!current?.messages?.length;
   const activeAssistantId=current?current.assistantId:selectedAssistant;
   return <AccessContext.Provider value={access}><div className={cx("appShell",sidebarCollapsed&&"sidebarCollapsed")}>
+    <InstallApp floating/>
     <Sidebar open={sidebar} setOpen={setSidebar} user={user} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} busyIds={Object.keys(generations)} onSelect={id=>{setCurrentId(id);setSidebar(false)}} onDeleteConversation={deleteConversation} onUnarchive={unarchiveConversation} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} activeAssistantId={activeAssistantId} onUseAssistant={startWithAssistant} onNewProject={()=>setEntityModal({type:"project",item:null})} onNewAssistant={()=>setEntityModal({type:"assistant",item:null})} onEditProject={p=>setEntityModal({type:"project",item:p})} onEditAssistant={a=>setEntityModal({type:"assistant",item:a})} onTool={name=>openTool(name)} onSettings={()=>setSettings(true)} onLogout={()=>logout()}/>
     {sidebar&&<div className="mobileScrim" onClick={()=>setSidebar(false)}/>}
     <main className="mainArea">

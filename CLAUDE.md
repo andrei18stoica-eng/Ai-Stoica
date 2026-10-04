@@ -12,7 +12,7 @@ AI Stoica (Stoica Enterprises AI) este o platformă AI proprie, multi-model: cha
 
 GitHub (`andrei18stoica-eng/Ai-Stoica`, privat) este atelierul: cod, versiuni, teste, build, Releases. Producția rulează pe serverul Hetzner. Aplicația nu depinde de GitHub la fiecare mesaj.
 
-Versiune curentă: **0.7.15** (pe `main`, PR #32, Release `v0.7.15`). 0.7.12 și 0.7.13 au fost făcute în cowork.
+Versiune curentă: **0.7.16** (ramura `claude/pensive-galileo-nwwkea`, PR în lucru; pe `main` e 0.7.15). 0.7.12 și 0.7.13 au fost făcute în cowork.
 
 ## Structura
 
@@ -35,7 +35,7 @@ Folderul `gateway/` (0.4.1) a fost șters în 0.7.11 și nu trebuie să reapară
 1. workflow-urile YAML (chei duplicate);
 2. aceeași versiune peste tot;
 3. `gateway/` absent;
-4. desktop: `node --check`, `npm run build:ui`, toate `scripts/test-*.cjs` (17 teste);
+4. desktop: `node --check`, `npm run build:ui`, toate `scripts/test-*.cjs` (19 teste);
 5. server: `npm test`;
 6. Cloudflare: `npm test` și `npm run check`.
 
@@ -71,9 +71,11 @@ Nu rulează local: Mobile (`expo-doctor`, `expo export`), build-ul Windows și D
 
 ## Stare curentă (2026-10-04)
 
+- **0.7.16** (în lucru): modelul ales răspunde, fără trecere ascunsă la API-urile directe (`directFallbackAllowed`, `chosenModelFailure` în `local-gateway.cjs`; „Rezervă automată” = `chatFallbackOnFailure`, pe server `AI_STOICA_CHAT_FALLBACK`); fără model → prima combinație OmniRoute (`defaultOmniModel`). Poze: întâi modelele din abonament (`subscriptionMedia`: codex, chatgpt-web, gemini-web), modelul reușit e legat per cont în `media-prefs.json` (se resetează când se schimbă setările de imagine/video). Ecuații: `lib/math.cjs` (temml, MIT → MathML → OMML, inserat în DOCX după build), chat: `renderer/src/mathText.mjs` + `math.jsx` (temml încărcat la nevoie). Vizualizare fișiere: `renderer/src/viewer.jsx`, ruta `GET /api/library/:id/preview`, `frame-src ... blob:`. PDF: `lib/pdftext.cjs` (pdf-lib + ToUnicode), folosit de `extract.cjs`. Teste: `test-0716-choice-media.cjs`, `test-0716-math.cjs`.
+- **Site-ul aistoica.ro e pornit** (2026-10-04): DNS A, certificat Let's Encrypt prin Caddy, OmniRoute pe server cu baza importată de pe PC și cheia `site-aistoica`. Rămân pentru Owner: ștergerea cheii vechi importate din API Manager (server), schimbarea parolelor/cheilor expuse în poze și chat.
 - **0.7.15** (PR #32, merge `744ecdd`, Release `v0.7.15` cu `.exe`, `latest.yml`, `.blockmap` din același run): „Copiază cheile pentru server” în Windows (`lib/serverenv.cjs`, IPC `server-env:copy`; Setările arată cheile doar mascat) și instalarea pe server dintr-o comandă, `deploy/hetzner/setup-web.sh`; `test-hetzner-setup.cjs` le păzește pe amândouă.
 - **0.7.14** e pe `main` (PR #30, merge `52f3148`); toate cele 6 verificări de pe `main` au trecut. Release-ul `v0.7.14` are `.exe`, `latest.yml` și `.blockmap` urcate de același run „Build AI Stoica Windows”, iar ZIP-ul separat, deci reparația publicării a funcționat. `sha512` nu a fost comparat byte cu byte (repo privat).
-- **Producția web nu e pornită încă** (2026-10-04): `aistoica.ro` nu are înregistrare DNS A (`api.aistoica.ro` → `178.104.117.42`). Owner-ul trebuie să: adauge DNS-ul, intre pe server (cheie SSH sau consola Hetzner), exporte baza OmniRoute de pe PC, ruleze `setup-web.sh`, apoi să pună în Windows adresa `https://aistoica.ro`. Mediul cloud al lui Claude nu ajunge la serverul Hetzner (portul 22 blocat) și nici la `aistoica.ro` prin proxy.
+- Mediul cloud al lui Claude nu ajunge la serverul Hetzner (portul 22 blocat) și nici la `aistoica.ro` prin proxy: pașii pe server îi face Owner-ul (consola Hetzner sau SSH cu cheia `~/.ssh/aistoica` de pe PC).
 - **Serverul `ai-stoica-prod`** (Ubuntu 26.04, 178.104.117.42), aflat pe 2026-10-04: `/opt/ai-stoica` aparține utilizatorului `aistoica`; remote-ul e `github-ai-stoica:andrei18stoica-eng/Ai-Stoica.git` (alias SSH cu cheia de deploy din `~aistoica/.ssh`), deci `git` merge doar ca `aistoica` (`sudo -u aistoica git -C /opt/ai-stoica pull`; `update.sh` face asta singur). `/etc/ssh/sshd_config.d/99-aistoica-hardening.conf` avea `PermitRootLogin no`; Owner-ul l-a schimbat în `prohibit-password` (root doar cu cheie). Există `deploy/hetzner/.env-broken` (copie veche, ignorată de git). API-ul răspunde (`"database":"ok"`).
 - Nu scrie cheia OmniRoute a Owner-ului nicăieri în repo; ea stă doar în `deploy/hetzner/.env` pe server. A fost trimisă în chat, deci trebuie înlocuită după instalare.
 - OmniRoute 3.8 cere cheie de client pe `/v1/*` (401 fără ea): `/health` raportează `omniNeedsKey`; combinațiile se recunosc după `owned_by: "combo"`. Watchdog-ul Windows e în `lib/omniwatch.cjs` (testat de `test-omniwatch.cjs`). Furnizorii fără credite (402/quota) sunt mutați la coada listei 1 oră (`providerCooldown` în `local-gateway.cjs`).

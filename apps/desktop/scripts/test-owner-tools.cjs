@@ -82,6 +82,12 @@ async function main(){
     expect(data.data?.code===0,"Owner code execution exit code was not 0");
     expect(String(data.data?.stdout||"").trim()==="5","Owner code execution output mismatch");
 
+    // 0.7.16: a chosen model that does not answer is reported, never replaced by a direct API on its own.
+    r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"test-model",messages:[{role:"user",content:"test fallback direct"}]})});
+    data=await r.json();
+    expect(r.status===502&&/Modelul ales «test-model»/.test(data.error||"")&&cerebrasCalls===0&&groqCalls===0,"A failing chosen model must not fall back without «Rezervă automată»: "+JSON.stringify(data).slice(0,300));
+    // With «Rezervă automată» turned on, the direct APIs answer in order (Cerebras, then Groq).
+    cfg.chatFallbackOnFailure=true;await new Promise(x=>setTimeout(x,2100));
     r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"test-model",messages:[{role:"user",content:"test fallback direct"}]})});
     data=await r.json();
     expect(r.ok,data.error||"Direct chat fallback failed");

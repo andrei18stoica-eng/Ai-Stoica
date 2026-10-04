@@ -5,6 +5,7 @@
 const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
+const { extractPdfText } = require("./pdftext.cjs");
 const JSZip = require("jszip");
 const MDBReaderModule = require("mdb-reader");
 const MDBReader = MDBReaderModule.default || MDBReaderModule;
@@ -366,6 +367,16 @@ function extractPdf(buf) {
   return texts.join("\n").replace(/[^\S\n]+/g, " ");
 }
 
+// The fonts' character maps (pdftext.cjs) read most PDFs; the plain reader stays for files pdf-lib cannot open.
+async function extractPdfBest(buf) {
+  let mapped = "";
+  try { mapped = await extractPdfText(buf); } catch {}
+  const letters = (t) => (String(t).match(/[\p{L}\p{N}]/gu) || []).length;
+  if (letters(mapped) >= 20) return mapped;
+  const plain = extractPdf(buf);
+  return letters(mapped) >= letters(plain) * 0.5 && letters(mapped) > 0 ? mapped : plain;
+}
+
 function kindFor(name, mime) {
   const n = String(name || "").toLowerCase(), m = String(mime || "").toLowerCase();
   if (/\.docx$/.test(n) || m.includes("wordprocessingml")) return "docx";
@@ -393,7 +404,7 @@ async function extractText(filePath, mime, name) {
     else if (kind === "pptx") text = await extractPptx(buf);
     else if (kind === "xlsx") text = await extractXlsx(buf);
     else if (kind === "odf") text = await extractOpenDocument(buf);
-    else if (kind === "pdf") text = extractPdf(buf);
+    else if (kind === "pdf") text = await extractPdfBest(buf);
     else if (kind === "access") text = await extractAccess(buf);
   } catch (e) {
     if (e && e.code === "ETOOLARGE") return { text: "", status: "too_large" };

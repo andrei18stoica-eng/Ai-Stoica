@@ -6,6 +6,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const { spawn } = require("child_process");
 const { createStore, renameWithRetry } = require("./lib/store.cjs");
 const { extractText } = require("./lib/extract.cjs");
@@ -647,11 +648,24 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const allowed=new Set(policy.data.filter(x=>x.allowed).map(x=>String(x.model)));
     return rows.filter(x=>allowed.has(x.policyId)).map(x=>x.entry);
   }
-  let omniIdsCache={at:0,ids:[]};
+  let omniEntriesCache={at:0,entries:[]};
+  async function omniEntriesCached(cfg){
+    if(Date.now()-omniEntriesCache.at<60000)return omniEntriesCache.entries;
+    let entries=[];try{entries=await omniModelEntries(cfg)}catch{}
+    omniEntriesCache={at:Date.now(),entries};return entries;
+  }
   async function omniModelIds(cfg){
-    if(Date.now()-omniIdsCache.at<60000)return omniIdsCache.ids;
-    let ids=[];try{ids=(await omniModelEntries(cfg)).map(x=>String(typeof x==="string"?x:x?.id||"")).filter(Boolean)}catch{}
-    omniIdsCache={at:Date.now(),ids};return ids;
+    return (await omniEntriesCached(cfg)).map(x=>String(typeof x==="string"?x:x?.id||"")).filter(Boolean);
+  }
+  // A request without a model (a client that left the choice to AI Stoica) goes to your own OmniRoute combination
+  // ("Ai principal"), then to OmniRoute's auto/* ones; the direct APIs only when OmniRoute has none.
+  async function defaultOmniModel(cfg,context){
+    const entries=await omniEntriesCached(cfg);
+    const combos=entries.map(x=>({id:String(typeof x==="string"?x:x?.id||"").trim(),combo:x?.owned_by==="combo"})).filter(x=>x.id&&(x.combo||!x.id.includes("/")));
+    for(const id of [...combos.filter(x=>!/^auto\//i.test(x.id)),...combos.filter(x=>/^auto\//i.test(x.id))].map(x=>x.id)){
+      try{await requireModelAccess(context?.cloudToken,id);return id}catch{}
+    }
+    return "";
   }
   // "Ai principal" / "AI Stoica …" (mobile default): an OmniRoute combo with that name if one exists, otherwise the configured default model.
   async function resolveModelAlias(cfg,requested){
@@ -667,11 +681,13 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const asked=String(requestedModel||cfg.model||"").trim();
     const requested=await resolveModelAlias(cfg,asked);
     if(!requested){
-      if(directApisAllowed(context)&&cfg.directChatEnabled!==false)return {task:"direct-fallback",reasons:["OmniRoute fără model selectat; folosesc API-urile directe configurate"],selectedModel:"",candidates:[]};
+      const auto=await defaultOmniModel(cfg,context);
+      if(auto)return {task:"auto",automatic:true,reasons:["niciun model ales: folosesc combinația principală OmniRoute"],selectedModel:auto,candidates:[{id:auto,provider:inferProvider(auto),score:0}]};
+      if(directApisAllowed(context)&&cfg.directChatEnabled!==false)return {task:"direct-fallback",automatic:true,reasons:["OmniRoute fără model selectat; folosesc API-urile directe configurate"],selectedModel:"",candidates:[]};
       throw policyFailure("Alege manual un model AI înainte de a trimite mesajul.",400);
     }
     await requireModelAccess(context?.cloudToken,requested);
-    return {task:"manual",reasons:[requested===asked?"model ales manual":"model implicit configurat"],selectedModel:requested,candidates:[{id:requested,provider:inferProvider(requested),score:0}]};
+    return {task:"manual",automatic:false,reasons:[requested===asked?"model ales manual":"model implicit configurat"],selectedModel:requested,candidates:[{id:requested,provider:inferProvider(requested),score:0}]};
   }
   const BUILTIN_PROMPT="Ești AI Stoica, asistentul principal Stoica Enterprises AI. Răspunde clar, riguros și util, în limba utilizatorului.";
   function builtInAssistant(userId){return {id:crypto.randomUUID(),userId,name:"AI Stoica",icon:"S",systemPrompt:BUILTIN_PROMPT,createdAt:Date.now(),builtIn:true};}
@@ -1288,6 +1304,25 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }
     if(item.text!=null){res.type(item.mime||"text/plain");return res.send(String(item.text));}
     return res.status(404).json({error:"Conținutul fișierului nu mai există pe disc."});
+  });
+  // The text of a Word / PowerPoint / Excel / PDF file, to show it inside AI Stoica without downloading it.
+  app.get("/api/library/:id/preview", auth, async (req,res) => {
+    const item=store.read().library.find(x=>x.id===req.params.id&&x.userId===req.user.id);
+    if(!item)return res.status(404).json({error:"Fișierul nu a fost găsit."});
+    let text=item.text!=null?String(item.text):"",status=item.textStatus||(text?"ok":"");
+    if(!text&&await libraryFileStat(item)){
+      try{const r=await extractText(item.filePath,item.mime,item.name);text=r.text||"";status=r.status||status}catch{status="error"}
+    }else if(!text&&item.dataUrl){
+      const m=String(item.dataUrl).match(/^data:([^;]+);base64,(.+)$/s);
+      if(m){
+        const tmp=path.join(os.tmpdir(),"ai-stoica-preview-"+crypto.randomUUID()+path.extname(String(item.name||"")));
+        try{await fs.promises.writeFile(tmp,Buffer.from(m[2],"base64"));const r=await extractText(tmp,item.mime,item.name);text=r.text||"";status=r.status||status}
+        catch{status="error"}
+        finally{fs.promises.rm(tmp,{force:true}).catch(()=>{})}
+      }
+    }
+    const LIMIT=200000;
+    res.json({data:{text:text.length>LIMIT?text.slice(0,LIMIT)+"\n\n… (fișierul continuă; descarcă-l pentru tot conținutul)":text,status,truncated:text.length>LIMIT}});
   });
   app.get("/api/library/:id", auth, (req,res) => {const db=store.read(),item=db.library.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Fișierul nu a fost găsit."});const {filePath,...safe}=item;res.json({data:safe});});
   app.delete("/api/library/:id", auth, async (req,res) => {
@@ -2032,6 +2067,31 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const seen=new Set();
     return rows.filter(row=>{const k=row.id.toLowerCase();if(seen.has(k))return false;seen.add(k);return true});
   }
+  // Poză / Video stay on the model that worked for this account: it is tried first next time (other models only if it
+  // fails). Changing the image / video settings (model, providers, order, cost) starts over from those settings.
+  const mediaPrefsFile=path.join(dataDir,"media-prefs.json");
+  let mediaPrefs={};try{mediaPrefs=JSON.parse(fs.readFileSync(mediaPrefsFile,"utf8"))||{}}catch{}
+  const configuredMedia=(cfg,kind)=>JSON.stringify(kind==="image"
+    ?[cfg.imageModel,cfg.imageProviderOrder,cfg.imageProviderMode,cfg.imageCostPolicy]
+    :[cfg.videoModel,cfg.videoProviderOrder,cfg.videoMode,cfg.videoCostPolicy]).replace(/null/g,'""');
+  function mediaPref(req,cfg,kind){
+    const p=mediaPrefs[req.user?.id]?.[kind];
+    return p&&p.configured===configuredMedia(cfg,kind)?String(p.id||""):"";
+  }
+  function rememberMedia(req,cfg,kind,id){
+    const uid=req.user?.id;if(!uid||!id)return;
+    const entry={id:String(id).slice(0,200),configured:configuredMedia(cfg,kind)};
+    const cur=mediaPrefs[uid]?.[kind];
+    if(cur&&cur.id===entry.id&&cur.configured===entry.configured)return;
+    mediaPrefs={...mediaPrefs,[uid]:{...(mediaPrefs[uid]||{}),[kind]:entry}};
+    try{fs.writeFileSync(mediaPrefsFile,JSON.stringify(mediaPrefs))}catch{}
+  }
+  // Images through your ChatGPT subscription (OmniRoute's Codex / ChatGPT Web connections) or Gemini Web, and the
+  // free web video providers, come before the free no-key providers and the paid APIs.
+  function subscriptionMedia(kind,id){
+    const v=String(id||"");
+    return kind==="image"?/^(codex|cx|chatgpt-web|cgpt-web|gemini-web|gweb)\//i.test(v):/^(veoaifree-web|veo-free)\//i.test(v);
+  }
   function localPaidHint(row){
     const p=String(row?.provider||inferProvider(row?.policyId||row?.id)||"").toLowerCase();
     return ["openai","anthropic","openrouter","runway"].includes(p)||/^(openai|anthropic|openrouter|runway)\//i.test(String(row?.policyId||row?.id||""));
@@ -2073,6 +2133,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       localRows.sort((a,b)=>{
         const configuredBoost=Number(b.id===configured)-Number(a.id===configured);
         if(configuredBoost)return configuredBoost;
+        const subscriptionBoost=Number(subscriptionMedia(kind,b.id))-Number(subscriptionMedia(kind,a.id));
+        if(subscriptionBoost)return subscriptionBoost;
         return Number(localPaidHint(a))-Number(localPaidHint(b));
       });
       if(strictFree&&!localRows.length)throw policyFailure("Protecția «Doar gratuit» este activă și OmniRoute nu are un model de imagine gratuit identificat.",403);
@@ -2090,6 +2152,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       .sort((a,b)=>{
         const ac=Number(a.row.id===configured),bc=Number(b.row.id===configured);
         if(isOwner&&ac!==bc)return bc-ac;
+        const as=Number(subscriptionMedia(kind,a.row.id)),bs=Number(subscriptionMedia(kind,b.row.id));
+        if(as!==bs)return bs-as;
         const ap=Number(a.decision?.paidRequired===true||localPaidHint(a.row));
         const bp=Number(b.decision?.paidRequired===true||localPaidHint(b.row));
         if(ap!==bp)return ap-bp;
@@ -2136,7 +2200,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           if(signal.aborted)return true;
           try{
             const resolved=await attempt.run();
-            if(resolved?.bytes?.length){noteProviderResult("image",attempt.id,"");if(await done(resolved,{model:resolved.model||attempt.label,provider:resolved.provider||attempt.id}))return true;}
+            if(resolved?.bytes?.length){noteProviderResult("image",attempt.id,"");rememberMedia(req,cfg,"image",attempt.id);if(await done(resolved,{model:resolved.model||attempt.label,provider:resolved.provider||attempt.id}))return true;}
           }catch(e){if(signal.aborted)return true;const msg=roError(e);noteProviderResult("image",attempt.id,msg);errors.push(attempt.label+": "+msg)}
         }
         return false;
@@ -2144,16 +2208,14 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const direct=directApisAllowed(req)&&!explicitModel?await directImageAttempts(cfg,prompt,size):[];
       // An image model chosen in Settings is tried before the no-key Pollinations fallback.
       const late=String(cfg.imageModel||"").trim()?direct.filter(a=>a.id==="pollinations-free"):[];
-      if(await runDirect(direct.filter(a=>!late.includes(a))))return;
-
       let models=[];
       try{models=(await discoverPermittedMediaModels(req,cfg,"image",explicitModel)).slice(0,4)}
       catch(e){if(e.status===403&&explicitModel)throw e;errors.push("OmniRoute: "+(e.status?e.message:roError(e)))}
-      if(models.length){
-        const imageUrl=String(cfg.baseUrl).replace(/\/+$/,"")+"/images/generations";
-        const imageHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:"Bearer "+cfg.apiKey}:{})};
-        for(const model of byCooldown("image",models,m=>"omniroute:"+m)){
-          if(signal.aborted)return;
+      const imageUrl=String(cfg.baseUrl).replace(/\/+$/,"")+"/images/generations";
+      const imageHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:"Bearer "+cfg.apiKey}:{})};
+      const runOmni=async(list)=>{
+        for(const model of byCooldown("image",list,m=>"omniroute:"+m)){
+          if(signal.aborted)return true;
           try{
             let upstream=await fetch(imageUrl,{method:"POST",headers:imageHeaders,body:JSON.stringify({model,prompt,size,n:1,response_format:"b64_json"}),signal:mediaSignal(180000)});
             if(!upstream.ok&&[400,404,405,409,422].includes(upstream.status)){
@@ -2167,11 +2229,21 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
             if(ctype.startsWith("image/")){const bytes=await readCapped(upstream,"image");resolved={bytes,mime:inferMediaMime(bytes,ctype,"image")};}
             else{const body=JSON.parse((await readCapped(upstream,"image")).toString("utf8")),candidate=findMediaCandidate(body,"image");resolved=await resolveGeneratedMedia(candidate,"image");}
             if(!resolved.bytes.length){errors.push(model+": imagine goală");continue}
-            if(await done(resolved,{model,provider:"omniroute"}))return;
-          }catch(e){if(signal.aborted)return;errors.push(model+": "+roError(e))}
+            rememberMedia(req,cfg,"image",model);
+            if(await done(resolved,{model,provider:"omniroute"}))return true;
+          }catch(e){if(signal.aborted)return true;errors.push(model+": "+roError(e))}
         }
-      }
-      if(await runDirect(late))return;
+        return false;
+      };
+      const pref=explicitModel?"":mediaPref(req,cfg,"image");
+      if(pref&&models.includes(pref)&&await runOmni([pref]))return;
+      if(pref&&await runDirect(direct.filter(a=>a.id===pref)))return;
+      const rest=models.filter(m=>m!==pref),others=direct.filter(a=>a.id!==pref);
+      const subscription=explicitModel?[]:rest.filter(m=>subscriptionMedia("image",m));
+      if(await runOmni(subscription))return;
+      if(await runDirect(others.filter(a=>!late.includes(a))))return;
+      if(await runOmni(rest.filter(m=>!subscription.includes(m))))return;
+      if(await runDirect(late.filter(a=>a.id!==pref)))return;
 
       const configuredProviders=[
         cfg.cloudflareAccountId&&cfg.cloudflareApiToken&&"Cloudflare",cfg.pollinationsApiKey&&"Pollinations",cfg.hfToken&&"Hugging Face",cfg.togetherApiKey&&"Together AI",
@@ -2199,22 +2271,27 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const done=async(resolved,meta)=>{if(signal.aborted)return true;res.json({data:await saveGeneratedMedia(req,{...resolved,kind:"video",prompt,...meta})});return true;};
 
       let tried=0;
+      const pref=explicitModel?"":mediaPref(req,cfg,"video");
       if(directApisAllowed(req)&&!explicitModel){
         const attempts=await directVideoAttempts(cfg,prompt,duration,aspectRatio);
         tried+=attempts.length;
-        for(const attempt of byCooldown("video",attempts)){
+        const ordered=[...attempts.filter(a=>a.id===pref),...byCooldown("video",attempts.filter(a=>a.id!==pref))];
+        for(const attempt of ordered){
           if(signal.aborted)return;
           try{
             const resolved=await attempt.run();
-            if(resolved?.bytes?.length){noteProviderResult("video",attempt.id,"");if(await done(resolved,{model:resolved.model||attempt.label,provider:resolved.provider||attempt.id}))return;}
+            if(resolved?.bytes?.length){noteProviderResult("video",attempt.id,"");rememberMedia(req,cfg,"video",attempt.id);if(await done(resolved,{model:resolved.model||attempt.label,provider:resolved.provider||attempt.id}))return;}
           }catch(e){if(signal.aborted)return;const msg=roError(e);noteProviderResult("video",attempt.id,msg);errors.push(attempt.label+": "+msg)}
         }
       }
 
-      if(!strictFree){
+      // «Doar gratuit» keeps the paid OmniRoute video models out, but not the free web ones (VEO 3.1 / Seedance).
+      {
         let models=[];
-        try{models=(await discoverPermittedMediaModels(req,cfg,"video",explicitModel)).slice(0,3)}
+        try{models=(await discoverPermittedMediaModels(req,cfg,"video",explicitModel)).slice(0,6)}
         catch(e){if(e.status===403&&explicitModel)throw e;errors.push("OmniRoute: "+(e.status?e.message:roError(e)))}
+        models=(strictFree?models.filter(m=>subscriptionMedia("video",m)):models).slice(0,3);
+        if(pref&&models.includes(pref))models=[pref,...models.filter(m=>m!==pref)];
         tried+=models.length;
         if(models.length){
           const videoUrl=String(cfg.baseUrl).replace(/\/+$/,"")+"/videos/generations";
@@ -2233,6 +2310,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
               if(ctype.startsWith("video/")){const bytes=await readCapped(upstream,"video");resolved={bytes,mime:inferMediaMime(bytes,ctype,"video")};}
               else{const body=JSON.parse((await readCapped(upstream,"image")).toString("utf8"));const candidate=await pollVideoResult(cfg,body);resolved=await resolveGeneratedMedia(candidate,"video");}
               if(!resolved.bytes.length){errors.push(model+": video gol");continue}
+              rememberMedia(req,cfg,"video",model);
               if(await done(resolved,{model,provider:"omniroute"}))return;
             }catch(e){if(signal.aborted)return;errors.push(model+": "+roError(e))}
           }
@@ -2692,6 +2770,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const latestText=textFromContent(latest?.content),query=typedText(latest?.content)||latestText.slice(0,4000);
     const cfg=getOmniConfig(),system=[];
     system.push("Când utilizatorul cere un fișier descărcabil (PDF, DOCX/Word, PPTX/PowerPoint, XLSX/Excel, CSV, JSON, Markdown, TXT, HTML, XML, RTF, ZIP, notebook sau fișier de cod), redactează direct conținutul final care trebuie introdus în acel fișier. Pentru XLSX/CSV folosește preferabil un tabel Markdown cu antete; pentru JSON produce JSON valid; pentru HTML/XML/SVG și cod produce conținut valid, fără explicații în afara lui. Nu afișa pseudo-comenzi de tool: aplicația creează fișierul real și îl atașează separat.");
+    system.push("Formule matematice: scrie-le în LaTeX, $…$ în text și $$…$$ pe un rând separat (de exemplu $$x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}$$), inclusiv în conținutul unui fișier Word. AI Stoica le afișează ca formule în chat și le transformă în ecuații Microsoft Word (Inserare → Ecuație), editabile. Nu folosi $ pentru sume de bani lângă cifre (scrie «10 USD» sau «10 lei»).");
     system.push("Capabilități AI Stoica: aplicația are memorie persistentă, poate primi context din alte conversații ale aceluiași Proiect, poate căuta internetul în timp real, poate căuta fragmente relevante într-un repository GitHub configurat, iar Owner-ul poate rula cod JavaScript sau Python doar prin butonul explicit de rulare și poate lucra cu serverul SSH configurat. Nu afirma că aceste capabilități nu există atunci când contextul lor este prezent. Nu pretinde că un cod a fost executat dacă nu ai primit explicit un rezultat de rulare. Pentru proiecte mari, lucrează modular și folosește contextul relevant recuperat, fără a cere utilizatorului să copieze manual întreaga bază de cod.");
     system.push("Fiabilitate: pentru informații actuale despre biblioteci, API-uri, modele, versiuni, prețuri sau servicii folosește prioritar contextul WEB LIVE dacă este disponibil și include la final o secțiune scurtă «Surse» cu linkurile folosite. Pentru cod, separă clar ce ai analizat de ce a fost efectiv rulat/testat. Pentru medical, juridic și financiar poți analiza și cita surse, dar păstrează recomandarea de validare umană atunci când decizia are consecințe importante.");
     const assistant=db.assistants.find(a=>a.id===assistantId&&a.userId===userId);if(assistant?.systemPrompt)system.push(assistant.systemPrompt);
@@ -2833,6 +2912,16 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   }
 
   // After 401/403/429 the remaining models of the same provider are skipped (same key, same limit).
+  // A model you chose is the one that answers. If it fails, the error says so instead of another provider answering
+  // in its place; the direct APIs step in only when no model was chosen, or when «Rezervă automată» is turned on.
+  function directFallbackAllowed(req,cfg,route){
+    return directApisAllowed(req)&&cfg.directChatEnabled!==false&&(route?.automatic===true||cfg.chatFallbackOnFailure===true);
+  }
+  function chosenModelFailure(cfg,route,errors){
+    if(route?.automatic)return policyFailure("Niciun model selectat de AI Stoica nu a putut răspunde. "+errors.slice(0,14).join(" | "),502);
+    const hint=cfg.directChatEnabled!==false?" Alege alt model din listă sau pornește «Rezervă automată» în Setări → API-uri AI.":" Alege alt model din listă.";
+    return policyFailure(`Modelul ales «${route?.selectedModel||"?"}» nu a răspuns, iar AI Stoica nu trece singur la alt model.${hint} Motiv: `+errors.slice(0,6).join(" | "),502);
+  }
   async function directChatFallback(cfg,messages,requestedModel,stream,timer=chatTimer(stream,null)){
     const candidates=byCooldown("chat",await directChatCandidates(cfg,requestedModel),c=>c.provider),errors=[],skip=new Set();
     for(const candidate of candidates){
@@ -2923,7 +3012,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           return res.status(200).type(r.headers.get("content-type")||"application/json").send(withCleanQuestions(body));
         }catch(e){if(clientSignal.aborted)return;errors.push(`${candidate.id}: ${roError(e)}`)}
       }
-      if(directApisAllowed(req)&&cfg.directChatEnabled!==false){
+      if(directFallbackAllowed(req,cfg,route)){
         const direct=await directChatFallback(cfg,messages,requestedModel,false,timer);
         errors.push(...direct.errors);
         if(direct.response){
@@ -2935,7 +3024,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         }
       }
       if(clientSignal.aborted)return;
-      throw policyFailure("Niciun model selectat de AI Stoica nu a putut răspunde. "+errors.slice(0,14).join(" | "),502);
+      throw chosenModelFailure(cfg,route,errors);
     }catch(e){if(!clientSignal.aborted)sendError(res,e)}
   });
   app.post("/api/chat/stream", auth, async (req,res) => {
@@ -2957,14 +3046,14 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           upstream=r;usedModel=candidate.id;break;
         }catch(e){if(clientGone.signal.aborted)return;errors.push(`${candidate.id}: ${timer.signal.aborted?timeoutMessage(timer):roError(e)}`)}
       }
-      if(!upstream&&directApisAllowed(req)&&cfg.directChatEnabled!==false&&!timer.signal.aborted){
+      if(!upstream&&directFallbackAllowed(req,cfg,route)&&!timer.signal.aborted){
         if(clientGone.signal.aborted)return;
         const direct=await directChatFallback(cfg,messages,requestedModel,true,timer);
         errors.push(...direct.errors);
         if(direct.response){upstream=direct.response;usedModel=direct.candidate.model;directCandidate=direct.candidate}
       }
       if(clientGone.signal.aborted)return;
-      if(!upstream)throw policyFailure("Niciun model selectat de AI Stoica nu a putut răspunde. "+errors.slice(0,14).join(" | "),502);
+      if(!upstream)throw chosenModelFailure(cfg,route,errors);
       timer.touch();
       const ctype=upstream.headers.get("content-type")||"";
       res.status(200);
@@ -3007,7 +3096,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         errors.push(`${candidate.id}: răspuns gol`);
       }catch(e){if(signal?.aborted)throw e;errors.push(`${candidate.id}: ${roError(e)}`)}
     }
-    if(directApisAllowed(req)&&cfg.directChatEnabled!==false){
+    if(directFallbackAllowed(req,cfg,route)){
       const direct=await directChatFallback(cfg,messages,requestedModel,false,timer);
       errors.push(...direct.errors);
       if(direct.response){const text=await textOf(direct.response);if(text.trim())return {text,model:`${direct.candidate.provider}/${direct.candidate.model}`};errors.push(`${direct.candidate.label}: răspuns gol`);}
@@ -3229,7 +3318,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   if(webDir){
     // Web version and installable phone app (PWA): the same React interface as the Windows app, served at "/".
     // The policy matches the page's own <meta> policy, with the page's own address as gateway and Design preview frame.
-    const WEB_CSP="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; frame-src 'self'; frame-ancestors 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'";
+    const WEB_CSP="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; frame-src 'self' blob:; frame-ancestors 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'";
     app.use(express.static(webDir,{index:"index.html",setHeaders:(res,file)=>{
       res.set("Content-Security-Policy",WEB_CSP);
       // Vite puts a content hash in every file under assets/; everything else (index.html, sw.js, manifest) must be re-checked so updates arrive.

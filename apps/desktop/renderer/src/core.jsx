@@ -1,5 +1,6 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { prepareMath, mathFromCode, mathFromPre } from "./math.jsx";
 import remarkGfm from "remark-gfm";
 import { X, Check, Copy } from "lucide-react";
 
@@ -248,9 +249,10 @@ export const REMARK_PLUGINS=[remarkGfm];
 export const MD_COMPONENTS={
   a({node,href,children,...props}){return <a {...props} href={href} title={href} rel="noreferrer noopener" onClick={e=>{e.preventDefault();if(!String(href||"").startsWith("#"))openLink(href)}}>{children}</a>;},
   table({node,...props}){return <div className="tableWrap"><table {...props}/></div>;},
-  pre({node,children,...props}){return <CodeBlock {...props}>{children}</CodeBlock>;}
+  pre({node,children,...props}){return mathFromPre(node)||<CodeBlock {...props}>{children}</CodeBlock>;},
+  code({node,children,...props}){return mathFromCode(children)||<code {...props}>{children}</code>;}
 };
-export function Markdown({text}){return <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MD_COMPONENTS}>{String(text||"")}</ReactMarkdown>;}
+export function Markdown({text}){return <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MD_COMPONENTS}>{prepareMath(String(text||""))}</ReactMarkdown>;}
 export function useAuthedBlobUrl(path){
   const [state,setState]=useState({src:"",failed:false});
   useEffect(()=>{

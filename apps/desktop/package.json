@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.7.15",
+  "version": "0.7.16",
   "private": true,
-  "description": "AI Stoica 0.7.15 - copy the saved keys for the server and one-command server setup (deploy/hetzner/setup-web.sh); 0.7.14: web version and free installable phone app (PWA) for iPhone and Android; 0.7.13: Scheduled tasks with run history, plugin directory and plugins used by name, memory across chats, restructured Library, new Design section, Poză/Video buttons with a free no-key image provider, clarifying questions with clickable answers; plus 0.7.12 (every free model and OmniRoute combination) and 0.7.11 fixes",
+  "description": "AI Stoica 0.7.16 - the chosen model answers, images through the ChatGPT subscription, math as Word equations, files open without downloading",
   "main": "main.cjs",
   "repository": {
     "type": "git",
@@ -16,23 +16,24 @@
     "release": "npm run build:ui && electron-builder --win --x64 --publish always"
   },
   "dependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
+    "docx": "^9.8.0",
     "electron-updater": "^6.6.2",
     "express": "^5.1.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.468.0",
+    "mdb-reader": "^3.2.0",
+    "pdf-lib": "^1.17.1",
+    "pptxgenjs": "^4.0.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "@pdf-lib/fontkit": "^1.1.1",
-    "docx": "^9.8.0",
-    "pdf-lib": "^1.17.1",
-    "pptxgenjs": "^4.0.1",
-    "jszip": "^3.10.1",
-    "mdb-reader": "^3.2.0"
+    "temml": "^0.13.5"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",

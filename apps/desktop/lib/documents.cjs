@@ -7,6 +7,7 @@ const fontkit = fontkitModule.default || fontkitModule;
 const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Table, TableRow, TableCell, WidthType, ShadingType, BorderStyle } = require("docx");
 const PptxGenJS = require("pptxgenjs");
 const JSZip = require("jszip");
+const { latexToOmml, ommlInline, ommlDisplay, splitInlineMath, mathBlockAt, hasMath } = require("./math.cjs");
 
 // Characters that are not allowed in XML (all Office formats, SVG, XML) and unpaired surrogates.
 function sanitizeText(value) {
@@ -25,7 +26,7 @@ function splitTableRow(line) {
   return String(line).trim().replace(/^\|/, "").replace(/(?<!\\)\|$/, "").split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, "|"));
 }
 function isTableSeparator(line) { return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/.test(String(line || "")); }
-function parseDocumentBlocks(content) {
+function parseDocumentBlocks(content, opts = {}) {
   const lines = sanitizeText(content).replace(/\r\n?/g, "\n").split("\n");
   const blocks = [];
   for (let i = 0; i < lines.length; i++) {
@@ -37,6 +38,9 @@ function parseDocumentBlocks(content) {
       blocks.push({ type: "code", lang: fence[2] || "", lines: code });
       i = j; continue;
     }
+    // Word only: an equation on its own lines ($$…$$, \[…\], \begin{equation}…).
+    const eq = opts.math ? mathBlockAt(lines, i) : null;
+    if (eq) { blocks.push({ type: "math", tex: eq.tex, text: lines.slice(i, eq.end + 1).map((l) => l.trim()).join(" ") }); i = eq.end; continue; }
     if (line.includes("|") && isTableSeparator(lines[i + 1])) {
       const rows = [splitTableRow(line)]; let j = i + 2;
       for (; j < lines.length && lines[j].includes("|") && lines[j].trim(); j++) rows.push(splitTableRow(lines[j]));
@@ -91,9 +95,30 @@ function inlineTokens(value) {
   if (pos < src.length) out.push({ text: src.slice(pos) });
   return out.map((x) => ({ ...x, text: x.code ? x.text : x.text.replace(UNESCAPE, "$1") })).filter((x) => x.text);
 }
-function inlineRuns(text, size = 22, extra = {}) {
-  const runs = inlineTokens(text).map((t) => new TextRun({ text: t.text, size, bold: t.bold || extra.bold, italics: t.italic || extra.italics, strike: t.strike, font: t.code ? "Consolas" : undefined, color: extra.color }));
+// Word equations are written into the document after it is built: a placeholder run marks where each one goes.
+const mathMark = (i) => `\ue000M${i}\ue001`;
+function inlineRuns(text, size = 22, extra = {}, maths = null) {
+  const textRuns = (value) => inlineTokens(value).map((t) => new TextRun({ text: t.text, size, bold: t.bold || extra.bold, italics: t.italic || extra.italics, strike: t.strike, font: t.code ? "Consolas" : undefined, color: extra.color }));
+  let runs;
+  if (maths && hasMath(text)) {
+    runs = [];
+    for (const part of splitInlineMath(text)) {
+      if (part.text != null) { runs.push(...textRuns(part.text)); continue; }
+      const omml = latexToOmml(part.math, { display: part.display, size });
+      if (omml) { runs.push(new TextRun({ text: mathMark(maths.length), size })); maths.push(ommlInline(omml)); }
+      else runs.push(new TextRun({ text: part.raw, size, color: extra.color }));
+    }
+  } else runs = textRuns(text);
   return runs.length ? runs : [new TextRun({ text: "", size })];
+}
+async function insertWordMath(buffer, maths) {
+  if (!maths.length) return buffer;
+  const zip = await JSZip.loadAsync(buffer);
+  const file = zip.file("word/document.xml");
+  let xml = await file.async("string");
+  xml = xml.replace(/<w:r>(?:(?!<\/w:r>)[\s\S])*?<w:t(?:\s[^>]*)?>\ue000M(\d+)\ue001<\/w:t><\/w:r>/g, (m, i) => maths[Number(i)] || "");
+  zip.file("word/document.xml", xml);
+  return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 }
 
 // ---------- PDF ----------
@@ -235,20 +260,28 @@ async function createPdfBytes(title, content, opts = {}) {
 
 // ---------- Word ----------
 async function createDocxBytes(title, content) {
+  const maths = [];
+  const runs = (text, size, extra) => inlineRuns(text, size, extra, maths);
   const children = [
     new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: String(title || "AI Stoica"), bold: true, size: 36 })] }),
     new Paragraph({ text: "" })
   ];
-  for (const b of parseDocumentBlocks(content)) {
+  for (const b of parseDocumentBlocks(content, { math: true })) {
     if (b.type === "blank") { children.push(new Paragraph({ text: "" })); continue; }
-    if (b.type === "heading") {
-      const level = b.level <= 1 ? HeadingLevel.HEADING_1 : b.level === 2 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3;
-      children.push(new Paragraph({ heading: level, children: inlineRuns(b.text, b.level <= 1 ? 30 : 26) }));
+    if (b.type === "math") {
+      const omml = latexToOmml(b.tex, { display: true, size: 24 });
+      if (omml) { children.push(new Paragraph({ spacing: { before: 60, after: 120 }, children: [new TextRun({ text: mathMark(maths.length), size: 24 })] })); maths.push(ommlDisplay(omml)); }
+      else children.push(new Paragraph({ children: [new TextRun({ text: b.text, size: 22 })], spacing: { after: 120 } }));
       continue;
     }
-    if (b.type === "bullet") { children.push(new Paragraph({ bullet: { level: b.level || 0 }, children: inlineRuns(b.text, 22) })); continue; }
-    if (b.type === "number") { children.push(new Paragraph({ indent: { left: 360 * (b.level || 0) }, children: [new TextRun({ text: String(b.number) + ". ", bold: true, size: 22 }), ...inlineRuns(b.text, 22)] })); continue; }
-    if (b.type === "quote") { children.push(new Paragraph({ indent: { left: 720 }, children: inlineRuns(b.text, 22, { italics: true, color: "5F6B7A" }) })); continue; }
+    if (b.type === "heading") {
+      const level = b.level <= 1 ? HeadingLevel.HEADING_1 : b.level === 2 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3;
+      children.push(new Paragraph({ heading: level, children: runs(b.text, b.level <= 1 ? 30 : 26) }));
+      continue;
+    }
+    if (b.type === "bullet") { children.push(new Paragraph({ bullet: { level: b.level || 0 }, children: runs(b.text, 22) })); continue; }
+    if (b.type === "number") { children.push(new Paragraph({ indent: { left: 360 * (b.level || 0) }, children: [new TextRun({ text: String(b.number) + ". ", bold: true, size: 22 }), ...runs(b.text, 22)] })); continue; }
+    if (b.type === "quote") { children.push(new Paragraph({ indent: { left: 720 }, children: runs(b.text, 22, { italics: true, color: "5F6B7A" }) })); continue; }
     if (b.type === "rule") { children.push(new Paragraph({ text: "", border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "C8CED8", space: 1 } } })); continue; }
     if (b.type === "code") {
       for (const l of b.lines.length ? b.lines : [""]) children.push(new Paragraph({ spacing: { after: 0 }, shading: { type: ShadingType.CLEAR, fill: "F2F4F7", color: "auto" }, children: [new TextRun({ text: l || " ", font: "Consolas", size: 19 })] }));
@@ -263,17 +296,17 @@ async function createDocxBytes(title, content) {
           tableHeader: ri === 0,
           children: Array.from({ length: cols }, (_, c) => new TableCell({
             shading: ri === 0 ? { type: ShadingType.CLEAR, fill: "E8EDF5", color: "auto" } : undefined,
-            children: [new Paragraph({ children: inlineRuns(r[c] ?? "", 20, { bold: ri === 0 }) })]
+            children: [new Paragraph({ children: runs(r[c] ?? "", 20, { bold: ri === 0 }) })]
           }))
         }))
       }));
       children.push(new Paragraph({ text: "" }));
       continue;
     }
-    children.push(new Paragraph({ children: inlineRuns(b.text, 22), spacing: { after: 120 } }));
+    children.push(new Paragraph({ children: runs(b.text, 22), spacing: { after: 120 } }));
   }
   const doc = new Document({ sections: [{ properties: {}, children }] });
-  return Buffer.from(await Packer.toBuffer(doc));
+  return insertWordMath(Buffer.from(await Packer.toBuffer(doc)), maths);
 }
 
 // ---------- PowerPoint ----------
