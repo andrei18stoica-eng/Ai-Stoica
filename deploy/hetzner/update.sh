@@ -19,6 +19,12 @@ cd "$DEPLOY"
 echo "==> Rebuilding API"
 docker compose up -d --build api
 
+# Web version (profile "web", e.g. COMPOSE_PROFILES=edge,web in .env): rebuilt from the same code.
+if docker compose config --services | grep -qx web; then
+  echo "==> Rebuilding web interface"
+  docker compose up -d --build web
+fi
+
 echo "==> Waiting for API health"
 for i in {1..30}; do
   if curl -fsS http://127.0.0.1:8787/health >/tmp/aistoica-health.json 2>/dev/null; then

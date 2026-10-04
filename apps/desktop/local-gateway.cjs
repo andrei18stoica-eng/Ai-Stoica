@@ -98,7 +98,7 @@ function roError(e){
   return msg||"Eroare necunoscută.";
 }
 
-function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig: readOmniConfig, onAutomationResult, encryptSecret, decryptSecret, streamIdleMs, streamTotalMs }) {
+function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig: readOmniConfig, onAutomationResult, encryptSecret, decryptSecret, streamIdleMs, streamTotalMs, webDir }) {
   // The configuration is read many times per request; one read is reused for 2 seconds.
   let configMemo = null, configMemoAt = 0;
   const getOmniConfig = () => { const now = Date.now(); if (!configMemo || now - configMemoAt > 2000) { configMemo = (typeof readOmniConfig === "function" ? readOmniConfig() : null) || {}; configMemoAt = now; } return configMemo; };
@@ -153,16 +153,22 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   const allowedOrigins=new Set(["null","file://","http://localhost:5173","http://127.0.0.1:5173",`http://127.0.0.1:${port}`,`http://localhost:${port}`]);
   const originAllowed=(origin)=>!origin||allowedOrigins.has(String(origin))||/^(file|app):/i.test(String(origin));
   const loopbackOnly=["127.0.0.1","localhost","::1"].includes(String(host));
+  // Web version (webDir set, e.g. apps/cloud behind Caddy): the interface is served by this same address,
+  // so requests from the service's own origin are allowed too. Without webDir (Windows) nothing changes.
+  const sameOrigin=(req)=>{
+    if(!webDir||!req.headers.origin)return false;
+    try{return new URL(String(req.headers.origin)).host===String(req.headers.host||"").toLowerCase()}catch{return false}
+  };
   app.use((req,res,next)=>{
     const hostName=String(req.headers.host||"").toLowerCase().replace(/:\d+$/,"").replace(/^\[|\]$/g,"");
     if(loopbackOnly&&hostName&&!["127.0.0.1","localhost","::1"].includes(hostName))return res.status(403).json({error:"Cerere blocată: adresă necunoscută."});
-    if(!originAllowed(req.headers.origin)&&!(req.method==="GET"&&/^\/api\/designs\/[^/]+\/preview$/.test(req.path))){
+    if(!originAllowed(req.headers.origin)&&!sameOrigin(req)&&!(req.method==="GET"&&/^\/api\/designs\/[^/]+\/preview$/.test(req.path))){
       logError(`Blocked request from origin ${String(req.headers.origin).slice(0,200)} to ${req.method} ${req.path}`);
       return res.status(403).json({error:"Cerere blocată: provine din afara aplicației AI Stoica."});
     }
     next();
   });
-  app.use(cors({ origin:(origin,cb)=>cb(null,originAllowed(origin)), credentials: false }));
+  app.use(cors((req,cb)=>cb(null,{ origin:originAllowed(req.headers.origin)||sameOrigin(req), credentials: false })));
   const jsonParser = express.json({ limit: loopbackHost ? "64mb" : "16mb" });
   const RAW_UPLOADS = new Set(["/api/library/upload", "/api/files"]);
   app.use((req,res,next)=>req.method==="POST"&&RAW_UPLOADS.has(req.path)?next():jsonParser(req,res,next));
@@ -603,15 +609,28 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(!decision?.allowed)throw policyFailure(decision?.reason||"Modelul nu este permis pentru acest cont.",403);
     return decision;
   }
+  // OmniRoute 3.8 refuses /v1/* without a client key (Docker: REQUIRE_API_KEY=true; /v1/models once the dashboard has a password).
+  const OMNI_KEY_HINT="OmniRoute cere cheia API: creează una în OmniRoute → API Manager (http://127.0.0.1:20128/dashboard/api-manager) și pune-o în Setări → AI & OmniRoute → Cheie API OmniRoute (pe server: OMNIROUTE_API_KEY în .env).";
+  function omniHttpError(status,text){
+    if(status===401||status===403)return (cfg=>cfg.apiKey?"OmniRoute a refuzat cheia API (HTTP "+status+"): cheia e greșită, expirată sau revocată. ":"")(getOmniConfig())+OMNI_KEY_HINT;
+    return `OmniRoute HTTP ${status}: ${String(text||"").slice(0,300)}`;
+  }
+  // The reason an OpenAI-compatible service gives (OmniRoute lists which provider of a combination failed and why).
+  function upstreamErrorText(body){
+    try{const j=JSON.parse(body);const e=j?.error;return String((typeof e==="string"?e:e?.message)||j?.message||body).slice(0,400)}catch{return String(body||"").slice(0,300)}
+  }
+  let omniEntriesLast=[];
   async function omniModelEntries(cfg) {
     const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/, "")}/models`,{
       headers:cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{},
-      signal:AbortSignal.timeout(9000)
+      signal:AbortSignal.timeout(20000)
     });
     const text=await r.text();
-    if(!r.ok)throw policyFailure(`OmniRoute models HTTP ${r.status}: ${text.slice(0,300)}`,502);
+    if(!r.ok)throw policyFailure(omniHttpError(r.status,text),502);
     let parsed;try{parsed=JSON.parse(text)}catch{throw policyFailure("OmniRoute a returnat o listă de modele invalidă.",502)}
-    return Array.isArray(parsed)?parsed:(Array.isArray(parsed?.data)?parsed.data:[]);
+    const list=Array.isArray(parsed)?parsed:(Array.isArray(parsed?.data)?parsed.data:[]);
+    if(list.length)omniEntriesLast=list;
+    return list;
   }
   async function allowedOmniEntries(context, entries) {
     const rows=(Array.isArray(entries)?entries:[]).map(entry=>{
@@ -788,19 +807,21 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   }
 
   app.get("/health", async (_req, res) => {
-    const cfg = getOmniConfig(); let omni = false, cloudOnline = false;
+    const cfg = getOmniConfig(); let omni = false, omniNeedsKey = false, cloudOnline = false;
     try {
       const r = await fetch(`${String(cfg.baseUrl).replace(/\/+$/, "")}/models`, {
         headers: cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {},
         signal: AbortSignal.timeout(2500)
       });
       omni = r.ok;
+      // OmniRoute 3.8 answers 401 on /v1/* without a valid client key: it is running, but AI Stoica cannot use it yet.
+      omniNeedsKey = r.status === 401 || r.status === 403;
       try { await r.body?.cancel(); } catch {}
     } catch {}
     if (cloudBase()) {
       try { const r = await cloudFetch("/health",{timeout:2500}); cloudOnline = r.ok; } catch {}
     }
-    res.json({ ok: true, service: serviceName, omni, model: cfg.model || "", cloudConfigured:!!cloudBase(), cloudOnline });
+    res.json({ ok: true, service: serviceName, omni, omniNeedsKey, model: cfg.model || "", cloudConfigured:!!cloudBase(), cloudOnline });
   });
 
   // Cloud login/register answers get the same shape as local ones: user.role and a permissions object.
@@ -913,10 +934,13 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.get("/api/models", auth, async (req, res) => {
     const cfg = getOmniConfig();
     let entries=[],omniError="";
-    try{entries=await omniModelEntries(cfg)}catch(e){omniError=roError(e)}
-    // Everything OmniRoute serves is listed, its combinations too ("Ai principal" and any other combo name).
-    // A name without "provider/" is a combination; the interface groups those first.
-    const manualModels=entries.map(x=>{const id=String(typeof x==="string"?x:x?.id||"").trim();if(!id)return null;const base=typeof x==="string"?{id}:{...x,id};return id.includes("/")?base:{...base,provider:"omniroute",kind:"combo"};}).filter(Boolean);
+    try{entries=await omniModelEntries(cfg)}catch(e){omniError=roError(e);entries=omniEntriesLast}
+    // Everything OmniRoute serves is listed: free and paid models and its combinations ("Ai principal", auto/* …).
+    // OmniRoute marks a combination with owned_by "combo"; a name without "provider/" is one too. The interface groups them first.
+    const mapped=entries.map(x=>{const id=String(typeof x==="string"?x:x?.id||"").trim();if(!id)return null;const base=typeof x==="string"?{id}:{...x,id};return (x?.owned_by==="combo"||!id.includes("/"))?{...base,provider:"omniroute",kind:"combo"}:base;}).filter(Boolean);
+    // Your own combinations first ("Ai principal" becomes the default pick), then OmniRoute's auto/* ones, then the models.
+    const rank=x=>x.kind==="combo"?(/^auto\//i.test(x.id)?1:0):2;
+    const manualModels=mapped.map((x,i)=>[x,i]).sort((a,b)=>rank(a[0])-rank(b[0])||a[1]-b[1]).map(([x])=>x);
     let filtered=manualModels,policyError="";
     if(cloudBase()){
       try{filtered=await allowedOmniEntries(req,manualModels)}
@@ -934,6 +958,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     res.json({
       data:filtered,
       manualModels:filtered,
+      combos:filtered.filter(x=>x?.kind==="combo").map(x=>x.id),
       policyEnforced:!!cloudBase(),
       policyUnavailable:!!policyError,
       policyError,
@@ -1684,6 +1709,32 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     return base;
   }
 
+  // A provider whose credits or quota ran out is moved to the end of the list for a while, so the next image, video
+  // or answer goes straight to the next provider instead of waiting for the same refusal. It is still tried last, so a
+  // request never fails only because of the memory. Empty credits: 1 hour. Rate limits: 2 minutes for images and video;
+  // chat keeps the order chosen in Settings after a rate limit (those usually clear within the minute).
+  const providerCooldown=new Map();
+  function exhaustionWindow(message,kind){
+    const m=String(message||"").toLowerCase();
+    if(/http 402|\b402\b|payment required|insufficient[_ ]?(credit|quota|balance|fund)|out of credits?|no (remaining )?credits?|credit balance|not enough credits?|exceeded your current quota|quota (exceeded|exhausted)|billing|spend(ing)? limit|monthly (limit|quota)|usage limit/.test(m))return 60*60*1000;
+    if(kind!=="chat"&&/http 429|\b429\b|rate.?limit|too many requests|resource.?exhausted/.test(m))return 2*60*1000;
+    return 0;
+  }
+  function noteProviderResult(kind,id,error){
+    const key=kind+":"+id;
+    if(!error){providerCooldown.delete(key);return}
+    const ms=exhaustionWindow(error,kind);
+    if(ms)providerCooldown.set(key,{until:Date.now()+ms,reason:String(error).slice(0,200)});
+  }
+  function coolingDown(kind,id){
+    const key=kind+":"+id,c=providerCooldown.get(key);
+    if(c&&c.until<=Date.now()){providerCooldown.delete(key);return null}
+    return c||null;
+  }
+  function byCooldown(kind,items,idOf=x=>x.id){
+    return [...items.filter(x=>!coolingDown(kind,idOf(x))),...items.filter(x=>coolingDown(kind,idOf(x)))];
+  }
+
   async function directImageAttempts(cfg,prompt,size){
     const strictFree=cfg.imageCostPolicy==="free_only"||cfg.imageProviderMode==="free";
     const openRouterModel=String(cfg.openRouterImageModel||"google/gemini-3.1-flash-image").trim();
@@ -2081,12 +2132,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const done=async(resolved,meta)=>{if(signal.aborted)return true;res.json({data:await saveGeneratedMedia(req,{...resolved,kind:"image",prompt,...meta})});return true;};
 
       const runDirect=async(attempts)=>{
-        for(const attempt of attempts){
+        for(const attempt of byCooldown("image",attempts)){
           if(signal.aborted)return true;
           try{
             const resolved=await attempt.run();
-            if(resolved?.bytes?.length&&await done(resolved,{model:resolved.model||attempt.label,provider:resolved.provider||attempt.id}))return true;
-          }catch(e){if(signal.aborted)return true;errors.push(attempt.label+": "+roError(e))}
+            if(resolved?.bytes?.length){noteProviderResult("image",attempt.id,"");if(await done(resolved,{model:resolved.model||attempt.label,provider:resolved.provider||attempt.id}))return true;}
+          }catch(e){if(signal.aborted)return true;const msg=roError(e);noteProviderResult("image",attempt.id,msg);errors.push(attempt.label+": "+msg)}
         }
         return false;
       };
@@ -2101,7 +2152,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       if(models.length){
         const imageUrl=String(cfg.baseUrl).replace(/\/+$/,"")+"/images/generations";
         const imageHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:"Bearer "+cfg.apiKey}:{})};
-        for(const model of models){
+        for(const model of byCooldown("image",models,m=>"omniroute:"+m)){
           if(signal.aborted)return;
           try{
             let upstream=await fetch(imageUrl,{method:"POST",headers:imageHeaders,body:JSON.stringify({model,prompt,size,n:1,response_format:"b64_json"}),signal:mediaSignal(180000)});
@@ -2110,7 +2161,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
               upstream=await fetch(imageUrl,{method:"POST",headers:imageHeaders,body:JSON.stringify({model,prompt,size,n:1}),signal:mediaSignal(180000)});
             }
             const ctype=upstream.headers.get("content-type")||"";
-            if(!upstream.ok){errors.push(model+": HTTP "+upstream.status+" "+(await upstream.text()).slice(0,350));continue}
+            if(!upstream.ok){const msg="HTTP "+upstream.status+" "+(await upstream.text()).slice(0,350);noteProviderResult("image","omniroute:"+model,msg);errors.push(model+": "+msg);continue}
+            noteProviderResult("image","omniroute:"+model,"");
             let resolved;
             if(ctype.startsWith("image/")){const bytes=await readCapped(upstream,"image");resolved={bytes,mime:inferMediaMime(bytes,ctype,"image")};}
             else{const body=JSON.parse((await readCapped(upstream,"image")).toString("utf8")),candidate=findMediaCandidate(body,"image");resolved=await resolveGeneratedMedia(candidate,"image");}
@@ -2150,12 +2202,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       if(directApisAllowed(req)&&!explicitModel){
         const attempts=await directVideoAttempts(cfg,prompt,duration,aspectRatio);
         tried+=attempts.length;
-        for(const attempt of attempts){
+        for(const attempt of byCooldown("video",attempts)){
           if(signal.aborted)return;
           try{
             const resolved=await attempt.run();
-            if(resolved?.bytes?.length&&await done(resolved,{model:resolved.model||attempt.label,provider:resolved.provider||attempt.id}))return;
-          }catch(e){if(signal.aborted)return;errors.push(attempt.label+": "+roError(e))}
+            if(resolved?.bytes?.length){noteProviderResult("video",attempt.id,"");if(await done(resolved,{model:resolved.model||attempt.label,provider:resolved.provider||attempt.id}))return;}
+          }catch(e){if(signal.aborted)return;const msg=roError(e);noteProviderResult("video",attempt.id,msg);errors.push(attempt.label+": "+msg)}
         }
       }
 
@@ -2167,7 +2219,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         if(models.length){
           const videoUrl=String(cfg.baseUrl).replace(/\/+$/,"")+"/videos/generations";
           const videoHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:"Bearer "+cfg.apiKey}:{})};
-          for(const model of models){
+          for(const model of byCooldown("video",models,m=>"omniroute:"+m)){
             if(signal.aborted)return;
             try{
               let upstream=await fetch(videoUrl,{method:"POST",headers:videoHeaders,body:JSON.stringify({model,prompt,duration,aspect_ratio:aspectRatio}),signal:mediaSignal(360000)});
@@ -2176,7 +2228,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
                 upstream=await fetch(videoUrl,{method:"POST",headers:videoHeaders,body:JSON.stringify({model,prompt}),signal:mediaSignal(360000)});
               }
               const ctype=upstream.headers.get("content-type")||"";
-              if(!upstream.ok){errors.push(model+": HTTP "+upstream.status+" "+(await upstream.text()).slice(0,350));continue}
+              if(!upstream.ok){const msg="HTTP "+upstream.status+" "+(await upstream.text()).slice(0,350);noteProviderResult("video","omniroute:"+model,msg);errors.push(model+": "+msg);continue}
               let resolved;
               if(ctype.startsWith("video/")){const bytes=await readCapped(upstream,"video");resolved={bytes,mime:inferMediaMime(bytes,ctype,"video")};}
               else{const body=JSON.parse((await readCapped(upstream,"image")).toString("utf8"));const candidate=await pollVideoResult(cfg,body);resolved=await resolveGeneratedMedia(candidate,"video");}
@@ -2782,13 +2834,19 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   // After 401/403/429 the remaining models of the same provider are skipped (same key, same limit).
   async function directChatFallback(cfg,messages,requestedModel,stream,timer=chatTimer(stream,null)){
-    const candidates=await directChatCandidates(cfg,requestedModel),errors=[],skip=new Set();
+    const candidates=byCooldown("chat",await directChatCandidates(cfg,requestedModel),c=>c.provider),errors=[],skip=new Set();
     for(const candidate of candidates){
       if(timer.cancelled())break;
       if(skip.has(candidate.provider))continue;
       try{
         const r=await fetchDirectChatCandidate(candidate,messages,stream,timer);
-        if(!r.ok){if([401,403,429].includes(r.status))skip.add(candidate.provider);errors.push(candidate.label+" · "+candidate.model+": HTTP "+r.status+" "+(await r.text()).slice(0,220));continue}
+        if(!r.ok){
+          const msg="HTTP "+r.status+" "+(await r.text()).slice(0,220);
+          if([401,402,403,429].includes(r.status))skip.add(candidate.provider);
+          noteProviderResult("chat",candidate.provider,msg);
+          errors.push(candidate.label+" · "+candidate.model+": "+msg);continue;
+        }
+        noteProviderResult("chat",candidate.provider,"");
         return {response:r,candidate,errors};
       }catch(e){if(timer.cancelled())break;errors.push(candidate.label+" · "+candidate.model+": "+(timer.signal?.aborted?timeoutMessage(timer):roError(e)))}
     }
@@ -2802,6 +2860,16 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     let candidates;
     try{candidates=await directChatCandidates(cfg,"")}catch(e){return res.status(502).json({error:roError(e)})}
     const firstPerProvider=[...new Map(candidates.map(c=>[c.provider,c])).values()];
+    // OmniRoute too: is it running, does it accept the key, how many models and combinations does it offer.
+    const omniCfg=getOmniConfig();
+    const omniCheck=String(omniCfg.baseUrl||"").trim()?(async()=>{
+      const started=Date.now();
+      try{
+        const list=await omniModelEntries(omniCfg);
+        const combos=list.filter(x=>x?.owned_by==="combo"||!String(typeof x==="string"?x:x?.id||"").includes("/")).length;
+        return {ok:true,label:"OmniRoute",models:list.length,combos,ms:Date.now()-started};
+      }catch(e){return {ok:false,label:"OmniRoute",error:e?.status?e.message:`OmniRoute nu răspunde la ${omniCfg.baseUrl} (${roError(e)}). Pornește-l sau verifică adresa.`,ms:Date.now()-started}}
+    })():Promise.resolve(null);
     const results=await Promise.all(firstPerProvider.map(async c=>{
       const started=Date.now();
       try{
@@ -2822,7 +2890,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       ["Cloudflare (imagini)",cfg.cloudflareAccountId&&cfg.cloudflareApiToken],["Pollinations",cfg.pollinationsApiKey],["Pollinations (fără cheie)",cfg.pollinationsFreeEnabled!==false],["Hugging Face",cfg.hfToken],
       ["Together AI",cfg.togetherApiKey],["Stability AI",cfg.stabilityApiKey],["fal.ai",cfg.falApiKey],["Replicate",cfg.replicateApiToken]
     ].map(([label,set])=>({label,configured:!!set}));
-    res.json({data:results,media,checkedAt:Date.now()});
+    res.json({data:results,media,omni:await omniCheck,checkedAt:Date.now()});
   });
 
   async function fetchChatCandidate(cfg,model,messages,stream,timer=chatTimer(stream,null)){
@@ -2849,7 +2917,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         try{
           const r=await fetchChatCandidate(cfg,candidate.id,messages,false,timer);
           const body=await r.text();
-          if(!r.ok){errors.push(`${candidate.id}: HTTP ${r.status}`);continue;}
+          if(!r.ok){errors.push(`${candidate.id}: ${r.status===401||r.status===403?omniHttpError(r.status,""):"HTTP "+r.status+" "+upstreamErrorText(body)}`);continue;}
           res.setHeader("X-AI-Stoica-Route",route.task);
           res.setHeader("X-AI-Stoica-Model",headerSafe(candidate.id));
           return res.status(200).type(r.headers.get("content-type")||"application/json").send(withCleanQuestions(body));
@@ -2885,7 +2953,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         if(clientGone.signal.aborted)return;
         try{
           const r=await fetchChatCandidate(cfg,candidate.id,messages,true,timer);
-          if(!r.ok){errors.push(`${candidate.id}: HTTP ${r.status} ${(await r.text()).slice(0,300)}`);continue;}
+          if(!r.ok){errors.push(`${candidate.id}: ${r.status===401||r.status===403?(await cancelBody(r),omniHttpError(r.status,"")):"HTTP "+r.status+" "+(await r.text()).slice(0,300)}`);continue;}
           upstream=r;usedModel=candidate.id;break;
         }catch(e){if(clientGone.signal.aborted)return;errors.push(`${candidate.id}: ${timer.signal.aborted?timeoutMessage(timer):roError(e)}`)}
       }
@@ -2961,9 +3029,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const n=Number(raw);
     return Number.isInteger(n)&&d.versions.some(v=>v.n===n)?n:null;
   }
-  function previewBase(){
+  function previewBase(req){
     const base=String(getOmniConfig().publicUrl||"").trim().replace(/\/+$/,"");
-    return /^https?:\/\//i.test(base)?base:`http://127.0.0.1:${server.address()?.port||port}`;
+    if(/^https?:\/\//i.test(base))return base;
+    // Web version: the preview is loaded from the same address as the page.
+    if(webDir&&req?.headers?.host)return `${req.protocol}://${req.headers.host}`;
+    return `http://127.0.0.1:${server.address()?.port||port}`;
   }
   async function generateDesignHtml(req,messages,signal){
     const requested=(typeof req.body?.model==="string"?req.body.model.trim().slice(0,200):"")||String(getOmniConfig().model||"").trim();
@@ -3027,7 +3098,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const d=findDesign(req);if(!d)return notFoundDesign(res);
     const v=designVersion(d,req.query.v);if(v==null)return res.status(404).json({error:"Versiunea cerută nu există."});
     const t=previewToken(secret,d.userId,d.id,v);
-    res.json({data:{url:`${previewBase()}/api/designs/${d.id}/preview?v=${v}&t=${encodeURIComponent(t)}`,v,expiresAt:Number(t.split(".")[0])}});
+    res.json({data:{url:`${previewBase(req)}/api/designs/${d.id}/preview?v=${v}&t=${encodeURIComponent(t)}`,v,expiresAt:Number(t.split(".")[0])}});
   });
   // Loaded by the Design page's sandboxed iframe: no Authorization header, the signed token is the permission.
   app.get("/api/designs/:id/preview", async (req,res) => {
@@ -3154,6 +3225,17 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       }
     }finally{automationBusy=false;}
   },30000);
+
+  if(webDir){
+    // Web version and installable phone app (PWA): the same React interface as the Windows app, served at "/".
+    // The policy matches the page's own <meta> policy, with the page's own address as gateway and Design preview frame.
+    const WEB_CSP="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; frame-src 'self'; frame-ancestors 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'";
+    app.use(express.static(webDir,{index:"index.html",setHeaders:(res,file)=>{
+      res.set("Content-Security-Policy",WEB_CSP);
+      // Vite puts a content hash in every file under assets/; everything else (index.html, sw.js, manifest) must be re-checked so updates arrive.
+      res.set("Cache-Control",/[\\/]assets[\\/]/.test(file)?"public, max-age=31536000, immutable":"no-cache");
+    }}));
+  }
 
   // C9: every answer is JSON, also for unknown addresses and malformed requests (no HTML, no stack traces).
   app.use((req,res)=>res.status(404).json({error:"Această adresă nu există în serviciul AI Stoica."}));

@@ -1,0 +1,57 @@
+name: AI Stoica Web Check
+
+# The web version (aistoica.ro) and the installable phone app: builds the apps/cloud image (service + web interface),
+# starts it and checks that the interface and /health answer.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/cloud/**"
+      - "apps/desktop/**"
+      - "deploy/hetzner/**"
+      - ".dockerignore"
+      - ".github/workflows/web-check.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/cloud/**"
+      - "apps/desktop/**"
+      - "deploy/hetzner/**"
+      - ".dockerignore"
+      - ".github/workflows/web-check.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: web-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Hetzner compose with the web profile
+        run: |
+          cp deploy/hetzner/.env.example deploy/hetzner/.env
+          COMPOSE_PROFILES=edge,web docker compose -f deploy/hetzner/docker-compose.yml config --services | tee /tmp/services.txt
+          grep -qx web /tmp/services.txt
+
+      - name: Build the web image (apps/cloud)
+        run: docker build -f apps/cloud/Dockerfile -t ai-stoica-web:test .
+
+      - name: Start it and check the interface
+        run: |
+          docker run -d --name web -p 127.0.0.1:8787:8787 ai-stoica-web:test
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8787/health && break; sleep 2; done
+          curl -fsS http://127.0.0.1:8787/health | grep -q '"ok":true'
+          curl -fsS http://127.0.0.1:8787/ | grep -q 'id="root"'
+          curl -fsS http://127.0.0.1:8787/manifest.webmanifest | grep -q '"display": "standalone"'
+          curl -fsS -o /dev/null http://127.0.0.1:8787/sw.js
+          curl -fsS -o /dev/null http://127.0.0.1:8787/icons/apple-touch-icon.png
+          docker logs web | grep -q "web interface on"
+
+      - name: Service log
+        if: always()
+        run: docker logs web || true

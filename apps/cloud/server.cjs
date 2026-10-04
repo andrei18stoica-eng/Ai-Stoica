@@ -1,3 +1,5 @@
+const fs = require("fs");
+const path = require("path");
 const { startLocalGateway } = require("./local-gateway.cjs");
 
 const port = Number(process.env.PORT || 8787);
@@ -11,10 +13,15 @@ function defaultModel() {
   return /^ai[ _-]*(principal|stoica)$/i.test(value) ? "" : value;
 }
 
+// Every key the Windows app has in Settings → API-uri AI, so the web version lists the same models and media providers.
 const DIRECT_KEYS = {
   cerebrasApiKey: "CEREBRAS_API_KEY", groqApiKey: "GROQ_API_KEY", geminiApiKey: "GEMINI_API_KEY",
   openAiApiKey: "OPENAI_API_KEY", openRouterApiKey: "OPENROUTER_API_KEY", mistralApiKey: "MISTRAL_API_KEY",
-  cloudflareAccountId: "CLOUDFLARE_ACCOUNT_ID", cloudflareApiToken: "CLOUDFLARE_API_TOKEN"
+  nvidiaApiKey: "NVIDIA_API_KEY", cohereApiKey: "COHERE_API_KEY", hfToken: "HF_TOKEN",
+  cloudflareAccountId: "CLOUDFLARE_ACCOUNT_ID", cloudflareApiToken: "CLOUDFLARE_API_TOKEN",
+  // Images and video
+  pollinationsApiKey: "POLLINATIONS_API_KEY", falApiKey: "FAL_API_KEY", replicateApiToken: "REPLICATE_API_TOKEN",
+  togetherApiKey: "TOGETHER_API_KEY", stabilityApiKey: "STABILITY_API_KEY"
 };
 
 function getOmniConfig() {
@@ -40,15 +47,21 @@ function getOmniConfig() {
 
 if (!env("AI_STOICA_OWNER_EMAIL")) console.warn("[AI Stoica] AI_STOICA_OWNER_EMAIL is not set: no account on this server is Owner (GitHub Solve, code run and server tools stay locked).");
 
+// The Docker image builds the web interface into ./web; with it, https://domain/ is AI Stoica in the browser
+// and can be installed as an app on iPhone and Android (PWA). AI_STOICA_WEB=false turns it off.
+const webDir = path.join(__dirname, "web");
+const webEnabled = env("AI_STOICA_WEB").toLowerCase() !== "false" && fs.existsSync(path.join(webDir, "index.html"));
+
 const gateway = startLocalGateway({
   dataDir,
   port,
   host,
   serviceName: "AI Stoica Cloud Gateway",
-  getOmniConfig
+  getOmniConfig,
+  webDir: webEnabled ? webDir : undefined
 });
 
-console.log(`AI Stoica Cloud Gateway listening on ${host}:${port}`);
+console.log(`AI Stoica Cloud Gateway listening on ${host}:${port}${webEnabled ? " (web interface on)" : ""}`);
 
 async function shutdown(signal) {
   console.log(`Received ${signal}; shutting down AI Stoica Cloud Gateway...`);

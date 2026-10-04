@@ -22,6 +22,9 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       OMNIROUTE_WS_BRIDGE_SECRET: ${OMNIROUTE_WS_BRIDGE_SECRET}
+      # Dashboard password from the first start. The image requires a client API key on /v1 (REQUIRE_API_KEY=true):
+      # create it in the dashboard (API Manager) and put it in OMNIROUTE_API_KEY.
+      INITIAL_PASSWORD: ${OMNIROUTE_INITIAL_PASSWORD:-}
       PORT: "20128"
     volumes:
       - omniroute-data:/app/data
@@ -72,6 +75,14 @@ services:
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
       CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      COHERE_API_KEY: ${COHERE_API_KEY:-}
+      HF_TOKEN: ${HF_TOKEN:-}
+      POLLINATIONS_API_KEY: ${POLLINATIONS_API_KEY:-}
+      FAL_API_KEY: ${FAL_API_KEY:-}
+      REPLICATE_API_TOKEN: ${REPLICATE_API_TOKEN:-}
+      TOGETHER_API_KEY: ${TOGETHER_API_KEY:-}
+      STABILITY_API_KEY: ${STABILITY_API_KEY:-}
     volumes:
       - ai-stoica-data:/data
     ports:

@@ -3,7 +3,10 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { X, Check, Copy } from "lucide-react";
 
-export const DEFAULT_GATEWAY = "http://127.0.0.1:8787";
+// Web version / installed phone app (PWA): the page is served by the AI Stoica server itself, so that server is the gateway.
+// The Windows app (preload bridge, file://) and the Vite dev server (port 5173) keep the local service.
+export const IS_WEB = typeof window!=="undefined" && !window.AIStoica && /^https?:$/.test(window.location.protocol) && window.location.port!=="5173";
+export const DEFAULT_GATEWAY = IS_WEB ? window.location.origin : "http://127.0.0.1:8787";
 export const GATEWAY_KEY = "aiStoicaGatewayUrlV1";
 export const TOKEN_KEY = "aiStoicaAuthTokenV3";
 export const USER_KEY = "aiStoicaUserV3";
@@ -29,7 +32,7 @@ export function cleanGatewayUrl(url){
   const s=String(url||"").trim().replace(/\/+$/,"");
   return /^https?:\/\/[^\s/?#]+$/i.test(s)?s:"";
 }
-export let GATEWAY = cleanGatewayUrl(storage.get(GATEWAY_KEY)) || DEFAULT_GATEWAY;
+export let GATEWAY = IS_WEB ? DEFAULT_GATEWAY : (cleanGatewayUrl(storage.get(GATEWAY_KEY)) || DEFAULT_GATEWAY);
 export function setGatewayUrl(url){
   GATEWAY=cleanGatewayUrl(url)||DEFAULT_GATEWAY;
   storage.set(GATEWAY_KEY,GATEWAY);

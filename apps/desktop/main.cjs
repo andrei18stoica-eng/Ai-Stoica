@@ -2,9 +2,10 @@ const { app, BrowserWindow, ipcMain, safeStorage, Tray, Menu, nativeImage, sessi
 const path = require("path");
 const fs = require("fs");
 const net = require("net");
-const { spawn } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 const { autoUpdater } = require("electron-updater");
 const { startLocalGateway } = require("./local-gateway.cjs");
+const { createOmniWatch } = require("./lib/omniwatch.cjs");
 const { DIRECT_MODEL_DEFAULTS, PROVIDER_KEY_PAGES, upgradeModelDefaults } = require("./lib/providers.cjs");
 
 if (process.platform === "win32") app.disableHardwareAcceleration();
@@ -19,7 +20,7 @@ let tray;
 let isQuitting = false;
 let gateway;
 let watchdog;
-let lastSpawn = 0;
+let omniInstalledCache = { at: 0, value: null };
 
 const SECRET_KEYS = ["apiKey","openAiApiKey","openRouterApiKey","cerebrasApiKey","groqApiKey","geminiApiKey","mistralApiKey","nvidiaApiKey","cohereApiKey","pollinationsApiKey","cloudflareApiToken","hfToken","togetherApiKey","stabilityApiKey","replicateApiToken","falApiKey","githubToken"];
 const MASK = "••••••••";
@@ -207,28 +208,40 @@ function isPortOpen(port, host = "127.0.0.1", timeout = 900) {
     s.connect(port, host);
   });
 }
-async function ensureOmniRoute() {
-  const cfg = loadConfig();
-  const port = omniPort();
-  if (await isPortOpen(port)) return true;
-  if (!cfg.autoStartOmniRoute || process.platform !== "win32") return false;
-  if (Date.now() - lastSpawn < 12000) return false;
-  lastSpawn = Date.now();
-  const cmd = String(cfg.omniCommand || "omniroute.cmd").trim();
+// "where" finds omniroute.cmd on PATH (npm install -g omniroute); a full path is checked directly. Cached for 5 minutes.
+function omniCommand() { return String(loadConfig().omniCommand || "omniroute.cmd").trim(); }
+function omniInstalled() {
+  if (process.platform !== "win32") return null;
+  if (Date.now() - omniInstalledCache.at < 5 * 60 * 1000) return omniInstalledCache.value;
+  const cmd = omniCommand().replaceAll('"', "");
+  let value = null;
+  try { value = /[\\/]/.test(cmd) ? fs.existsSync(cmd) : spawnSync("where", [cmd], { windowsHide: true, timeout: 5000 }).status === 0; } catch {}
+  omniInstalledCache = { at: Date.now(), value };
+  return value;
+}
+function runOmni(action) {
+  const cmd = omniCommand();
   try {
     const quoted = cmd.includes(" ") ? `\"${cmd.replaceAll('"','')}\"` : cmd;
-    const child = spawn("cmd.exe", ["/d", "/s", "/c", `${quoted} serve`], {
+    const child = spawn("cmd.exe", ["/d", "/s", "/c", `${quoted} ${action}`], {
       windowsHide: true, detached: true, stdio: "ignore", shell: false,
       env: { ...process.env, OMNIROUTE_SERVER_HOST: "127.0.0.1" }
     });
     child.unref();
-  } catch {}
-  for (let i = 0; i < 20; i++) {
-    await new Promise((r) => setTimeout(r, 650));
-    if (await isPortOpen(port)) return true;
-  }
-  return false;
+  } catch (e) { logError(`OmniRoute ${action}: ${e.message || e}`); }
 }
+// Any HTTP answer from /api/health counts as alive (older OmniRoute versions answer 404 there); a timeout or a server error does not.
+async function omniResponds() {
+  try {
+    const u = new URL(loadConfig().baseUrl);
+    const r = await fetch(`${u.protocol}//${u.host}/api/health`, { signal: AbortSignal.timeout(5000) });
+    try { await r.body?.cancel(); } catch {}
+    return r.status < 500;
+  } catch { return false; }
+}
+const omniWatch = createOmniWatch({ getConfig: loadConfig, isPortOpen, responds: omniResponds, runOmni, installed: omniInstalled, log: logError });
+const omniIsLocal = () => omniWatch.target().local;
+const ensureOmniRouteOnce = (opts) => omniWatch.ensureOnce(opts);
 
 function publicConfig(cfg=loadConfig()) {
   const out = { ...cfg };
@@ -240,7 +253,9 @@ function publicConfig(cfg=loadConfig()) {
 async function systemStatus() {
   const cfg=loadConfig();
   return {
-    omniRunning: await isPortOpen(omniPort()),
+    omniRunning: omniIsLocal() ? await isPortOpen(omniPort()) : await omniResponds(),
+    omniLocal: omniIsLocal(),
+    omniInstalled: omniIsLocal() ? omniInstalled() : null,
     gatewayRunning: await isPortOpen(8787),
     config: publicConfig(cfg)
   };
@@ -347,7 +362,7 @@ function createTray() {
   tray.setToolTip("AI Stoica — rulează în fundal");
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Deschide AI Stoica", click: showMain },
-    { label: "Repornește OmniRoute", click: async () => { lastSpawn = 0; await ensureOmniRoute(); } },
+    { label: "Repornește OmniRoute", click: async () => { await ensureOmniRouteOnce({ forceRestart: true }); } },
     { type: "separator" },
     { label: "Închide complet", click: () => { isQuitting = true; app.quit(); } }
   ]));
@@ -366,11 +381,11 @@ function registerIpcHandlers() {
         else if(!next[name]||next[name]===MASK)next[name]=current[name]||"";
         else next[name]=String(next[name]).trim();
       }
-      const cfg2=saveConfig(next);ensureOmniRoute().catch(()=>{});return {ok:true,config:publicConfig(cfg2)};
+      const cfg2=saveConfig(next);ensureOmniRouteOnce();return {ok:true,config:publicConfig(cfg2)};
     } catch (e) { logError(`Config save failed: ${e.message}`); return { ok:false, error:"Setările nu au putut fi salvate: " + e.message }; }
   });
   ipcMain.handle("system:status", () => systemStatus());
-  ipcMain.handle("system:ensure-omni", () => ensureOmniRoute());
+  ipcMain.handle("system:ensure-omni", () => ensureOmniRouteOnce());
   ipcMain.handle("clipboard:write-text", (_e, value) => {
     try {
       clipboard.writeText(String(value ?? "").slice(0, 5_000_000));
@@ -428,8 +443,8 @@ app.whenReady().then(async () => {
     logError(`Gateway startup failed: ${e.stack || e.message}`);
   }
   createTray();
-  ensureOmniRoute().catch(() => {});
-  watchdog = setInterval(() => ensureOmniRoute().catch(() => {}), 30000);
+  ensureOmniRouteOnce();
+  watchdog = setInterval(() => ensureOmniRouteOnce(), 30000);
 
   autoUpdater.autoDownload = true;
   autoUpdater.on("error", (e) => logError(`Update error: ${e?.message || e}`));
