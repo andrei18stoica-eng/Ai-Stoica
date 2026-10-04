@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.7.14",
+  "version": "0.7.15",
   "private": true,
-  "description": "AI Stoica 0.7.14 - web version and free installable phone app (PWA) for iPhone and Android; 0.7.13: Scheduled tasks with run history, plugin directory and plugins used by name, memory across chats, restructured Library, new Design section, Poză/Video buttons with a free no-key image provider, clarifying questions with clickable answers; plus 0.7.12 (every free model and OmniRoute combination) and 0.7.11 fixes",
+  "description": "AI Stoica 0.7.15 - copy the saved keys for the server and one-command server setup (deploy/hetzner/setup-web.sh); 0.7.14: web version and free installable phone app (PWA) for iPhone and Android; 0.7.13: Scheduled tasks with run history, plugin directory and plugins used by name, memory across chats, restructured Library, new Design section, Poză/Video buttons with a free no-key image provider, clarifying questions with clickable answers; plus 0.7.12 (every free model and OmniRoute combination) and 0.7.11 fixes",
   "main": "main.cjs",
   "repository": {
     "type": "git",

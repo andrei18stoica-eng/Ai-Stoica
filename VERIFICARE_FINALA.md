@@ -1,4 +1,4 @@
-# AI Stoica v0.7.14 — verificare
+# AI Stoica v0.7.15 — verificare
 
 Verificări automate în GitHub Actions:
 
@@ -18,6 +18,7 @@ Verificări automate în GitHub Actions:
   - `test-web-mode.cjs` – versiunea web și aplicația de telefon (PWA): interfața servită la „/”, politica de securitate a paginii, cache, propria adresă acceptată, alte site-uri refuzate, aplicația Windows neschimbată, manifestul și iconițele;
   - `test-0711-upgrade.cjs` – trecerea de la 0.7.10: pluginuri din rețeaua locală pe PC, limita de autentificare per email, primul login Cloud păstrează contul și conversațiile locale.
   - `test-release-workflows.cjs` – doar „Build AI Stoica Windows” publică `latest.yml` și `.blockmap` (la fel ca `.exe`), workflow-ul ZIP publică doar ZIP-ul.
+  - `test-hetzner-setup.cjs` – „Copiază cheile pentru server” (toate cheile Windows, sub numele citite de server, fără să ajungă în interfață) și `deploy/hetzner/setup-web.sh` rulat cu Docker, rețea și DNS simulate: păstrează valorile din `.env`, salvează exact cheile lipite și le refuză pe cele necunoscute, nu dublează rânduri, cere din nou o cheie OmniRoute refuzată, explică DNS-ul lipsă, creează `.env` pe un server nou.
 - **Build AI Stoica Windows**: aceleași teste pe Windows, apoi installerul + `latest.yml` + `.blockmap` în Releases.
 - **AI Stoica Server Check**: `apps/server` (politica AI și contractul HTTP) + Docker.
 - **Check AI Stoica Cloudflare**: `npm test` (scenarii cu bază D1 simulată) + `wrangler deploy --dry-run`.
