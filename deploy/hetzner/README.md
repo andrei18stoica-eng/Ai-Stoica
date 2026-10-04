@@ -94,7 +94,7 @@ docker compose up -d --build web caddy
 curl http://127.0.0.1:8788/health
 ```
 
-The `web` profile also starts OmniRoute (and its Redis), so the OmniRoute combinations ("Ai principal" and the others) are on the web too. Its dashboard stays private: from your PC run `ssh -L 20128:127.0.0.1:20128 root@SERVER_IP`, open `http://127.0.0.1:20128` and sign in with `OMNIROUTE_INITIAL_PASSWORD`.
+The `web` profile also starts OmniRoute (and its Redis), so the OmniRoute combinations ("Ai principal" and the others) are on the web too. Its dashboard stays private: from your PC run `ssh -L 20129:127.0.0.1:20128 root@SERVER_IP`, open `http://127.0.0.1:20129` and sign in with `OMNIROUTE_INITIAL_PASSWORD`.
 
 - **Same providers and combinations as on the PC:** on the PC's OmniRoute, Settings → System & Storage → **Export Database** (`.sqlite`); on the server's dashboard, **Import Database**. Tested with OmniRoute 3.8.51: combinations, OmniRoute API keys and the admin password move over. If a provider reports an error afterwards, enter its key again in OmniRoute.
 - **Client API key (required):** the OmniRoute image answers `401` on `/v1/*` without one. After the import the PC's key works; otherwise create one in **API Manager**. Put it in `OMNIROUTE_API_KEY` and run `docker compose up -d web`.

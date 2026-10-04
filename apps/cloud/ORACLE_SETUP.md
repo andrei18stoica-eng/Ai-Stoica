@@ -95,13 +95,13 @@ Creează imediat contul tău cu e-mailul din `AI_STOICA_OWNER_EMAIL`: cât timp 
 Dashboard-ul OmniRoute rămâne privat. Creează de pe PC un tunel SSH:
 
 ```bash
-ssh -L 20128:127.0.0.1:20128 ubuntu@IP_SERVER
+ssh -L 20129:127.0.0.1:20128 ubuntu@IP_SERVER
 ```
 
-Apoi deschide pe PC:
+Apoi deschide pe PC (portul 20129, ca să nu se bată cu un OmniRoute pornit pe PC la 20128):
 
 ```
-http://127.0.0.1:20128
+http://127.0.0.1:20129
 ```
 
 Conectează furnizorii și modelele. În aplicația desktop fiecare utilizator alege manual modelul dintre cele disponibile.
