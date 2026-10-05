@@ -74,6 +74,24 @@ function blockedProviders(cfg){
   return new Set(String(raw===undefined||raw===null?DEFAULT_BLOCKED_PROVIDERS:raw).split(",").map(x=>x.trim().toLowerCase()).filter(Boolean));
 }
 function modelBlocked(cfg,id){const family=providerFamily(id);return !!family&&blockedProviders(cfg).has(family);}
+// Who makes the pictures and the videos (Settings → Poze / Video → «Făcute de»). At the Owner's request only Gemini
+// (Nano Banana for pictures, Veo for video) unless chosen otherwise; an empty value lets every provider in.
+const DEFAULT_MEDIA_PROVIDERS="gemini";
+const MEDIA_FAMILY_LABELS={gemini:"Gemini",openai:"OpenAI",xai:"Grok (xAI)",anthropic:"Claude"};
+function mediaProviders(cfg,kind){
+  const raw=kind==="image"?cfg?.imageProviders:cfg?.videoProviders;
+  return new Set(String(raw===undefined||raw===null?DEFAULT_MEDIA_PROVIDERS:raw).split(",").map(x=>x.trim().toLowerCase()).filter(Boolean));
+}
+// The maker of a media model: gemini/…, gweb/nano-banana… and a bare "gemini-3.1-flash-image" are Gemini; a host or a
+// free web service (pollinations/…, veoaifree-web/…) counts under its own name, whatever model it serves.
+function mediaFamily(id,provider=""){
+  const v=String(id||"").trim().toLowerCase();
+  if(v.includes("/"))return providerFamily(v)||v.split("/")[0];
+  const p=String(provider||"").trim().toLowerCase();
+  return FAMILY_PREFIX[p]||(SUBSCRIPTION_PREFIXES.has(p)||!p?makerFromName(v):"")||p;
+}
+function mediaProviderAllowed(cfg,kind,family){const allowed=mediaProviders(cfg,kind);return !allowed.size||allowed.has(family);}
+function mediaProvidersLabel(cfg,kind){return [...mediaProviders(cfg,kind)].map(x=>MEDIA_FAMILY_LABELS[x]||x).join(", ");}
 
 function loadOrCreateSecret(dataDir) {
   const file = path.join(dataDir, "auth-secret.txt");
@@ -1762,9 +1780,11 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   }
   // Gemini image models ("Nano Banana") answer generateContent with the picture as inline data. The first name Google
   // does not know (404) moves on to the next one in the list.
+  const NANO_BANANA_MODELS="gemini-3.1-flash-image,gemini-3.1-flash-image-preview,gemini-2.5-flash-image";
   async function directGeminiImage(cfg,prompt){
     const key=String(cfg.geminiApiKey||"").trim();if(!key)return null;
-    const models=csvValues(cfg.geminiImageModel,"gemini-3.1-flash-image,gemini-3.1-flash-image-preview,gemini-2.5-flash-image");
+    // The model chosen in Settings, then the Nano Banana names Google may use: a name Google does not know (404) is skipped.
+    const models=[...new Set([...csvValues(cfg.geminiImageModel),...csvValues(NANO_BANANA_MODELS)])];
     let lastError="";
     for(const model of models){
       const r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(model)+":generateContent",{
@@ -2024,7 +2044,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       pollinations:{label:"Pollinations",configured:!!String(cfg.pollinationsApiKey||"").trim(),paidRisk:false,run:()=>directPollinationsImage(cfg,prompt)},
       "pollinations-free":{label:"Pollinations (fără cheie)",configured:cfg.pollinationsFreeEnabled!==false,paidRisk:false,run:()=>freePollinationsImage(prompt,size)}
     };
-    return imageProviderOrder(cfg).map(id=>({id,...definitions[id]})).filter(x=>x.configured&&(!strictFree||!x.paidRisk));
+    return imageProviderOrder(cfg).map(id=>({id,...definitions[id]})).filter(x=>x.configured&&(!strictFree||!x.paidRisk)&&mediaProviderAllowed(cfg,"image",x.id));
   }
 
   async function directOpenRouterVideo(cfg,prompt,duration,aspectRatio){
@@ -2126,19 +2146,28 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const n=Math.max(1,Math.min(8,Number(value||4))),allowed=[4,6,8];
     return allowed.sort((a,b)=>Math.abs(a-n)-Math.abs(b-n))[0];
   }
+  const VEO_MODELS="veo-3.1-fast-generate-preview,veo-3.1-generate-preview,veo-3.0-fast-generate-001,veo-3.0-generate-001";
   async function directGeminiVideo(cfg,prompt,duration,aspectRatio){
     const key=String(cfg.geminiApiKey||"").trim();if(!key)return null;
-    const model=String(cfg.geminiVideoModel||"veo-3.1-fast-generate-preview").trim();
     const base="https://generativelanguage.googleapis.com/v1beta";
     const dur=nearestVeoDuration(duration),aspect=["16:9","9:16"].includes(String(aspectRatio))?String(aspectRatio):"16:9";
-    const submit=await fetch(base+"/models/"+encodeURIComponent(model)+":predictLongRunning",{
-      method:"POST",
-      headers:{"Content-Type":"application/json","x-goog-api-key":key},
-      body:JSON.stringify({instances:[{prompt}],parameters:{numberOfVideos:1,aspectRatio:aspect,durationSeconds:String(dur),resolution:"720p"}}),
-      signal:mediaSignal(60000)
-    });
-    const text=await submit.text();let op={};try{op=JSON.parse(text)}catch{}
-    if(!submit.ok)throw new Error("HTTP "+submit.status+": "+text.slice(0,700));
+    // The Veo model chosen in Settings, then the other Veo names: one Google does not know (404) is skipped.
+    const models=[...new Set([...csvValues(cfg.geminiVideoModel),...csvValues(VEO_MODELS)])];
+    let model="",op={},missing=[];
+    for(const candidate of models){
+      const submit=await fetch(base+"/models/"+encodeURIComponent(candidate)+":predictLongRunning",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","x-goog-api-key":key},
+        body:JSON.stringify({instances:[{prompt}],parameters:{numberOfVideos:1,aspectRatio:aspect,durationSeconds:String(dur),resolution:"720p"}}),
+        signal:mediaSignal(60000)
+      });
+      const text=await submit.text();
+      if(submit.status===404){missing.push(candidate);continue}
+      if(!submit.ok)throw new Error("HTTP "+submit.status+": "+text.slice(0,700));
+      try{op=JSON.parse(text)}catch{}
+      model=candidate;break;
+    }
+    if(!model)throw new Error("Niciun model Veo nu este disponibil pentru această cheie Gemini ("+missing.join(", ")+": HTTP 404). Pune numele corect în Setări → Video.");
     const name=String(op?.name||"").trim();if(!name)throw new Error("Gemini Veo nu a returnat operațiunea de generare.");
     const deadline=Date.now()+8*60*1000;let state=op;
     while(Date.now()<deadline){
@@ -2313,7 +2342,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       openai:{label:"OpenAI Sora",configured:!!String(cfg.openAiApiKey||"").trim(),paidRisk:true,run:()=>directOpenAiVideo(cfg,prompt,duration,aspectRatio)},
       xai:{label:"Grok Imagine (xAI)",configured:!!String(cfg.xaiApiKey||"").trim(),paidRisk:true,run:()=>directXaiVideo(cfg,prompt,duration,aspectRatio)}
     };
-    return videoProviderOrder(cfg).map(id=>({id,...defs[id]})).filter(x=>x.configured&&(!strictFree||!x.paidRisk));
+    return videoProviderOrder(cfg).map(id=>({id,...defs[id]})).filter(x=>x.configured&&(!strictFree||!x.paidRisk)&&mediaProviderAllowed(cfg,"video",x.id));
   }
 
   async function saveGeneratedMedia(req,{bytes,mime,kind,prompt,model,provider}){
@@ -2365,8 +2394,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   const mediaPrefsFile=path.join(dataDir,"media-prefs.json");
   let mediaPrefs={};try{mediaPrefs=JSON.parse(fs.readFileSync(mediaPrefsFile,"utf8"))||{}}catch{}
   const configuredMedia=(cfg,kind)=>JSON.stringify(kind==="image"
-    ?[cfg.imageModel,cfg.imageProviderOrder,cfg.imageProviderMode,cfg.imageCostPolicy]
-    :[cfg.videoModel,cfg.videoProviderOrder,cfg.videoMode,cfg.videoCostPolicy]).replace(/null/g,'""');
+    ?[cfg.imageModel,cfg.imageProviderOrder,cfg.imageProviderMode,cfg.imageCostPolicy,[...mediaProviders(cfg,"image")].join()]
+    :[cfg.videoModel,cfg.videoProviderOrder,cfg.videoMode,cfg.videoCostPolicy,[...mediaProviders(cfg,"video")].join()]).replace(/null/g,'""');
   function mediaPref(req,cfg,kind){
     const p=mediaPrefs[req.user?.id]?.[kind];
     return p&&p.configured===configuredMedia(cfg,kind)?String(p.id||""):"";
@@ -2379,11 +2408,11 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     mediaPrefs={...mediaPrefs,[uid]:{...(mediaPrefs[uid]||{}),[kind]:entry}};
     try{fs.writeFileSync(mediaPrefsFile,JSON.stringify(mediaPrefs))}catch{}
   }
-  // Images through your ChatGPT subscription (OmniRoute's Codex / ChatGPT Web connections) or Gemini Web, and the
-  // free web video providers, come before the free no-key providers and the paid APIs.
+  // Images through your ChatGPT subscription (OmniRoute's Codex / ChatGPT Web connections) or Gemini Web, and video
+  // through Gemini Web or the free web video providers, come before the free no-key providers and the paid APIs.
   function subscriptionMedia(kind,id){
     const v=String(id||"");
-    return kind==="image"?/^(codex|cx|chatgpt-web|cgpt-web|gemini-web|gweb)\//i.test(v):/^(veoaifree-web|veo-free)\//i.test(v);
+    return kind==="image"?/^(codex|cx|chatgpt-web|cgpt-web|gemini-web|gweb)\//i.test(v):/^(gemini-web|gweb|veoaifree-web|veo-free)\//i.test(v);
   }
   // The media models to try, in the given order, each once: a name is an OmniRoute model (when discovery found it) or
   // the id of a direct-API attempt; an attempt object is a direct API.
@@ -2404,6 +2433,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   async function discoverPermittedMediaModels(req,cfg,kind,explicitModel=""){
     const explicit=String(explicitModel||"").trim();
     if(explicit){
+      if(!mediaProviderAllowed(cfg,kind,mediaFamily(explicit)))throw policyFailure(`${kind==="image"?"Pozele":"Videoclipurile"} sunt făcute doar de ${mediaProvidersLabel(cfg,kind)} (Setări → ${kind==="image"?"Poze":"Video"} → «Făcute de»); «${explicit}» nu e permis.`,403);
       await requireModelAccess(req.cloudToken,explicit);
       if(!cloudBase()&&kind==="image"&&(cfg.imageCostPolicy==="free_only"||cfg.imageProviderMode==="free")&&localPaidHint({id:explicit}))throw policyFailure("Protecția «Doar gratuit» este activă, iar modelul ales poate genera costuri.",403);
       return [explicit];
@@ -2425,10 +2455,15 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       if(row){rows.unshift(row);byId.set(configured.toLowerCase(),row)}
     }
 
+    // Only the providers chosen in Settings → Poze / Video → «Făcute de» (Gemini unless the Owner chose otherwise).
+    const offered=rows.length;
+    for(let i=rows.length-1;i>=0;i--)if(!mediaProviderAllowed(cfg,kind,mediaFamily(rows[i].id,rows[i].provider)))rows.splice(i,1);
     if(!rows.length)throw policyFailure(
-      kind==="image"
-        ?"Nu există momentan niciun model de imagine disponibil în OmniRoute."
-        :"Nu există momentan niciun model video disponibil în OmniRoute.",
+      offered
+        ?`OmniRoute nu are niciun model ${kind==="image"?"de imagine":"video"} de la ${mediaProvidersLabel(cfg,kind)}.`
+        :kind==="image"
+          ?"Nu există momentan niciun model de imagine disponibil în OmniRoute."
+          :"Nu există momentan niciun model video disponibil în OmniRoute.",
       503
     );
 
@@ -2473,6 +2508,18 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       403
     );
     return allowed.map(x=>x.row.id);
+  }
+
+  // What to do when no picture / video came out and only some providers may make them (Settings → «Făcute de»).
+  function mediaOnlyHint(cfg,kind,strictFree){
+    const only=mediaProviders(cfg,kind);if(!only.size)return "";
+    const tab=kind==="image"?"Poze":"Video",what=kind==="image"?"Nano Banana":"Veo";
+    let hint=` ${kind==="image"?"Pozele":"Videoclipurile"} sunt făcute doar de ${mediaProvidersLabel(cfg,kind)} (Setări → ${tab} → «Făcute de»).`;
+    if(only.has("gemini")){
+      if(!String(cfg.geminiApiKey||"").trim())hint+=` Pentru Gemini ${what} pune cheia Gemini în Setări → API-uri AI (o faci la aistudio.google.com/apikey) sau conectează Gemini în OmniRoute.`;
+      else if(strictFree)hint+=` Gemini ${what} prin API e cu plată: alege «Permite provideri cu plată» la Setări → ${tab} → Protecție costuri.`;
+    }
+    return hint;
   }
 
   const IMAGE_SIZES=new Set(["256x256","512x512","768x768","1024x1024","1024x1536","1536x1024","1024x1792","1792x1024"]);
@@ -2558,7 +2605,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         cfg.cloudflareAccountId&&cfg.cloudflareApiToken&&"Cloudflare",cfg.pollinationsApiKey&&"Pollinations",cfg.hfToken&&"Hugging Face",cfg.togetherApiKey&&"Together AI",
         cfg.openAiApiKey&&"OpenAI",directOpenRouterKey(cfg)&&"OpenRouter",cfg.stabilityApiKey&&"Stability AI",cfg.falApiKey&&"fal.ai",cfg.replicateApiToken&&"Replicate"
       ].filter(Boolean);
-      const providerHint=!configuredProviders.length
+      const providerHint=mediaProviders(cfg,"image").size?mediaOnlyHint(cfg,"image",strictFree):!configuredProviders.length
         ?" Nu există nicio cheie de imagine configurată; adaugă cel puțin un provider în Setări > AI & OmniRoute > Providere imagini."
         :strictFree
           ?" Protecția «Doar gratuit» este activă; providerii cu cost sau cost necunoscut nu sunt apelați. Pentru ei trebuie să alegi explicit «Permite provideri cu plată»."
@@ -2626,11 +2673,11 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         }catch(e){if(signal.aborted)return;errors.push(model+": "+roError(e))}
       }
 
-      if(!tried&&directApisAllowed(req))throw policyFailure(VIDEO_NEEDS_PROVIDER,400);
+      if(!tried&&directApisAllowed(req))throw policyFailure(mediaProviders(cfg,"video").size?("Nu am cu ce face videoclipul."+mediaOnlyHint(cfg,"video",strictFree)+" "+errors.slice(0,10).join(" | ")).trim():VIDEO_NEEDS_PROVIDER,400);
       const configuredProviders=[
         cfg.pollinationsApiKey&&"Pollinations",directOpenRouterKey(cfg)&&"OpenRouter",cfg.geminiApiKey&&"Gemini Veo",cfg.falApiKey&&"fal.ai",cfg.replicateApiToken&&"Replicate"
       ].filter(Boolean);
-      const hint=!configuredProviders.length
+      const hint=mediaProviders(cfg,"video").size?mediaOnlyHint(cfg,"video",strictFree):!configuredProviders.length
         ?" Nu există nicio cheie video configurată în Setări > Video."
         :strictFree
           ?" Protecția «Doar gratuit» este activă: AI Stoica pornește doar modelele web gratuite din OmniRoute (VEO 3.1, Seedance) și joburile al căror cost $0 îl poate confirma din catalogul providerului."
@@ -3276,8 +3323,28 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const started=Date.now();
       try{
         const list=await omniModelEntries(omniCfg);
-        const combos=list.filter(x=>x?.owned_by==="combo"||!String(typeof x==="string"?x:x?.id||"").includes("/")).length;
-        return {ok:true,label:"OmniRoute",models:list.length,combos,ms:Date.now()-started};
+        const idOf=x=>String(typeof x==="string"?x:x?.id||"").trim(),isCombo=x=>x?.owned_by==="combo"||!idOf(x).includes("/");
+        const combos=list.filter(isCombo).length,ms=Date.now()-started;
+        // One tiny question to your first combination and to one chat model per company (Gemini, Grok, OpenAI, Claude):
+        // the list above proves the OmniRoute key, these show which connection inside OmniRoute answers.
+        const chatIds=list.filter(x=>!isCombo(x)).map(idOf).filter(id=>id&&!/image|imagen|video|veo|sora|whisper|tts|embed|transcri/i.test(id)&&!modelBlocked(omniCfg,id));
+        const picks=[list.find(isCombo),...["gemini","xai","openai","anthropic"].map(f=>chatIds.find(id=>providerFamily(id)===f))].map(x=>x&&idOf(x)).filter(Boolean);
+        const checks=await Promise.all(picks.map(async model=>{
+          const t0=Date.now();
+          try{
+            const r=await fetch(String(omniCfg.baseUrl).replace(/\/+$/,"")+"/chat/completions",{
+              method:"POST",headers:{"Content-Type":"application/json",...(omniCfg.apiKey?{Authorization:`Bearer ${omniCfg.apiKey}`}:{})},
+              body:JSON.stringify({model,messages:[{role:"user",content:"Răspunde doar cu: OK"}],max_tokens:20,stream:false}),
+              signal:AbortSignal.timeout(25000)
+            });
+            const text=await r.text();
+            if(r.ok)return {model,ok:true,status:r.status,ms:Date.now()-t0};
+            const why=upstreamErrorText(text).trim();
+            const hint=r.status===401||r.status===403?"furnizorul a refuzat accesul (cheia OmniRoute e bună): reconectează-l în OmniRoute → Providers":r.status===402||r.status===429?"fără credit sau limită atinsă":r.status===404?"modelul nu mai există în OmniRoute":"";
+            return {model,ok:false,status:r.status,ms:Date.now()-t0,error:[hint,`HTTP ${r.status}${why?": "+why:""}`].filter(Boolean).join(" · ").slice(0,400)};
+          }catch(e){return {model,ok:false,status:0,ms:Date.now()-t0,error:roError(e)}}
+        }));
+        return {ok:true,label:"OmniRoute",models:list.length,combos,ms,checks};
       }catch(e){return {ok:false,label:"OmniRoute",error:e?.status?e.message:`OmniRoute nu răspunde la ${omniCfg.baseUrl} (${roError(e)}). Pornește-l sau verifică adresa.`,ms:Date.now()-started}}
     })():Promise.resolve(null);
     const results=await Promise.all(firstPerProvider.map(async c=>{

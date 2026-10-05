@@ -109,6 +109,14 @@ async function main() {
     r = await chat("openai/gpt-4o-mini"); j = await r.json();
     expect(/OmniRoute a refuzat cheia API \(HTTP 401\)/.test(j.error) && /Invalid API key/.test(j.error), "a bad OmniRoute key must say so: " + j.error);
     cfg.apiKey = "sk-omni"; await wait();
+    // Settings → «Testează cheile»: the OmniRoute key, then one model per company inside OmniRoute, so the Owner sees
+    // which connection refuses (here Grok Build) and that the key itself is fine.
+    r = await call("/api/providers/test", { method: "POST", token, body: {} }); j = await r.json();
+    const checks = Object.fromEntries((j.omni?.checks || []).map((c) => [c.model, c]));
+    expect(j.omni?.ok && checks["Ai principal"]?.ok && checks["gc/gemini-3-pro"]?.ok && checks["openai/gpt-4o-mini"]?.ok, "OmniRoute checks: " + JSON.stringify(j.omni));
+    expect(checks["gc/grok-4.6-low"]?.ok === false && /furnizorul a refuzat accesul \(cheia OmniRoute e bună\)/.test(checks["gc/grok-4.6-low"].error) && /sign-in expired/.test(checks["gc/grok-4.6-low"].error), "the refusing connection is named: " + JSON.stringify(checks["gc/grok-4.6-low"]));
+    expect(!Object.keys(checks).some((m) => /^cerebras\//.test(m)) && Object.keys(checks).length === 4, "one model per company, none from a left-out provider: " + Object.keys(checks).join(", "));
+    omniAsked.length = 0;
 
     // Everything ticked again: Cerebras comes back.
     cfg.blockedProviders = ""; await wait();
@@ -124,7 +132,8 @@ async function main() {
 
     // Pictures: Grok Imagine.
     const image = async () => { const res = await call("/api/generate/image", { method: "POST", token, body: { prompt: "Un pătrat albastru" } }); return { status: res.status, j: await res.json() }; };
-    Object.assign(cfg, { imageProviderOrder: "xai", imageProviderMode: "auto" });
+    // (Pictures and video are Gemini-only by default; test-0716-gemini-media.cjs covers that. Here every provider is in.)
+    Object.assign(cfg, { imageProviders: "", videoProviders: "", imageProviderOrder: "xai", imageProviderMode: "auto" });
     let out = await image();
     expect(out.status === 200 && out.j.data?.kind === "image" && out.j.data.model === "xai/grok-imagine-image" && calls.xaiImage[0]?.response_format === "b64_json", "Grok Imagine picture: " + JSON.stringify(out));
     // Pictures: Gemini, trying the next name when Google does not know the first.

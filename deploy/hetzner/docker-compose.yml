@@ -113,6 +113,11 @@ services:
       AI_STOICA_CHAT_FALLBACK: ${AI_STOICA_CHAT_FALLBACK:-false}
       AI_STOICA_IMAGE_MODEL: ${AI_STOICA_IMAGE_MODEL:-}
       AI_STOICA_VIDEO_MODEL: ${AI_STOICA_VIDEO_MODEL:-}
+      # Providers: Cerebras left out of the chat, pictures and video by Gemini only; an empty value in .env means all.
+      # The Owner can change them on the site too (Setări). "-" (not ":-") keeps an empty value.
+      AI_STOICA_BLOCKED_PROVIDERS: ${AI_STOICA_BLOCKED_PROVIDERS-cerebras}
+      AI_STOICA_IMAGE_PROVIDERS: ${AI_STOICA_IMAGE_PROVIDERS-gemini}
+      AI_STOICA_VIDEO_PROVIDERS: ${AI_STOICA_VIDEO_PROVIDERS-gemini}
       # "Actualizează site-ul" (Owner): the site drops a request here; the server's systemd service runs update.sh.
       AI_STOICA_UPDATE_DIR: /update
       OMNIROUTE_BASE_URL: ${OMNIROUTE_BASE_URL:-http://omniroute:20128/v1}

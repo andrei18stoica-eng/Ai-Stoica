@@ -1063,3 +1063,9 @@ h1,h2,h3{text-wrap:balance}
 .codeModel:active:not(:disabled){transform:scale(.98)}
 @media (hover:hover) and (pointer:fine){.codeModel:hover:not(:disabled){background:#132033;border-color:#2f6db1}}
 .codeAccessNote{margin:0}
+/* Testează cheile: the OmniRoute models checked one by one sit under the OmniRoute row. */
+.providerRow.omniCheck{margin-left:18px}
+.providerRow.omniCheck b{max-width:46%;overflow:hidden;text-overflow:ellipsis}
+/* A fieldset is as wide as its longest option by default (min-inline-size: min-content): keep it inside the phone screen. */
+.providerUse{min-width:0;max-width:100%}
+.providerUse select{width:100%;min-width:0;text-overflow:ellipsis}

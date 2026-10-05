@@ -63,7 +63,7 @@ async function main() {
     const winKeys = [...new Set(fs.readFileSync(path.join(__dirname, "..", "main.cjs"), "utf8").match(/\b[a-zA-Z]+(?:ApiKey|ApiToken|Token|AccountId)\b/g))];
     const cloudServer = fs.readFileSync(path.join(repo, "apps", "cloud", "server.cjs"), "utf8");
     for (const k of winKeys) expect(new RegExp("\\b" + k + "\\s*:").test(cloudServer), "apps/cloud/server.cjs does not read the Windows key " + k);
-    const envNames = [...cloudServer.matchAll(/env\("([A-Z0-9_]+)"\)|:\s*"([A-Z0-9_]+)"/g)].map(m => m[1] || m[2]).filter(n => /_(KEY|TOKEN|ID)$/.test(n));
+    const envNames = [...cloudServer.matchAll(/env\("([A-Z0-9_]+)"\)|:\s*"([A-Z0-9_]+)"/g)].map(m => m[1] || m[2]).filter(n => /_(KEY|TOKEN|ID|PROVIDERS)$/.test(n));
     for (const compose of [["apps", "cloud", "docker-compose.yml"], ["deploy", "hetzner", "docker-compose.yml"]]) {
       const text = fs.readFileSync(path.join(repo, ...compose), "utf8");
       for (const n of envNames) expect(text.includes(n + ": ${" + n), compose.join("/") + " does not pass " + n + " to the web service");

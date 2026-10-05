@@ -12,7 +12,7 @@ async function main(){
   const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),"ai-stoica-local-"));
   const port=8811;
   const cfg={
-    baseUrl:"http://127.0.0.1:65531/v1",
+    baseUrl:"http://127.0.0.1:65531/v1",imageProviders:"",videoProviders:"",
     controlApiUrl:"",
     apiKey:"",
     model:"",

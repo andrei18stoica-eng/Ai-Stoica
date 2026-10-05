@@ -25,7 +25,7 @@ async function main() {
     });
   });
   const omniPort = await listen(omni);
-  const cfg = { baseUrl: `http://127.0.0.1:${omniPort}/v1`, apiKey: "", model: "", webSearchEnabled: false, githubAutoContext: false, directChatEnabled: false,
+  const cfg = { baseUrl: `http://127.0.0.1:${omniPort}/v1`, apiKey: "", model: "", imageProviders: "", videoProviders: "", webSearchEnabled: false, githubAutoContext: false, directChatEnabled: false,
     openAiApiKey: "sk-openai-test", openRouterApiKey: "sk-or-test", pollinationsFreeEnabled: false, imageProviderOrder: "openai,openrouter", imageCostPolicy: "allow_paid" };
   const calls = { openai: 0, openrouter: 0, cerebras: 0, groq: 0 };
   const realFetch = globalThis.fetch;
