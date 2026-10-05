@@ -54,6 +54,8 @@ function defaults() {
     openAiApiKey: "",
     xaiApiKey: "",
     blockedProviders: "cerebras",
+    imageProviders: "gemini",
+    videoProviders: "gemini",
     openRouterApiKey: "",
     cerebrasApiKey: "",
     groqApiKey: "",
@@ -142,6 +144,9 @@ function saveConfig(input) {
     directChatProviderOrder: String(cfg.directChatProviderOrder || "cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai,xai").trim(),
     // Providers left out of the chat; "" keeps them all. Older configs (no value) leave Cerebras out.
     blockedProviders: typeof cfg.blockedProviders === "string" ? cfg.blockedProviders.split(",").map(x => x.trim().toLowerCase()).filter(x => /^[a-z0-9@-]{2,20}$/.test(x)).join(",") : "cerebras",
+    // Who makes pictures and videos (Poze / Video → «Făcute de»); "" lets every provider in. Older configs: Gemini only.
+    imageProviders: typeof cfg.imageProviders === "string" ? cfg.imageProviders.split(",").map(x => x.trim().toLowerCase()).filter(x => /^[a-z0-9@-]{2,20}$/.test(x)).join(",") : "gemini",
+    videoProviders: typeof cfg.videoProviders === "string" ? cfg.videoProviders.split(",").map(x => x.trim().toLowerCase()).filter(x => /^[a-z0-9@-]{2,20}$/.test(x)).join(",") : "gemini",
     xaiModels: String(cfg.xaiModels || DIRECT_MODEL_DEFAULTS.xaiModels).trim(),
     xaiImageModel: String(cfg.xaiImageModel || "grok-imagine-image").trim(),
     xaiVideoModel: String(cfg.xaiVideoModel || "grok-imagine-video").trim(),

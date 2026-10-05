@@ -63,7 +63,7 @@ async function main() {
   const plugins = http.createServer((req, res) => { pluginHits.push(req.url.split("?")[0]); res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ ok: req.url.split("?")[0] })); });
   const omniPort = await listen(omni), pluginPort = await listen(plugins);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-0713-"));
-  const cfg = { baseUrl: `http://127.0.0.1:${omniPort}/v1`, model: "test/model", webSearchEnabled: false, githubAutoContext: false, directChatEnabled: false };
+  const cfg = { baseUrl: `http://127.0.0.1:${omniPort}/v1`, model: "test/model", imageProviders: "", videoProviders: "", webSearchEnabled: false, githubAutoContext: false, directChatEnabled: false };
   const port = await freePort(), base = "http://127.0.0.1:" + port;
   const gw = startLocalGateway({ dataDir: dir, port, host: "127.0.0.1", getOmniConfig: () => cfg });
   const realFetch = globalThis.fetch, pollinationsUrls = [];

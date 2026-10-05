@@ -67,6 +67,10 @@ function inferModelProvider(model,provider="") {
   if(p)return p;
   const m=String(model||"").toLowerCase();
   const first=m.split("/")[0];
+  // Subscription prefixes are shared (OmniRoute: gc/ is Gemini CLI and Grok Build): the model's name decides.
+  if(/^(cx|codex|cc|claude-code|gc|gemini-cli|gh|kr|ag)$/.test(first)){
+    if(/\bgrok/.test(m))return "xai";if(/claude/.test(m))return "anthropic";if(/gemini|gemma/.test(m))return "gemini";if(/codex|gpt/.test(m))return "openai";
+  }
   const prefixMap={openai:"openai",anthropic:"anthropic",google:"gemini",gemini:"gemini",cerebras:"cerebras",groq:"groq",cloudflare:"cloudflare",openrouter:"openrouter",runway:"runway","@cf":"cloudflare",xai:"xai","x-ai":"xai",cx:"openai",codex:"openai",cc:"anthropic","claude-code":"anthropic",gc:"gemini","gemini-cli":"gemini"};
   if(prefixMap[first])return prefixMap[first];
   if(/groq/.test(m))return "groq";
@@ -1089,10 +1093,11 @@ function ProviderTestBox() {
     catch(e){setState({busy:false,data:null,media:[],omni:null,error:e.message})}
   }
   return <div className="providerTest">
-    <div className="providerTestHead"><div><b>Testează cheile</b><span>Verifică fiecare API salvat. Salvează setările înainte de test.</span></div>
+    <div className="providerTestHead"><div><b>Testează cheile</b><span>Verifică OmniRoute (cheia și câte un model Gemini, Grok, OpenAI, Claude) și fiecare API salvat. Salvează setările înainte de test.</span></div>
       <button className="secondary" onClick={run} disabled={state.busy}>{state.busy?"Se testează…":"Testează acum"}</button></div>
     {state.error&&<div className="providerRow bad"><X size={15}/><span>{state.error}</span></div>}
-    {state.omni&&<div className={cx("providerRow",state.omni.ok?"good":"bad")}>{state.omni.ok?<Check size={15}/>:<X size={15}/>}<b>OmniRoute</b><span>{state.omni.ok?`${state.omni.models} modele, ${state.omni.combos} combinații · ${(state.omni.ms/1000).toFixed(1)} s`:state.omni.error}</span></div>}
+    {state.omni&&<div className={cx("providerRow",state.omni.ok?"good":"bad")}>{state.omni.ok?<Check size={15}/>:<X size={15}/>}<b>OmniRoute</b><span>{state.omni.ok?`cheia e bună · ${state.omni.models} modele, ${state.omni.combos} combinații · ${(state.omni.ms/1000).toFixed(1)} s`:state.omni.error}</span></div>}
+    {(state.omni?.checks||[]).map(c=><div key={c.model} className={cx("providerRow omniCheck",c.ok?"good":"bad")}>{c.ok?<Check size={15}/>:<X size={15}/>}<b>{c.model}</b><span>{c.ok?`răspunde · ${(c.ms/1000).toFixed(1)} s`:c.error||("HTTP "+c.status)}</span></div>)}
     {state.data&&!state.data.length&&!state.omni?.ok&&<div className="providerRow bad"><X size={15}/><span>Nu ai nicio cheie de chat salvată. Adaugă de exemplu o cheie Gemini sau Groq și salvează.</span></div>}
     {(state.data||[]).map(x=><div key={x.provider} className={cx("providerRow",x.ok?"good":"bad")}>{x.ok?<Check size={15}/>:<X size={15}/>}<b>{x.label}</b><span>{x.model}{x.ok?` · ${(x.ms/1000).toFixed(1)} s`:` · ${x.error||("HTTP "+x.status)}`}{x.paid?" · cu plată":""}</span></div>)}
     {state.data&&state.media.length>0&&<div className="providerMedia">Imagini și video (nu se generează la test, pentru a nu consuma credite): {state.media.map(m=>`${m.label} ${m.configured?"✓":"—"}`).join(" · ")}</div>}
@@ -1144,6 +1149,30 @@ function ProviderUseList({cfg,set}) {
   return <fieldset className="providerUse"><legend>Furnizori folosiți în chat</legend>
     <p className="settingsHelp">Debifat: modelele lui nu apar în listă și nu răspund, nici ca rezervă. Combinațiile OmniRoute („Ai principal”) rămân; ce modele conțin le alegi în panoul OmniRoute.</p>
     <div className="providerUseGrid">{CHAT_FAMILIES.map(([id,label])=><label key={id} className="providerUseItem"><input type="checkbox" checked={!blocked.has(id)} onChange={e=>toggle(id,e.target.checked)}/><span>{label}</span></label>)}</div>
+  </fieldset>;
+}
+// Poze / Video → «Făcute de»: Gemini only by default (Nano Banana, Veo); "" lets every provider in, the free ones too.
+const MEDIA_MAKERS={
+  image:[["gemini","Doar Gemini · Nano Banana"],["gemini,openai,xai","Gemini, OpenAI și Grok"],["","Toți furnizorii, și cei gratuiți"]],
+  video:[["gemini","Doar Gemini · Veo"],["gemini,openai,xai","Gemini, OpenAI (Sora) și Grok"],["","Toți furnizorii, și cei gratuiți"]]
+};
+const GEMINI_MEDIA_MODELS={
+  image:[["gemini-3.1-flash-image","Nano Banana 2 · gemini-3.1-flash-image"],["gemini-3-pro-image-preview","Nano Banana Pro · gemini-3-pro-image-preview"],["gemini-2.5-flash-image","Nano Banana · gemini-2.5-flash-image"]],
+  video:[["veo-3.1-fast-generate-preview","Veo 3.1 Fast · veo-3.1-fast-generate-preview"],["veo-3.1-generate-preview","Veo 3.1 · veo-3.1-generate-preview"],["veo-3.0-fast-generate-001","Veo 3 Fast · veo-3.0-fast-generate-001"]]
+};
+function MediaMakers({kind,cfg,set,paidOff}) {
+  const field=kind==="image"?"imageProviders":"videoProviders",modelField=kind==="image"?"geminiImageModel":"geminiVideoModel";
+  const value=String(cfg[field]??"gemini").split(",").map(x=>x.trim().toLowerCase()).filter(Boolean).join(",");
+  const options=MEDIA_MAKERS[kind].some(([v])=>v===value)?MEDIA_MAKERS[kind]:[...MEDIA_MAKERS[kind],[value,"Ales de tine: "+value]];
+  const model=String(cfg[modelField]||GEMINI_MEDIA_MODELS[kind][0][0]);
+  const models=GEMINI_MEDIA_MODELS[kind].some(([v])=>v===model)?GEMINI_MEDIA_MODELS[kind]:[...GEMINI_MEDIA_MODELS[kind],[model,model]];
+  const geminiOnly=value==="gemini";
+  return <fieldset className="providerUse"><legend>{kind==="image"?"Poze făcute de":"Video făcut de"}</legend>
+    <label>Furnizori<select value={value} onChange={e=>set({[field]:e.target.value})}>{options.map(([v,l])=><option key={v||"all"} value={v}>{l}</option>)}</select></label>
+    <label>{kind==="image"?"Model Gemini (Nano Banana)":"Model Gemini (Veo)"}<select value={model} onChange={e=>set({[modelField]:e.target.value})}>{models.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>
+    <p className="settingsHelp">{geminiOnly
+      ?`Doar Gemini: prin cheia Gemini de la API-uri AI sau prin Gemini conectat în OmniRoute. Ceilalți furnizori de mai jos nu sunt folosiți.${paidOff?" Gemini prin API e cu plată: ca să meargă cu cheia, alege mai jos «Permite provideri cu plată».":""}`
+      :"Dacă modelul Gemini ales nu există pentru cheia ta, AI Stoica încearcă singur celelalte nume Gemini, apoi furnizorii permiși aici."}</p>
   </fieldset>;
 }
 function KeyField({label,name,cfg,keys,setKeys,placeholder,token=false}) {
@@ -1213,6 +1242,8 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
     catch(e){setUpdateStatus("Nu am putut verifica: "+e.message)}
   }
   const keyProps={cfg,keys,setKeys};
+  // The site's server allows paid pictures when nothing was chosen (no imageCostPolicy in .env); Windows saves "free_only".
+  const imageCost=cfg?.imageCostPolicy||(webServer?"allow_paid":"free_only");
   const tabs=[["general",SlidersHorizontal,"General",true],["ai",Bot,"AI & OmniRoute",machineSettingsAllowed],["chatapis",Plug,"API-uri AI",machineSettingsAllowed],["images",ImageIcon,"Poze",machineSettingsAllowed],["video",Play,"Video",machineSettingsAllowed],["voice",Volume2,"Voce și microfon",true],["account",User,"Cont și date",true]];
   return <div className="modalBackdrop" {...backdropProps}><div className="settingsModal" ref={ref} role="dialog" aria-modal="true" aria-label="Setări AI Stoica" tabIndex={-1}><div className="modalHead"><div><h2>Setări AI Stoica</h2><p>Aplicația, vocea, serviciile AI și actualizările.</p></div><button className="iconOnly" onClick={onClose} aria-label="Închide" title="Închide"><X size={20}/></button></div>
     {!cfg?<div className="settingsLoading">{error||"Se încarcă setările…"}{error&&onPreferences&&<div className="settingsPrefs"><h3>Memorie și conversații</h3><PreferenceSwitches preferences={preferences} onChange={onPreferences} busyKey={prefBusy}/></div>}{error&&<ServerUpdate/>}</div>:<>
@@ -1314,12 +1345,13 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <label>Modele Grok · separate prin virgulă<input value={cfg.xaiModels||""} onChange={e=>set({xaiModels:e.target.value})} placeholder="grok-4.6,grok-4.3"/></label>
       </>}
       {tab==="images"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><ImageIcon size={22}/></div><div><h3>Poze</h3><p>Generare imagini, API-uri, modele și încercare automată a altui provider.</p></div></div>
+        <MediaMakers kind="image" cfg={cfg} set={set} paidOff={imageCost!=="allow_paid"||cfg.imageProviderMode==="free"}/>
         <label><span className="labelLine">Model generare imagini <span className="optional">opțional</span></span><input value={cfg.imageModel||""} onChange={e=>set({imageModel:e.target.value})} placeholder="Automat — primul model de imagine disponibil"/></label>
         <details className="mediaProviderSettings" open><summary>Provideri de imagini</summary>
           <p className="settingsHelp">Poți conecta mai multe servicii. AI Stoica încearcă providerii în ordine și trece automat la următorul dacă unul eșuează. {webServer?"Cheile stau pe server și se văd doar mascat.":"Cheile sunt criptate pe acest PC."}</p>
           <label>Mod de alegere<select value={cfg.imageProviderMode||"auto"} onChange={e=>set({imageProviderMode:e.target.value})}><option value="auto">Automat — ordinea mea</option><option value="fast">⚡ Rapid</option><option value="quality">✨ Calitate</option><option value="free">🛡️ Doar gratuit</option></select></label>
-          <label>Protecție costuri<select value={cfg.imageCostPolicy||"free_only"} onChange={e=>set({imageCostPolicy:e.target.value})}><option value="free_only">Nu permite costuri directe</option><option value="allow_paid">Permite provideri cu plată</option></select></label>
-          <p className="settingsHelp">{(cfg.imageCostPolicy||"free_only")==="free_only"?"Protecție activă: AI Stoica încearcă direct Cloudflare și Pollinations. Hugging Face, Together, OpenAI, Stability, fal.ai și Replicate sunt blocate dacă ar putea consuma credit plătit. La OpenRouter se verifică prețul înainte de apel.":"Atenție: providerii configurați pot consuma credit conform tarifelor lor."}</p>
+          <label>Protecție costuri<select value={imageCost} onChange={e=>set({imageCostPolicy:e.target.value})}><option value="free_only">Nu permite costuri directe</option><option value="allow_paid">Permite provideri cu plată</option></select></label>
+          <p className="settingsHelp">{imageCost==="free_only"?"Protecție activă: AI Stoica încearcă direct Cloudflare și Pollinations. Hugging Face, Together, OpenAI, Stability, fal.ai și Replicate sunt blocate dacă ar putea consuma credit plătit. La OpenRouter se verifică prețul înainte de apel.":"Atenție: providerii configurați pot consuma credit conform tarifelor lor."}</p>
           <label>Ordinea de încercare<input value={cfg.imageProviderOrder||"cloudflare,pollinations,huggingface,together,openrouter,fal,replicate,stability,openai,gemini,xai"} onChange={e=>set({imageProviderOrder:e.target.value})}/></label>
           <div className="providerGroup"><b>Cloudflare Workers AI</b><small>FLUX.1 Schnell · provider prioritar în modul gratuit.</small></div>
           <label>Cloudflare Account ID<input value={cfg.cloudflareAccountId||""} onChange={e=>set({cloudflareAccountId:e.target.value})} placeholder="Account ID"/></label>
@@ -1334,8 +1366,8 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
           <div className="providerGroup"><b>OpenAI</b><small>GPT Image prin API OpenAI.</small></div>
           <KeyField label="Cheie API OpenAI" name="openAiApiKey" placeholder="sk-..." {...keyProps}/>
           <label>Model imagine OpenAI<input value={cfg.openAiImageModel||"gpt-image-1-mini"} onChange={e=>set({openAiImageModel:e.target.value})}/></label>
-          <div className="providerGroup"><b>Google Gemini</b><small>„Nano Banana” prin cheia Gemini de la API-uri AI. Mai multe nume, separate prin virgulă: următorul e încercat dacă Google nu îl cunoaște.</small></div>
-          <label>Model imagine Gemini<input value={cfg.geminiImageModel||"gemini-3.1-flash-image"} onChange={e=>set({geminiImageModel:e.target.value})}/></label>
+          <div className="providerGroup"><b>Google Gemini</b><small>„Nano Banana”; modelul îl alegi sus, la «Poze făcute de». Aceeași cheie ca la API-uri AI și Video.</small></div>
+          <KeyField label="Cheie API Gemini" name="geminiApiKey" placeholder="AIza..." {...keyProps}/>
           <div className="providerGroup"><b>Grok Imagine (xAI)</b><small>Prin cheia xAI de la API-uri AI.</small></div>
           <label>Model imagine Grok<input value={cfg.xaiImageModel||"grok-imagine-image"} onChange={e=>set({xaiImageModel:e.target.value})}/></label>
           <div className="providerGroup"><b>Stability AI</b><small>Stable Image REST API.</small></div>
@@ -1354,6 +1386,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <p className="settingsHelp">Când ceri o poză, AI Stoica încearcă providerii în ordinea stabilită, pune fișierul real în chat și îl salvează în Bibliotecă.</p>
       </>}
       {tab==="video"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><Play size={22}/></div><div><h3>Video</h3><p>Generare videoclipuri, API-uri, modele și încercare automată a altui provider.</p></div></div>
+        <MediaMakers kind="video" cfg={cfg} set={set} paidOff={cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free"}/>
         <label>Mod video<select value={cfg.videoMode||"fast"} onChange={e=>{const videoMode=e.target.value;const quality=videoMode==="quality";set({videoMode,videoModel:quality?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast",openRouterVideoModel:quality?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast",geminiVideoModel:quality?"veo-3.1-generate-preview":"veo-3.1-fast-generate-preview"})}}><option value="fast">⚡ Rapid</option><option value="quality">🎬 Calitate</option><option value="free">🛡️ Doar gratuit</option></select></label>
         <label>Protecție costuri<select value={cfg.videoCostPolicy||"free_only"} onChange={e=>set({videoCostPolicy:e.target.value})}><option value="free_only">Nu porni joburi cu plată</option><option value="allow_paid">Permite provideri cu plată</option></select></label>
         <p className="settingsHelp">{(cfg.videoCostPolicy||"free_only")==="free_only"?"AI Stoica verifică prețul publicat când este disponibil și nu pornește generarea dacă nu poate confirma costul zero. Gemini Veo, fal.ai și Replicate rămân blocate în acest mod.":"Atenție: generarea video poate consuma rapid credit. Costul depinde de model, durată și rezoluție."}</p>
@@ -1364,9 +1397,8 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <div className="providerGroup"><b>OpenRouter Video</b><small>Seedance, Veo, Wan și alte modele prin același API.</small></div>
         <KeyField label="Cheie API OpenRouter" name="openRouterApiKey" placeholder="sk-or-..." {...keyProps}/>
         <label>Model video OpenRouter<input value={cfg.openRouterVideoModel||(cfg.videoMode==="quality"?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast")} onChange={e=>set({openRouterVideoModel:e.target.value})}/></label>
-        <div className="providerGroup"><b>Gemini · Veo</b><small>Veo 3.1 prin aceeași cheie Gemini folosită la chat.</small></div>
+        <div className="providerGroup"><b>Gemini · Veo</b><small>Veo prin aceeași cheie Gemini folosită la chat; modelul îl alegi sus, la «Video făcut de».</small></div>
         <KeyField label="Cheie API Gemini" name="geminiApiKey" placeholder="AIza..." {...keyProps}/>
-        <label>Model video Gemini<input value={cfg.geminiVideoModel||"veo-3.1-fast-generate-preview"} onChange={e=>set({geminiVideoModel:e.target.value})}/></label>
         <div className="providerGroup"><b>OpenAI · Sora</b><small>Prin cheia OpenAI de la API-uri AI; videoclipuri de 4, 8 sau 12 secunde.</small></div>
         <label>Model video OpenAI<input value={cfg.openAiVideoModel||"sora-2"} onChange={e=>set({openAiVideoModel:e.target.value})}/></label>
         <div className="providerGroup"><b>Grok Imagine Video (xAI)</b><small>Prin cheia xAI de la API-uri AI; 1–15 secunde.</small></div>

@@ -52,6 +52,9 @@ function envConfig() {
     videoModel: env("AI_STOICA_VIDEO_MODEL"),
     // Providers left out of the chat (Settings → API-uri AI → Furnizori folosiți). Not set: Cerebras is left out.
     blockedProviders: process.env.AI_STOICA_BLOCKED_PROVIDERS === undefined ? undefined : env("AI_STOICA_BLOCKED_PROVIDERS"),
+    // Who makes pictures and videos (Setări → Poze / Video → «Făcute de»). Not set: Gemini only; empty: every provider.
+    imageProviders: process.env.AI_STOICA_IMAGE_PROVIDERS === undefined ? undefined : env("AI_STOICA_IMAGE_PROVIDERS"),
+    videoProviders: process.env.AI_STOICA_VIDEO_PROVIDERS === undefined ? undefined : env("AI_STOICA_VIDEO_PROVIDERS"),
     ...Object.fromEntries(Object.entries(DIRECT_KEYS).map(([key, name]) => [key, env(name)]))
   };
 }
