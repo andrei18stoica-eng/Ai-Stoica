@@ -66,7 +66,7 @@ function inferModelProvider(model,provider="") {
   if(p)return p;
   const m=String(model||"").toLowerCase();
   const first=m.split("/")[0];
-  const prefixMap={openai:"openai",anthropic:"anthropic",google:"gemini",gemini:"gemini",cerebras:"cerebras",groq:"groq",cloudflare:"cloudflare",openrouter:"openrouter",runway:"runway","@cf":"cloudflare"};
+  const prefixMap={openai:"openai",anthropic:"anthropic",google:"gemini",gemini:"gemini",cerebras:"cerebras",groq:"groq",cloudflare:"cloudflare",openrouter:"openrouter",runway:"runway","@cf":"cloudflare",xai:"xai","x-ai":"xai",cx:"openai",codex:"openai",cc:"anthropic","claude-code":"anthropic",gc:"gemini","gemini-cli":"gemini"};
   if(prefixMap[first])return prefixMap[first];
   if(/groq/.test(m))return "groq";
   if(/cerebras/.test(m))return "cerebras";
@@ -80,7 +80,7 @@ function inferModelProvider(model,provider="") {
 }
 function providerLabel(provider,model="") {
   const p=inferModelProvider(model,provider);
-  return ({openai:"OpenAI",anthropic:"Anthropic",gemini:"Google Gemini",cerebras:"Cerebras",groq:"Groq",cloudflare:"Cloudflare AI",openrouter:"OpenRouter",runway:"Runway",ai:"AI"})[p]||String(provider||"AI");
+  return ({openai:"OpenAI",anthropic:"Anthropic",gemini:"Google Gemini",cerebras:"Cerebras",groq:"Groq",xai:"Grok (xAI)",cloudflare:"Cloudflare AI",openrouter:"OpenRouter",runway:"Runway",ai:"AI"})[p]||String(provider||"AI");
 }
 function routeTaskLabel(task) {
   return ({
@@ -1133,6 +1133,17 @@ function ProviderHead({name,id,cfg,children}) {
   const url=cfg?.providerKeyPages?.[id];
   return <div className="providerGroup"><div className="providerGroupTop"><b>{name}</b>{url&&<button type="button" className="providerKeyLink" onClick={()=>openLink(url)}>Ia cheia gratuită <ExternalLink size={12}/></button>}</div><small>{children}</small></div>;
 }
+// Settings → API-uri AI: which companies' models the chat uses. Unticked = their models leave the list and never answer
+// (not even as a fallback). Cerebras starts unticked.
+const CHAT_FAMILIES=[["openai","OpenAI (ChatGPT, Codex)"],["anthropic","Claude (Anthropic, Claude Code)"],["gemini","Google Gemini"],["xai","Grok (xAI)"],["groq","Groq"],["cerebras","Cerebras"],["mistral","Mistral"],["openrouter","OpenRouter"],["nvidia","NVIDIA"],["github","GitHub Models"],["cloudflare","Cloudflare"],["cohere","Cohere"],["huggingface","Hugging Face"]];
+function ProviderUseList({cfg,set}) {
+  const blocked=new Set(String(cfg.blockedProviders??"cerebras").split(",").map(x=>x.trim()).filter(Boolean));
+  const toggle=(id,on)=>{const next=new Set(blocked);if(on)next.delete(id);else next.add(id);set({blockedProviders:[...next].join(",")})};
+  return <fieldset className="providerUse"><legend>Furnizori folosiți în chat</legend>
+    <p className="settingsHelp">Debifat: modelele lui nu apar în listă și nu răspund, nici ca rezervă. Combinațiile OmniRoute („Ai principal”) rămân; ce modele conțin le alegi în panoul OmniRoute.</p>
+    <div className="providerUseGrid">{CHAT_FAMILIES.map(([id,label])=><label key={id} className="providerUseItem"><input type="checkbox" checked={!blocked.has(id)} onChange={e=>toggle(id,e.target.checked)}/><span>{label}</span></label>)}</div>
+  </fieldset>;
+}
 function KeyField({label,name,cfg,keys,setKeys,placeholder,token=false}) {
   const pending=keys[name]||"",clearing=pending==="__CLEAR__",saved=!!cfg?.[name];
   const savedText=token?"Token salvat — lasă gol pentru a-l păstra":"Cheie salvată — lasă gol pentru a o păstra";
@@ -1245,8 +1256,9 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <ServerKeysBox/>
         <label className="toggleRow"><div><b>Folosește API-urile directe</b><span>Modelele lor apar în listă (Groq, Gemini, Cerebras…). Răspund când le alegi sau când nu ai ales niciun model.</span></div><input type="checkbox" checked={cfg.directChatEnabled!==false} onChange={e=>set({directChatEnabled:e.target.checked})}/></label>
         <label className="toggleRow"><div><b>Rezervă automată</b><span>Dacă modelul ales nu răspunde, trece singur la API-urile directe. Oprit: răspunde doar modelul ales, iar altfel vezi eroarea.</span></div><input type="checkbox" checked={cfg.chatFallbackOnFailure===true} onChange={e=>set({chatFallbackOnFailure:e.target.checked})}/></label>
-        <label>Protecție costuri<select value={cfg.directChatCostPolicy||"free_only"} onChange={e=>set({directChatCostPolicy:e.target.value})}><option value="free_only">Doar provideri fără cost direct</option><option value="allow_paid">Permite și OpenAI</option></select></label>
-        <label>Ordinea de încercare<input value={cfg.directChatProviderOrder||"cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai"} onChange={e=>set({directChatProviderOrder:e.target.value})}/></label>
+        <ProviderUseList cfg={cfg} set={set}/>
+        <label>Protecție costuri<select value={cfg.directChatCostPolicy||"free_only"} onChange={e=>set({directChatCostPolicy:e.target.value})}><option value="free_only">Doar provideri fără cost direct</option><option value="allow_paid">Permite și API-urile plătite (OpenAI, Grok)</option></select></label>
+        <label>Ordinea de încercare<input value={cfg.directChatProviderOrder||"cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai,xai"} onChange={e=>set({directChatProviderOrder:e.target.value})}/></label>
         <p className="settingsHelp">Fiecare model din liste apare în lista de modele de sus. Dacă lipsește cheia, providerul răspunde cu 429/404/503 sau nu răspunde deloc, AI Stoica încearcă următorul model, apoi următorul provider.</p>
         <ProviderHead name="Cerebras" id="cerebras" cfg={cfg}>Compatibil OpenAI.</ProviderHead>
         <KeyField label="Cheie API Cerebras" name="cerebrasApiKey" placeholder="csk-..." {...keyProps}/>
@@ -1282,6 +1294,9 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <ProviderHead name="OpenAI" id="openai" cfg={cfg}>Inclus, dar blocat implicit de protecția costurilor.</ProviderHead>
         <KeyField label="Cheie API OpenAI" name="openAiApiKey" placeholder="sk-..." {...keyProps}/>
         <label>Modele OpenAI · separate prin virgulă<input value={cfg.openAiChatModels||""} onChange={e=>set({openAiChatModels:e.target.value})}/></label>
+        <ProviderHead name="Grok (xAI)" id="xai" cfg={cfg}>Plătit pe consum; aceeași cheie face și poze și video Grok Imagine. Pornește-l cu „Permite și API-urile plătite”.</ProviderHead>
+        <KeyField label="Cheie API xAI" name="xaiApiKey" placeholder="xai-..." {...keyProps}/>
+        <label>Modele Grok · separate prin virgulă<input value={cfg.xaiModels||""} onChange={e=>set({xaiModels:e.target.value})} placeholder="grok-4.6,grok-4.3"/></label>
       </>}
       {tab==="images"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><ImageIcon size={22}/></div><div><h3>Poze</h3><p>Generare imagini, API-uri, modele și încercare automată a altui provider.</p></div></div>
         <label><span className="labelLine">Model generare imagini <span className="optional">opțional</span></span><input value={cfg.imageModel||""} onChange={e=>set({imageModel:e.target.value})} placeholder="Automat — primul model de imagine disponibil"/></label>
@@ -1290,7 +1305,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
           <label>Mod de alegere<select value={cfg.imageProviderMode||"auto"} onChange={e=>set({imageProviderMode:e.target.value})}><option value="auto">Automat — ordinea mea</option><option value="fast">⚡ Rapid</option><option value="quality">✨ Calitate</option><option value="free">🛡️ Doar gratuit</option></select></label>
           <label>Protecție costuri<select value={cfg.imageCostPolicy||"free_only"} onChange={e=>set({imageCostPolicy:e.target.value})}><option value="free_only">Nu permite costuri directe</option><option value="allow_paid">Permite provideri cu plată</option></select></label>
           <p className="settingsHelp">{(cfg.imageCostPolicy||"free_only")==="free_only"?"Protecție activă: AI Stoica încearcă direct Cloudflare și Pollinations. Hugging Face, Together, OpenAI, Stability, fal.ai și Replicate sunt blocate dacă ar putea consuma credit plătit. La OpenRouter se verifică prețul înainte de apel.":"Atenție: providerii configurați pot consuma credit conform tarifelor lor."}</p>
-          <label>Ordinea de încercare<input value={cfg.imageProviderOrder||"cloudflare,pollinations,huggingface,together,openrouter,fal,replicate,stability,openai"} onChange={e=>set({imageProviderOrder:e.target.value})}/></label>
+          <label>Ordinea de încercare<input value={cfg.imageProviderOrder||"cloudflare,pollinations,huggingface,together,openrouter,fal,replicate,stability,openai,gemini,xai"} onChange={e=>set({imageProviderOrder:e.target.value})}/></label>
           <div className="providerGroup"><b>Cloudflare Workers AI</b><small>FLUX.1 Schnell · provider prioritar în modul gratuit.</small></div>
           <label>Cloudflare Account ID<input value={cfg.cloudflareAccountId||""} onChange={e=>set({cloudflareAccountId:e.target.value})} placeholder="Account ID"/></label>
           <KeyField label="Token API Cloudflare" name="cloudflareApiToken" placeholder="Token API" token {...keyProps}/>
@@ -1304,6 +1319,10 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
           <div className="providerGroup"><b>OpenAI</b><small>GPT Image prin API OpenAI.</small></div>
           <KeyField label="Cheie API OpenAI" name="openAiApiKey" placeholder="sk-..." {...keyProps}/>
           <label>Model imagine OpenAI<input value={cfg.openAiImageModel||"gpt-image-1-mini"} onChange={e=>set({openAiImageModel:e.target.value})}/></label>
+          <div className="providerGroup"><b>Google Gemini</b><small>„Nano Banana” prin cheia Gemini de la API-uri AI. Mai multe nume, separate prin virgulă: următorul e încercat dacă Google nu îl cunoaște.</small></div>
+          <label>Model imagine Gemini<input value={cfg.geminiImageModel||"gemini-3.1-flash-image"} onChange={e=>set({geminiImageModel:e.target.value})}/></label>
+          <div className="providerGroup"><b>Grok Imagine (xAI)</b><small>Prin cheia xAI de la API-uri AI.</small></div>
+          <label>Model imagine Grok<input value={cfg.xaiImageModel||"grok-imagine-image"} onChange={e=>set({xaiImageModel:e.target.value})}/></label>
           <div className="providerGroup"><b>Stability AI</b><small>Stable Image REST API.</small></div>
           <KeyField label="Cheie API Stability" name="stabilityApiKey" placeholder="sk-..." {...keyProps}/>
           <label>Motor Stability<select value={cfg.stabilityImageEngine||"core"} onChange={e=>set({stabilityImageEngine:e.target.value})}><option value="core">Core</option><option value="ultra">Ultra</option><option value="sd3">SD3</option></select></label>
@@ -1323,7 +1342,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <label>Mod video<select value={cfg.videoMode||"fast"} onChange={e=>{const videoMode=e.target.value;const quality=videoMode==="quality";set({videoMode,videoModel:quality?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast",openRouterVideoModel:quality?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast",geminiVideoModel:quality?"veo-3.1-generate-preview":"veo-3.1-fast-generate-preview"})}}><option value="fast">⚡ Rapid</option><option value="quality">🎬 Calitate</option><option value="free">🛡️ Doar gratuit</option></select></label>
         <label>Protecție costuri<select value={cfg.videoCostPolicy||"free_only"} onChange={e=>set({videoCostPolicy:e.target.value})}><option value="free_only">Nu porni joburi cu plată</option><option value="allow_paid">Permite provideri cu plată</option></select></label>
         <p className="settingsHelp">{(cfg.videoCostPolicy||"free_only")==="free_only"?"AI Stoica verifică prețul publicat când este disponibil și nu pornește generarea dacă nu poate confirma costul zero. Gemini Veo, fal.ai și Replicate rămân blocate în acest mod.":"Atenție: generarea video poate consuma rapid credit. Costul depinde de model, durată și rezoluție."}</p>
-        <label>Ordinea de încercare<input value={cfg.videoProviderOrder||"pollinations,openrouter,gemini,fal,replicate"} onChange={e=>set({videoProviderOrder:e.target.value})}/></label>
+        <label>Ordinea de încercare<input value={cfg.videoProviderOrder||"pollinations,openrouter,gemini,fal,replicate,openai,xai"} onChange={e=>set({videoProviderOrder:e.target.value})}/></label>
         <div className="providerGroup"><b>Pollinations Video</b><small>Cheia este comună cu secțiunea Poze.</small></div>
         <KeyField label="Cheie API Pollinations" name="pollinationsApiKey" placeholder="sk_..." {...keyProps}/>
         <label>Model video Pollinations<input value={cfg.pollinationsVideoModel||"google/veo-3.1-fast"} onChange={e=>set({pollinationsVideoModel:e.target.value})}/></label>
@@ -1333,6 +1352,10 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <div className="providerGroup"><b>Gemini · Veo</b><small>Veo 3.1 prin aceeași cheie Gemini folosită la chat.</small></div>
         <KeyField label="Cheie API Gemini" name="geminiApiKey" placeholder="AIza..." {...keyProps}/>
         <label>Model video Gemini<input value={cfg.geminiVideoModel||"veo-3.1-fast-generate-preview"} onChange={e=>set({geminiVideoModel:e.target.value})}/></label>
+        <div className="providerGroup"><b>OpenAI · Sora</b><small>Prin cheia OpenAI de la API-uri AI; videoclipuri de 4, 8 sau 12 secunde.</small></div>
+        <label>Model video OpenAI<input value={cfg.openAiVideoModel||"sora-2"} onChange={e=>set({openAiVideoModel:e.target.value})}/></label>
+        <div className="providerGroup"><b>Grok Imagine Video (xAI)</b><small>Prin cheia xAI de la API-uri AI; 1–15 secunde.</small></div>
+        <label>Model video Grok<input value={cfg.xaiVideoModel||"grok-imagine-video"} onChange={e=>set({xaiVideoModel:e.target.value})}/></label>
         <div className="providerGroup"><b>fal.ai Video</b><small>LTX Video. Poate folosi creditele inițiale, apoi credit plătit.</small></div>
         <KeyField label="Cheie API fal" name="falApiKey" placeholder="FAL_KEY" {...keyProps}/>
         <label>Model video fal<input value={cfg.falVideoModel||"fal-ai/ltx-video"} onChange={e=>set({falVideoModel:e.target.value})}/></label>

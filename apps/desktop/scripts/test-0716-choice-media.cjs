@@ -38,7 +38,7 @@ async function main() {
   });
   const omniPort = await listen(omni);
   const cfg = { baseUrl: `http://127.0.0.1:${omniPort}/v1`, apiKey: "sk-omni", model: "", webSearchEnabled: false, githubAutoContext: false,
-    directChatEnabled: true, directChatProviderOrder: "cerebras,groq", cerebrasApiKey: "k-cerebras", groqApiKey: "k-groq",
+    directChatEnabled: true, directChatProviderOrder: "cerebras,groq", blockedProviders: "", cerebrasApiKey: "k-cerebras", groqApiKey: "k-groq",
     openAiApiKey: "sk-openai-test", pollinationsFreeEnabled: false, imageProviderOrder: "openai", imageCostPolicy: "allow_paid" };
   const calls = { cerebras: 0, groq: 0, openai: 0 };
   const realFetch = globalThis.fetch;

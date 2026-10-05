@@ -22,6 +22,7 @@ async function main(){
     directChatEnabled:true,
     directChatCostPolicy:"free_only",
     directChatProviderOrder:"cerebras,groq",
+    blockedProviders:"",
     cerebrasApiKey:"test-cerebras-key",
     cerebrasModel:"gpt-oss-120b",
     groqApiKey:"test-groq-key",

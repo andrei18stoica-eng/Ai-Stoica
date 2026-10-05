@@ -22,7 +22,9 @@ const DIRECT_KEYS = {
   cloudflareAccountId: "CLOUDFLARE_ACCOUNT_ID", cloudflareApiToken: "CLOUDFLARE_API_TOKEN",
   // Images and video
   pollinationsApiKey: "POLLINATIONS_API_KEY", falApiKey: "FAL_API_KEY", replicateApiToken: "REPLICATE_API_TOKEN",
-  togetherApiKey: "TOGETHER_API_KEY", stabilityApiKey: "STABILITY_API_KEY"
+  togetherApiKey: "TOGETHER_API_KEY", stabilityApiKey: "STABILITY_API_KEY",
+  // Grok (xAI): chat, Grok Imagine pictures and video
+  xaiApiKey: "XAI_API_KEY"
 };
 
 function getOmniConfig() {
@@ -47,6 +49,8 @@ function getOmniConfig() {
     // Optional fixed media models, e.g. codex/gpt-5.6-sol (images through the ChatGPT subscription in OmniRoute).
     imageModel: env("AI_STOICA_IMAGE_MODEL"),
     videoModel: env("AI_STOICA_VIDEO_MODEL"),
+    // Providers left out of the chat (Settings → API-uri AI → Furnizori folosiți). Not set: Cerebras is left out.
+    blockedProviders: process.env.AI_STOICA_BLOCKED_PROVIDERS === undefined ? undefined : env("AI_STOICA_BLOCKED_PROVIDERS"),
     ...Object.fromEntries(Object.entries(DIRECT_KEYS).map(([key, name]) => [key, env(name)]))
   };
 }

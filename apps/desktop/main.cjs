@@ -23,7 +23,7 @@ let gateway;
 let watchdog;
 let omniInstalledCache = { at: 0, value: null };
 
-const SECRET_KEYS = ["apiKey","openAiApiKey","openRouterApiKey","cerebrasApiKey","groqApiKey","geminiApiKey","mistralApiKey","nvidiaApiKey","cohereApiKey","pollinationsApiKey","cloudflareApiToken","hfToken","togetherApiKey","stabilityApiKey","replicateApiToken","falApiKey","githubToken"];
+const SECRET_KEYS = ["apiKey","openAiApiKey","openRouterApiKey","cerebrasApiKey","groqApiKey","geminiApiKey","mistralApiKey","nvidiaApiKey","cohereApiKey","pollinationsApiKey","cloudflareApiToken","hfToken","togetherApiKey","stabilityApiKey","replicateApiToken","falApiKey","githubToken","xaiApiKey"];
 const MASK = "••••••••";
 function configPath() { return path.join(app.getPath("userData"), "config.json"); }
 function logError(line) {
@@ -47,11 +47,13 @@ function defaults() {
     videoMode: "fast",
     videoModel: "bytedance/seedance-2.0-fast",
     videoCostPolicy: "free_only",
-    videoProviderOrder: "pollinations,openrouter,gemini,fal,replicate",
+    videoProviderOrder: "pollinations,openrouter,gemini,fal,replicate,openai,xai",
     geminiVideoModel: "veo-3.1-fast-generate-preview",
     falVideoModel: "fal-ai/ltx-video",
     replicateVideoModel: "wan-video/wan-2.2-t2v-fast",
     openAiApiKey: "",
+    xaiApiKey: "",
+    blockedProviders: "cerebras",
     openRouterApiKey: "",
     cerebrasApiKey: "",
     groqApiKey: "",
@@ -74,7 +76,7 @@ function defaults() {
     ...DIRECT_MODEL_DEFAULTS,
     imageProviderMode: "auto",
     imageCostPolicy: "free_only",
-    imageProviderOrder: "cloudflare,pollinations,huggingface,together,openrouter,fal,replicate,stability,openai",
+    imageProviderOrder: "cloudflare,pollinations,huggingface,together,openrouter,fal,replicate,stability,openai,gemini,xai",
     openAiImageModel: "gpt-image-1-mini",
     stabilityImageEngine: "core",
     replicateImageModel: "black-forest-labs/flux-schnell",
@@ -137,7 +139,14 @@ function saveConfig(input) {
     directChatEnabled: cfg.directChatEnabled !== false,
     chatFallbackOnFailure: cfg.chatFallbackOnFailure === true,
     directChatCostPolicy: cfg.directChatCostPolicy==="allow_paid"?"allow_paid":"free_only",
-    directChatProviderOrder: String(cfg.directChatProviderOrder || "cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai").trim(),
+    directChatProviderOrder: String(cfg.directChatProviderOrder || "cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai,xai").trim(),
+    // Providers left out of the chat; "" keeps them all. Older configs (no value) leave Cerebras out.
+    blockedProviders: typeof cfg.blockedProviders === "string" ? cfg.blockedProviders.split(",").map(x => x.trim().toLowerCase()).filter(x => /^[a-z0-9@-]{2,20}$/.test(x)).join(",") : "cerebras",
+    xaiModels: String(cfg.xaiModels || DIRECT_MODEL_DEFAULTS.xaiModels).trim(),
+    xaiImageModel: String(cfg.xaiImageModel || "grok-imagine-image").trim(),
+    xaiVideoModel: String(cfg.xaiVideoModel || "grok-imagine-video").trim(),
+    openAiVideoModel: String(cfg.openAiVideoModel || "sora-2").trim(),
+    geminiImageModel: String(cfg.geminiImageModel || "gemini-3.1-flash-image").trim(),
     cerebrasModel: String(cfg.cerebrasModel || DIRECT_MODEL_DEFAULTS.cerebrasModel).trim(),
     groqModel: String(cfg.groqModel || DIRECT_MODEL_DEFAULTS.groqModel).trim(),
     geminiModels: String(cfg.geminiModels || DIRECT_MODEL_DEFAULTS.geminiModels).trim(),
@@ -152,7 +161,7 @@ function saveConfig(input) {
     imageModel: String(cfg.imageModel || "").trim(),
     imageProviderMode: ["auto","fast","quality","free"].includes(String(cfg.imageProviderMode))?String(cfg.imageProviderMode):"auto",
     imageCostPolicy: cfg.imageCostPolicy==="allow_paid"?"allow_paid":"free_only",
-    imageProviderOrder: String(cfg.imageProviderOrder || "cloudflare,pollinations,huggingface,together,openrouter,fal,replicate,stability,openai").trim(),
+    imageProviderOrder: String(cfg.imageProviderOrder || "cloudflare,pollinations,huggingface,together,openrouter,fal,replicate,stability,openai,gemini,xai").trim(),
     cloudflareAccountId: String(cfg.cloudflareAccountId || "").trim(),
     openAiImageModel: String(cfg.openAiImageModel || "gpt-image-1-mini").trim(),
     stabilityImageEngine: ["core","ultra","sd3"].includes(String(cfg.stabilityImageEngine))?String(cfg.stabilityImageEngine):"core",
@@ -160,7 +169,7 @@ function saveConfig(input) {
     falImageModel: String(cfg.falImageModel || "fal-ai/z-image/turbo").trim(),
     videoMode: ["fast","quality","free"].includes(String(cfg.videoMode))?String(cfg.videoMode):"fast",
     videoCostPolicy: cfg.videoCostPolicy==="allow_paid"?"allow_paid":"free_only",
-    videoProviderOrder: String(cfg.videoProviderOrder || "pollinations,openrouter,gemini,fal,replicate").trim(),
+    videoProviderOrder: String(cfg.videoProviderOrder || "pollinations,openrouter,gemini,fal,replicate,openai,xai").trim(),
     geminiVideoModel: String(cfg.geminiVideoModel || "veo-3.1-fast-generate-preview").trim(),
     falVideoModel: String(cfg.falVideoModel || "fal-ai/ltx-video").trim(),
     replicateVideoModel: String(cfg.replicateVideoModel || "wan-video/wan-2.2-t2v-fast").trim(),

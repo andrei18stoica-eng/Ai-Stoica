@@ -136,6 +136,7 @@ services:
       REPLICATE_API_TOKEN: ${REPLICATE_API_TOKEN:-}
       TOGETHER_API_KEY: ${TOGETHER_API_KEY:-}
       STABILITY_API_KEY: ${STABILITY_API_KEY:-}
+      XAI_API_KEY: ${XAI_API_KEY:-}
     volumes:
       - web-data:/data
       - ${AI_STOICA_UPDATE_HOST_DIR:-/var/lib/ai-stoica-update}:/update

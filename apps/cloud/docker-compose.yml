@@ -86,6 +86,7 @@ services:
       REPLICATE_API_TOKEN: ${REPLICATE_API_TOKEN:-}
       TOGETHER_API_KEY: ${TOGETHER_API_KEY:-}
       STABILITY_API_KEY: ${STABILITY_API_KEY:-}
+      XAI_API_KEY: ${XAI_API_KEY:-}
     volumes:
       - ai-stoica-data:/data
     ports:

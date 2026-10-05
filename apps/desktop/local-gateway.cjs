@@ -28,9 +28,10 @@ function inferProvider(entry){
   if(explicit)return explicit;
   const id=normalizeModelKey(typeof entry==="string"?entry:entry&&entry.id);
   const first=id.split("/")[0];
-  const prefix={openai:"openai",anthropic:"anthropic",google:"gemini",gemini:"gemini",cerebras:"cerebras",groq:"groq",cloudflare:"cloudflare",openrouter:"openrouter","@cf":"cloudflare"};
+  const prefix={openai:"openai",anthropic:"anthropic",google:"gemini",gemini:"gemini",cerebras:"cerebras",groq:"groq",cloudflare:"cloudflare",openrouter:"openrouter","@cf":"cloudflare",xai:"xai","x-ai":"xai"};
   if(prefix[first])return prefix[first];
   if(/groq/.test(id))return "groq";
+  if(/\bgrok/.test(id))return "xai";
   if(/cerebras/.test(id))return "cerebras";
   if(/cloudflare|@cf\//.test(id))return "cloudflare";
   if(/openrouter/.test(id))return "openrouter";
@@ -39,6 +40,26 @@ function inferProvider(entry){
   if(/openai|codex|\bo[134]\b/.test(id)||(!/gpt[-_. ]?oss/.test(id)&&/gpt/.test(id)))return "openai";
   return "";
 }
+
+// The company behind a model id, for Settings → "Furnizori folosiți". OmniRoute's subscription prefixes count as their
+// maker (cx/ = ChatGPT/Codex, cc/ = Claude Code, gc/ = Gemini CLI …). Combinations have no family and are never hidden.
+const FAMILY_PREFIX={openai:"openai",cx:"openai",codex:"openai","chatgpt-web":"openai","cgpt-web":"openai",
+  anthropic:"anthropic",claude:"anthropic",cc:"anthropic","claude-code":"anthropic",
+  gemini:"gemini",google:"gemini",gc:"gemini","gemini-cli":"gemini",gweb:"gemini","gemini-web":"gemini",
+  xai:"xai","x-ai":"xai",grok:"xai",groq:"groq",cerebras:"cerebras",mistral:"mistral",openrouter:"openrouter",nvidia:"nvidia",
+  github:"github",cloudflare:"cloudflare","@cf":"cloudflare",cohere:"cohere",huggingface:"huggingface"};
+function providerFamily(id){
+  const v=normalizeModelKey(id);
+  if(!v.includes("/"))return "";
+  return FAMILY_PREFIX[v.split("/")[0]]||"";
+}
+// Cerebras is off unless the Owner turns it back on (its answers were the weakest); an empty value means none is off.
+const DEFAULT_BLOCKED_PROVIDERS="cerebras";
+function blockedProviders(cfg){
+  const raw=cfg?.blockedProviders;
+  return new Set(String(raw===undefined||raw===null?DEFAULT_BLOCKED_PROVIDERS:raw).split(",").map(x=>x.trim().toLowerCase()).filter(Boolean));
+}
+function modelBlocked(cfg,id){const family=providerFamily(id);return !!family&&blockedProviders(cfg).has(family);}
 
 function loadOrCreateSecret(dataDir) {
   const file = path.join(dataDir, "auth-secret.txt");
@@ -638,7 +659,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const id=String(typeof entry==="string"?entry:entry?.id||"").trim();
       const provider=String(typeof entry==="string"?"":entry?.provider||"").trim().toLowerCase();
       const first=id.toLowerCase().split("/")[0];
-      const alreadyScoped=["openai","anthropic","google","gemini","cerebras","groq","cloudflare","openrouter","@cf"].includes(first);
+      const alreadyScoped=["openai","anthropic","google","gemini","cerebras","groq","cloudflare","openrouter","@cf","xai"].includes(first);
       const policyId=provider&&!alreadyScoped?`${provider}/${id}`:id;
       return {entry,id,policyId};
     }).filter(x=>x.id);
@@ -678,7 +699,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   }
   // A model from the direct APIs list (groq/…, cerebras/…, as /api/models offers it) that OmniRoute does not have:
   // that API answers it.
-  const DIRECT_PROVIDERS=["cerebras","groq","gemini","mistral","nvidia","github","openrouter","cloudflare","cohere","huggingface","openai"];
+  const DIRECT_PROVIDERS=["cerebras","groq","gemini","mistral","nvidia","github","openrouter","cloudflare","cohere","huggingface","openai","xai"];
   async function isDirectModel(cfg,allowed,id){
     const v=String(id||"").trim(),provider=(v.split("/")[0]||"").toLowerCase();
     if(!allowed||cfg.directChatEnabled===false||!v.includes("/")||!DIRECT_PROVIDERS.includes(provider))return false;
@@ -698,6 +719,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }
     await requireModelAccess(context?.cloudToken,requested);
     requirePersonalAccess(context,requested);
+    if(modelBlocked(cfg,requested))throw policyFailure(`Furnizorul modelului «${requested}» este oprit în Setări → API-uri AI → Furnizori folosiți. Alege alt model din listă.`,403);
     const automatic=chosen===false||!String(requestedModel||"").trim()||requested!==asked;
     if(await isDirectModel(cfg,directApisAllowed(context),requested))return {task:"direct",automatic,direct:true,reasons:["model API direct ales"],selectedModel:requested,candidates:[]};
     return {task:"manual",automatic,reasons:[automatic?"model implicit configurat":"model ales manual"],selectedModel:requested,candidates:[{id:requested,provider:inferProvider(requested),score:0}]};
@@ -1031,6 +1053,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       }catch(e){policyError=policyError||("API direct: "+roError(e))}
     }
     if(!personalAllowed(req.user,req.cloudUser))filtered=filtered.filter(x=>!PERSONAL_PROVIDERS.test(String(typeof x==="string"?x:x?.id||"")));
+    filtered=filtered.filter(x=>!modelBlocked(cfg,String(typeof x==="string"?x:x?.id||"")));
     if(!filtered.length&&omniError)return res.status(502).json({error:"Nu pot încărca modele OmniRoute și nu există API-uri directe configurate: "+omniError});
     res.json({
       data:filtered,
@@ -1611,6 +1634,44 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     return {...resolved,model:`openai/${model}`,provider:"openai-direct"};
   }
 
+  // Grok Imagine (xAI): https://api.x.ai/v1/images/generations, OpenAI-style request and answer.
+  async function directXaiImage(cfg,prompt){
+    const key=String(cfg.xaiApiKey||"").trim();if(!key)return null;
+    const model=String(cfg.xaiImageModel||"grok-imagine-image").trim().replace(/^(xai|x-ai)\//i,"");
+    const r=await fetch("https://api.x.ai/v1/images/generations",{
+      method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${key}`},
+      body:JSON.stringify({model,prompt:String(prompt).slice(0,4000),n:1,response_format:"b64_json"}),
+      signal:mediaSignal(180000)
+    });
+    const resolved=await fetchBinaryOrCandidate(r,"image");
+    return {...resolved,model:`xai/${model}`,provider:"xai-direct"};
+  }
+  // Gemini image models ("Nano Banana") answer generateContent with the picture as inline data. The first name Google
+  // does not know (404) moves on to the next one in the list.
+  async function directGeminiImage(cfg,prompt){
+    const key=String(cfg.geminiApiKey||"").trim();if(!key)return null;
+    const models=csvValues(cfg.geminiImageModel,"gemini-3.1-flash-image,gemini-3.1-flash-image-preview,gemini-2.5-flash-image");
+    let lastError="";
+    for(const model of models){
+      const r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(model)+":generateContent",{
+        method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},
+        body:JSON.stringify({contents:[{parts:[{text:String(prompt).slice(0,4000)}]}],generationConfig:{responseModalities:["IMAGE"]}}),
+        signal:mediaSignal(180000)
+      });
+      const text=await r.text();
+      if(r.status===404){lastError=`${model}: HTTP 404`;continue}
+      if(!r.ok)throw new Error("HTTP "+r.status+": "+text.slice(0,700));
+      let body={};try{body=JSON.parse(text)}catch{throw new Error("Gemini a returnat un răspuns invalid.")}
+      const part=(body?.candidates||[]).flatMap(c=>c?.content?.parts||[]).find(x=>x?.inlineData?.data||x?.inline_data?.data);
+      const data=part?.inlineData||part?.inline_data;
+      if(!data?.data)throw new Error("Gemini nu a returnat nicio imagine"+(body?.promptFeedback?.blockReason?` (${body.promptFeedback.blockReason})`:"")+".");
+      const bytes=Buffer.from(String(data.data),"base64");
+      if(bytes.length>MEDIA_MAX.image)throw new Error("Imaginea Gemini depășește limita locală de siguranță.");
+      return {bytes,mime:inferMediaMime(bytes,data.mimeType||data.mime_type||"image/png","image"),model:`gemini/${model}`,provider:"gemini-image-direct"};
+    }
+    throw new Error("Niciun model de imagine Gemini nu este disponibil ("+lastError+"). Pune numele corect în Setări → Poze.");
+  }
+
   function directOpenRouterKey(cfg){
     const explicit=String(cfg.openRouterApiKey||"").trim();
     if(explicit)return explicit;
@@ -1795,13 +1856,13 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   // Orders saved before 0.7.13 do not know "pollinations-free": it goes right after "pollinations".
   function imageProviderOrder(cfg){
-    const known=["cloudflare","pollinations","pollinations-free","huggingface","together","openrouter","fal","replicate","stability","openai"];
+    const known=["cloudflare","pollinations","pollinations-free","huggingface","together","openrouter","fal","replicate","stability","openai","gemini","xai"];
     const configured=String(cfg.imageProviderOrder||"").split(",").map(x=>x.trim().toLowerCase()).filter(x=>known.includes(x));
     if(!configured.includes("pollinations-free")&&configured.includes("pollinations"))configured.splice(configured.indexOf("pollinations")+1,0,"pollinations-free");
     const base=[...new Set([...configured,...known])];
     const mode=String(cfg.imageProviderMode||"auto");
-    if(mode==="fast")return ["cloudflare","pollinations","pollinations-free","openrouter","fal","huggingface","together","replicate","stability","openai"];
-    if(mode==="quality")return ["openai","openrouter","stability","fal","cloudflare","huggingface","together","replicate","pollinations","pollinations-free"];
+    if(mode==="fast")return ["cloudflare","pollinations","pollinations-free","openrouter","fal","huggingface","together","replicate","stability","gemini","xai","openai"];
+    if(mode==="quality")return ["openai","gemini","xai","openrouter","stability","fal","cloudflare","huggingface","together","replicate","pollinations","pollinations-free"];
     return base;
   }
 
@@ -1840,6 +1901,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       huggingface:{label:"Hugging Face",configured:!!String(cfg.hfToken||"").trim(),paidRisk:true,run:()=>directHuggingFaceImage(cfg,prompt,size)},
       together:{label:"Together AI",configured:!!String(cfg.togetherApiKey||"").trim(),paidRisk:true,run:()=>directTogetherImage(cfg,prompt,size)},
       openai:{label:"OpenAI",configured:!!String(cfg.openAiApiKey||"").trim(),paidRisk:true,run:()=>directOpenAiImage(cfg,prompt,size)},
+      gemini:{label:"Google Gemini",configured:!!String(cfg.geminiApiKey||"").trim(),paidRisk:true,run:()=>directGeminiImage(cfg,prompt)},
+      xai:{label:"Grok (xAI)",configured:!!String(cfg.xaiApiKey||"").trim(),paidRisk:true,run:()=>directXaiImage(cfg,prompt)},
       openrouter:{label:"OpenRouter",configured:!!directOpenRouterKey(cfg),paidRisk:!openRouterFree,run:()=>directOpenRouterImage(cfg,prompt)},
       stability:{label:"Stability AI",configured:!!String(cfg.stabilityApiKey||"").trim(),paidRisk:true,run:()=>directStabilityImage(cfg,prompt)},
       fal:{label:"fal.ai",configured:!!String(cfg.falApiKey||"").trim(),paidRisk:true,run:()=>directFalImage(cfg,prompt)},
@@ -2061,12 +2124,65 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     throw new Error("Replicate nu a finalizat videoclipul în intervalul permis.");
   }
 
+  // OpenAI Sora: create the job, poll it, then download /content (the file comes with the API key, not as a public URL).
+  async function directOpenAiVideo(cfg,prompt,duration,aspectRatio){
+    const key=String(cfg.openAiApiKey||"").trim();if(!key)return null;
+    const model=String(cfg.openAiVideoModel||"sora-2").trim().replace(/^openai\//i,"");
+    const seconds=[4,8,12].sort((a,b)=>Math.abs(a-Number(duration||4))-Math.abs(b-Number(duration||4)))[0];
+    const size=String(aspectRatio)==="9:16"?"720x1280":"1280x720";
+    const headers={"Content-Type":"application/json",Authorization:`Bearer ${key}`};
+    const submit=await fetch("https://api.openai.com/v1/videos",{method:"POST",headers,body:JSON.stringify({model,prompt:String(prompt).slice(0,4000),seconds:String(seconds),size}),signal:mediaSignal(60000)});
+    const text=await submit.text();let job={};try{job=JSON.parse(text)}catch{}
+    if(!submit.ok)throw new Error("HTTP "+submit.status+": "+text.slice(0,700));
+    const id=String(job?.id||"").trim();if(!id)throw new Error("OpenAI nu a returnat ID-ul videoclipului.");
+    const deadline=Date.now()+10*60*1000;
+    while(Date.now()<deadline){
+      const status=String(job?.status||"").toLowerCase();
+      if(status==="completed"){
+        const file=await providerFetch("https://api.openai.com/v1/videos/"+encodeURIComponent(id)+"/content",{headers:{Authorization:`Bearer ${key}`},signal:mediaSignal(180000)},["api.openai.com"]);
+        const resolved=await fetchBinaryOrCandidate(file,"video");
+        return {...resolved,model:`openai/${model}`,provider:"openai-video-direct"};
+      }
+      if(["failed","cancelled","canceled","expired"].includes(status))throw new Error("OpenAI Sora: "+String(job?.error?.message||status));
+      await mediaSleep(5000);
+      const r=await fetch("https://api.openai.com/v1/videos/"+encodeURIComponent(id),{headers:{Authorization:`Bearer ${key}`},signal:mediaSignal(20000)});
+      const st=await r.text();try{job=JSON.parse(st)}catch{job={status:"unknown"}}
+      if(!r.ok)throw new Error("OpenAI Sora status HTTP "+r.status+": "+st.slice(0,500));
+    }
+    throw new Error("OpenAI Sora nu a finalizat videoclipul în intervalul permis.");
+  }
+  // Grok Imagine Video (xAI): start with /v1/videos/generations, poll /v1/videos/{request_id} until "done".
+  async function directXaiVideo(cfg,prompt,duration,aspectRatio){
+    const key=String(cfg.xaiApiKey||"").trim();if(!key)return null;
+    const model=String(cfg.xaiVideoModel||"grok-imagine-video").trim().replace(/^(xai|x-ai)\//i,"");
+    const headers={"Content-Type":"application/json",Authorization:`Bearer ${key}`};
+    const submit=await fetch("https://api.x.ai/v1/videos/generations",{method:"POST",headers,body:JSON.stringify({model,prompt:String(prompt).slice(0,4000),duration:Math.max(1,Math.min(15,Number(duration||5))),aspect_ratio:String(aspectRatio||"16:9")}),signal:mediaSignal(60000)});
+    const text=await submit.text();let job={};try{job=JSON.parse(text)}catch{}
+    if(!submit.ok)throw new Error("HTTP "+submit.status+": "+text.slice(0,700));
+    const id=String(job?.request_id||job?.id||"").trim();if(!id)throw new Error("xAI nu a returnat ID-ul cererii video.");
+    const deadline=Date.now()+10*60*1000;let state=job;
+    while(Date.now()<deadline){
+      const status=String(state?.status||"").toLowerCase();
+      const url=state?.video?.url||state?.url||state?.data?.[0]?.url||"";
+      if(url&&(status==="done"||status==="completed"||!status)){
+        const resolved=await resolveGeneratedMedia({type:"url",value:String(url)},"video");
+        return {...resolved,model:`xai/${model}`,provider:"xai-video-direct"};
+      }
+      if(["failed","expired","error","cancelled","canceled"].includes(status))throw new Error("Grok Imagine: "+String(state?.error?.message||state?.error||status));
+      await mediaSleep(5000);
+      const r=await fetch("https://api.x.ai/v1/videos/"+encodeURIComponent(id),{headers:{Authorization:`Bearer ${key}`},signal:mediaSignal(20000)});
+      const st=await r.text();try{state=JSON.parse(st)}catch{state={status:"unknown"}}
+      if(!r.ok)throw new Error("Grok Imagine status HTTP "+r.status+": "+st.slice(0,500));
+    }
+    throw new Error("Grok Imagine nu a finalizat videoclipul în intervalul permis.");
+  }
+
   function videoProviderOrder(cfg){
-    const known=["pollinations","openrouter","gemini","fal","replicate"];
+    const known=["pollinations","openrouter","gemini","fal","replicate","openai","xai"];
     const configured=String(cfg.videoProviderOrder||known.join(",")).split(",").map(x=>x.trim().toLowerCase()).filter(x=>known.includes(x));
     const base=[...new Set([...configured,...known])];
-    if(cfg.videoMode==="quality")return ["gemini","openrouter","fal","replicate","pollinations"];
-    if(cfg.videoMode==="fast")return ["pollinations","openrouter","fal","replicate","gemini"];
+    if(cfg.videoMode==="quality")return ["gemini","openai","xai","openrouter","fal","replicate","pollinations"];
+    if(cfg.videoMode==="fast")return ["pollinations","openrouter","xai","fal","replicate","gemini","openai"];
     return base;
   }
   async function directVideoAttempts(cfg,prompt,duration,aspectRatio){
@@ -2079,7 +2195,9 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       openrouter:{label:"OpenRouter",configured:!!directOpenRouterKey(cfg),paidRisk:!orFree,run:()=>directOpenRouterVideo(cfg,prompt,duration,aspectRatio)},
       gemini:{label:"Gemini Veo",configured:!!String(cfg.geminiApiKey||"").trim(),paidRisk:true,run:()=>directGeminiVideo(cfg,prompt,duration,aspectRatio)},
       fal:{label:"fal.ai",configured:!!String(cfg.falApiKey||"").trim(),paidRisk:true,run:()=>directFalVideo(cfg,prompt,duration,aspectRatio)},
-      replicate:{label:"Replicate",configured:!!String(cfg.replicateApiToken||"").trim(),paidRisk:true,run:()=>directReplicateVideo(cfg,prompt,duration,aspectRatio)}
+      replicate:{label:"Replicate",configured:!!String(cfg.replicateApiToken||"").trim(),paidRisk:true,run:()=>directReplicateVideo(cfg,prompt,duration,aspectRatio)},
+      openai:{label:"OpenAI Sora",configured:!!String(cfg.openAiApiKey||"").trim(),paidRisk:true,run:()=>directOpenAiVideo(cfg,prompt,duration,aspectRatio)},
+      xai:{label:"Grok Imagine (xAI)",configured:!!String(cfg.xaiApiKey||"").trim(),paidRisk:true,run:()=>directXaiVideo(cfg,prompt,duration,aspectRatio)}
     };
     return videoProviderOrder(cfg).map(id=>({id,...defs[id]})).filter(x=>x.configured&&(!strictFree||!x.paidRisk));
   }
@@ -2103,7 +2221,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       : /video|runway|veo|kling|sora|seedance|hailuo|wan|ltx|minimax|hunyuan/.test(meta));
     if(!matches)return null;
     const first=id.toLowerCase().split("/")[0];
-    const alreadyScoped=["openai","anthropic","google","gemini","cerebras","groq","cloudflare","openrouter","@cf"].includes(first);
+    const alreadyScoped=["openai","anthropic","google","gemini","cerebras","groq","cloudflare","openrouter","@cf","xai"].includes(first);
     const policyId=provider&&!alreadyScoped?`${provider}/${id}`:id;
     return {entry,id,provider,policyId};
   }
@@ -2917,7 +3035,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   async function directChatCandidates(cfg,requestedModel=""){
     if(cfg.directChatEnabled===false)return [];
     const strictFree=cfg.directChatCostPolicy!=="allow_paid";
-    const known=["cerebras","groq","gemini","mistral","nvidia","github","openrouter","cloudflare","cohere","huggingface","openai"];
+    const known=["cerebras","groq","gemini","mistral","nvidia","github","openrouter","cloudflare","cohere","huggingface","openai","xai"];
     const configured=String(cfg.directChatProviderOrder||known.join(",")).split(",").map(x=>x.trim().toLowerCase()).filter(x=>known.includes(x));
     const baseOrder=[...new Set([...configured,...known])];
     const requested=String(requestedModel||"").trim();
@@ -2952,9 +3070,11 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       cloudflare:()=>push("cloudflare",cfg.cloudflareAccountId?"https://api.cloudflare.com/client/v4/accounts/"+encodeURIComponent(String(cfg.cloudflareAccountId).trim())+"/ai/v1":"",String(cfg.cloudflareApiToken||"").trim(),csvValues(cfg.cloudflareChatModel,MODEL_DEFAULTS.cloudflareChatModel),{label:"Cloudflare Workers AI"}),
       cohere:()=>push("cohere","https://api.cohere.ai/compatibility/v1",String(cfg.cohereApiKey||"").trim(),csvValues(cfg.cohereModel,MODEL_DEFAULTS.cohereModel),{label:"Cohere"}),
       huggingface:()=>push("huggingface","https://router.huggingface.co/v1",String(cfg.hfToken||"").trim(),csvValues(cfg.huggingFaceChatModel,MODEL_DEFAULTS.huggingFaceChatModel),{label:"Hugging Face"}),
-      openai:()=>push("openai","https://api.openai.com/v1",String(cfg.openAiApiKey||"").trim(),csvValues(cfg.openAiChatModels,MODEL_DEFAULTS.openAiChatModels),{label:"OpenAI",paidRisk:true})
+      openai:()=>push("openai","https://api.openai.com/v1",String(cfg.openAiApiKey||"").trim(),csvValues(cfg.openAiChatModels,MODEL_DEFAULTS.openAiChatModels),{label:"OpenAI",paidRisk:true}),
+      xai:()=>push("xai","https://api.x.ai/v1",String(cfg.xaiApiKey||"").trim(),csvValues(cfg.xaiModels,MODEL_DEFAULTS.xaiModels),{label:"Grok (xAI)",paidRisk:true})
     };
-    for(const id of order)defs[id]?.();
+    const blocked=blockedProviders(cfg);
+    for(const id of order)if(!blocked.has(id))defs[id]?.();
     return result;
   }
 
