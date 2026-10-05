@@ -1085,6 +1085,8 @@ function ServerKeysBox() {
   </div>;
 }
 
+// OmniRoute's connection names, as people know them.
+const OMNI_CONNECTIONS={codex:"Codex (ChatGPT)","grok-cli":"Grok CLI",github:"GitHub Copilot","claude-code":"Claude Code",claude:"Claude Code","gemini-cli":"Gemini CLI",antigravity:"Antigravity","gemini-web":"Gemini Web","chatgpt-web":"ChatGPT Web"};
 function ProviderTestBox() {
   const [state,setState]=useState({busy:false,data:null,media:[],omni:null,error:""});
   async function run(){
@@ -1097,6 +1099,7 @@ function ProviderTestBox() {
       <button className="secondary" onClick={run} disabled={state.busy}>{state.busy?"Se testează…":"Testează acum"}</button></div>
     {state.error&&<div className="providerRow bad"><X size={15}/><span>{state.error}</span></div>}
     {state.omni&&<div className={cx("providerRow",state.omni.ok?"good":"bad")}>{state.omni.ok?<Check size={15}/>:<X size={15}/>}<b>OmniRoute</b><span>{state.omni.ok?`cheia e bună · ${state.omni.models} modele, ${state.omni.combos} combinații · ${(state.omni.ms/1000).toFixed(1)} s`:state.omni.error}</span></div>}
+    {state.omni?.expired?.length>0&&<div className="providerRow bad omniExpired"><X size={15}/><b>Reconectează în OmniRoute</b><span>Loginul a expirat la: {state.omni.expired.map(x=>OMNI_CONNECTIONS[x]||x).join(", ")}. Panoul OmniRoute de pe server → Providers → fiecare cont → Reconnect (sau pune o cheie API).</span></div>}
     {(state.omni?.checks||[]).map(c=><div key={c.model} className={cx("providerRow omniCheck",c.ok?"good":"bad")}>{c.ok?<Check size={15}/>:<X size={15}/>}<b>{c.model}</b><span>{c.ok?`răspunde · ${(c.ms/1000).toFixed(1)} s`:c.error||("HTTP "+c.status)}</span></div>)}
     {state.data&&!state.data.length&&!state.omni?.ok&&<div className="providerRow bad"><X size={15}/><span>Nu ai nicio cheie de chat salvată. Adaugă de exemplu o cheie Gemini sau Groq și salvează.</span></div>}
     {(state.data||[]).map(x=><div key={x.provider} className={cx("providerRow",x.ok?"good":"bad")}>{x.ok?<Check size={15}/>:<X size={15}/>}<b>{x.label}</b><span>{x.model}{x.ok?` · ${(x.ms/1000).toFixed(1)} s`:` · ${x.error||("HTTP "+x.status)}`}{x.paid?" · cu plată":""}</span></div>)}

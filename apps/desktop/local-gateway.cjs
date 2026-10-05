@@ -678,12 +678,19 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     try{const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/models`,{headers:cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{},signal:AbortSignal.timeout(8000)});keyOk=r.ok;await cancelBody(r);}catch{}
     const why=upstreamErrorText(body).trim();
     if(!keyOk)return omniHttpError(status,"")+(why?` Răspunsul OmniRoute: ${why}`:"");
+    const expired=expiredConnections(why);
+    if(expired.length)return `loginul a expirat în OmniRoute pentru: ${expired.join(", ")} (HTTP ${status}). Cheia OmniRoute e bună; reconectează aceste conturi în panoul OmniRoute → Providers, sau alege alt model. Răspunsul OmniRoute: ${why}`;
     return `furnizorul acestui model a refuzat accesul (HTTP ${status})${why?": "+why:""}. Cheia OmniRoute e bună (lista de modele merge); reconectează contul sau cheia acestui furnizor în panoul OmniRoute → Providers, sau alege alt model.`;
   }
   // The reason an OpenAI-compatible service gives (OmniRoute lists which provider of a combination failed and why).
   function upstreamErrorText(body){
     try{const j=JSON.parse(body);const e=j?.error;return String((typeof e==="string"?e:e?.message)||j?.message||body).slice(0,400)}catch{return String(body||"").slice(0,300)}
   }
+  // OmniRoute names a connection whose login expired: "[codex] All 1 connection(s) authentication expired".
+  function expiredConnections(text){
+    return [...new Set([...String(text||"").matchAll(/\[([\w.-]+)\][^\[;]*?\bexpired\b/gi)].map(m=>m[1].toLowerCase()))];
+  }
+  const noCredit=text=>/insufficient_quota|no credits|credit balance|out of credits|payment required|exceeded your current quota/i.test(String(text||""));
   let omniEntriesLast=[];
   async function omniModelEntries(cfg) {
     const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/, "")}/models`,{
@@ -3339,12 +3346,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
             });
             const text=await r.text();
             if(r.ok)return {model,ok:true,status:r.status,ms:Date.now()-t0};
-            const why=upstreamErrorText(text).trim();
-            const hint=r.status===401||r.status===403?"furnizorul a refuzat accesul (cheia OmniRoute e bună): reconectează-l în OmniRoute → Providers":r.status===402||r.status===429?"fără credit sau limită atinsă":r.status===404?"modelul nu mai există în OmniRoute":"";
-            return {model,ok:false,status:r.status,ms:Date.now()-t0,error:[hint,`HTTP ${r.status}${why?": "+why:""}`].filter(Boolean).join(" · ").slice(0,400)};
+            const why=upstreamErrorText(text).trim(),expired=expiredConnections(why);
+            const hint=expired.length?`login expirat în OmniRoute (${expired.join(", ")}): reconectează în OmniRoute → Providers`:r.status===401||r.status===403?"furnizorul a refuzat accesul (cheia OmniRoute e bună): reconectează-l în OmniRoute → Providers":noCredit(why)?"fără credit la furnizor":r.status===402||r.status===429?"fără credit sau limită atinsă":r.status===404?"modelul nu mai există în OmniRoute":r.status===503?"furnizorul e aglomerat acum, încearcă mai târziu":"";
+            return {model,ok:false,status:r.status,ms:Date.now()-t0,expired,error:[hint,`HTTP ${r.status}${why?": "+why:""}`].filter(Boolean).join(" · ").slice(0,400)};
           }catch(e){return {model,ok:false,status:0,ms:Date.now()-t0,error:roError(e)}}
         }));
-        return {ok:true,label:"OmniRoute",models:list.length,combos,ms,checks};
+        return {ok:true,label:"OmniRoute",models:list.length,combos,ms,checks,expired:[...new Set(checks.flatMap(c=>c.expired||[]))]};
       }catch(e){return {ok:false,label:"OmniRoute",error:e?.status?e.message:`OmniRoute nu răspunde la ${omniCfg.baseUrl} (${roError(e)}). Pornește-l sau verifică adresa.`,ms:Date.now()-started}}
     })():Promise.resolve(null);
     const results=await Promise.all(firstPerProvider.map(async c=>{
@@ -3357,13 +3364,16 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         });
         const text=await r.text();
         if(!r.ok){
-          const hint=r.status===401||r.status===403?"cheie greșită sau fără drepturi":r.status===404?"modelul nu mai există — schimbă numele modelului":r.status===429?"limita gratuită de azi a fost atinsă":"";
+          const hint=r.status===401||r.status===403?"cheie greșită sau fără drepturi":r.status===404?"modelul nu mai există — schimbă numele modelului":noCredit(text)?"cheia e bună, dar contul nu are credit: adaugă credit la furnizor":r.status===429?"limita gratuită de azi a fost atinsă":r.status===503?"cheia e bună, dar modelul e aglomerat acum la furnizor: încearcă mai târziu":"";
           return {provider:c.provider,label:c.label,model:c.model,ok:false,status:r.status,ms:Date.now()-started,error:(hint?hint+" · ":"")+text.slice(0,200),paid:!!c.paidRisk};
         }
         return {provider:c.provider,label:c.label,model:c.model,ok:true,status:r.status,ms:Date.now()-started,paid:!!c.paidRisk};
       }catch(e){return {provider:c.provider,label:c.label,model:c.model,ok:false,status:0,ms:Date.now()-started,error:roError(e),paid:!!c.paidRisk}}
     }));
-    const media=[
+    // Pictures and video: the providers chosen at «Făcute de» (Gemini by default) and whether their key is saved.
+    const familyKey={gemini:cfg.geminiApiKey,openai:cfg.openAiApiKey,xai:cfg.xaiApiKey};
+    const makers=kind=>[...mediaProviders(cfg,kind)].map(f=>({label:`${kind==="image"?"Poze":"Video"}: ${MEDIA_FAMILY_LABELS[f]||f}${f==="gemini"?(kind==="image"?" (Nano Banana)":" (Veo)"):""}`,configured:!!String(familyKey[f]||"").trim()}));
+    const media=mediaProviders(cfg,"image").size||mediaProviders(cfg,"video").size?[...makers("image"),...makers("video")]:[
       ["Cloudflare (imagini)",cfg.cloudflareAccountId&&cfg.cloudflareApiToken],["Pollinations",cfg.pollinationsApiKey],["Pollinations (fără cheie)",cfg.pollinationsFreeEnabled!==false],["Hugging Face",cfg.hfToken],
       ["Together AI",cfg.togetherApiKey],["Stability AI",cfg.stabilityApiKey],["fal.ai",cfg.falApiKey],["Replicate",cfg.replicateApiToken]
     ].map(([label,set])=>({label,configured:!!set}));
