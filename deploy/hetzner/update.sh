@@ -39,10 +39,12 @@ if docker compose config --services | grep -qx web; then
 fi
 
 echo "==> Waiting for API health"
+# The answer is kept in a variable, not in a file under /tmp: a file left there by another user (for example a run
+# as "aistoica") cannot be overwritten even by root on Ubuntu (fs.protected_regular), and every check then failed with
+# "Permission denied".
 for i in {1..30}; do
-  if curl -fsS http://127.0.0.1:8787/health >/tmp/aistoica-health.json 2>/dev/null; then
-    cat /tmp/aistoica-health.json
-    echo
+  if health="$(curl -fsS http://127.0.0.1:8787/health 2>/dev/null)"; then
+    echo "$health"
     echo "AI Stoica API is healthy."
     docker compose ps
     exit 0

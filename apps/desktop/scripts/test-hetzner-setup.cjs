@@ -131,6 +131,13 @@ try {
     env: { ...process.env, PATH: bin + path.delimiter + process.env.PATH, FAKE_LOG: log, AI_STOICA_ROOT: repoRoot, ...extraEnv } }); return { status: u.status, out: (u.stdout || "") + (u.stderr || ""), calls: fs.readFileSync(log, "utf8") }; };
   r = update({});
   expect(r.status === 0 && r.calls.includes("runuser -u aistoica -- git status --porcelain") && r.calls.includes("runuser -u aistoica -- git pull --ff-only origin main") && r.calls.includes("docker compose up -d --build api"), "update.sh must run git as the checkout owner:\n" + r.out + r.calls);
+  expect(/AI Stoica API is healthy/.test(r.out), "update.sh must report the health check:\n" + r.out);
+  // The health answer must not go through a fixed file in /tmp: one left there by another user (a run as "aistoica")
+  // cannot be overwritten even by root on Ubuntu, and every check failed with "Permission denied" (2026-10-05).
+  for (const name of ["update.sh", "update-runner.sh", "install-updater.sh", "setup-web.sh"]) {
+    const src = fs.readFileSync(path.join(repo, "deploy", "hetzner", name), "utf8");
+    expect(!/>\s*\/tmp\/[\w.-]+/.test(src), name + " must not write a fixed file in /tmp");
+  }
   r = update({ FAKE_OWNER: "root" });
   expect(r.status === 0 && !r.calls.includes("runuser") && r.calls.includes("git pull --ff-only origin main"), "update.sh on a root checkout must use plain git:\n" + r.calls);
   console.log("Hetzner setup script checks OK");
