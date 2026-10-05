@@ -12,7 +12,8 @@ assert(gateway.includes('app.post("/api/files"'),"binary /api/files upload missi
 for(const key of ["file_upload","document_generation","plugins","automations"])assert(gateway.includes(`"${key}"`),`permission ${key} missing`);
 const renderer=fs.readFileSync(path.join(root,"renderer","src","main.jsx"),"utf8");
 assert(renderer.includes("generateMediaAssistant")&&renderer.includes("mediaMode"),"explicit media generation missing");
-assert(renderer.includes("MEDIA_COMMAND")&&!renderer.includes("createVerb"),"media word guessing still active");
+const mediaIntent=fs.readFileSync(path.join(root,"renderer","src","mediaIntent.mjs"),"utf8");
+assert(mediaIntent.includes("MEDIA_COMMAND")&&renderer.includes("requestedMediaGeneration")&&!renderer.includes("createVerb"),"media word guessing still active");
 assert(renderer.includes("showArchived"),"archived conversation view missing");
 assert(renderer.includes("speechLanguage"),"speech language setting missing");
 const docs=fs.readFileSync(path.join(root,"lib","documents.cjs"),"utf8");
