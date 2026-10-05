@@ -120,7 +120,7 @@ function roError(e){
   return msg||"Eroare necunoscută.";
 }
 
-function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig: readOmniConfig, onAutomationResult, encryptSecret, decryptSecret, streamIdleMs, streamTotalMs, webDir, updateDir }) {
+function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig: readOmniConfig, onAutomationResult, encryptSecret, decryptSecret, streamIdleMs, streamTotalMs, webDir, updateDir, serverSettings }) {
   // The configuration is read many times per request; one read is reused for 2 seconds.
   let configMemo = null, configMemoAt = 0;
   const getOmniConfig = () => { const now = Date.now(); if (!configMemo || now - configMemoAt > 2000) { configMemo = (typeof readOmniConfig === "function" ? readOmniConfig() : null) || {}; configMemoAt = now; } return configMemo; };
@@ -868,6 +868,27 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       res.status(503).json({ error: cloudDownMessage(0) });
     }
   }
+
+  // Setări on the web site, for the Owner (apps/cloud/server.cjs passes serverSettings; the Windows app keeps its own
+  // config through Electron and has no such route). Keys come back masked; a saved change applies to the next request.
+  function requireSettingsOwner(req){
+    if(!serverSettings)throw policyFailure("Setările serverului există doar pe site (aistoica.ro); în Windows sunt în aplicație.",404);
+    if(!ownerRequest(req))throw policyFailure("Doar Owner-ul poate schimba setările serverului.",403);
+  }
+  app.get("/api/server/settings", auth, (req,res) => {
+    try{requireSettingsOwner(req);res.json({data:serverSettings.publicView()})}
+    catch(e){sendError(res,e,500)}
+  });
+  app.put("/api/server/settings", auth, (req,res) => {
+    try{
+      requireSettingsOwner(req);
+      const input=req.body&&typeof req.body==="object"&&!Array.isArray(req.body)?req.body:{};
+      serverSettings.save(input);
+      // The model list and the OmniRoute list follow the new keys and addresses right away.
+      omniEntriesCache={at:0,entries:[]};configMemo=null;
+      res.json({ok:true,config:serverSettings.publicView()});
+    }catch(e){sendError(res,e,500)}
+  });
 
   // "Actualizează site-ul" (Owner, web server only). The site never runs anything on the server itself: it drops a
   // request file in updateDir, and the server's systemd service (deploy/hetzner/install-updater.sh) runs update.sh and

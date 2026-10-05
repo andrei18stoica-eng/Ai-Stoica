@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { startLocalGateway } = require("./local-gateway.cjs");
+const { createServerSettings } = require("./lib/serversettings.cjs");
 
 const port = Number(process.env.PORT || 8787);
 const host = process.env.HOST || "0.0.0.0";
@@ -27,7 +28,7 @@ const DIRECT_KEYS = {
   xaiApiKey: "XAI_API_KEY"
 };
 
-function getOmniConfig() {
+function envConfig() {
   const model = defaultModel();
   return {
     baseUrl: (env("OMNIROUTE_BASE_URL") || "http://omniroute:20128/v1").replace(/\/+$/, ""),
@@ -55,6 +56,10 @@ function getOmniConfig() {
   };
 }
 
+// Settings the Owner changes on the site (Setări) are saved in the data volume and win over the .env values above.
+const serverSettings = createServerSettings(dataDir);
+const getOmniConfig = () => serverSettings.apply(envConfig());
+
 if (!env("AI_STOICA_OWNER_EMAIL")) console.warn("[AI Stoica] AI_STOICA_OWNER_EMAIL is not set: no account on this server is Owner (GitHub Solve, code run and server tools stay locked).");
 
 // The Docker image builds the web interface into ./web; with it, https://domain/ is AI Stoica in the browser
@@ -70,7 +75,9 @@ const gateway = startLocalGateway({
   getOmniConfig,
   webDir: webEnabled ? webDir : undefined,
   // deploy/hetzner: folder shared with the server's update service ("Actualizează site-ul" for the Owner).
-  updateDir: env("AI_STOICA_UPDATE_DIR") || undefined
+  updateDir: env("AI_STOICA_UPDATE_DIR") || undefined,
+  // Setări on the site, for the Owner.
+  serverSettings: { publicView: () => serverSettings.publicView(envConfig()), save: (input) => serverSettings.save(input, envConfig()) }
 });
 
 console.log(`AI Stoica Cloud Gateway listening on ${host}:${port}${webEnabled ? " (web interface on)" : ""}`);

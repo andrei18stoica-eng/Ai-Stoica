@@ -1155,15 +1155,23 @@ function KeyField({label,name,cfg,keys,setKeys,placeholder,token=false}) {
   </span></label>;
 }
 
+// On the web site the Owner's settings live on the server (/api/server/settings, lib/serversettings.cjs); in Windows,
+// in the app (Electron). Both answer the same shape, so the same Settings window serves both.
+const WEB_SETTINGS={
+  getConfig:async()=>(await api("/api/server/settings")).data,
+  setConfig:async(payload)=>{const r=await api("/api/server/settings",{method:"PUT",body:JSON.stringify(payload)});return {ok:true,config:r.config};}
+};
 function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initialTab="general",preferences,onPreferences,prefBusy}) {
   const {isOwner}=useAccess();
+  const bridge=window.AIStoica?.getConfig?window.AIStoica:IS_WEB&&isOwner?WEB_SETTINGS:null;
+  const webServer=bridge===WEB_SETTINGS;
   const [cfg,setCfg]=useState(null),[keys,setKeys]=useState({}),[tab,setTab]=useState(initialTab),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState(""),[toolStatus,setToolStatus]=useState(""),[error,setError]=useState(""),[saving,setSaving]=useState(false),[updateStatus,setUpdateStatus]=useState("");
   const {ref,backdropProps}=useModal(onClose);
   const mounted=useRef(true);
   useEffect(()=>()=>{mounted.current=false},[]);
   useEffect(()=>{
-    if(!window.AIStoica?.getConfig){setError(IS_WEB?"Cheile AI și OmniRoute le configurează Owner-ul pe server. Aici poți schimba preferințele contului tău.":"Setările sunt disponibile doar în aplicația AI Stoica pentru Windows.");return;}
-    Promise.all([window.AIStoica.getConfig(),window.AIStoica.systemStatus?.().catch(()=>null)])
+    if(!bridge){setError(IS_WEB?"Cheile AI și OmniRoute le configurează Owner-ul pe server. Aici poți schimba preferințele contului tău.":"Setările sunt disponibile doar în aplicația AI Stoica pentru Windows.");return;}
+    Promise.all([bridge.getConfig(),bridge.systemStatus?.().catch(()=>null)])
       .then(([c,s])=>{if(mounted.current){setCfg(c||{});setStatus(s)}})
       .catch(e=>{if(mounted.current)setError("Nu am putut citi setările: "+e.message)});
   },[]);
@@ -1172,10 +1180,10 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
   async function save(){
     if(saving||!cfg)return;
     setError("");
-    const gw=cleanGatewayUrl(cfg.gatewayUrl||DEFAULT_GATEWAY);
+    const gw=webServer?GATEWAY:cleanGatewayUrl(cfg.gatewayUrl||DEFAULT_GATEWAY);
     if(machineSettingsAllowed&&!gw){setError("Adresa serviciului local nu este validă. Exemplu: "+DEFAULT_GATEWAY);setTab("ai");return;}
     const ownerEmail=String(cfg.ownerEmail||"").trim().toLowerCase();
-    if(machineSettingsAllowed&&ownerEmail&&!/^\S+@\S+\.\S+$/.test(ownerEmail)){setError("Emailul Owner nu este valid.");setTab("account");return;}
+    if(machineSettingsAllowed&&!webServer&&ownerEmail&&!/^\S+@\S+\.\S+$/.test(ownerEmail)){setError("Emailul Owner nu este valid.");setTab("account");return;}
     setSaving(true);
     try{
       if(machineSettingsAllowed&&gw!==GATEWAY){
@@ -1183,10 +1191,10 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         catch{throw new Error(`Nu pot contacta serviciul AI Stoica la ${gw}. Verifică adresa sau folosește ${DEFAULT_GATEWAY}.`)}
       }
       const changedKeys=Object.fromEntries(Object.entries(keys).filter(([,v])=>v));
-      const payload={...cfg,...(machineSettingsAllowed?{gatewayUrl:gw,ownerEmail}:{}),...changedKeys};
-      const r=await window.AIStoica.setConfig(payload);
+      const payload={...cfg,...(machineSettingsAllowed&&!webServer?{gatewayUrl:gw,ownerEmail}:{}),...changedKeys};
+      const r=await bridge.setConfig(payload);
       if(r&&r.ok===false)throw new Error(r.error||"Setările nu au putut fi salvate.");
-      if(machineSettingsAllowed)setGatewayUrl(gw);
+      if(machineSettingsAllowed&&!webServer)setGatewayUrl(gw);
       DICTATION_LANG=String(payload.speechLanguage||"ro");
       onSaved?.(r?.config||payload);
       toast("Setările au fost salvate.","ok");
@@ -1222,10 +1230,13 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <ServerUpdate/>
       </>}
       {tab==="ai"&&<><h3>AI & OmniRoute</h3>
+        {webServer&&<p className="settingsHelp">Setările site-ului: se salvează pe server și se aplică imediat pentru toate conturile. Cheile rămân pe server și se văd doar mascat. Emailul Owner și înregistrarea conturilor rămân în fișierul <code>.env</code> de pe server.</p>}
+        {!webServer&&<>
         <label>Adresa serviciului AI Stoica<input value={cfg.gatewayUrl||DEFAULT_GATEWAY} onChange={e=>set({gatewayUrl:e.target.value})} placeholder={DEFAULT_GATEWAY}/></label>
         <p className="settingsHelp">Lasă {DEFAULT_GATEWAY} dacă nu folosești un server AI Stoica separat. Adresa este verificată înainte de salvare.</p>
         <label>AI Stoica Cloud API<input value={cfg.controlApiUrl||""} onChange={e=>set({controlApiUrl:e.target.value})} placeholder="https://api.aistoica.ro"/></label>
         <p className="settingsHelp">Cu Cloud API configurat, conturile, aprobările și permisiunile sunt gestionate central de Owner. Lasă câmpul gol pentru folosire doar pe acest PC.</p>
+        </>}
         <label>Adresa OmniRoute<input value={cfg.baseUrl||""} onChange={e=>set({baseUrl:e.target.value})}/></label>
         <KeyField label="Cheie API OmniRoute" name="apiKey" placeholder="Cheie OmniRoute" {...keyProps}/>
         <p className="settingsHelp">OmniRoute 3.8 nu răspunde fără cheie. Creeaz-o în OmniRoute: <button type="button" className="linkBtn" onClick={()=>openLink(String(cfg.baseUrl||"http://127.0.0.1:20128/v1").replace(/\/v1\/?$/,"")+"/dashboard/api-manager")}>API Manager → Create API Key</button>, lipește-o aici și apasă „Testează cheile”.</p>
@@ -1239,7 +1250,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
           <label>GitHub repository<input value={cfg.githubRepo||""} onChange={e=>set({githubRepo:e.target.value})} placeholder="owner/repository"/></label>
           <label>GitHub branch<input value={cfg.githubBranch||"main"} onChange={e=>set({githubBranch:e.target.value})} placeholder="main"/></label>
           <KeyField label="Token GitHub (pentru repository privat)" name="githubToken" placeholder="github_pat_... sau ghp_..." token {...keyProps}/>
-          {isOwner&&<>
+          {isOwner&&!webServer&&<>
             <label>Server SSH · adresă<input value={cfg.serverHost||""} onChange={e=>set({serverHost:e.target.value})} placeholder="IP sau domeniu"/></label>
             <div className="claudeFormRow"><label>Utilizator SSH<input value={cfg.serverUser||"root"} onChange={e=>set({serverUser:e.target.value})}/></label><label>Port SSH<input type="number" min="1" max="65535" value={cfg.serverPort||22} onChange={e=>set({serverPort:Number(e.target.value)||22})}/></label></div>
             <label>Calea cheii private SSH<input value={cfg.serverKeyPath||""} onChange={e=>set({serverKeyPath:e.target.value})} placeholder="C:\Users\Nume\.ssh\id_ed25519"/></label>
@@ -1247,9 +1258,11 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
           </>}
         </details>
         <p className="settingsHelp">Când ceri o poză sau un videoclip, AI Stoica returnează fișierul real în chat, cu buton de descărcare.</p>
+        {!webServer&&<>
         <label>Comandă OmniRoute<input value={cfg.omniCommand||"omniroute.cmd"} onChange={e=>set({omniCommand:e.target.value})}/></label>
         <label className="toggleRow"><div><b>Pornește OmniRoute automat</b><span>Dacă serviciul cade, AI Stoica încearcă să îl repornească.</span></div><input type="checkbox" checked={!!cfg.autoStartOmniRoute} onChange={e=>set({autoStartOmniRoute:e.target.checked})}/></label>
         <div className="statusGrid"><div><span>Serviciul AI Stoica</span><b>{status?.gatewayRunning?"Pornit":"Indisponibil"}</b></div><div><span>OmniRoute</span><b>{status?.omniRunning?"Conectat":status?.omniInstalled===false?"Neinstalat — npm install -g omniroute":"Indisponibil"}</b></div></div>
+        </>}
       </>}
       {tab==="chatapis"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><Plug size={22}/></div><div><h3>API-uri AI</h3><p>Modelele lor apar în listă și răspund direct, fără OmniRoute.</p></div></div>
         <ProviderTestBox/>
@@ -1301,7 +1314,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
       {tab==="images"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><ImageIcon size={22}/></div><div><h3>Poze</h3><p>Generare imagini, API-uri, modele și încercare automată a altui provider.</p></div></div>
         <label><span className="labelLine">Model generare imagini <span className="optional">opțional</span></span><input value={cfg.imageModel||""} onChange={e=>set({imageModel:e.target.value})} placeholder="Automat — primul model de imagine disponibil"/></label>
         <details className="mediaProviderSettings" open><summary>Provideri de imagini</summary>
-          <p className="settingsHelp">Poți conecta mai multe servicii. AI Stoica încearcă providerii în ordine și trece automat la următorul dacă unul eșuează. Cheile sunt criptate pe acest PC.</p>
+          <p className="settingsHelp">Poți conecta mai multe servicii. AI Stoica încearcă providerii în ordine și trece automat la următorul dacă unul eșuează. {webServer?"Cheile stau pe server și se văd doar mascat.":"Cheile sunt criptate pe acest PC."}</p>
           <label>Mod de alegere<select value={cfg.imageProviderMode||"auto"} onChange={e=>set({imageProviderMode:e.target.value})}><option value="auto">Automat — ordinea mea</option><option value="fast">⚡ Rapid</option><option value="quality">✨ Calitate</option><option value="free">🛡️ Doar gratuit</option></select></label>
           <label>Protecție costuri<select value={cfg.imageCostPolicy||"free_only"} onChange={e=>set({imageCostPolicy:e.target.value})}><option value="free_only">Nu permite costuri directe</option><option value="allow_paid">Permite provideri cu plată</option></select></label>
           <p className="settingsHelp">{(cfg.imageCostPolicy||"free_only")==="free_only"?"Protecție activă: AI Stoica încearcă direct Cloudflare și Pollinations. Hugging Face, Together, OpenAI, Stability, fal.ai și Replicate sunt blocate dacă ar putea consuma credit plătit. La OpenRouter se verifică prețul înainte de apel.":"Atenție: providerii configurați pot consuma credit conform tarifelor lor."}</p>
@@ -1372,8 +1385,8 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
       </>}
       {tab==="account"&&<><h3>Cont și date</h3>
         <div className="accountSettingsCard"><div className="accountAvatar big">{(user?.name||user?.email||"S")[0].toUpperCase()}</div><div><b>{user?.name||"Cont AI Stoica"}</b><span>{user?.email}{user?.role==="owner"?" · Owner":""}</span></div></div>
-        <p className="settingsHelp">Conversațiile, memoria, biblioteca, designurile, proiectele, pluginurile și sarcinile programate sunt păstrate pe acest calculator.</p>
-        {machineSettingsAllowed&&<>
+        <p className="settingsHelp">Conversațiile, memoria, biblioteca, designurile, proiectele, pluginurile și sarcinile programate sunt păstrate {IS_WEB?"pe serverul AI Stoica":"pe acest calculator"}.</p>
+        {machineSettingsAllowed&&!webServer&&<>
           <label><span className="labelLine">Email Owner pe acest PC <span className="optional">opțional</span></span><input type="email" value={cfg.ownerEmail||""} onChange={e=>set({ownerEmail:e.target.value})} placeholder="nume@email.ro" autoComplete="off"/></label>
           <p className="settingsHelp">Contul local cu acest email primește drepturi de Owner: rulare de cod, GitHub Solve, verificare server. Se aplică doar când AI Stoica Cloud nu este configurat. Reautentifică-te după schimbare.</p>
         </>}
