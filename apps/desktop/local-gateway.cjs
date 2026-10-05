@@ -83,7 +83,7 @@ const DEEP_RESEARCH_WORDS=wordsRegex(["deep research","cercetare aprofundată","
 const GITHUB_WORDS=wordsRegex(["github","repository","repo","cod","code","bug","eroare","build","component","funcție","functie","endpoint","react","node","python","server","api","fișier","fisier"]);
 const SERVER_WORDS=wordsRegex(["server","ssh","hetzner","deploy","deployment","producție","productie","nginx","ubuntu"]);
 const PERMISSION_KEYS=["image_generation","video_generation","document_generation","file_upload","web_search","deep_research","automations","plugins","github_access"];
-const PERMISSION_LABELS={image_generation:"Generare imagini",video_generation:"Generare video",document_generation:"Fișiere descărcabile",file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",automations:"Automatizări",plugins:"Pluginuri",github_access:"GitHub"};
+const PERMISSION_LABELS={image_generation:"Generare imagini",video_generation:"Generare video",document_generation:"Fișiere descărcabile",file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",automations:"Automatizări",plugins:"Pluginuri",code:"Code AI Stoica",github_access:"GitHub"};
 function deniedMessage(key){return `Funcția „${PERMISSION_LABELS[key]||key}” este dezactivată de Owner pentru contul tău.`;}
 function pluginHeaders(plugin) {
   const out = { "Content-Type": "application/json" };
@@ -783,12 +783,19 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   function normalizePermissions(raw, owner) {
     const out = {};
     for (const k of PERMISSION_KEYS) { const v = raw?.[k]; out[k] = owner || !(v === false || v === "false" || v === 0); }
+    // "Code AI Stoica" is opt-in: only the Owner, or an account the Owner gave it to.
+    out.code = owner || raw?.code === true || raw?.code === "true";
     return out;
   }
   // Missing keys are allowed. In Cloud mode without a verified Cloud session (Cloud unreachable) gated features stay off.
   function permissionsFor(req) {
-    if (!cloudBase() || ownerRequest(req)) return normalizePermissions({}, true);
-    if (!req.cloudUser) return Object.fromEntries(PERMISSION_KEYS.map((k) => [k, false]));
+    if (!cloudBase() || ownerRequest(req)) {
+      const all = normalizePermissions({}, true);
+      // A PC with an Owner email: the other local accounts do not get Code (it runs on the Owner's subscriptions).
+      if (!ownerRequest(req) && normalizeEmail(getOmniConfig().ownerEmail)) all.code = false;
+      return all;
+    }
+    if (!req.cloudUser) return { ...Object.fromEntries(PERMISSION_KEYS.map((k) => [k, false])), code: false };
     return normalizePermissions(req.permissions || {}, false);
   }
   function hasPermission(req, key) { return permissionsFor(req)[key] !== false; }
@@ -1096,6 +1103,53 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(res.headersSent)return;
     res.status(Number.isInteger(e?.status)&&e.status>=400&&e.status<600?e.status:fallback).json({error:e?.status?e.message:roError(e)});
   }
+
+  // "Code AI Stoica": a programming workspace. The Owner codes with the subscriptions connected in OmniRoute (Codex = cx/…,
+  // Claude Code = cc/…). An account the Owner gave "code" to (Control Center) gets the paid APIs only (OpenAI / Claude
+  // through OmniRoute, or the OpenAI key): the subscriptions' terms forbid sharing them.
+  const CODE_SUBSCRIPTION=/^(cx|codex|cc|claude-code)\//i,CODE_API=/^(openai|anthropic)\//i;
+  const CODE_PROMPT="Ești AI Stoica Code, asistentul de programare Stoica Enterprises AI. Scrii cod corect, complet și ușor de testat, în blocuri de cod cu limbajul indicat. Explici pe scurt ce schimbi și de ce. Când îți lipsesc fișiere, versiuni sau erori, le ceri. Răspunzi în limba utilizatorului.";
+  function codeAllowed(req){return permissionsFor(req).code===true;}
+  async function codeModels(req){
+    const cfg=getOmniConfig(),personal=personalAllowed(req.user,req.cloudUser),rows=[];
+    for(const x of await omniEntriesCached(cfg)){
+      const id=String(typeof x==="string"?x:x?.id||"").trim();
+      if(!id||modelBlocked(cfg,id))continue;
+      if(CODE_SUBSCRIPTION.test(id)){if(personal)rows.push({id,group:/^(cc|claude-code)\//i.test(id)?"claude-code":"codex",source:"subscription"});}
+      else if(CODE_API.test(id))rows.push({id,group:/^anthropic\//i.test(id)?"claude-api":"openai-api",source:"api"});
+    }
+    if(directApisAllowed(req)&&cfg.directChatEnabled!==false&&!blockedProviders(cfg).has("openai")){
+      try{for(const c of await directChatCandidates(cfg,""))if(c.provider==="openai")rows.push({id:"openai/"+c.model,group:"openai-api",source:"api"})}catch{}
+    }
+    let list=[...new Map(rows.map(r=>[r.id.toLowerCase(),r])).values()];
+    if(cloudBase()){
+      try{const ok=new Set((await allowedOmniEntries(req,list.map(r=>r.id))).map(x=>String(typeof x==="string"?x:x?.id||"")));list=list.filter(r=>ok.has(r.id))}
+      catch{list=[]}
+    }
+    return list;
+  }
+  app.get("/api/code", auth, async (req,res) => {
+    try{
+      if(!codeAllowed(req))return res.json({data:{allowed:false}});
+      const cfg=getOmniConfig();
+      res.json({data:{allowed:true,subscriptions:personalAllowed(req.user,req.cloudUser),owner:ownerRequest(req),models:await codeModels(req),repo:String(cfg.githubRepo||""),branch:String(cfg.githubBranch||"main")}});
+    }catch(e){sendError(res,e,500)}
+  });
+  // Starts a Code conversation: the "AI Stoica Code" assistant (made once per account) and the chosen code model.
+  app.post("/api/code/session", auth, async (req,res) => {
+    try{
+      if(!codeAllowed(req))return res.status(403).json({error:"Code AI Stoica este disponibil doar pentru Owner și pentru conturile cărora Owner-ul le-a dat acces."});
+      const models=await codeModels(req),model=String(req.body?.model||"").trim()||models[0]?.id||"";
+      if(!model||!models.some(m=>m.id===model))return res.status(400).json({error:"Alege unul dintre modelele de cod din listă."});
+      const db=store.read();
+      let assistant=db.assistants.find(a=>a.userId===req.user.id&&a.codeAssistant);
+      if(!assistant){assistant={id:crypto.randomUUID(),userId:req.user.id,name:"AI Stoica Code",icon:"</>",systemPrompt:CODE_PROMPT,createdAt:Date.now(),codeAssistant:true};db.assistants.push(assistant);}
+      const now=Date.now(),label=model.split("/").slice(1).join("/")||model;
+      const conversation={id:crypto.randomUUID(),userId:req.user.id,title:"Code · "+label.slice(0,80),projectId:null,assistantId:assistant.id,model,messages:[],createdAt:now,updatedAt:now};
+      db.conversations.push(conversation);store.write(db);
+      res.json({data:conversation,assistant});
+    }catch(e){sendError(res,e,500)}
+  });
 
   app.post("/api/tools/code/run", auth, ownerOnlyLocal, async (req,res) => {
     try{

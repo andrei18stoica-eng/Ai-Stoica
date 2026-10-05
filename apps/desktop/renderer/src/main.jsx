@@ -7,7 +7,7 @@ import {
   CalendarClock, Plug, Library, Brain, Upload, Trash2, Play, Pin, PinOff,
   FileText, Image as ImageIcon, HardDrive, ToggleLeft, ToggleRight,
   Compass, Map as MapIcon, Globe2, Archive, ArchiveRestore, ExternalLink, SlidersHorizontal, Volume2,
-  PanelTopOpen, ShieldCheck, UserCheck, Download, Lock, Pencil, Palette, Clapperboard, Eye, Maximize2, LoaderCircle
+  PanelTopOpen, ShieldCheck, UserCheck, Download, Lock, Pencil, Palette, Clapperboard, Eye, Maximize2, LoaderCircle, SquareTerminal
 } from "lucide-react";
 import "./styles.css";
 import {
@@ -21,6 +21,7 @@ import { InstallApp } from "./install.jsx";
 import { FileViewer, canView } from "./viewer.jsx";
 import { ServerUpdate } from "./serverUpdate.jsx";
 import { ScheduledPage } from "./pages/Scheduled.jsx";
+import { CodePage } from "./pages/Code.jsx";
 import { PluginsPage } from "./pages/Plugins.jsx";
 import { MemoryPage, PreferenceSwitches } from "./pages/Memory.jsx";
 import { LibraryPage } from "./pages/Library.jsx";
@@ -320,7 +321,7 @@ function AuthScreen({ onAuth, notice:initialNotice="" }) {
 
 function BrandMark({small=false}) { return <div className={cx("brandMark",small&&"small")}><img src="./stoica-enterprises-ai-mark.webp" alt="AI Stoica"/></div>; }
 
-const TOOL_ITEMS=[["explore",Compass,"Explorează",null],["automations",CalendarClock,"Scheduled","automations"],["plugins",Plug,"Pluginuri","plugins"],["library",Library,"Bibliotecă",null],["design",Palette,"Design","document_generation"],["memory",Brain,"Memorie",null]];
+const TOOL_ITEMS=[["explore",Compass,"Explorează",null],["code",SquareTerminal,"Code AI Stoica","code"],["automations",CalendarClock,"Scheduled","automations"],["plugins",Plug,"Pluginuri","plugins"],["library",Library,"Bibliotecă",null],["design",Palette,"Design","document_generation"],["memory",Brain,"Memorie",null]];
 function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,conversations,currentId,busyIds,onSelect,onDeleteConversation,onUnarchive,onNew,selectedProject,setSelectedProject,activeAssistantId,onUseAssistant,onNewProject,onNewAssistant,onEditProject,onEditAssistant,onTool,onSettings,onLogout}) {
   const {can,isOwner}=useAccess();
   const [showArchived,setShowArchived]=useState(false);
@@ -359,7 +360,7 @@ function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,convers
     <div className="searchBox"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Escape"&&search){e.preventDefault();setSearch("")}}} placeholder="Caută în conversații" aria-label="Caută în conversații"/>{search&&<button className="searchClear" onClick={()=>setSearch("")} title="Șterge căutarea" aria-label="Șterge căutarea"><X size={14}/></button>}</div>
     <div className="sideScroll">
       <div className="sideSection"><div className="sectionHead"><span>Instrumente</span></div>
-        {TOOL_ITEMS.map(([name,Icon,label,perm])=>{const locked=perm&&!can(perm);return <button key={name} className={cx("sideItem",name==="explore"?"exploreItem":"toolItem",locked&&"locked")} onClick={()=>onTool(name)} title={locked?deniedMessage(perm):label}><Icon size={16}/> {label}{locked&&<Lock size={13} className="lockIcon"/>}</button>})}
+        {TOOL_ITEMS.filter(([name])=>name!=="code"||can("code")).map(([name,Icon,label,perm])=>{const locked=perm&&!can(perm);return <button key={name} className={cx("sideItem",name==="explore"?"exploreItem":"toolItem",locked&&"locked")} onClick={()=>onTool(name)} title={locked?deniedMessage(perm):label}><Icon size={16}/> {label}{locked&&<Lock size={13} className="lockIcon"/>}</button>})}
         {isOwner&&<button className="sideItem ownerItem" onClick={()=>onTool("admin")}><ShieldCheck size={16}/> Control Center</button>}
       </div>
       <div className="sideSection"><div className="sectionHead"><span>Proiecte</span><button onClick={onNewProject} aria-label="Proiect nou" title="Proiect nou"><Plus size={15}/></button></div>
@@ -906,7 +907,8 @@ function AdminPanel({onClose}) {
     chat:"Chat AI",cerebras:"Cerebras",gemini:"Gemini",groq:"Groq",cloudflare:"Cloudflare AI",
     openrouter:"OpenRouter (poate genera costuri)",image_generation:"Generare imagini",video_generation:"Generare videoclipuri",document_generation:"Fișiere: PDF / Word / PowerPoint / Excel / CSV / ZIP / cod",
     file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",
-    automations:"Scheduled (sarcini programate)",plugins:"Pluginuri",github_access:"GitHub",openai:"OpenAI (plătit)",anthropic:"Claude / Anthropic (plătit)"
+    automations:"Scheduled (sarcini programate)",plugins:"Pluginuri",github_access:"GitHub",openai:"OpenAI (plătit)",anthropic:"Claude / Anthropic (plătit)",
+    code:"Code AI Stoica (prin API-urile OpenAI / Claude, nu prin abonamentele tale)"
   };
   const [users,setUsers]=useState([]),[selectedId,setSelectedId]=useState(null),[filter,setFilter]=useState("all");
   const [paidAi,setPaidAi]=useState(false),[auditRows,setAuditRows]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[pending,setPending]=useState({}),[actionBusy,setActionBusy]=useState(false);
@@ -1884,6 +1886,7 @@ function App() {
     if(name==="design"&&!can("document_generation")){deny("document_generation");return}
     if(name==="plugins"&&!can("plugins")){deny("plugins");return}
     if(name==="admin"&&!isOwner)return;
+    if(name==="code"&&!can("code")){deny("code");return}
     setSidebar(false);setToolPanel({name,filter});
   }
   function closeTool(){
@@ -1928,6 +1931,14 @@ function App() {
   }
   function focusComposer(){setTimeout(()=>document.querySelector(".composerLine textarea")?.focus(),0)}
   function newConversation(){setCurrentId(null);setDraft("");setAttachments([]);setMediaMode(null);setSidebar(false);focusComposer()}
+  // Code AI Stoica: the new Code conversation opens with its code model chosen.
+  function startCode(conv,assistant){
+    if(!conv?.id)return;
+    if(assistant)setAssistants(v=>v.some(a=>a.id===assistant.id)?v:[...v,assistant]);
+    setConversations(v=>[conv,...v.filter(x=>x.id!==conv.id)]);
+    if(conv.model){setModel(conv.model);storage.set(MANUAL_MODEL_KEY,conv.model);storage.set(MODEL_SELECTED_KEY,conv.model);}
+    setCurrentId(conv.id);setDraft("");setMediaMode(null);setToolPanel(null);setSidebar(false);focusComposer();
+  }
   function startWithAssistant(id){setSelectedAssistant(id);setCurrentId(null);setDraft("");setMediaMode(null);setToolPanel(null);setSidebar(false);focusComposer()}
   function startImageMode(){
     if(!can("image_generation")){deny("image_generation");return}
@@ -1964,6 +1975,7 @@ function App() {
     {toolPanel?.name==="memory"&&<MemoryPage onClose={closeTool} preferences={user?.preferences} onPreferences={updatePreferences} prefBusy={prefBusy}/>}
     {toolPanel?.name==="admin"&&isOwner&&<AdminPanel onClose={closeTool}/>}
     {toolPanel?.name==="plugins"&&can("plugins")&&<PluginsPage onClose={closeTool}/>}
+    {toolPanel?.name==="code"&&can("code")&&<CodePage onClose={closeTool} onStart={startCode}/>}
     {toolPanel?.name==="automations"&&can("automations")&&<ScheduledPage onClose={closeTool} model={model} models={models}/>}
     {filesPanel&&<ConversationFilesPanel conversation={current} onClose={()=>setFilesPanel(false)}/>}
     {githubModal&&isOwner&&<GithubSolveModal model={model} onClose={()=>setGithubModal(false)} onBackup={saveGithubBackup}/>}

@@ -81,7 +81,7 @@ export async function authedFetch(path,init={}){
   return r;
 }
 
-export const PERMISSION_LABELS = {image_generation:"Generare imagini",video_generation:"Generare video",document_generation:"Fișiere descărcabile",file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",automations:"Scheduled",plugins:"Pluginuri",github_access:"GitHub"};
+export const PERMISSION_LABELS = {image_generation:"Generare imagini",video_generation:"Generare video",document_generation:"Fișiere descărcabile",file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",automations:"Scheduled",plugins:"Pluginuri",github_access:"GitHub",code:"Code AI Stoica"};
 export function deniedMessage(key){return `Funcția „${PERMISSION_LABELS[key]||key}” este dezactivată de Owner pentru contul tău.`;}
 export const AccessContext = React.createContext({can:()=>true,deny:()=>{},isOwner:false});
 export function useAccess(){return useContext(AccessContext);}
