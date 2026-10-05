@@ -7,7 +7,7 @@ import {
   CalendarClock, Plug, Library, Brain, Upload, Trash2, Play, Pin, PinOff,
   FileText, Image as ImageIcon, HardDrive, ToggleLeft, ToggleRight,
   Compass, Map as MapIcon, Globe2, Archive, ArchiveRestore, ExternalLink, SlidersHorizontal, Volume2,
-  PanelTopOpen, ShieldCheck, UserCheck, Download, Lock, Pencil, Palette, Clapperboard, Eye, Maximize2
+  PanelTopOpen, ShieldCheck, UserCheck, Download, Lock, Pencil, Palette, Clapperboard, Eye, Maximize2, LoaderCircle
 } from "lucide-react";
 import "./styles.css";
 import {
@@ -93,8 +93,9 @@ function routeTaskLabel(task) {
 function RouteBadge({info}) {
   if(!info?.model)return null;
   const provider=providerLabel(info.provider,info.model);
-  return <div className="routeBadge" title={"AI Stoica a folosit "+provider+" · "+info.model}>
-    <Sparkles size={12}/><span><b>{provider}</b><em>{info.model}</em></span><small>{routeTaskLabel(info.task)}</small>
+  const served=info.servedBy?` → ${info.servedBy}`:"";
+  return <div className="routeBadge" title={info.servedBy?`Ai ales ${info.model}; OmniRoute a trimis întrebarea la ${info.servedBy}.`:"AI Stoica a folosit "+provider+" · "+info.model}>
+    <Sparkles size={12}/><span><b>{info.servedBy&&/\//.test(info.servedBy)?providerLabel("",info.servedBy):provider}</b><em>{info.model}{served}</em></span><small>{routeTaskLabel(info.task)}</small>
   </div>;
 }
 function friendlyError(raw){
@@ -506,10 +507,12 @@ function CopyMessageButton({message,className=""}) {
   return <button className={className} onClick={copy} title={copied?"Copiat":"Copiază mesajul"} aria-label="Copiază mesajul">{copied?<Check size={15}/>:<Copy size={15}/>}</button>;
 }
 
+const EXPORT_FORMATS=[["pdf","PDF"],["docx","Word"],["pptx","PowerPoint"]];
 function MessageActions({message,title,disabled,onRegenerate,onRate}) {
   const {can,deny}=useAccess();
-  const [speaking,setSpeaking]=useState(false),[exporting,setExporting]=useState("");
-  const speakingRef=useRef(false);
+  const [speaking,setSpeaking]=useState(false),[exporting,setExporting]=useState(""),[exportMenu,setExportMenu]=useState(false);
+  const speakingRef=useRef(false),exportRef=useRef(null);
+  useDismiss(exportMenu,()=>setExportMenu(false),exportRef);
   useEffect(()=>()=>{if(speakingRef.current){try{window.speechSynthesis.cancel()}catch{}}},[]);
   function stopSpeaking(){speakingRef.current=false;setSpeaking(false);}
   function speak(){
@@ -530,7 +533,11 @@ function MessageActions({message,title,disabled,onRegenerate,onRate}) {
   const exportLocked=!can("document_generation");
   return <div className="messageActions">
     <CopyMessageButton message={message}/>
-    {["pdf","docx","pptx"].map(f=><button key={f} className={cx(exportLocked&&"locked")} onClick={()=>exp(f)} disabled={!!exporting} title={exportLocked?deniedMessage("document_generation"):`Descarcă ${f.toUpperCase()}`} aria-label={`Descarcă răspunsul ca ${f.toUpperCase()}`}><span className="formatTag">{exporting===f?"…":f.toUpperCase()}</span></button>)}
+    {/* PDF / Word / PowerPoint behind one "Descarcă" button instead of three format labels in the row. */}
+    <div className="exportWrap" ref={exportRef}>
+      <button className={cx(exportLocked&&"locked",exportMenu&&"selected")} onClick={()=>{if(exportLocked){deny("document_generation");return;}setExportMenu(v=>!v)}} disabled={!!exporting} title={exportLocked?deniedMessage("document_generation"):"Descarcă răspunsul (PDF, Word, PowerPoint)"} aria-label="Descarcă răspunsul" aria-haspopup="menu" aria-expanded={exportMenu}>{exporting?<LoaderCircle size={15} className="spin"/>:<Download size={15}/>}</button>
+      {exportMenu&&<div className="exportMenu" role="menu">{EXPORT_FORMATS.map(([f,label])=><button key={f} role="menuitem" onClick={()=>{setExportMenu(false);exp(f)}}><FileText size={15}/><span>{label}</span><small>.{f}</small></button>)}</div>}
+    </div>
     <button onClick={speak} title={speaking?"Oprește citirea":"Citește cu voce"} aria-label={speaking?"Oprește citirea":"Citește cu voce"} aria-pressed={speaking}><Volume2 size={15}/></button>
     <button className={message.rating===1?"selected":""} onClick={()=>onRate(1)} disabled={disabled} title="Răspuns util" aria-label="Răspuns util" aria-pressed={message.rating===1}><ThumbsUp size={15}/></button>
     <button className={message.rating===-1?"selected":""} onClick={()=>onRate(-1)} disabled={disabled} title="Răspuns slab" aria-label="Răspuns slab" aria-pressed={message.rating===-1}><ThumbsDown size={15}/></button>
@@ -859,38 +866,34 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
     <div className={cx("composerCard",dragOver&&"dragOver")}>
       {dragOver&&<div className="dropHint">{uploadLocked?deniedMessage("file_upload"):"Eliberează pentru a atașa fișierele"}</div>}
       {attachments.length>0&&<div className="attachmentTray">{attachments.map((a,i)=><TrayChip key={(a.libraryId||a.name)+i} attachment={a} onRemove={()=>setAttachments(v=>v.filter((_,j)=>j!==i))}/>)}</div>}
+      <input ref={fileInput} type="file" hidden multiple onChange={filesChosen}/>
+      <input ref={imageInput} type="file" hidden multiple accept="image/png,image/jpeg,image/webp,image/gif" onChange={filesChosen}/>
+      <input ref={videoInput} type="file" hidden multiple accept="video/mp4,video/webm,video/quicktime,.mp4,.mov,.m4v,.avi,.mkv,.mpeg,.mpg" onChange={filesChosen}/>
+      <input ref={audioInput} type="file" hidden multiple accept="audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/flac,audio/opus,.mp3,.m4a,.aac,.wav,.ogg,.flac,.opus" onChange={filesChosen}/>
       <div className="composerLine">
-        <input ref={fileInput} type="file" hidden multiple onChange={filesChosen}/>
-        <input ref={imageInput} type="file" hidden multiple accept="image/png,image/jpeg,image/webp,image/gif" onChange={filesChosen}/>
-        <input ref={videoInput} type="file" hidden multiple accept="video/mp4,video/webm,video/quicktime,.mp4,.mov,.m4v,.avi,.mkv,.mpeg,.mpg" onChange={filesChosen}/>
-        <input ref={audioInput} type="file" hidden multiple accept="audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/flac,audio/opus,.mp3,.m4a,.aac,.wav,.ogg,.flac,.opus" onChange={filesChosen}/>
-        <div className="attachWrap" ref={attachRef}><button className="composerIcon" onClick={()=>setMenu(v=>!v)} title="Fișiere și unelte" aria-label="Fișiere și unelte" aria-haspopup="menu" aria-expanded={menu}><Plus size={21}/></button>{menu&&<div className="attachMenu" role="menu">
+        <textarea ref={ta} value={draft} onChange={e=>{setDraft(e.target.value);setMentionClosedFor(null)}} onPaste={pasteIntoComposer} spellCheck={true} aria-label="Mesaj pentru AI Stoica" placeholder={placeholder} onKeyDown={onKeyDown}/>
+      </div>
+      {/* One toolbar under the text, as in the big chat apps: attach and modes on the left, voice and send on the right. */}
+      <div className="composerTools">
+        <div className="attachWrap" ref={attachRef}><button className="composerIcon" onClick={()=>setMenu(v=>!v)} title="Fișiere și unelte" aria-label="Fișiere și unelte" aria-haspopup="menu" aria-expanded={menu}><Plus size={20}/></button>{menu&&<div className="attachMenu" role="menu">
+          <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>{setMenu(false);imageInput.current?.click()})}><ImageIcon size={16}/> Încarcă poze{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
+          <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>{setMenu(false);videoInput.current?.click()})}><Play size={16}/> Încarcă video{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
+          <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>{setMenu(false);audioInput.current?.click()})}><Volume2 size={16}/> Încarcă audio{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
+          <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>{setMenu(false);fileInput.current?.click()})}><Upload size={16}/> Încarcă orice fișier{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
+          <button role="menuitem" onClick={()=>{setMenu(false);onOpenLibrary()}}><Library size={16}/> Alege din Bibliotecă</button>
+          <div className="menuDivider"/>
           <button role="menuitem" className={cx(!can("web_search")&&"locked")} onClick={lockedItem("web_search",()=>toolPrompt("Caută pe internet informații actuale despre "))}><Globe2 size={16}/> Căutare web{!can("web_search")&&<Lock size={12} className="lockIcon"/>}</button>
           <button role="menuitem" className={cx(!can("deep_research")&&"locked")} onClick={lockedItem("deep_research",()=>toolPrompt("Fă deep research, verifică mai multe surse și explică-mi complet: "))}><Search size={16}/> Deep Research{!can("deep_research")&&<Lock size={12} className="lockIcon"/>}</button>
-          <button role="menuitem" className={cx(!can("image_generation")&&"locked")} onClick={()=>toggleMedia("image")}><ImageIcon size={16}/> Creează o poză{!can("image_generation")&&<Lock size={12} className="lockIcon"/>}</button>
-          <button role="menuitem" className={cx(!can("video_generation")&&"locked")} onClick={()=>toggleMedia("video")}><Clapperboard size={16}/> Creează un video{!can("video_generation")&&<Lock size={12} className="lockIcon"/>}</button>
-          <div className="menuDivider"/>
-          <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>fileInput.current?.click())}><Upload size={16}/> Încarcă orice fișier{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
-          <button role="menuitem" onClick={()=>{setMenu(false);onOpenLibrary()}}><Library size={16}/> Alege din Bibliotecă</button>
         </div>}</div>
-        <div className="mediaQuickButtons">
-          <button className={cx("composerIcon mediaQuick",uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>imageInput.current?.click())} title={uploadLocked?deniedMessage("file_upload"):"Încarcă imagine"} aria-label="Încarcă imagine"><ImageIcon size={19}/></button>
-          <button className={cx("composerIcon mediaQuick",uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>videoInput.current?.click())} title={uploadLocked?deniedMessage("file_upload"):"Încarcă video MP4 / MOV / WebM"} aria-label="Încarcă video"><Play size={19}/></button>
-          <button className={cx("composerIcon mediaQuick",uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>audioInput.current?.click())} title={uploadLocked?deniedMessage("file_upload"):"Încarcă audio MP3 / M4A / WAV / OGG"} aria-label="Încarcă audio"><Volume2 size={19}/></button>
-        </div>
-        <textarea ref={ta} value={draft} onChange={e=>{setDraft(e.target.value);setMentionClosedFor(null)}} onPaste={pasteIntoComposer} spellCheck={true} aria-label="Mesaj pentru AI Stoica" placeholder={placeholder} onKeyDown={onKeyDown}/>
-        <button className={cx("composerIcon",recording&&"recording",uploadLocked&&"locked")} onClick={mic} title={uploadLocked?deniedMessage("file_upload"):recording?"Oprește vocalul":"Înregistrează vocal"} aria-label={recording?"Oprește înregistrarea vocală":"Înregistrează vocal"} aria-pressed={recording} disabled={transcribing}><Mic size={20}/></button>
+        <button className={cx("mediaMake",mediaMode==="image"&&"active",!can("image_generation")&&"locked")} aria-pressed={mediaMode==="image"} aria-label="Poză" title={can("image_generation")?`Poză: următorul mesaj creează o imagine. ${imageProvidersText(mediaPolicy)}`:deniedMessage("image_generation")} onClick={()=>toggleMedia("image")}><ImageIcon size={16}/><span>Poză</span></button>
+        <button className={cx("mediaMake",mediaMode==="video"&&"active",!can("video_generation")&&"locked")} aria-pressed={mediaMode==="video"} aria-label="Video" title={can("video_generation")?`Video: următorul mesaj creează un videoclip. ${VIDEO_PROVIDERS_TEXT}`:deniedMessage("video_generation")} onClick={()=>toggleMedia("video")}><Clapperboard size={16}/><span>Video</span></button>
+        <button className={cx("mediaMake thinkToggle",responseMode==="thinking"&&"active")} aria-pressed={responseMode==="thinking"} aria-label="Gândire" title={responseMode==="thinking"?"Gândire pornită: răspunsuri mai atente, puțin mai lente. Apasă pentru modul Rapid.":"Mod Rapid. Apasă pentru Gândire: răspunsuri mai atente, puțin mai lente."} onClick={()=>setResponseMode(responseMode==="thinking"?"rapid":"thinking")}><Brain size={16}/><span>Gândire</span></button>
+        <span className="composerSpacer"/>
+        <button className={cx("composerIcon",recording&&"recording",uploadLocked&&"locked")} onClick={mic} title={uploadLocked?deniedMessage("file_upload"):recording?"Oprește vocalul":"Înregistrează vocal"} aria-label={recording?"Oprește înregistrarea vocală":"Înregistrează vocal"} aria-pressed={recording} disabled={transcribing}><Mic size={19}/></button>
         {busy
           ? <button className="sendButton stopButton" onClick={onStop} title="Oprește răspunsul" aria-label="Oprește răspunsul"><Square size={15} fill="currentColor"/></button>
           : <button className="sendButton" disabled={!!uploading||recording||transcribing||!hasContent} onClick={trySend} title="Trimite" aria-label="Trimite mesajul"><ArrowUp size={20}/></button>}
       </div>
-    </div>
-    <div className="composerModeRow">
-      <button className={cx("mediaMake",mediaMode==="image"&&"active",!can("image_generation")&&"locked")} aria-pressed={mediaMode==="image"} title={can("image_generation")?`Poză: următorul mesaj creează o imagine. ${imageProvidersText(mediaPolicy)}`:deniedMessage("image_generation")} onClick={()=>toggleMedia("image")}><ImageIcon size={16}/> Poză</button>
-      <button className={cx("mediaMake",mediaMode==="video"&&"active",!can("video_generation")&&"locked")} aria-pressed={mediaMode==="video"} title={can("video_generation")?`Video: următorul mesaj creează un videoclip. ${VIDEO_PROVIDERS_TEXT}`:deniedMessage("video_generation")} onClick={()=>toggleMedia("video")}><Clapperboard size={16}/> Video</button>
-      <span className="modeDivider" aria-hidden="true"/>
-      <button className={cx("modeChip",responseMode==="rapid"&&"active")} aria-pressed={responseMode==="rapid"} onClick={()=>setResponseMode("rapid")}><Sparkles size={13}/> Rapid</button>
-      <button className={cx("modeChip",responseMode==="thinking"&&"active")} aria-pressed={responseMode==="thinking"} onClick={()=>setResponseMode("thinking")}><Brain size={13}/> Gândire</button>
     </div>
     <div className="composerHint" aria-live="polite">{hint}</div>
   </div>;
@@ -1667,6 +1670,8 @@ function App() {
           working={...working,messages:[...messages,{...assistantMessage,routeInfo,content:answer,streaming:true}]};scheduleFlush();
           return;
         }
+        // An OmniRoute combination ("Ai principal") answers with one of its members: show which one really answered.
+        if(routeInfo?.model&&!routeInfo.servedBy&&typeof j?.model==="string"&&j.model&&!j.model.includes(String(routeInfo.model).split("/").pop()))routeInfo={...routeInfo,servedBy:j.model};
         const delta=j?.choices?.[0]?.delta?.content||j?.choices?.[0]?.message?.content||"";
         if(delta){
           if(!started){started=true;setGen(convId,{stage:format?`Scrie conținutul pentru fișierul ${format.toUpperCase()}…`:"Scrie răspunsul…"})}
@@ -1896,11 +1901,11 @@ function App() {
   const hasMessages=!!current?.messages?.length;
   const activeAssistantId=current?current.assistantId:selectedAssistant;
   return <AccessContext.Provider value={access}><div className={cx("appShell",sidebarCollapsed&&"sidebarCollapsed")}>
-    <InstallApp floating/>
     <Sidebar open={sidebar} setOpen={setSidebar} user={user} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} busyIds={Object.keys(generations)} onSelect={id=>{setCurrentId(id);setSidebar(false)}} onDeleteConversation={deleteConversation} onUnarchive={unarchiveConversation} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} activeAssistantId={activeAssistantId} onUseAssistant={startWithAssistant} onNewProject={()=>setEntityModal({type:"project",item:null})} onNewAssistant={()=>setEntityModal({type:"assistant",item:null})} onEditProject={p=>setEntityModal({type:"project",item:p})} onEditAssistant={a=>setEntityModal({type:"assistant",item:a})} onTool={name=>openTool(name)} onSettings={()=>setSettings(true)} onLogout={()=>logout()}/>
     {sidebar&&<div className="mobileScrim" onClick={()=>setSidebar(false)}/>}
     <main className="mainArea">
       <Header deniedCount={deniedModels} onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} policyEnforced={modelPolicyEnforced} omni={omni} showOmni={machineSettingsAllowed} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={()=>setGithubModal(true)} onGitHubRollback={githubRollback} hasGitHubBackup={!!lastGithubBackup} onArchive={()=>current&&archiveConversation(current.id)} onUnarchive={()=>current&&unarchiveConversation(current.id)} onDelete={()=>current&&deleteConversation(current.id)}/>
+      <InstallApp banner/>
       {loadError&&<div className="loadErrorBanner" role="alert"><span>Nu am putut încărca datele: {loadError}</span><button onClick={()=>loadData()}>Reîncearcă</button>{GATEWAY!==DEFAULT_GATEWAY&&<button onClick={resetGatewayAndReload}>Folosește serviciul local implicit</button>}</div>}
       {updateReady&&!updateDismissed&&<div className="updateBanner" role="status"><button className="updateInstall" onClick={()=>window.AIStoica?.installUpdate?.()}>Actualizare AI Stoica disponibilă — instalează acum</button><button className="updateClose" onClick={()=>setUpdateDismissed(true)} aria-label="Ascunde notificarea" title="Mai târziu"><X size={14}/></button></div>}
       <div className="chatScroll" ref={chatRef} onScroll={updateChatScrollState}><ConversationView conversation={current} busy={busy} busyStage={currentGen?.stage} busySteps={currentGen?.steps||[]} onRegenerate={regenerate} onRate={rate} canRunCode={isOwner} onCodeResult={text=>setDraft(v=>(v?v+"\n\n":"")+text)} onAnswer={text=>send(text)} onOpenSettings={tab=>setSettings(tab||true)}/></div>

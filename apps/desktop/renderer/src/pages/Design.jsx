@@ -25,7 +25,7 @@ function Progress({job,onCancel}){
     <LoaderCircle size={30} className="spin"/>
     <h3>{job.type==="revise"?"Aplic modificările…":"Creez designul…"}</h3>
     <p>{STEPS[Math.min(STEPS.length-1,Math.floor(s/10))]}</p>
-    <div className="progressBar" aria-hidden="true"><span style={{width:`${pct}%`}}/></div>
+    <div className="progressBar" aria-hidden="true"><span style={{transform:`scaleX(${pct/100})`}}/></div>
     <small>{s} s · de obicei durează aproximativ un minut</small>
     {job.prompt&&<blockquote>{job.prompt}</blockquote>}
     <button className="secondary" onClick={onCancel}>Anulează</button>

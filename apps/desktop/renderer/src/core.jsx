@@ -243,7 +243,10 @@ export function CodeBlock({children,...props}) {
     if(!ok){toast("Nu am putut copia codul în clipboard.");return;}
     setCopied(true);clearTimeout(timer.current);timer.current=setTimeout(()=>setCopied(false),1400);
   }
-  return <div className="codeBlock"><button type="button" className="codeCopy" onClick={copy} aria-label="Copiază codul">{copied?<Check size={13}/>:<Copy size={13}/>}<span>{copied?"Copiat":"Copiază"}</span></button><pre ref={ref} {...props}>{children}</pre></div>;
+  // The language and "Copiază" sit in a bar above the code, so the button never covers the first line (on a phone it
+  // was always visible on top of the code).
+  const lang=/language-([\w+#.-]+)/.exec(children?.props?.className||"")?.[1]||"";
+  return <div className="codeBlock"><div className="codeHead"><span className="codeLang">{lang||"cod"}</span><button type="button" className="codeCopy" onClick={copy} aria-label="Copiază codul">{copied?<Check size={13}/>:<Copy size={13}/>}<span>{copied?"Copiat":"Copiază"}</span></button></div><pre ref={ref} {...props}>{children}</pre></div>;
 }
 export const REMARK_PLUGINS=[remarkGfm];
 export const MD_COMPONENTS={

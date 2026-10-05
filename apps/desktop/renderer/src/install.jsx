@@ -46,19 +46,20 @@ function InstallSteps() {
 }
 
 // "Convertește AI Stoica în aplicație": a card with the logo and the name, on the sign-in page and (until dismissed
-// for a week) in the app, whenever AI Stoica is open in a browser instead of as the installed app.
-export function InstallApp({ floating = false }) {
+// for a week) as a banner under the app's header, whenever AI Stoica is open in a browser instead of as the installed
+// app. The banner takes its own row, so it never covers the conversation or the side menu.
+export function InstallApp({ banner = false }) {
   const refresh = useInstallState();
   const [open, setOpen] = useState(false);
   const [hidden, setHidden] = useState(() => {
-    if (!floating) return false;
+    if (!banner) return false;
     const at = Number(storage.get(DISMISS_KEY) || 0);
     return at > 0 && Date.now() - at < DISMISS_DAYS * 86400000;
   });
   if (!IS_WEB || isStandalone() || hidden) return null;
   async function install() { if (!(await promptInstall(refresh))) setOpen(v => !v); }
   function dismiss() { storage.set(DISMISS_KEY, String(Date.now())); setHidden(true); }
-  return <div className={floating ? "installCard floating" : "installCard"} role="region" aria-label="Instalează aplicația AI Stoica">
+  return <div className={banner ? "installCard banner" : "installCard"} role="region" aria-label="Instalează aplicația AI Stoica">
     <img src="./icons/icon-192.png" alt="" width="44" height="44"/>
     <div className="installText">
       <b>AI Stoica</b>
@@ -66,6 +67,6 @@ export function InstallApp({ floating = false }) {
       {open && <InstallSteps/>}
     </div>
     <button type="button" className="installBtn" onClick={install}><Download size={15}/> {deferredPrompt ? "Instalează" : open ? "Ascunde pașii" : "Cum instalez"}</button>
-    {floating && <button type="button" className="installClose" onClick={dismiss} aria-label="Închide" title="Închide"><X size={15}/></button>}
+    {banner && <button type="button" className="installClose" onClick={dismiss} aria-label="Închide" title="Închide"><X size={15}/></button>}
   </div>;
 }
