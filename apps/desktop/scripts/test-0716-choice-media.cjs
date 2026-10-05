@@ -120,6 +120,17 @@ async function main() {
     const beforePersonal = asked.image.length;
     r = await call("/api/generate/image", { method: "POST", token, body: { prompt: "un logo mov" } });
     expect(r.status === 200 && !asked.image.slice(beforePersonal).includes("codex/gpt-5.6-sol"), "another account's images must skip the Owner's subscription: " + JSON.stringify(asked.image.slice(beforePersonal)));
+    r = await call("/api/generate/image", { method: "POST", token, body: { prompt: "un logo mov", model: "codex/gpt-5.6-sol" } });
+    expect(r.status === 403, "another account must not pick the Owner's subscription image model: " + r.status);
+    // The Owner keeps them all: the Owner's account sees, chooses and draws with the subscription models.
+    cfg.ownerEmail = "owner@example.com"; await new Promise((x) => setTimeout(x, 2100));
+    r = await call("/api/models", { token }); j = await r.json();
+    expect(r.status === 200 && (j.data || []).some((x) => (x.id || x) === "codex/gpt-5.6-sol"), "the Owner must see the subscription models: " + JSON.stringify(j.data).slice(0, 300));
+    r = await chat("codex/gpt-5.6-sol"); j = await r.json();
+    expect(r.status === 200 && j.choices[0].message.content === "OMNI codex/gpt-5.6-sol", "the Owner must chat through the subscription: " + JSON.stringify(j));
+    const beforeOwner = asked.image.length;
+    r = await call("/api/generate/image", { method: "POST", token, body: { prompt: "un logo auriu", model: "codex/gpt-5.6-sol" } });
+    expect(r.status === 200 && asked.image.slice(beforeOwner).includes("codex/gpt-5.6-sol"), "the Owner's images may use the subscription: " + JSON.stringify(asked.image.slice(beforeOwner)));
     cfg.ownerEmail = ""; await new Promise((x) => setTimeout(x, 2100));
 
     // Video under «Doar gratuit» (no cost policy set): the free OmniRoute web model, never the paid one.
