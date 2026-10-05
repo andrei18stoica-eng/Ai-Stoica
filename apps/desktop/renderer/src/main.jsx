@@ -19,6 +19,7 @@ import {
 } from "./core.jsx";
 import { InstallApp } from "./install.jsx";
 import { FileViewer, canView } from "./viewer.jsx";
+import { ServerUpdate } from "./serverUpdate.jsx";
 import { ScheduledPage } from "./pages/Scheduled.jsx";
 import { PluginsPage } from "./pages/Plugins.jsx";
 import { MemoryPage, PreferenceSwitches } from "./pages/Memory.jsx";
@@ -1190,18 +1191,21 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
   const keyProps={cfg,keys,setKeys};
   const tabs=[["general",SlidersHorizontal,"General",true],["ai",Bot,"AI & OmniRoute",machineSettingsAllowed],["chatapis",Plug,"API-uri AI",machineSettingsAllowed],["images",ImageIcon,"Poze",machineSettingsAllowed],["video",Play,"Video",machineSettingsAllowed],["voice",Volume2,"Voce și microfon",true],["account",User,"Cont și date",true]];
   return <div className="modalBackdrop" {...backdropProps}><div className="settingsModal" ref={ref} role="dialog" aria-modal="true" aria-label="Setări AI Stoica" tabIndex={-1}><div className="modalHead"><div><h2>Setări AI Stoica</h2><p>Aplicația, vocea, serviciile AI și actualizările.</p></div><button className="iconOnly" onClick={onClose} aria-label="Închide" title="Închide"><X size={20}/></button></div>
-    {!cfg?<div className="settingsLoading">{error||"Se încarcă setările…"}{error&&onPreferences&&<div className="settingsPrefs"><h3>Memorie și conversații</h3><PreferenceSwitches preferences={preferences} onChange={onPreferences} busyKey={prefBusy}/></div>}</div>:<>
+    {!cfg?<div className="settingsLoading">{error||"Se încarcă setările…"}{error&&onPreferences&&<div className="settingsPrefs"><h3>Memorie și conversații</h3><PreferenceSwitches preferences={preferences} onChange={onPreferences} busyKey={prefBusy}/></div>}{error&&<ServerUpdate/>}</div>:<>
     <div className="settingsBody"><div className="settingsNav" role="tablist" aria-orientation="vertical">
       {tabs.filter(t=>t[3]).map(([k,Icon,label])=><button key={k} role="tab" aria-selected={tab===k} className={tab===k?"active":""} onClick={()=>setTab(k)}><Icon size={17}/> {label}</button>)}
     </div>
     <div className="settingsPane">
       {tab==="general"&&<><h3>General</h3>
         {onPreferences&&<div className="settingsPrefs"><h4>Memorie și conversații</h4><p className="settingsHelp">Se aplică imediat, pentru contul tău.</p><PreferenceSwitches preferences={preferences} onChange={onPreferences} busyKey={prefBusy}/></div>}
+        {!IS_WEB&&<>
         <label className="toggleRow"><div><b>Pornește AI Stoica cu Windows</b><span>Aplicația pornește automat și poate rămâne în fundal.</span></div><input type="checkbox" checked={!!cfg.startWithWindows} onChange={e=>set({startWithWindows:e.target.checked})}/></label>
         <label className="toggleRow"><div><b>Închidere în zona de notificare</b><span>Butonul X ascunde aplicația fără să oprească serviciile.</span></div><input type="checkbox" checked={cfg.closeToTray!==false} onChange={e=>set({closeToTray:e.target.checked})}/></label>
-        <label className="toggleRow"><div><b>Actualizări automate</b><span>AI Stoica caută versiuni noi la pornire.</span></div><input type="checkbox" checked={cfg.autoUpdate!==false} onChange={e=>set({autoUpdate:e.target.checked})}/></label>
+        <label className="toggleRow"><div><b>Actualizări automate (aplicația Windows)</b><span>La pornire, AI Stoica descarcă singur versiunea nouă din GitHub Releases și te anunță când e gata de instalat.</span></div><input type="checkbox" checked={cfg.autoUpdate!==false} onChange={e=>set({autoUpdate:e.target.checked})}/></label>
         {window.AIStoica?.checkUpdate&&<div className="settingsButtons"><button type="button" className="secondary" onClick={checkUpdate}><RotateCcw size={15}/> Caută actualizări acum</button></div>}
         {updateStatus&&<div className="micStatus" role="status">{updateStatus}</div>}
+        </>}
+        <ServerUpdate/>
       </>}
       {tab==="ai"&&<><h3>AI & OmniRoute</h3>
         <label>Adresa serviciului AI Stoica<input value={cfg.gatewayUrl||DEFAULT_GATEWAY} onChange={e=>set({gatewayUrl:e.target.value})} placeholder={DEFAULT_GATEWAY}/></label>

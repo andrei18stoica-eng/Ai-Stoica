@@ -15,6 +15,7 @@ Asistent AI pentru Windows, web (aistoica.ro) și telefon cu chat, proiecte, asi
 - **Deschizi fișierele fără să le descarci:** poze, video, audio, PDF, Word, PowerPoint, Excel și text se deschid în aplicație (Bibliotecă → „Deschide”, sau din conversație). Pe telefoanele unde browserul nu arată PDF-uri, apare textul PDF-ului.
 - **PDF-urile cu diacritice se citesc.** PDF-urile făcute de Word, de browsere sau de AI Stoica, cu fonturi pentru ș, ț, ă, nu dădeau niciun text (sau dădeau caractere fără sens), deci AI-ul nu le putea folosi. Acum sunt citite prin tabelele de caractere ale fonturilor, cu aceleași limite de dezarhivare ca înainte (un PDF mic „umflat” la sute de MB nu blochează serverul).
 - **Verificat cu procedura pluginului „code-review” (Anthropic):** cinci recenzii independente pe tot codul 0.7.16; problemele găsite (modelele API directe alese din listă, limitele PDF, ordinea modelului de imagine din Setări, spații în textul PDF, bold în jurul formulelor, sume ca „5$/lună”) sunt reparate și au teste.
+- **Actualizare cu un buton.** Pe site (contul Owner): **Setări → „Actualizează site-ul acum”**. Serverul descarcă ultima versiune de pe GitHub, reconstruiește site-ul (1–5 minute), iar pagina se reîncarcă singură. Bifa **„Actualizare automată a site-ului”** face ca serverul să verifice o dată pe oră și să instaleze singur versiunea nouă. Site-ul doar cere actualizarea; o rulează un serviciu de pe server (`deploy/hetzner/install-updater.sh`, instalat automat de `update.sh`). **Aplicația Windows** se actualizează singură la pornire (Setări → General → „Caută actualizări acum”), din GitHub Releases.
 - **Butonul „Convertește AI Stoica în aplicație pe telefon”**, cu logo și nume, apare pe site (pagina de autentificare și în aplicație, până îl închizi). Pe Android instalează direct; pe iPhone arată pașii din Safari. Aplicația instalată se numește „AI Stoica” și pornește cu ecranul cu logo.
 
 ## Noutăți 0.7.15 — totul pe serverul Hetzner, mereu online
@@ -141,6 +142,7 @@ La actualizări, `sudo bash /opt/ai-stoica/deploy/hetzner/update.sh` reconstruie
 | `lib/documents.cjs` | export PDF, Word, PowerPoint, Excel, CSV, JSON, HTML etc. |
 | `lib/math.cjs` | formulele LaTeX devin ecuații Word (Office Math) |
 | `lib/pdftext.cjs` | textul PDF-urilor prin tabelele de caractere ale fonturilor |
+| `renderer/src/serverUpdate.jsx` | „Actualizează site-ul” pentru Owner (serviciul de pe server: `deploy/hetzner/update-runner.sh`, `install-updater.sh`) |
 | `lib/schedule.cjs` | calculul orei următoarei rulări pentru automatizări (cu fus orar) |
 | `lib/netguard.cjs` | blochează accesul pluginurilor la adrese interne |
 | `lib/providers.cjs` | modelele gratuite ale fiecărui provider și paginile de unde se iau cheile |
@@ -155,7 +157,7 @@ La actualizări, `sudo bash /opt/ai-stoica/deploy/hetzner/update.sh` reconstruie
 4. **Windows:** după ce apare release-ul v0.7.16 (cu `latest.yml`), aplicațiile cu „Actualizări automate” pornite se actualizează singure la următoarea pornire. Release-urile v0.7.11 și v0.7.13 au fost publicate fără reparația de publicare: dacă aplicația nu se actualizează, instalează 0.7.16 o dată de mână, de aici înainte actualizările vin singure.
 5. **Site-ul aistoica.ro:** DNS-ul, apoi `sudo bash deploy/hetzner/setup-web.sh` (vezi „Site-ul aistoica.ro” mai sus).
 6. **Windows pe server:** Setări → AI & OmniRoute → Adresa serviciului AI Stoica: `https://aistoica.ro`, apoi intri cu contul de pe server.
-7. **Site-ul la 0.7.16:** pe server, `sudo bash /opt/ai-stoica/deploy/hetzner/update.sh` (reconstruiește API-ul și site-ul).
+7. **Site-ul la 0.7.16:** pe server, **o singură dată**, `sudo bash /opt/ai-stoica/deploy/hetzner/update.sh`, apoi încă o dată aceeași comandă: a doua rulare instalează butonul „Actualizează site-ul”. De aici înainte actualizezi din aplicație (Setări), fără consolă.
 8. **Poze prin abonamentul ChatGPT pe site:** în panoul OmniRoute de pe server (prin tunel), la furnizori, conectează **Codex** (autentificare cu contul ChatGPT). Opțional, în `deploy/hetzner/.env`: `AI_STOICA_IMAGE_MODEL=codex/gpt-5.6-sol`, apoi `update.sh`.
 
 ---

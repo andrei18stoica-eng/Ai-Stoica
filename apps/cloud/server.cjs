@@ -64,7 +64,9 @@ const gateway = startLocalGateway({
   host,
   serviceName: "AI Stoica Cloud Gateway",
   getOmniConfig,
-  webDir: webEnabled ? webDir : undefined
+  webDir: webEnabled ? webDir : undefined,
+  // deploy/hetzner: folder shared with the server's update service ("Actualizează site-ul" for the Owner).
+  updateDir: env("AI_STOICA_UPDATE_DIR") || undefined
 });
 
 console.log(`AI Stoica Cloud Gateway listening on ${host}:${port}${webEnabled ? " (web interface on)" : ""}`);

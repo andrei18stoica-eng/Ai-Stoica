@@ -99,7 +99,7 @@ function roError(e){
   return msg||"Eroare necunoscută.";
 }
 
-function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig: readOmniConfig, onAutomationResult, encryptSecret, decryptSecret, streamIdleMs, streamTotalMs, webDir }) {
+function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig: readOmniConfig, onAutomationResult, encryptSecret, decryptSecret, streamIdleMs, streamTotalMs, webDir, updateDir }) {
   // The configuration is read many times per request; one read is reused for 2 seconds.
   let configMemo = null, configMemoAt = 0;
   const getOmniConfig = () => { const now = Date.now(); if (!configMemo || now - configMemoAt > 2000) { configMemo = (typeof readOmniConfig === "function" ? readOmniConfig() : null) || {}; configMemoAt = now; } return configMemo; };
@@ -846,6 +846,41 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       res.status(503).json({ error: cloudDownMessage(0) });
     }
   }
+
+  // "Actualizează site-ul" (Owner, web server only). The site never runs anything on the server itself: it drops a
+  // request file in updateDir, and the server's systemd service (deploy/hetzner/install-updater.sh) runs update.sh and
+  // writes status.json / available.json back here.
+  const readUpdateJson=(name)=>{try{return JSON.parse(fs.readFileSync(path.join(updateDir,name),"utf8"))}catch{return null}};
+  function requireUpdateOwner(req){
+    if(!ownerRequest(req))throw policyFailure("Doar Owner-ul poate actualiza site-ul.",403);
+    if(!updateDir)throw policyFailure("Actualizarea din aplicație există doar pe serverul aistoica.ro.",404);
+  }
+  const UPDATE_SETUP="Serviciul de actualizare nu e instalat pe server. Rulează o dată pe server: sudo bash /opt/ai-stoica/deploy/hetzner/update.sh";
+  app.get("/api/server/update", auth, (req,res) => {
+    if(!ownerRequest(req)||!updateDir)return res.json({data:{enabled:false}});
+    const exists=(name)=>{try{return fs.existsSync(path.join(updateDir,name))}catch{return false}};
+    res.json({data:{enabled:true,installed:exists("installed"),pending:exists("request"),auto:exists("auto"),
+      status:readUpdateJson("status.json"),available:readUpdateJson("available.json"),setupHint:exists("installed")?"":UPDATE_SETUP}});
+  });
+  app.post("/api/server/update", auth, (req,res) => {
+    try{
+      requireUpdateOwner(req);
+      if(!fs.existsSync(path.join(updateDir,"installed")))throw policyFailure(UPDATE_SETUP,503);
+      if(readUpdateJson("status.json")?.state==="running")throw policyFailure("O actualizare rulează deja. Așteaptă să se termine.",409);
+      fs.writeFileSync(path.join(updateDir,"request"),JSON.stringify({by:req.user?.email||"",at:new Date().toISOString()}));
+      res.status(202).json({data:{pending:true}});
+    }catch(e){sendError(res,e.status?e:policyFailure("Cererea de actualizare nu a putut fi scrisă pe server: "+e.message,500))}
+  });
+  app.patch("/api/server/update", auth, (req,res) => {
+    try{
+      requireUpdateOwner(req);
+      const auto=toBool(req.body?.auto,undefined);
+      if(typeof auto!=="boolean")throw policyFailure("Câmpul „auto” trebuie să fie true sau false.",400);
+      const file=path.join(updateDir,"auto");
+      if(auto)fs.writeFileSync(file,new Date().toISOString());else fs.rmSync(file,{force:true});
+      res.json({data:{auto}});
+    }catch(e){sendError(res,e.status?e:policyFailure("Setarea nu a putut fi salvată pe server: "+e.message,500))}
+  });
 
   app.get("/health", async (_req, res) => {
     const cfg = getOmniConfig(); let omni = false, omniNeedsKey = false, cloudOnline = false;
