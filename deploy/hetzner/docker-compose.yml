@@ -110,6 +110,11 @@ services:
       AI_STOICA_OWNER_EMAIL: ${OWNER_EMAIL}
       AI_STOICA_TRUST_PROXY: ${TRUST_PROXY_HOPS:-1}
       AI_STOICA_DEFAULT_MODEL: ${AI_STOICA_DEFAULT_MODEL:-}
+      AI_STOICA_CHAT_FALLBACK: ${AI_STOICA_CHAT_FALLBACK:-false}
+      AI_STOICA_IMAGE_MODEL: ${AI_STOICA_IMAGE_MODEL:-}
+      AI_STOICA_VIDEO_MODEL: ${AI_STOICA_VIDEO_MODEL:-}
+      # "Actualizează site-ul" (Owner): the site drops a request here; the server's systemd service runs update.sh.
+      AI_STOICA_UPDATE_DIR: /update
       OMNIROUTE_BASE_URL: ${OMNIROUTE_BASE_URL:-http://omniroute:20128/v1}
       OMNIROUTE_API_KEY: ${OMNIROUTE_API_KEY:-}
       AI_STOICA_GITHUB_TOKEN: ${AI_STOICA_GITHUB_TOKEN:-}
@@ -131,8 +136,10 @@ services:
       REPLICATE_API_TOKEN: ${REPLICATE_API_TOKEN:-}
       TOGETHER_API_KEY: ${TOGETHER_API_KEY:-}
       STABILITY_API_KEY: ${STABILITY_API_KEY:-}
+      XAI_API_KEY: ${XAI_API_KEY:-}
     volumes:
       - web-data:/data
+      - ${AI_STOICA_UPDATE_HOST_DIR:-/var/lib/ai-stoica-update}:/update
     ports:
       - "127.0.0.1:8788:8787"
     mem_limit: 768m

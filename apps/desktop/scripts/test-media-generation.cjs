@@ -160,6 +160,8 @@ async function main(){
     const ownerImage=await r.json();expect(r.ok,ownerImage.error||"Owner image generation failed while paid AI was off");
     expect(ownerImage.data?.model==="openai/gpt-image-2","Owner should retain configured paid image access while paid AI is off for normal accounts");
 
+    // Since 0.7.16 an image model chosen in Settings is tried first; without one, the direct provider order applies.
+    const chosenImageModel=omniConfig.imageModel;omniConfig.imageModel="";
     omniConfig.stabilityApiKey="test-stability-key";
     omniConfig.imageCostPolicy="allow_paid";
     omniConfig.imageProviderMode="auto";
@@ -171,6 +173,7 @@ async function main(){
     r=await fetch(base+"/api/files/"+stabilityImage.data.id,{headers:{authorization:"Bearer owner-token"}});
     const stabilityBytes=Buffer.from(await r.arrayBuffer());
     expect(r.ok&&stabilityBytes.subarray(0,8).equals(png.subarray(0,8)),"Stability direct output is not a real PNG");
+    omniConfig.imageModel=chosenImageModel;
     delete omniConfig.stabilityApiKey;
     delete omniConfig.imageCostPolicy;
     delete omniConfig.imageProviderMode;
@@ -194,6 +197,8 @@ async function main(){
     delete omniConfig.imageProviderMode;
     delete omniConfig.imageProviderOrder;
 
+    // As for images: a video model chosen in Settings goes first, so the direct providers are checked without one.
+    const chosenVideoModel=omniConfig.videoModel;omniConfig.videoModel="";
     omniConfig.geminiApiKey="test-gemini-key";
     omniConfig.videoCostPolicy="allow_paid";
     omniConfig.videoMode="fast";
@@ -226,6 +231,7 @@ async function main(){
     delete omniConfig.falApiKey;
     delete omniConfig.videoProviderOrder;
     delete omniConfig.falVideoModel;
+    omniConfig.videoModel=chosenVideoModel;
 
     r=await fetch(base+"/api/generate/video",{method:"POST",headers:ownerHeaders,body:JSON.stringify({prompt:"Owner free video while paid AI is globally off"})});
     const ownerVideo=await r.json();expect(r.ok,ownerVideo.error||"Owner video generation failed while paid AI was off");

@@ -105,3 +105,13 @@ The `web` profile also starts OmniRoute (and its Redis), so the OmniRoute combin
 The web service is bound to `127.0.0.1:8788` only; Caddy is the public entry point. Its data (conversations, Library, memory) is in the `web-data` volume. `update.sh` rebuilds it whenever the `web` profile is active.
 
 On phones the site installs as an app for free: Safari → Share → "Add to Home Screen" on iPhone, Chrome → "Install app" on Android.
+
+## Update from the app (0.7.16)
+
+`update.sh` also installs (as root, through `install-updater.sh`) a small systemd service: the site's Owner button
+**Setări → „Actualizează site-ul acum”** only drops a request file in `/var/lib/ai-stoica-update` (mounted in the web
+container as `/update`); `ai-stoica-update.path` then runs `update-runner.sh`, which runs `update.sh` and writes
+`status.json` (result and the last 40 log lines) for the site. `ai-stoica-update-check.timer` looks for a new version
+every hour (`available.json`) and installs it when the Owner turned on automatic updates (file `auto`).
+Check it with `systemctl status ai-stoica-update.path ai-stoica-update-check.timer` and `cat /var/lib/ai-stoica-update/update.log`.
+

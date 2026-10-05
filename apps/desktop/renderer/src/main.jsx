@@ -7,7 +7,7 @@ import {
   CalendarClock, Plug, Library, Brain, Upload, Trash2, Play, Pin, PinOff,
   FileText, Image as ImageIcon, HardDrive, ToggleLeft, ToggleRight,
   Compass, Map as MapIcon, Globe2, Archive, ArchiveRestore, ExternalLink, SlidersHorizontal, Volume2,
-  PanelTopOpen, ShieldCheck, UserCheck, Download, Lock, Pencil, Palette, Clapperboard
+  PanelTopOpen, ShieldCheck, UserCheck, Download, Lock, Pencil, Palette, Clapperboard, Eye, Maximize2, LoaderCircle, SquareTerminal
 } from "lucide-react";
 import "./styles.css";
 import {
@@ -18,7 +18,10 @@ import {
   isHttpUrl, setAuthLostHandler, IS_WEB
 } from "./core.jsx";
 import { InstallApp } from "./install.jsx";
+import { FileViewer, canView } from "./viewer.jsx";
+import { ServerUpdate } from "./serverUpdate.jsx";
 import { ScheduledPage } from "./pages/Scheduled.jsx";
+import { CodePage } from "./pages/Code.jsx";
 import { PluginsPage } from "./pages/Plugins.jsx";
 import { MemoryPage, PreferenceSwitches } from "./pages/Memory.jsx";
 import { LibraryPage } from "./pages/Library.jsx";
@@ -64,7 +67,7 @@ function inferModelProvider(model,provider="") {
   if(p)return p;
   const m=String(model||"").toLowerCase();
   const first=m.split("/")[0];
-  const prefixMap={openai:"openai",anthropic:"anthropic",google:"gemini",gemini:"gemini",cerebras:"cerebras",groq:"groq",cloudflare:"cloudflare",openrouter:"openrouter",runway:"runway","@cf":"cloudflare"};
+  const prefixMap={openai:"openai",anthropic:"anthropic",google:"gemini",gemini:"gemini",cerebras:"cerebras",groq:"groq",cloudflare:"cloudflare",openrouter:"openrouter",runway:"runway","@cf":"cloudflare",xai:"xai","x-ai":"xai",cx:"openai",codex:"openai",cc:"anthropic","claude-code":"anthropic",gc:"gemini","gemini-cli":"gemini"};
   if(prefixMap[first])return prefixMap[first];
   if(/groq/.test(m))return "groq";
   if(/cerebras/.test(m))return "cerebras";
@@ -78,21 +81,22 @@ function inferModelProvider(model,provider="") {
 }
 function providerLabel(provider,model="") {
   const p=inferModelProvider(model,provider);
-  return ({openai:"OpenAI",anthropic:"Anthropic",gemini:"Google Gemini",cerebras:"Cerebras",groq:"Groq",cloudflare:"Cloudflare AI",openrouter:"OpenRouter",runway:"Runway",ai:"AI"})[p]||String(provider||"AI");
+  return ({openai:"OpenAI",anthropic:"Anthropic",gemini:"Google Gemini",cerebras:"Cerebras",groq:"Groq",xai:"Grok (xAI)",cloudflare:"Cloudflare AI",openrouter:"OpenRouter",runway:"Runway",ai:"AI"})[p]||String(provider||"AI");
 }
 function routeTaskLabel(task) {
   return ({
     coding:"Programare",reasoning:"Matematică / logică",legal_analysis:"Analiză juridică",
     long_context:"Document / context lung",research:"Cercetare",creative:"Creativitate",
     vision:"Imagine / viziune",fast:"Răspuns rapid",general:"General",manual:"Model ales manual",
-    "direct-fallback":"API direct",image_generation:"Generare imagine",video_generation:"Generare video"
+    "direct-fallback":"Rezervă automată: API direct",direct:"API direct ales manual",auto:"Combinația principală (automat)",image_generation:"Generare imagine",video_generation:"Generare video"
   })[task]||"General";
 }
 function RouteBadge({info}) {
   if(!info?.model)return null;
   const provider=providerLabel(info.provider,info.model);
-  return <div className="routeBadge" title={"AI Stoica a folosit "+provider+" · "+info.model}>
-    <Sparkles size={12}/><span><b>{provider}</b><em>{info.model}</em></span><small>{routeTaskLabel(info.task)}</small>
+  const served=info.servedBy?` → ${info.servedBy}`:"";
+  return <div className="routeBadge" title={info.servedBy?`Ai ales ${info.model}; OmniRoute a trimis întrebarea la ${info.servedBy}.`:"AI Stoica a folosit "+provider+" · "+info.model}>
+    <Sparkles size={12}/><span><b>{info.servedBy&&/\//.test(info.servedBy)?providerLabel("",info.servedBy):provider}</b><em>{info.model}{served}</em></span><small>{routeTaskLabel(info.task)}</small>
   </div>;
 }
 function friendlyError(raw){
@@ -317,7 +321,7 @@ function AuthScreen({ onAuth, notice:initialNotice="" }) {
 
 function BrandMark({small=false}) { return <div className={cx("brandMark",small&&"small")}><img src="./stoica-enterprises-ai-mark.webp" alt="AI Stoica"/></div>; }
 
-const TOOL_ITEMS=[["explore",Compass,"Explorează",null],["automations",CalendarClock,"Scheduled","automations"],["plugins",Plug,"Pluginuri","plugins"],["library",Library,"Bibliotecă",null],["design",Palette,"Design","document_generation"],["memory",Brain,"Memorie",null]];
+const TOOL_ITEMS=[["explore",Compass,"Explorează",null],["code",SquareTerminal,"Code AI Stoica","code"],["automations",CalendarClock,"Scheduled","automations"],["plugins",Plug,"Pluginuri","plugins"],["library",Library,"Bibliotecă",null],["design",Palette,"Design","document_generation"],["memory",Brain,"Memorie",null]];
 function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,conversations,currentId,busyIds,onSelect,onDeleteConversation,onUnarchive,onNew,selectedProject,setSelectedProject,activeAssistantId,onUseAssistant,onNewProject,onNewAssistant,onEditProject,onEditAssistant,onTool,onSettings,onLogout}) {
   const {can,isOwner}=useAccess();
   const [showArchived,setShowArchived]=useState(false);
@@ -356,7 +360,7 @@ function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,convers
     <div className="searchBox"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Escape"&&search){e.preventDefault();setSearch("")}}} placeholder="Caută în conversații" aria-label="Caută în conversații"/>{search&&<button className="searchClear" onClick={()=>setSearch("")} title="Șterge căutarea" aria-label="Șterge căutarea"><X size={14}/></button>}</div>
     <div className="sideScroll">
       <div className="sideSection"><div className="sectionHead"><span>Instrumente</span></div>
-        {TOOL_ITEMS.map(([name,Icon,label,perm])=>{const locked=perm&&!can(perm);return <button key={name} className={cx("sideItem",name==="explore"?"exploreItem":"toolItem",locked&&"locked")} onClick={()=>onTool(name)} title={locked?deniedMessage(perm):label}><Icon size={16}/> {label}{locked&&<Lock size={13} className="lockIcon"/>}</button>})}
+        {TOOL_ITEMS.filter(([name])=>name!=="code"||can("code")).map(([name,Icon,label,perm])=>{const locked=perm&&!can(perm);return <button key={name} className={cx("sideItem",name==="explore"?"exploreItem":"toolItem",locked&&"locked")} onClick={()=>onTool(name)} title={locked?deniedMessage(perm):label}><Icon size={16}/> {label}{locked&&<Lock size={13} className="lockIcon"/>}</button>})}
         {isOwner&&<button className="sideItem ownerItem" onClick={()=>onTool("admin")}><ShieldCheck size={16}/> Control Center</button>}
       </div>
       <div className="sideSection"><div className="sectionHead"><span>Proiecte</span><button onClick={onNewProject} aria-label="Proiect nou" title="Proiect nou"><Plus size={15}/></button></div>
@@ -465,7 +469,7 @@ function Header({deniedCount,onMenu,model,onSelectModel,models,onRefreshModels,r
     <button className="iconOnly menuBtn" onClick={onMenu} aria-label="Afișează sau ascunde meniul" title="Meniu"><Menu size={20}/></button>
     <ModelPicker model={model} onSelect={onSelectModel} models={models} onRefresh={onRefreshModels} refreshing={refreshingModels} policyEnforced={policyEnforced} deniedCount={deniedCount}/>
     <div className="topSpacer"/>
-    {showOmni&&<div className={cx("connection",omni===true?"ok":"bad")} title={omni===true?"OmniRoute răspunde.":omni==="key"?"OmniRoute rulează, dar cere cheia API: creează una în OmniRoute → API Manager și pune-o în Setări → AI & OmniRoute. Până atunci chatul folosește API-urile directe.":"OmniRoute nu răspunde. Chatul continuă prin API-urile directe configurate, dacă există."}>{omni===true?<Wifi size={15}/>:<WifiOff size={15}/>} {omni===true?"OmniRoute conectat":omni==="key"?"OmniRoute cere cheie API":"OmniRoute oprit"}</div>}
+    {showOmni&&<div className={cx("connection",omni===true?"ok":"bad")} title={omni===true?"OmniRoute răspunde.":omni==="key"?"OmniRoute rulează, dar cere cheia API: creează una în OmniRoute → API Manager și pune-o în Setări → AI & OmniRoute. Până atunci răspund modelele API-urilor directe (Groq, Gemini…), dacă le alegi din listă.":"OmniRoute nu răspunde. Alege din listă un model al API-urilor directe configurate (Groq, Gemini…) sau pornește «Rezervă automată»."}>{omni===true?<Wifi size={15}/>:<WifiOff size={15}/>} {omni===true?"OmniRoute conectat":omni==="key"?"OmniRoute cere cheie API":"OmniRoute oprit"}</div>}
     <button className="topAction" onClick={onShare} disabled={!current} title="Copiază conversația în clipboard"><Share2 size={16}/> Copiază conversația</button>
     <div className="moreWrap" ref={moreRef}>
       <button className="iconOnly" onClick={()=>{setMore(v=>!v);setMoveOpen(false)}} aria-label="Opțiuni conversație" title="Opțiuni conversație" aria-haspopup="menu" aria-expanded={more}><MoreHorizontal size={20}/></button>
@@ -504,10 +508,12 @@ function CopyMessageButton({message,className=""}) {
   return <button className={className} onClick={copy} title={copied?"Copiat":"Copiază mesajul"} aria-label="Copiază mesajul">{copied?<Check size={15}/>:<Copy size={15}/>}</button>;
 }
 
+const EXPORT_FORMATS=[["pdf","PDF"],["docx","Word"],["pptx","PowerPoint"]];
 function MessageActions({message,title,disabled,onRegenerate,onRate}) {
   const {can,deny}=useAccess();
-  const [speaking,setSpeaking]=useState(false),[exporting,setExporting]=useState("");
-  const speakingRef=useRef(false);
+  const [speaking,setSpeaking]=useState(false),[exporting,setExporting]=useState(""),[exportMenu,setExportMenu]=useState(false);
+  const speakingRef=useRef(false),exportRef=useRef(null);
+  useDismiss(exportMenu,()=>setExportMenu(false),exportRef);
   useEffect(()=>()=>{if(speakingRef.current){try{window.speechSynthesis.cancel()}catch{}}},[]);
   function stopSpeaking(){speakingRef.current=false;setSpeaking(false);}
   function speak(){
@@ -528,7 +534,11 @@ function MessageActions({message,title,disabled,onRegenerate,onRate}) {
   const exportLocked=!can("document_generation");
   return <div className="messageActions">
     <CopyMessageButton message={message}/>
-    {["pdf","docx","pptx"].map(f=><button key={f} className={cx(exportLocked&&"locked")} onClick={()=>exp(f)} disabled={!!exporting} title={exportLocked?deniedMessage("document_generation"):`Descarcă ${f.toUpperCase()}`} aria-label={`Descarcă răspunsul ca ${f.toUpperCase()}`}><span className="formatTag">{exporting===f?"…":f.toUpperCase()}</span></button>)}
+    {/* PDF / Word / PowerPoint behind one "Descarcă" button instead of three format labels in the row. */}
+    <div className="exportWrap" ref={exportRef}>
+      <button className={cx(exportLocked&&"locked",exportMenu&&"selected")} onClick={()=>{if(exportLocked){deny("document_generation");return;}setExportMenu(v=>!v)}} disabled={!!exporting} title={exportLocked?deniedMessage("document_generation"):"Descarcă răspunsul (PDF, Word, PowerPoint)"} aria-label="Descarcă răspunsul" aria-haspopup="menu" aria-expanded={exportMenu}>{exporting?<LoaderCircle size={15} className="spin"/>:<Download size={15}/>}</button>
+      {exportMenu&&<div className="exportMenu" role="menu">{EXPORT_FORMATS.map(([f,label])=><button key={f} role="menuitem" onClick={()=>{setExportMenu(false);exp(f)}}><FileText size={15}/><span>{label}</span><small>.{f}</small></button>)}</div>}
+    </div>
     <button onClick={speak} title={speaking?"Oprește citirea":"Citește cu voce"} aria-label={speaking?"Oprește citirea":"Citește cu voce"} aria-pressed={speaking}><Volume2 size={15}/></button>
     <button className={message.rating===1?"selected":""} onClick={()=>onRate(1)} disabled={disabled} title="Răspuns util" aria-label="Răspuns util" aria-pressed={message.rating===1}><ThumbsUp size={15}/></button>
     <button className={message.rating===-1?"selected":""} onClick={()=>onRate(-1)} disabled={disabled} title="Răspuns slab" aria-label="Răspuns slab" aria-pressed={message.rating===-1}><ThumbsDown size={15}/></button>
@@ -540,31 +550,37 @@ function GeneratedAttachment({attachment}) {
   const kind=attachment?.kind||attachment?.type||(String(attachment?.mimeType||"").startsWith("image/")?"image":String(attachment?.mimeType||"").startsWith("video/")?"video":String(attachment?.mimeType||"").startsWith("audio/")?"audio":"file");
   const media=["image","video","audio"].includes(kind);
   const {src,failed}=useAuthedBlobUrl(media&&attachment?.id?`/api/files/${attachment.id}`:"");
-  const [downloading,setDownloading]=useState(false);
+  const [downloading,setDownloading]=useState(false),[viewing,setViewing]=useState(false);
   async function download(){
     if(downloading)return;setDownloading(true);
     try{await downloadGeneratedFile(attachment)}catch(e){toast(e.message)}finally{setDownloading(false)}
   }
+  const viewer=viewing&&<FileViewer file={{...attachment,libraryId:attachment.id}} onClose={()=>setViewing(false)}/>;
   if(media){
     return <div className={cx("generatedMedia",kind)}>
-      {src?(kind==="image"?<img src={src} alt={attachment.name||"Imagine generată de AI Stoica"}/>:kind==="video"?<video controls preload="metadata" src={src}/>:<audio controls preload="metadata" src={src}/>)
+      {viewer}
+      {src?(kind==="image"?<img src={src} alt={attachment.name||"Imagine generată de AI Stoica"} className="zoomable" onClick={()=>setViewing(true)} title="Deschide pe tot ecranul"/>:kind==="video"?<video controls preload="metadata" src={src}/>:<audio controls preload="metadata" src={src}/>)
         :<div className="mediaPlaceholder">{failed?"Previzualizarea nu este disponibilă. Fișierul a fost probabil șters din Bibliotecă.":"Se încarcă previzualizarea…"}</div>}
-      <div className="generatedMediaBar"><span><b>{attachment.name}</b><small>{(attachment.mimeType||kind).replace(/^.*\//,"").toUpperCase()} · {formatBytes(attachment.size)}{attachment.provider?` · ${attachment.provider}`:""}</small></span><button onClick={download} disabled={downloading}><Download size={17}/> {downloading?"Se descarcă…":"Descarcă"}</button></div>
+      <div className="generatedMediaBar"><span><b>{attachment.name}</b><small>{(attachment.mimeType||kind).replace(/^.*\//,"").toUpperCase()} · {formatBytes(attachment.size)}{attachment.provider?` · ${attachment.provider}`:""}</small></span><button onClick={()=>setViewing(true)} title="Deschide" aria-label={"Deschide "+(attachment.name||"fișierul")}><Maximize2 size={15}/></button><button onClick={download} disabled={downloading}><Download size={17}/> {downloading?"Se descarcă…":"Descarcă"}</button></div>
     </div>;
   }
-  return <button className="generatedDownload" onClick={download} disabled={downloading} title={"Descarcă "+(attachment?.name||"fișierul")}><span className="generatedFileIcon"><FileText size={20}/></span><span className="generatedFileMeta"><b>{attachment?.name}</b><small>{(attachment?.format||attachment?.name?.split(".").pop()||"FIȘIER").toUpperCase()} · {formatBytes(attachment?.size)}</small></span><span className="generatedDownloadAction"><Download size={18}/><em>{downloading?"Se descarcă…":"Descarcă"}</em></span></button>;
+  const openable=canView(attachment);
+  return <>{viewer}<button className="generatedDownload" onClick={openable?()=>setViewing(true):download} disabled={downloading} title={(openable?"Deschide ":"Descarcă ")+(attachment?.name||"fișierul")}><span className="generatedFileIcon"><FileText size={20}/></span><span className="generatedFileMeta"><b>{attachment?.name}</b><small>{(attachment?.format||attachment?.name?.split(".").pop()||"FIȘIER").toUpperCase()} · {formatBytes(attachment?.size)}</small></span><span className="generatedDownloadAction">{openable?<Eye size={18}/>:<Download size={18}/>}<em>{openable?"Deschide":downloading?"Se descarcă…":"Descarcă"}</em></span></button></>;
 }
 
 function MediaAttachment({attachment}) {
   const kind=attachment?.type;
   const isMedia=["image","audio","video"].includes(kind)&&!!attachment?.libraryId;
   const {src,failed}=useAuthedBlobUrl(isMedia?`/api/library/${attachment.libraryId}/content`:"");
+  const [viewing,setViewing]=useState(false);
   async function download(){try{await downloadLibraryFile(attachment)}catch(e){toast(e.message)}}
-  if(!isMedia)return <span className="fileChip"><Paperclip size={12}/>{attachment?.name}{attachment?.libraryId&&<button onClick={download} title="Descarcă" aria-label={`Descarcă ${attachment?.name||"fișierul"}`}><Download size={12}/></button>}</span>;
+  const viewer=viewing&&<FileViewer file={attachment} onClose={()=>setViewing(false)}/>;
+  if(!isMedia)return <span className="fileChip">{viewer}<Paperclip size={12}/>{attachment?.name}{attachment?.libraryId&&canView(attachment)&&<button onClick={()=>setViewing(true)} title="Deschide" aria-label={`Deschide ${attachment?.name||"fișierul"}`}><Eye size={12}/></button>}{attachment?.libraryId&&<button onClick={download} title="Descarcă" aria-label={`Descarcă ${attachment?.name||"fișierul"}`}><Download size={12}/></button>}</span>;
   const Icon=kind==="audio"?Volume2:kind==="video"?Play:ImageIcon;
   return <div className={cx("messageMedia",kind)}>
-    <div className="messageMediaHead"><span><Icon size={15}/><b>{attachment.name}</b></span><button title="Descarcă" aria-label={`Descarcă ${attachment.name}`} onClick={download}><Download size={15}/></button></div>
-    {src?(kind==="image"?<img src={src} alt={attachment.name}/>:kind==="audio"?<audio controls preload="metadata" src={src}/>:<video controls preload="metadata" src={src}/>)
+    {viewer}
+    <div className="messageMediaHead"><span><Icon size={15}/><b>{attachment.name}</b></span><button title="Deschide" aria-label={`Deschide ${attachment.name}`} onClick={()=>setViewing(true)}><Maximize2 size={15}/></button><button title="Descarcă" aria-label={`Descarcă ${attachment.name}`} onClick={download}><Download size={15}/></button></div>
+    {src?(kind==="image"?<img src={src} alt={attachment.name} className="zoomable" onClick={()=>setViewing(true)}/>:kind==="audio"?<audio controls preload="metadata" src={src}/>:<video controls preload="metadata" src={src}/>)
       :<div className="mediaPlaceholder small">{failed?"Fișierul nu mai este disponibil în Bibliotecă.":"Se încarcă…"}</div>}
     {attachment.transcript&&<small>Pista audio a fost transcrisă pentru AI Stoica.</small>}
   </div>;
@@ -851,38 +867,34 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
     <div className={cx("composerCard",dragOver&&"dragOver")}>
       {dragOver&&<div className="dropHint">{uploadLocked?deniedMessage("file_upload"):"Eliberează pentru a atașa fișierele"}</div>}
       {attachments.length>0&&<div className="attachmentTray">{attachments.map((a,i)=><TrayChip key={(a.libraryId||a.name)+i} attachment={a} onRemove={()=>setAttachments(v=>v.filter((_,j)=>j!==i))}/>)}</div>}
+      <input ref={fileInput} type="file" hidden multiple onChange={filesChosen}/>
+      <input ref={imageInput} type="file" hidden multiple accept="image/png,image/jpeg,image/webp,image/gif" onChange={filesChosen}/>
+      <input ref={videoInput} type="file" hidden multiple accept="video/mp4,video/webm,video/quicktime,.mp4,.mov,.m4v,.avi,.mkv,.mpeg,.mpg" onChange={filesChosen}/>
+      <input ref={audioInput} type="file" hidden multiple accept="audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/flac,audio/opus,.mp3,.m4a,.aac,.wav,.ogg,.flac,.opus" onChange={filesChosen}/>
       <div className="composerLine">
-        <input ref={fileInput} type="file" hidden multiple onChange={filesChosen}/>
-        <input ref={imageInput} type="file" hidden multiple accept="image/png,image/jpeg,image/webp,image/gif" onChange={filesChosen}/>
-        <input ref={videoInput} type="file" hidden multiple accept="video/mp4,video/webm,video/quicktime,.mp4,.mov,.m4v,.avi,.mkv,.mpeg,.mpg" onChange={filesChosen}/>
-        <input ref={audioInput} type="file" hidden multiple accept="audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/flac,audio/opus,.mp3,.m4a,.aac,.wav,.ogg,.flac,.opus" onChange={filesChosen}/>
-        <div className="attachWrap" ref={attachRef}><button className="composerIcon" onClick={()=>setMenu(v=>!v)} title="Fișiere și unelte" aria-label="Fișiere și unelte" aria-haspopup="menu" aria-expanded={menu}><Plus size={21}/></button>{menu&&<div className="attachMenu" role="menu">
+        <textarea ref={ta} value={draft} onChange={e=>{setDraft(e.target.value);setMentionClosedFor(null)}} onPaste={pasteIntoComposer} spellCheck={true} aria-label="Mesaj pentru AI Stoica" placeholder={placeholder} onKeyDown={onKeyDown}/>
+      </div>
+      {/* One toolbar under the text, as in the big chat apps: attach and modes on the left, voice and send on the right. */}
+      <div className="composerTools">
+        <div className="attachWrap" ref={attachRef}><button className="composerIcon" onClick={()=>setMenu(v=>!v)} title="Fișiere și unelte" aria-label="Fișiere și unelte" aria-haspopup="menu" aria-expanded={menu}><Plus size={20}/></button>{menu&&<div className="attachMenu" role="menu">
+          <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>{setMenu(false);imageInput.current?.click()})}><ImageIcon size={16}/> Încarcă poze{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
+          <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>{setMenu(false);videoInput.current?.click()})}><Play size={16}/> Încarcă video{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
+          <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>{setMenu(false);audioInput.current?.click()})}><Volume2 size={16}/> Încarcă audio{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
+          <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>{setMenu(false);fileInput.current?.click()})}><Upload size={16}/> Încarcă orice fișier{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
+          <button role="menuitem" onClick={()=>{setMenu(false);onOpenLibrary()}}><Library size={16}/> Alege din Bibliotecă</button>
+          <div className="menuDivider"/>
           <button role="menuitem" className={cx(!can("web_search")&&"locked")} onClick={lockedItem("web_search",()=>toolPrompt("Caută pe internet informații actuale despre "))}><Globe2 size={16}/> Căutare web{!can("web_search")&&<Lock size={12} className="lockIcon"/>}</button>
           <button role="menuitem" className={cx(!can("deep_research")&&"locked")} onClick={lockedItem("deep_research",()=>toolPrompt("Fă deep research, verifică mai multe surse și explică-mi complet: "))}><Search size={16}/> Deep Research{!can("deep_research")&&<Lock size={12} className="lockIcon"/>}</button>
-          <button role="menuitem" className={cx(!can("image_generation")&&"locked")} onClick={()=>toggleMedia("image")}><ImageIcon size={16}/> Creează o poză{!can("image_generation")&&<Lock size={12} className="lockIcon"/>}</button>
-          <button role="menuitem" className={cx(!can("video_generation")&&"locked")} onClick={()=>toggleMedia("video")}><Clapperboard size={16}/> Creează un video{!can("video_generation")&&<Lock size={12} className="lockIcon"/>}</button>
-          <div className="menuDivider"/>
-          <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>fileInput.current?.click())}><Upload size={16}/> Încarcă orice fișier{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
-          <button role="menuitem" onClick={()=>{setMenu(false);onOpenLibrary()}}><Library size={16}/> Alege din Bibliotecă</button>
         </div>}</div>
-        <div className="mediaQuickButtons">
-          <button className={cx("composerIcon mediaQuick",uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>imageInput.current?.click())} title={uploadLocked?deniedMessage("file_upload"):"Încarcă imagine"} aria-label="Încarcă imagine"><ImageIcon size={19}/></button>
-          <button className={cx("composerIcon mediaQuick",uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>videoInput.current?.click())} title={uploadLocked?deniedMessage("file_upload"):"Încarcă video MP4 / MOV / WebM"} aria-label="Încarcă video"><Play size={19}/></button>
-          <button className={cx("composerIcon mediaQuick",uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>audioInput.current?.click())} title={uploadLocked?deniedMessage("file_upload"):"Încarcă audio MP3 / M4A / WAV / OGG"} aria-label="Încarcă audio"><Volume2 size={19}/></button>
-        </div>
-        <textarea ref={ta} value={draft} onChange={e=>{setDraft(e.target.value);setMentionClosedFor(null)}} onPaste={pasteIntoComposer} spellCheck={true} aria-label="Mesaj pentru AI Stoica" placeholder={placeholder} onKeyDown={onKeyDown}/>
-        <button className={cx("composerIcon",recording&&"recording",uploadLocked&&"locked")} onClick={mic} title={uploadLocked?deniedMessage("file_upload"):recording?"Oprește vocalul":"Înregistrează vocal"} aria-label={recording?"Oprește înregistrarea vocală":"Înregistrează vocal"} aria-pressed={recording} disabled={transcribing}><Mic size={20}/></button>
+        <button className={cx("mediaMake",mediaMode==="image"&&"active",!can("image_generation")&&"locked")} aria-pressed={mediaMode==="image"} aria-label="Poză" title={can("image_generation")?`Poză: următorul mesaj creează o imagine. ${imageProvidersText(mediaPolicy)}`:deniedMessage("image_generation")} onClick={()=>toggleMedia("image")}><ImageIcon size={16}/><span>Poză</span></button>
+        <button className={cx("mediaMake",mediaMode==="video"&&"active",!can("video_generation")&&"locked")} aria-pressed={mediaMode==="video"} aria-label="Video" title={can("video_generation")?`Video: următorul mesaj creează un videoclip. ${VIDEO_PROVIDERS_TEXT}`:deniedMessage("video_generation")} onClick={()=>toggleMedia("video")}><Clapperboard size={16}/><span>Video</span></button>
+        <button className={cx("mediaMake thinkToggle",responseMode==="thinking"&&"active")} aria-pressed={responseMode==="thinking"} aria-label="Gândire" title={responseMode==="thinking"?"Gândire pornită: răspunsuri mai atente, puțin mai lente. Apasă pentru modul Rapid.":"Mod Rapid. Apasă pentru Gândire: răspunsuri mai atente, puțin mai lente."} onClick={()=>setResponseMode(responseMode==="thinking"?"rapid":"thinking")}><Brain size={16}/><span>Gândire</span></button>
+        <span className="composerSpacer"/>
+        <button className={cx("composerIcon",recording&&"recording",uploadLocked&&"locked")} onClick={mic} title={uploadLocked?deniedMessage("file_upload"):recording?"Oprește vocalul":"Înregistrează vocal"} aria-label={recording?"Oprește înregistrarea vocală":"Înregistrează vocal"} aria-pressed={recording} disabled={transcribing}><Mic size={19}/></button>
         {busy
           ? <button className="sendButton stopButton" onClick={onStop} title="Oprește răspunsul" aria-label="Oprește răspunsul"><Square size={15} fill="currentColor"/></button>
           : <button className="sendButton" disabled={!!uploading||recording||transcribing||!hasContent} onClick={trySend} title="Trimite" aria-label="Trimite mesajul"><ArrowUp size={20}/></button>}
       </div>
-    </div>
-    <div className="composerModeRow">
-      <button className={cx("mediaMake",mediaMode==="image"&&"active",!can("image_generation")&&"locked")} aria-pressed={mediaMode==="image"} title={can("image_generation")?`Poză: următorul mesaj creează o imagine. ${imageProvidersText(mediaPolicy)}`:deniedMessage("image_generation")} onClick={()=>toggleMedia("image")}><ImageIcon size={16}/> Poză</button>
-      <button className={cx("mediaMake",mediaMode==="video"&&"active",!can("video_generation")&&"locked")} aria-pressed={mediaMode==="video"} title={can("video_generation")?`Video: următorul mesaj creează un videoclip. ${VIDEO_PROVIDERS_TEXT}`:deniedMessage("video_generation")} onClick={()=>toggleMedia("video")}><Clapperboard size={16}/> Video</button>
-      <span className="modeDivider" aria-hidden="true"/>
-      <button className={cx("modeChip",responseMode==="rapid"&&"active")} aria-pressed={responseMode==="rapid"} onClick={()=>setResponseMode("rapid")}><Sparkles size={13}/> Rapid</button>
-      <button className={cx("modeChip",responseMode==="thinking"&&"active")} aria-pressed={responseMode==="thinking"} onClick={()=>setResponseMode("thinking")}><Brain size={13}/> Gândire</button>
     </div>
     <div className="composerHint" aria-live="polite">{hint}</div>
   </div>;
@@ -895,7 +907,8 @@ function AdminPanel({onClose}) {
     chat:"Chat AI",cerebras:"Cerebras",gemini:"Gemini",groq:"Groq",cloudflare:"Cloudflare AI",
     openrouter:"OpenRouter (poate genera costuri)",image_generation:"Generare imagini",video_generation:"Generare videoclipuri",document_generation:"Fișiere: PDF / Word / PowerPoint / Excel / CSV / ZIP / cod",
     file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",
-    automations:"Scheduled (sarcini programate)",plugins:"Pluginuri",github_access:"GitHub",openai:"OpenAI (plătit)",anthropic:"Claude / Anthropic (plătit)"
+    automations:"Scheduled (sarcini programate)",plugins:"Pluginuri",github_access:"GitHub",openai:"OpenAI (plătit)",anthropic:"Claude / Anthropic (plătit)",
+    code:"Code AI Stoica (prin API-urile OpenAI / Claude, nu prin abonamentele tale)"
   };
   const [users,setUsers]=useState([]),[selectedId,setSelectedId]=useState(null),[filter,setFilter]=useState("all");
   const [paidAi,setPaidAi]=useState(false),[auditRows,setAuditRows]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[pending,setPending]=useState({}),[actionBusy,setActionBusy]=useState(false);
@@ -1122,6 +1135,17 @@ function ProviderHead({name,id,cfg,children}) {
   const url=cfg?.providerKeyPages?.[id];
   return <div className="providerGroup"><div className="providerGroupTop"><b>{name}</b>{url&&<button type="button" className="providerKeyLink" onClick={()=>openLink(url)}>Ia cheia gratuită <ExternalLink size={12}/></button>}</div><small>{children}</small></div>;
 }
+// Settings → API-uri AI: which companies' models the chat uses. Unticked = their models leave the list and never answer
+// (not even as a fallback). Cerebras starts unticked.
+const CHAT_FAMILIES=[["openai","OpenAI (ChatGPT, Codex)"],["anthropic","Claude (Anthropic, Claude Code)"],["gemini","Google Gemini"],["xai","Grok (xAI)"],["groq","Groq"],["cerebras","Cerebras"],["mistral","Mistral"],["openrouter","OpenRouter"],["nvidia","NVIDIA"],["github","GitHub Models"],["cloudflare","Cloudflare"],["cohere","Cohere"],["huggingface","Hugging Face"]];
+function ProviderUseList({cfg,set}) {
+  const blocked=new Set(String(cfg.blockedProviders??"cerebras").split(",").map(x=>x.trim()).filter(Boolean));
+  const toggle=(id,on)=>{const next=new Set(blocked);if(on)next.delete(id);else next.add(id);set({blockedProviders:[...next].join(",")})};
+  return <fieldset className="providerUse"><legend>Furnizori folosiți în chat</legend>
+    <p className="settingsHelp">Debifat: modelele lui nu apar în listă și nu răspund, nici ca rezervă. Combinațiile OmniRoute („Ai principal”) rămân; ce modele conțin le alegi în panoul OmniRoute.</p>
+    <div className="providerUseGrid">{CHAT_FAMILIES.map(([id,label])=><label key={id} className="providerUseItem"><input type="checkbox" checked={!blocked.has(id)} onChange={e=>toggle(id,e.target.checked)}/><span>{label}</span></label>)}</div>
+  </fieldset>;
+}
 function KeyField({label,name,cfg,keys,setKeys,placeholder,token=false}) {
   const pending=keys[name]||"",clearing=pending==="__CLEAR__",saved=!!cfg?.[name];
   const savedText=token?"Token salvat — lasă gol pentru a-l păstra":"Cheie salvată — lasă gol pentru a o păstra";
@@ -1133,15 +1157,23 @@ function KeyField({label,name,cfg,keys,setKeys,placeholder,token=false}) {
   </span></label>;
 }
 
+// On the web site the Owner's settings live on the server (/api/server/settings, lib/serversettings.cjs); in Windows,
+// in the app (Electron). Both answer the same shape, so the same Settings window serves both.
+const WEB_SETTINGS={
+  getConfig:async()=>(await api("/api/server/settings")).data,
+  setConfig:async(payload)=>{const r=await api("/api/server/settings",{method:"PUT",body:JSON.stringify(payload)});return {ok:true,config:r.config};}
+};
 function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initialTab="general",preferences,onPreferences,prefBusy}) {
   const {isOwner}=useAccess();
+  const bridge=window.AIStoica?.getConfig?window.AIStoica:IS_WEB&&isOwner?WEB_SETTINGS:null;
+  const webServer=bridge===WEB_SETTINGS;
   const [cfg,setCfg]=useState(null),[keys,setKeys]=useState({}),[tab,setTab]=useState(initialTab),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState(""),[toolStatus,setToolStatus]=useState(""),[error,setError]=useState(""),[saving,setSaving]=useState(false),[updateStatus,setUpdateStatus]=useState("");
   const {ref,backdropProps}=useModal(onClose);
   const mounted=useRef(true);
   useEffect(()=>()=>{mounted.current=false},[]);
   useEffect(()=>{
-    if(!window.AIStoica?.getConfig){setError(IS_WEB?"Cheile AI și OmniRoute le configurează Owner-ul pe server. Aici poți schimba preferințele contului tău.":"Setările sunt disponibile doar în aplicația AI Stoica pentru Windows.");return;}
-    Promise.all([window.AIStoica.getConfig(),window.AIStoica.systemStatus?.().catch(()=>null)])
+    if(!bridge){setError(IS_WEB?"Cheile AI și OmniRoute le configurează Owner-ul pe server. Aici poți schimba preferințele contului tău.":"Setările sunt disponibile doar în aplicația AI Stoica pentru Windows.");return;}
+    Promise.all([bridge.getConfig(),bridge.systemStatus?.().catch(()=>null)])
       .then(([c,s])=>{if(mounted.current){setCfg(c||{});setStatus(s)}})
       .catch(e=>{if(mounted.current)setError("Nu am putut citi setările: "+e.message)});
   },[]);
@@ -1150,10 +1182,10 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
   async function save(){
     if(saving||!cfg)return;
     setError("");
-    const gw=cleanGatewayUrl(cfg.gatewayUrl||DEFAULT_GATEWAY);
+    const gw=webServer?GATEWAY:cleanGatewayUrl(cfg.gatewayUrl||DEFAULT_GATEWAY);
     if(machineSettingsAllowed&&!gw){setError("Adresa serviciului local nu este validă. Exemplu: "+DEFAULT_GATEWAY);setTab("ai");return;}
     const ownerEmail=String(cfg.ownerEmail||"").trim().toLowerCase();
-    if(machineSettingsAllowed&&ownerEmail&&!/^\S+@\S+\.\S+$/.test(ownerEmail)){setError("Emailul Owner nu este valid.");setTab("account");return;}
+    if(machineSettingsAllowed&&!webServer&&ownerEmail&&!/^\S+@\S+\.\S+$/.test(ownerEmail)){setError("Emailul Owner nu este valid.");setTab("account");return;}
     setSaving(true);
     try{
       if(machineSettingsAllowed&&gw!==GATEWAY){
@@ -1161,10 +1193,10 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         catch{throw new Error(`Nu pot contacta serviciul AI Stoica la ${gw}. Verifică adresa sau folosește ${DEFAULT_GATEWAY}.`)}
       }
       const changedKeys=Object.fromEntries(Object.entries(keys).filter(([,v])=>v));
-      const payload={...cfg,...(machineSettingsAllowed?{gatewayUrl:gw,ownerEmail}:{}),...changedKeys};
-      const r=await window.AIStoica.setConfig(payload);
+      const payload={...cfg,...(machineSettingsAllowed&&!webServer?{gatewayUrl:gw,ownerEmail}:{}),...changedKeys};
+      const r=await bridge.setConfig(payload);
       if(r&&r.ok===false)throw new Error(r.error||"Setările nu au putut fi salvate.");
-      if(machineSettingsAllowed)setGatewayUrl(gw);
+      if(machineSettingsAllowed&&!webServer)setGatewayUrl(gw);
       DICTATION_LANG=String(payload.speechLanguage||"ro");
       onSaved?.(r?.config||payload);
       toast("Setările au fost salvate.","ok");
@@ -1183,24 +1215,30 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
   const keyProps={cfg,keys,setKeys};
   const tabs=[["general",SlidersHorizontal,"General",true],["ai",Bot,"AI & OmniRoute",machineSettingsAllowed],["chatapis",Plug,"API-uri AI",machineSettingsAllowed],["images",ImageIcon,"Poze",machineSettingsAllowed],["video",Play,"Video",machineSettingsAllowed],["voice",Volume2,"Voce și microfon",true],["account",User,"Cont și date",true]];
   return <div className="modalBackdrop" {...backdropProps}><div className="settingsModal" ref={ref} role="dialog" aria-modal="true" aria-label="Setări AI Stoica" tabIndex={-1}><div className="modalHead"><div><h2>Setări AI Stoica</h2><p>Aplicația, vocea, serviciile AI și actualizările.</p></div><button className="iconOnly" onClick={onClose} aria-label="Închide" title="Închide"><X size={20}/></button></div>
-    {!cfg?<div className="settingsLoading">{error||"Se încarcă setările…"}{error&&onPreferences&&<div className="settingsPrefs"><h3>Memorie și conversații</h3><PreferenceSwitches preferences={preferences} onChange={onPreferences} busyKey={prefBusy}/></div>}</div>:<>
+    {!cfg?<div className="settingsLoading">{error||"Se încarcă setările…"}{error&&onPreferences&&<div className="settingsPrefs"><h3>Memorie și conversații</h3><PreferenceSwitches preferences={preferences} onChange={onPreferences} busyKey={prefBusy}/></div>}{error&&<ServerUpdate/>}</div>:<>
     <div className="settingsBody"><div className="settingsNav" role="tablist" aria-orientation="vertical">
       {tabs.filter(t=>t[3]).map(([k,Icon,label])=><button key={k} role="tab" aria-selected={tab===k} className={tab===k?"active":""} onClick={()=>setTab(k)}><Icon size={17}/> {label}</button>)}
     </div>
     <div className="settingsPane">
       {tab==="general"&&<><h3>General</h3>
         {onPreferences&&<div className="settingsPrefs"><h4>Memorie și conversații</h4><p className="settingsHelp">Se aplică imediat, pentru contul tău.</p><PreferenceSwitches preferences={preferences} onChange={onPreferences} busyKey={prefBusy}/></div>}
+        {!IS_WEB&&<>
         <label className="toggleRow"><div><b>Pornește AI Stoica cu Windows</b><span>Aplicația pornește automat și poate rămâne în fundal.</span></div><input type="checkbox" checked={!!cfg.startWithWindows} onChange={e=>set({startWithWindows:e.target.checked})}/></label>
         <label className="toggleRow"><div><b>Închidere în zona de notificare</b><span>Butonul X ascunde aplicația fără să oprească serviciile.</span></div><input type="checkbox" checked={cfg.closeToTray!==false} onChange={e=>set({closeToTray:e.target.checked})}/></label>
-        <label className="toggleRow"><div><b>Actualizări automate</b><span>AI Stoica caută versiuni noi la pornire.</span></div><input type="checkbox" checked={cfg.autoUpdate!==false} onChange={e=>set({autoUpdate:e.target.checked})}/></label>
+        <label className="toggleRow"><div><b>Actualizări automate (aplicația Windows)</b><span>La pornire, AI Stoica descarcă singur versiunea nouă din GitHub Releases și te anunță când e gata de instalat.</span></div><input type="checkbox" checked={cfg.autoUpdate!==false} onChange={e=>set({autoUpdate:e.target.checked})}/></label>
         {window.AIStoica?.checkUpdate&&<div className="settingsButtons"><button type="button" className="secondary" onClick={checkUpdate}><RotateCcw size={15}/> Caută actualizări acum</button></div>}
         {updateStatus&&<div className="micStatus" role="status">{updateStatus}</div>}
+        </>}
+        <ServerUpdate/>
       </>}
       {tab==="ai"&&<><h3>AI & OmniRoute</h3>
+        {webServer&&<p className="settingsHelp">Setările site-ului: se salvează pe server și se aplică imediat pentru toate conturile. Cheile rămân pe server și se văd doar mascat. Emailul Owner și înregistrarea conturilor rămân în fișierul <code>.env</code> de pe server.</p>}
+        {!webServer&&<>
         <label>Adresa serviciului AI Stoica<input value={cfg.gatewayUrl||DEFAULT_GATEWAY} onChange={e=>set({gatewayUrl:e.target.value})} placeholder={DEFAULT_GATEWAY}/></label>
         <p className="settingsHelp">Lasă {DEFAULT_GATEWAY} dacă nu folosești un server AI Stoica separat. Adresa este verificată înainte de salvare.</p>
         <label>AI Stoica Cloud API<input value={cfg.controlApiUrl||""} onChange={e=>set({controlApiUrl:e.target.value})} placeholder="https://api.aistoica.ro"/></label>
         <p className="settingsHelp">Cu Cloud API configurat, conturile, aprobările și permisiunile sunt gestionate central de Owner. Lasă câmpul gol pentru folosire doar pe acest PC.</p>
+        </>}
         <label>Adresa OmniRoute<input value={cfg.baseUrl||""} onChange={e=>set({baseUrl:e.target.value})}/></label>
         <KeyField label="Cheie API OmniRoute" name="apiKey" placeholder="Cheie OmniRoute" {...keyProps}/>
         <p className="settingsHelp">OmniRoute 3.8 nu răspunde fără cheie. Creeaz-o în OmniRoute: <button type="button" className="linkBtn" onClick={()=>openLink(String(cfg.baseUrl||"http://127.0.0.1:20128/v1").replace(/\/v1\/?$/,"")+"/dashboard/api-manager")}>API Manager → Create API Key</button>, lipește-o aici și apasă „Testează cheile”.</p>
@@ -1214,7 +1252,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
           <label>GitHub repository<input value={cfg.githubRepo||""} onChange={e=>set({githubRepo:e.target.value})} placeholder="owner/repository"/></label>
           <label>GitHub branch<input value={cfg.githubBranch||"main"} onChange={e=>set({githubBranch:e.target.value})} placeholder="main"/></label>
           <KeyField label="Token GitHub (pentru repository privat)" name="githubToken" placeholder="github_pat_... sau ghp_..." token {...keyProps}/>
-          {isOwner&&<>
+          {isOwner&&!webServer&&<>
             <label>Server SSH · adresă<input value={cfg.serverHost||""} onChange={e=>set({serverHost:e.target.value})} placeholder="IP sau domeniu"/></label>
             <div className="claudeFormRow"><label>Utilizator SSH<input value={cfg.serverUser||"root"} onChange={e=>set({serverUser:e.target.value})}/></label><label>Port SSH<input type="number" min="1" max="65535" value={cfg.serverPort||22} onChange={e=>set({serverPort:Number(e.target.value)||22})}/></label></div>
             <label>Calea cheii private SSH<input value={cfg.serverKeyPath||""} onChange={e=>set({serverKeyPath:e.target.value})} placeholder="C:\Users\Nume\.ssh\id_ed25519"/></label>
@@ -1222,16 +1260,20 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
           </>}
         </details>
         <p className="settingsHelp">Când ceri o poză sau un videoclip, AI Stoica returnează fișierul real în chat, cu buton de descărcare.</p>
+        {!webServer&&<>
         <label>Comandă OmniRoute<input value={cfg.omniCommand||"omniroute.cmd"} onChange={e=>set({omniCommand:e.target.value})}/></label>
         <label className="toggleRow"><div><b>Pornește OmniRoute automat</b><span>Dacă serviciul cade, AI Stoica încearcă să îl repornească.</span></div><input type="checkbox" checked={!!cfg.autoStartOmniRoute} onChange={e=>set({autoStartOmniRoute:e.target.checked})}/></label>
         <div className="statusGrid"><div><span>Serviciul AI Stoica</span><b>{status?.gatewayRunning?"Pornit":"Indisponibil"}</b></div><div><span>OmniRoute</span><b>{status?.omniRunning?"Conectat":status?.omniInstalled===false?"Neinstalat — npm install -g omniroute":"Indisponibil"}</b></div></div>
+        </>}
       </>}
-      {tab==="chatapis"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><Plug size={22}/></div><div><h3>API-uri AI</h3><p>Folosite direct pentru chat când OmniRoute nu răspunde.</p></div></div>
+      {tab==="chatapis"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><Plug size={22}/></div><div><h3>API-uri AI</h3><p>Modelele lor apar în listă și răspund direct, fără OmniRoute.</p></div></div>
         <ProviderTestBox/>
         <ServerKeysBox/>
-        <label className="toggleRow"><div><b>Folosește API-urile directe</b><span>Dacă OmniRoute nu răspunde, conversația continuă prin providerii configurați pe acest PC.</span></div><input type="checkbox" checked={cfg.directChatEnabled!==false} onChange={e=>set({directChatEnabled:e.target.checked})}/></label>
-        <label>Protecție costuri<select value={cfg.directChatCostPolicy||"free_only"} onChange={e=>set({directChatCostPolicy:e.target.value})}><option value="free_only">Doar provideri fără cost direct</option><option value="allow_paid">Permite și OpenAI</option></select></label>
-        <label>Ordinea de încercare<input value={cfg.directChatProviderOrder||"cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai"} onChange={e=>set({directChatProviderOrder:e.target.value})}/></label>
+        <label className="toggleRow"><div><b>Folosește API-urile directe</b><span>Modelele lor apar în listă (Groq, Gemini, Cerebras…). Răspund când le alegi sau când nu ai ales niciun model.</span></div><input type="checkbox" checked={cfg.directChatEnabled!==false} onChange={e=>set({directChatEnabled:e.target.checked})}/></label>
+        <label className="toggleRow"><div><b>Rezervă automată</b><span>Dacă modelul ales nu răspunde, trece singur la API-urile directe. Oprit: răspunde doar modelul ales, iar altfel vezi eroarea.</span></div><input type="checkbox" checked={cfg.chatFallbackOnFailure===true} onChange={e=>set({chatFallbackOnFailure:e.target.checked})}/></label>
+        <ProviderUseList cfg={cfg} set={set}/>
+        <label>Protecție costuri<select value={cfg.directChatCostPolicy||"free_only"} onChange={e=>set({directChatCostPolicy:e.target.value})}><option value="free_only">Doar provideri fără cost direct</option><option value="allow_paid">Permite și API-urile plătite (OpenAI, Grok)</option></select></label>
+        <label>Ordinea de încercare<input value={cfg.directChatProviderOrder||"cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai,xai"} onChange={e=>set({directChatProviderOrder:e.target.value})}/></label>
         <p className="settingsHelp">Fiecare model din liste apare în lista de modele de sus. Dacă lipsește cheia, providerul răspunde cu 429/404/503 sau nu răspunde deloc, AI Stoica încearcă următorul model, apoi următorul provider.</p>
         <ProviderHead name="Cerebras" id="cerebras" cfg={cfg}>Compatibil OpenAI.</ProviderHead>
         <KeyField label="Cheie API Cerebras" name="cerebrasApiKey" placeholder="csk-..." {...keyProps}/>
@@ -1267,15 +1309,18 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <ProviderHead name="OpenAI" id="openai" cfg={cfg}>Inclus, dar blocat implicit de protecția costurilor.</ProviderHead>
         <KeyField label="Cheie API OpenAI" name="openAiApiKey" placeholder="sk-..." {...keyProps}/>
         <label>Modele OpenAI · separate prin virgulă<input value={cfg.openAiChatModels||""} onChange={e=>set({openAiChatModels:e.target.value})}/></label>
+        <ProviderHead name="Grok (xAI)" id="xai" cfg={cfg}>Plătit pe consum; aceeași cheie face și poze și video Grok Imagine. Pornește-l cu „Permite și API-urile plătite”.</ProviderHead>
+        <KeyField label="Cheie API xAI" name="xaiApiKey" placeholder="xai-..." {...keyProps}/>
+        <label>Modele Grok · separate prin virgulă<input value={cfg.xaiModels||""} onChange={e=>set({xaiModels:e.target.value})} placeholder="grok-4.6,grok-4.3"/></label>
       </>}
       {tab==="images"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><ImageIcon size={22}/></div><div><h3>Poze</h3><p>Generare imagini, API-uri, modele și încercare automată a altui provider.</p></div></div>
         <label><span className="labelLine">Model generare imagini <span className="optional">opțional</span></span><input value={cfg.imageModel||""} onChange={e=>set({imageModel:e.target.value})} placeholder="Automat — primul model de imagine disponibil"/></label>
         <details className="mediaProviderSettings" open><summary>Provideri de imagini</summary>
-          <p className="settingsHelp">Poți conecta mai multe servicii. AI Stoica încearcă providerii în ordine și trece automat la următorul dacă unul eșuează. Cheile sunt criptate pe acest PC.</p>
+          <p className="settingsHelp">Poți conecta mai multe servicii. AI Stoica încearcă providerii în ordine și trece automat la următorul dacă unul eșuează. {webServer?"Cheile stau pe server și se văd doar mascat.":"Cheile sunt criptate pe acest PC."}</p>
           <label>Mod de alegere<select value={cfg.imageProviderMode||"auto"} onChange={e=>set({imageProviderMode:e.target.value})}><option value="auto">Automat — ordinea mea</option><option value="fast">⚡ Rapid</option><option value="quality">✨ Calitate</option><option value="free">🛡️ Doar gratuit</option></select></label>
           <label>Protecție costuri<select value={cfg.imageCostPolicy||"free_only"} onChange={e=>set({imageCostPolicy:e.target.value})}><option value="free_only">Nu permite costuri directe</option><option value="allow_paid">Permite provideri cu plată</option></select></label>
           <p className="settingsHelp">{(cfg.imageCostPolicy||"free_only")==="free_only"?"Protecție activă: AI Stoica încearcă direct Cloudflare și Pollinations. Hugging Face, Together, OpenAI, Stability, fal.ai și Replicate sunt blocate dacă ar putea consuma credit plătit. La OpenRouter se verifică prețul înainte de apel.":"Atenție: providerii configurați pot consuma credit conform tarifelor lor."}</p>
-          <label>Ordinea de încercare<input value={cfg.imageProviderOrder||"cloudflare,pollinations,huggingface,together,openrouter,fal,replicate,stability,openai"} onChange={e=>set({imageProviderOrder:e.target.value})}/></label>
+          <label>Ordinea de încercare<input value={cfg.imageProviderOrder||"cloudflare,pollinations,huggingface,together,openrouter,fal,replicate,stability,openai,gemini,xai"} onChange={e=>set({imageProviderOrder:e.target.value})}/></label>
           <div className="providerGroup"><b>Cloudflare Workers AI</b><small>FLUX.1 Schnell · provider prioritar în modul gratuit.</small></div>
           <label>Cloudflare Account ID<input value={cfg.cloudflareAccountId||""} onChange={e=>set({cloudflareAccountId:e.target.value})} placeholder="Account ID"/></label>
           <KeyField label="Token API Cloudflare" name="cloudflareApiToken" placeholder="Token API" token {...keyProps}/>
@@ -1289,6 +1334,10 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
           <div className="providerGroup"><b>OpenAI</b><small>GPT Image prin API OpenAI.</small></div>
           <KeyField label="Cheie API OpenAI" name="openAiApiKey" placeholder="sk-..." {...keyProps}/>
           <label>Model imagine OpenAI<input value={cfg.openAiImageModel||"gpt-image-1-mini"} onChange={e=>set({openAiImageModel:e.target.value})}/></label>
+          <div className="providerGroup"><b>Google Gemini</b><small>„Nano Banana” prin cheia Gemini de la API-uri AI. Mai multe nume, separate prin virgulă: următorul e încercat dacă Google nu îl cunoaște.</small></div>
+          <label>Model imagine Gemini<input value={cfg.geminiImageModel||"gemini-3.1-flash-image"} onChange={e=>set({geminiImageModel:e.target.value})}/></label>
+          <div className="providerGroup"><b>Grok Imagine (xAI)</b><small>Prin cheia xAI de la API-uri AI.</small></div>
+          <label>Model imagine Grok<input value={cfg.xaiImageModel||"grok-imagine-image"} onChange={e=>set({xaiImageModel:e.target.value})}/></label>
           <div className="providerGroup"><b>Stability AI</b><small>Stable Image REST API.</small></div>
           <KeyField label="Cheie API Stability" name="stabilityApiKey" placeholder="sk-..." {...keyProps}/>
           <label>Motor Stability<select value={cfg.stabilityImageEngine||"core"} onChange={e=>set({stabilityImageEngine:e.target.value})}><option value="core">Core</option><option value="ultra">Ultra</option><option value="sd3">SD3</option></select></label>
@@ -1308,7 +1357,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <label>Mod video<select value={cfg.videoMode||"fast"} onChange={e=>{const videoMode=e.target.value;const quality=videoMode==="quality";set({videoMode,videoModel:quality?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast",openRouterVideoModel:quality?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast",geminiVideoModel:quality?"veo-3.1-generate-preview":"veo-3.1-fast-generate-preview"})}}><option value="fast">⚡ Rapid</option><option value="quality">🎬 Calitate</option><option value="free">🛡️ Doar gratuit</option></select></label>
         <label>Protecție costuri<select value={cfg.videoCostPolicy||"free_only"} onChange={e=>set({videoCostPolicy:e.target.value})}><option value="free_only">Nu porni joburi cu plată</option><option value="allow_paid">Permite provideri cu plată</option></select></label>
         <p className="settingsHelp">{(cfg.videoCostPolicy||"free_only")==="free_only"?"AI Stoica verifică prețul publicat când este disponibil și nu pornește generarea dacă nu poate confirma costul zero. Gemini Veo, fal.ai și Replicate rămân blocate în acest mod.":"Atenție: generarea video poate consuma rapid credit. Costul depinde de model, durată și rezoluție."}</p>
-        <label>Ordinea de încercare<input value={cfg.videoProviderOrder||"pollinations,openrouter,gemini,fal,replicate"} onChange={e=>set({videoProviderOrder:e.target.value})}/></label>
+        <label>Ordinea de încercare<input value={cfg.videoProviderOrder||"pollinations,openrouter,gemini,fal,replicate,openai,xai"} onChange={e=>set({videoProviderOrder:e.target.value})}/></label>
         <div className="providerGroup"><b>Pollinations Video</b><small>Cheia este comună cu secțiunea Poze.</small></div>
         <KeyField label="Cheie API Pollinations" name="pollinationsApiKey" placeholder="sk_..." {...keyProps}/>
         <label>Model video Pollinations<input value={cfg.pollinationsVideoModel||"google/veo-3.1-fast"} onChange={e=>set({pollinationsVideoModel:e.target.value})}/></label>
@@ -1318,6 +1367,10 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <div className="providerGroup"><b>Gemini · Veo</b><small>Veo 3.1 prin aceeași cheie Gemini folosită la chat.</small></div>
         <KeyField label="Cheie API Gemini" name="geminiApiKey" placeholder="AIza..." {...keyProps}/>
         <label>Model video Gemini<input value={cfg.geminiVideoModel||"veo-3.1-fast-generate-preview"} onChange={e=>set({geminiVideoModel:e.target.value})}/></label>
+        <div className="providerGroup"><b>OpenAI · Sora</b><small>Prin cheia OpenAI de la API-uri AI; videoclipuri de 4, 8 sau 12 secunde.</small></div>
+        <label>Model video OpenAI<input value={cfg.openAiVideoModel||"sora-2"} onChange={e=>set({openAiVideoModel:e.target.value})}/></label>
+        <div className="providerGroup"><b>Grok Imagine Video (xAI)</b><small>Prin cheia xAI de la API-uri AI; 1–15 secunde.</small></div>
+        <label>Model video Grok<input value={cfg.xaiVideoModel||"grok-imagine-video"} onChange={e=>set({xaiVideoModel:e.target.value})}/></label>
         <div className="providerGroup"><b>fal.ai Video</b><small>LTX Video. Poate folosi creditele inițiale, apoi credit plătit.</small></div>
         <KeyField label="Cheie API fal" name="falApiKey" placeholder="FAL_KEY" {...keyProps}/>
         <label>Model video fal<input value={cfg.falVideoModel||"fal-ai/ltx-video"} onChange={e=>set({falVideoModel:e.target.value})}/></label>
@@ -1334,8 +1387,8 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
       </>}
       {tab==="account"&&<><h3>Cont și date</h3>
         <div className="accountSettingsCard"><div className="accountAvatar big">{(user?.name||user?.email||"S")[0].toUpperCase()}</div><div><b>{user?.name||"Cont AI Stoica"}</b><span>{user?.email}{user?.role==="owner"?" · Owner":""}</span></div></div>
-        <p className="settingsHelp">Conversațiile, memoria, biblioteca, designurile, proiectele, pluginurile și sarcinile programate sunt păstrate pe acest calculator.</p>
-        {machineSettingsAllowed&&<>
+        <p className="settingsHelp">Conversațiile, memoria, biblioteca, designurile, proiectele, pluginurile și sarcinile programate sunt păstrate {IS_WEB?"pe serverul AI Stoica":"pe acest calculator"}.</p>
+        {machineSettingsAllowed&&!webServer&&<>
           <label><span className="labelLine">Email Owner pe acest PC <span className="optional">opțional</span></span><input type="email" value={cfg.ownerEmail||""} onChange={e=>set({ownerEmail:e.target.value})} placeholder="nume@email.ro" autoComplete="off"/></label>
           <p className="settingsHelp">Contul local cu acest email primește drepturi de Owner: rulare de cod, GitHub Solve, verificare server. Se aplică doar când AI Stoica Cloud nu este configurat. Reautentifică-te după schimbare.</p>
         </>}
@@ -1425,7 +1478,10 @@ function App() {
   const [boot,setBoot]=useState(true),[loadError,setLoadError]=useState(""),[authNotice,setAuthNotice]=useState("");
   const [conversations,setConversations]=useState([]),[projects,setProjects]=useState([]),[assistants,setAssistants]=useState([]);
   const [models,setModels]=useState(()=>cachedModels()),[modelPolicyEnforced,setModelPolicyEnforced]=useState(false),[refreshingModels,setRefreshingModels]=useState(false),[deniedModels,setDeniedModels]=useState(0),[modelsChecked,setModelsChecked]=useState(false);
-  const [currentId,setCurrentId]=useState(null),[model,setModel]=useState(()=>storage.get(MANUAL_MODEL_KEY)||storage.get(MODEL_SELECTED_KEY)||"");
+  const [currentId,setCurrentId]=useState(null),[model,setModel]=useState(()=>storage.get(MANUAL_MODEL_KEY)||"");
+  // The model AI Stoica picked by itself (first in the list: your OmniRoute combination). Unlike a model you chose, it is
+  // replaced as soon as a better one appears, so a direct API picked while OmniRoute was offline does not stay selected.
+  const autoPickRef=useRef("");
   const [selectedProject,setSelectedProject]=useState(null),[selectedAssistant,setSelectedAssistant]=useState(null);
   const [draft,setDraft]=useState(""),[attachmentsState,setAttachments]=useState([]),[responseMode,setResponseModeState]=useState(()=>storage.get(RESPONSE_MODE_KEY,"rapid")==="thinking"?"thinking":"rapid"),[mediaModeState,setMediaMode]=useState(null);
   const [generations,setGenerations]=useState({});
@@ -1477,7 +1533,9 @@ function App() {
       const merged=enforced?live:uniqueModels([...live,...cachedModels()]);
       setModelPolicyEnforced(enforced);setDeniedModels(enforced?Number(ms.deniedCount)||0:0);setModels(merged);storage.set(MODEL_CACHE_KEY,JSON.stringify(merged));
       setModel(prev=>{
-        const pick=[prev,storage.get(MANUAL_MODEL_KEY),machineCfgRef.current?.model].find(x=>x&&merged.includes(x))||merged[0]||"";
+        const chosen=[prev&&prev!==autoPickRef.current?prev:"",storage.get(MANUAL_MODEL_KEY),machineCfgRef.current?.model];
+        const pick=chosen.find(x=>x&&merged.includes(x))||merged[0]||"";
+        autoPickRef.current=chosen.includes(pick)?"":pick;
         if(pick)storage.set(MODEL_SELECTED_KEY,pick);else storage.remove(MODEL_SELECTED_KEY);
         return pick;
       });
@@ -1497,6 +1555,14 @@ function App() {
       patchConversation(id,{model:value}).catch(e=>toast("Modelul nu a putut fi salvat pentru conversație: "+e.message));
     }
   }
+  // A file renamed in the Library or the viewer keeps its new name in the conversations on screen too.
+  useEffect(()=>{
+    const renamed=e=>{const {id,name}=e.detail||{};if(!id||!name)return;
+      const fix=a=>a&&(a.libraryId===id||a.id===id)?{...a,name}:a;
+      setConversations(cs=>cs.map(c=>(c.messages||[]).some(m=>m.attachments?.some(a=>a&&(a.libraryId===id||a.id===id)))?{...c,messages:c.messages.map(m=>m.attachments?{...m,attachments:m.attachments.map(fix)}:m)}:c));};
+    window.addEventListener("ai-stoica:file-renamed",renamed);
+    return()=>window.removeEventListener("ai-stoica:file-renamed",renamed);
+  },[]);
   async function loadData({initial=false}={}){
     if(!storage.get(TOKEN_KEY)){setBoot(false);return}
     setLoadError("");
@@ -1650,6 +1716,8 @@ function App() {
           working={...working,messages:[...messages,{...assistantMessage,routeInfo,content:answer,streaming:true}]};scheduleFlush();
           return;
         }
+        // An OmniRoute combination ("Ai principal") answers with one of its members: show which one really answered.
+        if(routeInfo?.model&&!routeInfo.servedBy&&typeof j?.model==="string"&&j.model&&!j.model.includes(String(routeInfo.model).split("/").pop()))routeInfo={...routeInfo,servedBy:j.model};
         const delta=j?.choices?.[0]?.delta?.content||j?.choices?.[0]?.message?.content||"";
         if(delta){
           if(!started){started=true;setGen(convId,{stage:format?`Scrie conținutul pentru fișierul ${format.toUpperCase()}…`:"Scrie răspunsul…"})}
@@ -1818,6 +1886,7 @@ function App() {
     if(name==="design"&&!can("document_generation")){deny("document_generation");return}
     if(name==="plugins"&&!can("plugins")){deny("plugins");return}
     if(name==="admin"&&!isOwner)return;
+    if(name==="code"&&!can("code")){deny("code");return}
     setSidebar(false);setToolPanel({name,filter});
   }
   function closeTool(){
@@ -1862,6 +1931,14 @@ function App() {
   }
   function focusComposer(){setTimeout(()=>document.querySelector(".composerLine textarea")?.focus(),0)}
   function newConversation(){setCurrentId(null);setDraft("");setAttachments([]);setMediaMode(null);setSidebar(false);focusComposer()}
+  // Code AI Stoica: the new Code conversation opens with its code model chosen.
+  function startCode(conv,assistant){
+    if(!conv?.id)return;
+    if(assistant)setAssistants(v=>v.some(a=>a.id===assistant.id)?v:[...v,assistant]);
+    setConversations(v=>[conv,...v.filter(x=>x.id!==conv.id)]);
+    if(conv.model){setModel(conv.model);storage.set(MANUAL_MODEL_KEY,conv.model);storage.set(MODEL_SELECTED_KEY,conv.model);}
+    setCurrentId(conv.id);setDraft("");setMediaMode(null);setToolPanel(null);setSidebar(false);focusComposer();
+  }
   function startWithAssistant(id){setSelectedAssistant(id);setCurrentId(null);setDraft("");setMediaMode(null);setToolPanel(null);setSidebar(false);focusComposer()}
   function startImageMode(){
     if(!can("image_generation")){deny("image_generation");return}
@@ -1883,6 +1960,7 @@ function App() {
     {sidebar&&<div className="mobileScrim" onClick={()=>setSidebar(false)}/>}
     <main className="mainArea">
       <Header deniedCount={deniedModels} onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} policyEnforced={modelPolicyEnforced} omni={omni} showOmni={machineSettingsAllowed} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={()=>setGithubModal(true)} onGitHubRollback={githubRollback} hasGitHubBackup={!!lastGithubBackup} onArchive={()=>current&&archiveConversation(current.id)} onUnarchive={()=>current&&unarchiveConversation(current.id)} onDelete={()=>current&&deleteConversation(current.id)}/>
+      <InstallApp banner/>
       {loadError&&<div className="loadErrorBanner" role="alert"><span>Nu am putut încărca datele: {loadError}</span><button onClick={()=>loadData()}>Reîncearcă</button>{GATEWAY!==DEFAULT_GATEWAY&&<button onClick={resetGatewayAndReload}>Folosește serviciul local implicit</button>}</div>}
       {updateReady&&!updateDismissed&&<div className="updateBanner" role="status"><button className="updateInstall" onClick={()=>window.AIStoica?.installUpdate?.()}>Actualizare AI Stoica disponibilă — instalează acum</button><button className="updateClose" onClick={()=>setUpdateDismissed(true)} aria-label="Ascunde notificarea" title="Mai târziu"><X size={14}/></button></div>}
       <div className="chatScroll" ref={chatRef} onScroll={updateChatScrollState}><ConversationView conversation={current} busy={busy} busyStage={currentGen?.stage} busySteps={currentGen?.steps||[]} onRegenerate={regenerate} onRate={rate} canRunCode={isOwner} onCodeResult={text=>setDraft(v=>(v?v+"\n\n":"")+text)} onAnswer={text=>send(text)} onOpenSettings={tab=>setSettings(tab||true)}/></div>
@@ -1897,6 +1975,7 @@ function App() {
     {toolPanel?.name==="memory"&&<MemoryPage onClose={closeTool} preferences={user?.preferences} onPreferences={updatePreferences} prefBusy={prefBusy}/>}
     {toolPanel?.name==="admin"&&isOwner&&<AdminPanel onClose={closeTool}/>}
     {toolPanel?.name==="plugins"&&can("plugins")&&<PluginsPage onClose={closeTool}/>}
+    {toolPanel?.name==="code"&&can("code")&&<CodePage onClose={closeTool} onStart={startCode}/>}
     {toolPanel?.name==="automations"&&can("automations")&&<ScheduledPage onClose={closeTool} model={model} models={models}/>}
     {filesPanel&&<ConversationFilesPanel conversation={current} onClose={()=>setFilesPanel(false)}/>}
     {githubModal&&isOwner&&<GithubSolveModal model={model} onClose={()=>setGithubModal(false)} onBackup={saveGithubBackup}/>}

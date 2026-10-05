@@ -1,5 +1,6 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { prepareMath, mathFromCode, mathFromPre } from "./math.jsx";
 import remarkGfm from "remark-gfm";
 import { X, Check, Copy } from "lucide-react";
 
@@ -80,7 +81,7 @@ export async function authedFetch(path,init={}){
   return r;
 }
 
-export const PERMISSION_LABELS = {image_generation:"Generare imagini",video_generation:"Generare video",document_generation:"Fișiere descărcabile",file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",automations:"Scheduled",plugins:"Pluginuri",github_access:"GitHub"};
+export const PERMISSION_LABELS = {image_generation:"Generare imagini",video_generation:"Generare video",document_generation:"Fișiere descărcabile",file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",automations:"Scheduled",plugins:"Pluginuri",github_access:"GitHub",code:"Code AI Stoica"};
 export function deniedMessage(key){return `Funcția „${PERMISSION_LABELS[key]||key}” este dezactivată de Owner pentru contul tău.`;}
 export const AccessContext = React.createContext({can:()=>true,deny:()=>{},isOwner:false});
 export function useAccess(){return useContext(AccessContext);}
@@ -242,15 +243,19 @@ export function CodeBlock({children,...props}) {
     if(!ok){toast("Nu am putut copia codul în clipboard.");return;}
     setCopied(true);clearTimeout(timer.current);timer.current=setTimeout(()=>setCopied(false),1400);
   }
-  return <div className="codeBlock"><button type="button" className="codeCopy" onClick={copy} aria-label="Copiază codul">{copied?<Check size={13}/>:<Copy size={13}/>}<span>{copied?"Copiat":"Copiază"}</span></button><pre ref={ref} {...props}>{children}</pre></div>;
+  // The language and "Copiază" sit in a bar above the code, so the button never covers the first line (on a phone it
+  // was always visible on top of the code).
+  const lang=/language-([\w+#.-]+)/.exec(children?.props?.className||"")?.[1]||"";
+  return <div className="codeBlock"><div className="codeHead"><span className="codeLang">{lang||"cod"}</span><button type="button" className="codeCopy" onClick={copy} aria-label="Copiază codul">{copied?<Check size={13}/>:<Copy size={13}/>}<span>{copied?"Copiat":"Copiază"}</span></button></div><pre ref={ref} {...props}>{children}</pre></div>;
 }
 export const REMARK_PLUGINS=[remarkGfm];
 export const MD_COMPONENTS={
   a({node,href,children,...props}){return <a {...props} href={href} title={href} rel="noreferrer noopener" onClick={e=>{e.preventDefault();if(!String(href||"").startsWith("#"))openLink(href)}}>{children}</a>;},
   table({node,...props}){return <div className="tableWrap"><table {...props}/></div>;},
-  pre({node,children,...props}){return <CodeBlock {...props}>{children}</CodeBlock>;}
+  pre({node,children,...props}){return mathFromPre(node)||<CodeBlock {...props}>{children}</CodeBlock>;},
+  code({node,children,...props}){return mathFromCode(children)||<code {...props}>{children}</code>;}
 };
-export function Markdown({text}){return <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MD_COMPONENTS}>{String(text||"")}</ReactMarkdown>;}
+export function Markdown({text}){return <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MD_COMPONENTS}>{prepareMath(String(text||""))}</ReactMarkdown>;}
 export function useAuthedBlobUrl(path){
   const [state,setState]=useState({src:"",failed:false});
   useEffect(()=>{

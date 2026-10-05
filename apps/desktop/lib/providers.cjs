@@ -12,7 +12,9 @@ const DIRECT_MODEL_DEFAULTS = {
   cloudflareChatModel: "@cf/meta/llama-3.3-70b-instruct-fp8-fast,@cf/openai/gpt-oss-120b,@cf/openai/gpt-oss-20b,@cf/meta/llama-4-scout-17b-16e-instruct",
   cohereModel: "command-a-03-2025,command-a-plus-05-2026,command-a-reasoning-08-2025",
   huggingFaceChatModel: "openai/gpt-oss-120b:fastest,meta-llama/Llama-3.3-70B-Instruct,deepseek-ai/DeepSeek-R1",
-  openAiChatModels: "gpt-5-mini,gpt-5-nano"
+  openAiChatModels: "gpt-5-mini,gpt-5-nano",
+  // Grok (xAI), paid per use; names from the xAI catalog in October 2026, editable in Settings.
+  xaiModels: "grok-4.6,grok-4.3"
 };
 
 // Single-model defaults shipped up to 0.7.11. A saved value equal to one of these was never chosen by the
@@ -39,7 +41,8 @@ const PROVIDER_KEY_PAGES = {
   cloudflare: "https://dash.cloudflare.com/profile/api-tokens",
   cohere: "https://dashboard.cohere.com/api-keys",
   huggingface: "https://huggingface.co/settings/tokens",
-  openai: "https://platform.openai.com/api-keys"
+  openai: "https://platform.openai.com/api-keys",
+  xai: "https://console.x.ai/"
 };
 
 function upgradeModelDefaults(raw) {

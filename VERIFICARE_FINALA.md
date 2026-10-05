@@ -1,4 +1,4 @@
-# AI Stoica v0.7.15 — verificare
+# AI Stoica v0.7.16 — verificare
 
 Verificări automate în GitHub Actions:
 
@@ -18,11 +18,16 @@ Verificări automate în GitHub Actions:
   - `test-web-mode.cjs` – versiunea web și aplicația de telefon (PWA): interfața servită la „/”, politica de securitate a paginii, cache, propria adresă acceptată, alte site-uri refuzate, aplicația Windows neschimbată, manifestul și iconițele;
   - `test-0711-upgrade.cjs` – trecerea de la 0.7.10: pluginuri din rețeaua locală pe PC, limita de autentificare per email, primul login Cloud păstrează contul și conversațiile locale.
   - `test-release-workflows.cjs` – doar „Build AI Stoica Windows” publică `latest.yml` și `.blockmap` (la fel ca `.exe`), workflow-ul ZIP publică doar ZIP-ul.
+  - `test-0716-choice-media.cjs` – modelul ales răspunde (fără trecere ascunsă la Cerebras/Groq, nici la streaming), „Rezervă automată” o permite, fără model răspunde combinația principală, pozele încearcă întâi abonamentul ChatGPT (Codex), modelul care a reușit rămâne legat per cont, video web gratuit cu „Doar gratuit”, deschiderea unui Word fără descărcare (doar pentru contul lui);
+  - `test-0716-math.cjs` – LaTeX → ecuații Word (fracții, radicali, sume, integrale, funcții, matrice, ecuații aliniate), banii și codul rămân text, LaTeX greșit rămâne scris, XML valid în DOCX, aceleași reguli pentru formulele din chat, textul PDF-urilor cu diacritice și tabelele ToUnicode;
+  - `test-0716-server-update.cjs` – „Actualizează site-ul”: doar Owner-ul vede secțiunea și poate cere actualizarea (o cerere o dată, nu în timpul altei actualizări), actualizarea automată se pornește și se oprește; `update-runner.sh` cu un repo git simulat (găsește versiunea nouă, o instalează doar cu actualizarea automată pornită, raportează o actualizare eșuată cu log-ul ei); `install-updater.sh` cu systemd simulat (unitățile rulează scriptul fix, folderul aparține utilizatorului site-ului, a doua rulare nu schimbă nimic);
   - `test-hetzner-setup.cjs` – „Copiază cheile pentru server” (toate cheile Windows, sub numele citite de server, fără să ajungă în interfață) și `deploy/hetzner/setup-web.sh` rulat cu Docker, rețea și DNS simulate: păstrează valorile din `.env`, salvează exact cheile lipite și le refuză pe cele necunoscute, nu dublează rânduri, cere din nou o cheie OmniRoute refuzată, explică DNS-ul lipsă, creează `.env` pe un server nou.
 - **Build AI Stoica Windows**: aceleași teste pe Windows, apoi installerul + `latest.yml` + `.blockmap` în Releases.
 - **AI Stoica Server Check**: `apps/server` (politica AI și contractul HTTP) + Docker.
 - **Check AI Stoica Cloudflare**: `npm test` (scenarii cu bază D1 simulată) + `wrangler deploy --dry-run`.
 - **Check AI Stoica Mobile**: `expo-doctor` și export iOS/Android.
+
+Verificat suplimentar pe 0.7.16 (în afara GitHub): interfața web rulată în Chromium cu serviciul 0.7.16 și un OmniRoute simulat — formulele din chat apar ca formule (banii și codul rămân text), butonul „Convertește AI Stoica în aplicație pe telefon” apare pe pagina de autentificare și în aplicație, iar Word, poze și PDF se deschid în aplicație, fără erori în consolă; un DOCX cu ecuații deschis în LibreOffice arată ecuațiile.
 
 Verificat suplimentar pe 0.7.11 (în afara GitHub): interfața rulată într-un browser real cu serviciul local 0.7.11 — 44 de verificări (întrebări fără fișier, butoanele Imagine/Video, imagini din Bibliotecă, permisiuni, Owner, Escape, linkuri, automatizări, setări).
 

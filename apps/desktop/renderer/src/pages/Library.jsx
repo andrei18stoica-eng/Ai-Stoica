@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Upload, Search, Eye, Download, Trash2, FileText, Film, Music, Palette, X, HardDrive, Play, MessageSquarePlus } from "lucide-react";
+import { Upload, Search, Eye, Download, Trash2, FileText, Film, Music, Palette, X, HardDrive, Play, MessageSquarePlus, Maximize2 } from "lucide-react";
+import { FileViewer, FileName, canView } from "../viewer.jsx";
 import { api, authedFetch, toast, cx, plural, formatBytes, shortDate, mediaKind, kindLabel, uploadFileToLibrary, downloadLibraryFile, useAccess, deniedMessage, useModal, useAuthedBlobUrl, useInView, ToolShell } from "../core.jsx";
 
 export const LIBRARY_FILTERS=[["all","Toate"],["document","Documente"],["image","Poze"],["video","Video"],["audio","Audio"],["design","Design"]];
@@ -54,17 +55,20 @@ function PreviewBody({item}){
   return <div className="previewText">{text.note&&<small>{text.note}</small>}{text.value&&<pre>{text.value}</pre>}</div>;
 }
 
-function PreviewDrawer({item,onClose,onAttach,attaching,onRemove}){
+function PreviewDrawer({item,onClose,onAttach,attaching,onRemove,onRenamed}){
   const {ref,backdropProps}=useModal(onClose);
+  const [full,setFull]=useState(false);
   return <div className="drawerBackdrop" {...backdropProps}>
     <aside className="previewDrawer" ref={ref} role="dialog" aria-modal="true" aria-label={`Previzualizare: ${item.name}`} tabIndex={-1}>
-      <div className="drawerHead"><div><b title={item.name}>{item.name}</b><small>{kindLabel(mediaKind(item.mime,item.name),item.mime,item.name)} · {formatBytes(item.size)} · {shortDate(item.createdAt)}</small></div><button className="iconOnly" onClick={onClose} aria-label="Închide previzualizarea" title="Închide"><X size={18}/></button></div>
+      <div className="drawerHead"><div><FileName id={item.id} name={item.name} onRenamed={name=>onRenamed?.(item,name)}/><small>{kindLabel(mediaKind(item.mime,item.name),item.mime,item.name)} · {formatBytes(item.size)} · {shortDate(item.createdAt)}</small></div><button className="iconOnly" onClick={onClose} aria-label="Închide previzualizarea" title="Închide"><X size={18}/></button></div>
       <div className="drawerBody"><PreviewBody item={item}/></div>
       <div className="drawerActions">
         {onAttach&&<button className="primary" onClick={()=>onAttach(item)} disabled={!!attaching}><MessageSquarePlus size={15}/> {attaching===item.id?"Se pregătește…":"Folosește în chat"}</button>}
+        {canView({mime:item.mime,name:item.name})&&<button className="secondary" onClick={()=>setFull(true)}><Maximize2 size={15}/> Deschide</button>}
         <button className="secondary" onClick={()=>downloadLibraryFile({libraryId:item.id,name:item.name}).catch(e=>toast(e.message))}><Download size={15}/> Descarcă</button>
         <button className="dangerButton" onClick={()=>onRemove(item)}><Trash2 size={15}/> Șterge</button>
       </div>
+      {full&&<FileViewer file={{libraryId:item.id,name:item.name,mime:item.mime,size:item.size}} onClose={()=>setFull(false)}/>}
     </aside>
   </div>;
 }
@@ -152,6 +156,6 @@ export function LibraryPage({onClose,onAttach,toAttachment,initialFilter="all",o
         </div>;
       })}</div>}
     </div>
-    {preview&&<PreviewDrawer item={preview} onClose={()=>setPreview(null)} onAttach={onAttach?attach:null} attaching={attaching} onRemove={remove}/>}
+    {preview&&<PreviewDrawer item={preview} onClose={()=>setPreview(null)} onAttach={onAttach?attach:null} attaching={attaching} onRemove={remove} onRenamed={(x,name)=>{setPreview(p=>p?.id===x.id?{...p,name}:p);setItems(list=>list.map(i=>i.id===x.id?{...i,name}:i))}}/>}
   </ToolShell>;
 }

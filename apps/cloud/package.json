@@ -17,6 +17,7 @@
     "jszip": "^3.10.1",
     "pdf-lib": "^1.17.1",
     "pptxgenjs": "^4.0.1",
-    "mdb-reader": "^3.2.0"
+    "mdb-reader": "^3.2.0",
+    "temml": "^0.13.5"
   }
 }

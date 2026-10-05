@@ -66,9 +66,12 @@ const DEFAULT_USER_PERMISSIONS = {
   plugins: false,
   github_access: false,
   openai: false,
-  anthropic: false
+  anthropic: false,
+  // "Code AI Stoica" (Codex / Claude Code). The Owner gives it per account; those accounts use the paid APIs, never
+  // the Owner's own subscriptions.
+  code: false
 };
-const OWNER_PERMISSIONS = { ...DEFAULT_USER_PERMISSIONS, video_generation: true, deep_research: true, automations: true, plugins: true, github_access: true, openai: true, anthropic: true, openrouter: true };
+const OWNER_PERMISSIONS = { ...DEFAULT_USER_PERMISSIONS, video_generation: true, deep_research: true, automations: true, plugins: true, github_access: true, openai: true, anthropic: true, openrouter: true, code: true };
 
 function httpError(status, message) { const e = new Error(message); e.status = status; e.expose = true; return e; }
 function toBool(value) {

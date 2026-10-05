@@ -7,7 +7,7 @@ const SERVER_ENV = {
   nvidiaApiKey: "NVIDIA_API_KEY", cohereApiKey: "COHERE_API_KEY", hfToken: "HF_TOKEN",
   cloudflareAccountId: "CLOUDFLARE_ACCOUNT_ID", cloudflareApiToken: "CLOUDFLARE_API_TOKEN", githubToken: "AI_STOICA_GITHUB_TOKEN",
   pollinationsApiKey: "POLLINATIONS_API_KEY", falApiKey: "FAL_API_KEY", replicateApiToken: "REPLICATE_API_TOKEN",
-  togetherApiKey: "TOGETHER_API_KEY", stabilityApiKey: "STABILITY_API_KEY"
+  togetherApiKey: "TOGETHER_API_KEY", stabilityApiKey: "STABILITY_API_KEY", xaiApiKey: "XAI_API_KEY"
 };
 
 // Docker Compose reads .env literally: a value with spaces, quotes, "$", "#" or backslashes is left out and named.

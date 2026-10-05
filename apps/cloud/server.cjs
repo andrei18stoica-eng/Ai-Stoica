@@ -1,13 +1,15 @@
 const fs = require("fs");
 const path = require("path");
 const { startLocalGateway } = require("./local-gateway.cjs");
+const { createServerSettings } = require("./lib/serversettings.cjs");
 
 const port = Number(process.env.PORT || 8787);
 const host = process.env.HOST || "0.0.0.0";
 const dataDir = process.env.DATA_DIR || "/data";
 const env = name => String(process.env[name] || "").trim();
 
-// "Ai principal"/"AI Stoica" are automatic-routing names that the gateway refuses (409); an empty model lets the gateway choose.
+// "Ai principal"/"AI Stoica" as the default are dropped: an empty model lets the gateway choose, and it picks your first
+// OmniRoute combination ("Ai principal" when you have it).
 function defaultModel() {
   const value = env("AI_STOICA_DEFAULT_MODEL") || env("AI_STOICA_MODEL");
   return /^ai[ _-]*(principal|stoica)$/i.test(value) ? "" : value;
@@ -21,10 +23,12 @@ const DIRECT_KEYS = {
   cloudflareAccountId: "CLOUDFLARE_ACCOUNT_ID", cloudflareApiToken: "CLOUDFLARE_API_TOKEN",
   // Images and video
   pollinationsApiKey: "POLLINATIONS_API_KEY", falApiKey: "FAL_API_KEY", replicateApiToken: "REPLICATE_API_TOKEN",
-  togetherApiKey: "TOGETHER_API_KEY", stabilityApiKey: "STABILITY_API_KEY"
+  togetherApiKey: "TOGETHER_API_KEY", stabilityApiKey: "STABILITY_API_KEY",
+  // Grok (xAI): chat, Grok Imagine pictures and video
+  xaiApiKey: "XAI_API_KEY"
 };
 
-function getOmniConfig() {
+function envConfig() {
   const model = defaultModel();
   return {
     baseUrl: (env("OMNIROUTE_BASE_URL") || "http://omniroute:20128/v1").replace(/\/+$/, ""),
@@ -41,9 +45,20 @@ function getOmniConfig() {
     githubRepo: env("AI_STOICA_GITHUB_REPO"),
     githubBranch: env("AI_STOICA_GITHUB_BRANCH") || "main",
     trustProxy: Number(env("AI_STOICA_TRUST_PROXY") || 1),
+    // The model you choose answers; with AI_STOICA_CHAT_FALLBACK=true the direct APIs answer when it fails.
+    chatFallbackOnFailure: env("AI_STOICA_CHAT_FALLBACK").toLowerCase() === "true",
+    // Optional fixed media models, e.g. codex/gpt-5.6-sol (images through the ChatGPT subscription in OmniRoute).
+    imageModel: env("AI_STOICA_IMAGE_MODEL"),
+    videoModel: env("AI_STOICA_VIDEO_MODEL"),
+    // Providers left out of the chat (Settings → API-uri AI → Furnizori folosiți). Not set: Cerebras is left out.
+    blockedProviders: process.env.AI_STOICA_BLOCKED_PROVIDERS === undefined ? undefined : env("AI_STOICA_BLOCKED_PROVIDERS"),
     ...Object.fromEntries(Object.entries(DIRECT_KEYS).map(([key, name]) => [key, env(name)]))
   };
 }
+
+// Settings the Owner changes on the site (Setări) are saved in the data volume and win over the .env values above.
+const serverSettings = createServerSettings(dataDir);
+const getOmniConfig = () => serverSettings.apply(envConfig());
 
 if (!env("AI_STOICA_OWNER_EMAIL")) console.warn("[AI Stoica] AI_STOICA_OWNER_EMAIL is not set: no account on this server is Owner (GitHub Solve, code run and server tools stay locked).");
 
@@ -58,7 +73,11 @@ const gateway = startLocalGateway({
   host,
   serviceName: "AI Stoica Cloud Gateway",
   getOmniConfig,
-  webDir: webEnabled ? webDir : undefined
+  webDir: webEnabled ? webDir : undefined,
+  // deploy/hetzner: folder shared with the server's update service ("Actualizează site-ul" for the Owner).
+  updateDir: env("AI_STOICA_UPDATE_DIR") || undefined,
+  // Setări on the site, for the Owner.
+  serverSettings: { publicView: () => serverSettings.publicView(envConfig()), save: (input) => serverSettings.save(input, envConfig()) }
 });
 
 console.log(`AI Stoica Cloud Gateway listening on ${host}:${port}${webEnabled ? " (web interface on)" : ""}`);

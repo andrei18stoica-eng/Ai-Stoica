@@ -99,7 +99,8 @@ Ultima verificare declarată: rolurile Owner/User existau și contul Owner era a
 | Selector de modele, indicator de gândire, Copy/Paste, revenire la ultimul mesaj | În cod, **de confirmat în aplicație** | cerute de Owner în ciclurile 0.6.x–0.7.x; interfața 0.7.11 a fost verificată manual în browser (44 de verificări, vezi `VERIFICARE_FINALA.md`), nu în CI |
 | Aplicație Windows (Electron, tray, auto-update) | În cod + teste | actualizarea automată cere `latest.yml` + `.blockmap` în Release; de verificat manual la instalare |
 | Aplicație telefon (Expo) | În cod | se conectează la Worker-ul Cloudflare; verificată doar de workflow-ul Mobile, care n-a rulat pe 0.7.11 |
-| Web (aistoica.ro) și PWA pentru iPhone/Android | În cod + teste (0.7.14) | interfața e servită de `apps/cloud` (serviciul `web` din `deploy/hetzner`, conturile din `apps/server`); manifest, iconițe, service worker; testat în Chromium pe container; **de pus în producție**: DNS `aistoica.ro`, apoi `deploy/hetzner/setup-web.sh` (0.7.15, testat cu Docker simulat) |
+| Web (aistoica.ro) și PWA pentru iPhone/Android | În producție (2026-10-04) | interfața e servită de `apps/cloud` (serviciul `web` din `deploy/hetzner`, conturile din `apps/server`); manifest, iconițe, service worker, butonul „Convertește AI Stoica în aplicație pe telefon” (0.7.16); site-ul răspunde cu certificat Let's Encrypt și vede OmniRoute de pe server; instalarea PWA pe telefon **de confirmat de Owner** |
+| Ecuații în Word, vizualizare fișiere, PDF cu diacritice | În cod + teste (0.7.16) | `lib/math.cjs`, `renderer/src/viewer.jsx`, `lib/pdftext.cjs`; ecuațiile verificate în LibreOffice, **de confirmat în Microsoft Word** |
 | Cloud Cloudflare (D1/R2) | În cod + teste | folosit de aplicația de telefon; Owner a decis să mute părți spre Hetzner, deci schemele Cloudflare istorice nu sunt arhitectura finală |
 
 ## 9. Fluxuri
@@ -125,5 +126,5 @@ Nu se adaugă funcții noi până nu e stabilă baza:
 1. Publicarea lui 0.7.13 (cu reparația de publicare) și potrivirea `sha512` verificată (vezi `docs/PUBLICARE_RELEASE.md`).
 2. Verificarea efectivă a aplicației: instalare, pornire din tray, microfon, automatizări, actualizare automată de la 0.7.10.
 3. HTTPS cap-coadă pe `api.aistoica.ro` și deploy-ul 0.7.11 pe Hetzner (`update.sh`, apoi `/health`).
-4. Site-ul aistoica.ro și aplicația PWA (codul e în 0.7.14; pornirea pe server: DNS + `deploy/hetzner/setup-web.sh` din 0.7.15), apoi aplicația Windows mutată pe server.
+4. Site-ul aistoica.ro și aplicația PWA: pornite pe 2026-10-04 (DNS + `deploy/hetzner/setup-web.sh`); rămâne aplicația Windows mutată pe server (`https://aistoica.ro` în Setări).
 5. Abia apoi funcții noi, într-o versiune următoare, cu aceeași procedură.

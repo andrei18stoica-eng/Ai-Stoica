@@ -28,7 +28,7 @@ fi
 
 case "${AI_STOICA_DEFAULT_MODEL:-}" in
   [Aa][Ii]" "[Pp]rincipal|[Aa][Ii]" "[Ss]toica)
-    echo "AI_STOICA_DEFAULT_MODEL nu poate fi „${AI_STOICA_DEFAULT_MODEL}” (selectarea automată este dezactivată). Lasă-l gol sau pune un id exact din OmniRoute."
+    echo "AI_STOICA_DEFAULT_MODEL nu poate fi „${AI_STOICA_DEFAULT_MODEL}” . Lasă-l gol (atunci răspunde prima ta combinație OmniRoute, de exemplu „Ai principal”) sau pune un id exact din OmniRoute."
     exit 1
     ;;
 esac

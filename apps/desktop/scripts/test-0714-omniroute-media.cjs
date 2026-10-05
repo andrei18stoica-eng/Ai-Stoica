@@ -75,7 +75,7 @@ async function main() {
     r = await call("/api/generate/image", { method: "POST", token, body: { prompt: "un logo verde" } });
     expect(r.status === 200 && calls.openai === 1 && calls.openrouter === 2, "a provider without credits must not be tried first again: " + JSON.stringify(calls));
     // Chat on direct APIs: Cerebras out of credits (402) → Groq answers; the next message skips Cerebras.
-    Object.assign(cfg, { baseUrl: "http://127.0.0.1:9/v1", directChatEnabled: true, directChatProviderOrder: "cerebras,groq", cerebrasApiKey: "k1", groqApiKey: "k2" });
+    Object.assign(cfg, { baseUrl: "http://127.0.0.1:9/v1", directChatEnabled: true, directChatProviderOrder: "cerebras,groq", blockedProviders: "", cerebrasApiKey: "k1", groqApiKey: "k2" });
     await wait(2100);
     for (const n of [1, 2]) {
       r = await call("/api/chat", { method: "POST", token, body: { model: "", messages: [{ role: "user", content: "salut " + n }] } });

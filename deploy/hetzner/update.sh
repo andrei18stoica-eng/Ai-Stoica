@@ -29,6 +29,11 @@ docker compose up -d --build api
 
 # Web version (profile "web", e.g. COMPOSE_PROFILES=edge,web in .env): rebuilt from the same code.
 if docker compose config --services | grep -qx web; then
+  # The site's "Actualizează site-ul" button (Owner) and the hourly check for a new version: installed or refreshed
+  # here, before the web container starts, so its shared folder already belongs to the container's user.
+  if [ "$(id -u)" = 0 ] && command -v systemctl >/dev/null 2>&1 && [ -f "$DEPLOY/install-updater.sh" ]; then
+    bash "$DEPLOY/install-updater.sh" --quiet || echo "Atenție: butonul de actualizare din aplicație nu a putut fi instalat (vezi install-updater.sh)."
+  fi
   echo "==> Rebuilding web interface"
   docker compose up -d --build web
 fi

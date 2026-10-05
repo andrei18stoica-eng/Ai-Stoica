@@ -6,6 +6,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const { spawn } = require("child_process");
 const { createStore, renameWithRetry } = require("./lib/store.cjs");
 const { extractText } = require("./lib/extract.cjs");
@@ -27,9 +28,10 @@ function inferProvider(entry){
   if(explicit)return explicit;
   const id=normalizeModelKey(typeof entry==="string"?entry:entry&&entry.id);
   const first=id.split("/")[0];
-  const prefix={openai:"openai",anthropic:"anthropic",google:"gemini",gemini:"gemini",cerebras:"cerebras",groq:"groq",cloudflare:"cloudflare",openrouter:"openrouter","@cf":"cloudflare"};
+  const prefix={openai:"openai",anthropic:"anthropic",google:"gemini",gemini:"gemini",cerebras:"cerebras",groq:"groq",cloudflare:"cloudflare",openrouter:"openrouter","@cf":"cloudflare",xai:"xai","x-ai":"xai"};
   if(prefix[first])return prefix[first];
   if(/groq/.test(id))return "groq";
+  if(/\bgrok/.test(id))return "xai";
   if(/cerebras/.test(id))return "cerebras";
   if(/cloudflare|@cf\//.test(id))return "cloudflare";
   if(/openrouter/.test(id))return "openrouter";
@@ -38,6 +40,26 @@ function inferProvider(entry){
   if(/openai|codex|\bo[134]\b/.test(id)||(!/gpt[-_. ]?oss/.test(id)&&/gpt/.test(id)))return "openai";
   return "";
 }
+
+// The company behind a model id, for Settings → "Furnizori folosiți". OmniRoute's subscription prefixes count as their
+// maker (cx/ = ChatGPT/Codex, cc/ = Claude Code, gc/ = Gemini CLI …). Combinations have no family and are never hidden.
+const FAMILY_PREFIX={openai:"openai",cx:"openai",codex:"openai","chatgpt-web":"openai","cgpt-web":"openai",
+  anthropic:"anthropic",claude:"anthropic",cc:"anthropic","claude-code":"anthropic",
+  gemini:"gemini",google:"gemini",gc:"gemini","gemini-cli":"gemini",gweb:"gemini","gemini-web":"gemini",
+  xai:"xai","x-ai":"xai",grok:"xai",groq:"groq",cerebras:"cerebras",mistral:"mistral",openrouter:"openrouter",nvidia:"nvidia",
+  github:"github",cloudflare:"cloudflare","@cf":"cloudflare",cohere:"cohere",huggingface:"huggingface"};
+function providerFamily(id){
+  const v=normalizeModelKey(id);
+  if(!v.includes("/"))return "";
+  return FAMILY_PREFIX[v.split("/")[0]]||"";
+}
+// Cerebras is off unless the Owner turns it back on (its answers were the weakest); an empty value means none is off.
+const DEFAULT_BLOCKED_PROVIDERS="cerebras";
+function blockedProviders(cfg){
+  const raw=cfg?.blockedProviders;
+  return new Set(String(raw===undefined||raw===null?DEFAULT_BLOCKED_PROVIDERS:raw).split(",").map(x=>x.trim().toLowerCase()).filter(Boolean));
+}
+function modelBlocked(cfg,id){const family=providerFamily(id);return !!family&&blockedProviders(cfg).has(family);}
 
 function loadOrCreateSecret(dataDir) {
   const file = path.join(dataDir, "auth-secret.txt");
@@ -61,7 +83,7 @@ const DEEP_RESEARCH_WORDS=wordsRegex(["deep research","cercetare aprofundată","
 const GITHUB_WORDS=wordsRegex(["github","repository","repo","cod","code","bug","eroare","build","component","funcție","functie","endpoint","react","node","python","server","api","fișier","fisier"]);
 const SERVER_WORDS=wordsRegex(["server","ssh","hetzner","deploy","deployment","producție","productie","nginx","ubuntu"]);
 const PERMISSION_KEYS=["image_generation","video_generation","document_generation","file_upload","web_search","deep_research","automations","plugins","github_access"];
-const PERMISSION_LABELS={image_generation:"Generare imagini",video_generation:"Generare video",document_generation:"Fișiere descărcabile",file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",automations:"Automatizări",plugins:"Pluginuri",github_access:"GitHub"};
+const PERMISSION_LABELS={image_generation:"Generare imagini",video_generation:"Generare video",document_generation:"Fișiere descărcabile",file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",automations:"Automatizări",plugins:"Pluginuri",code:"Code AI Stoica",github_access:"GitHub"};
 function deniedMessage(key){return `Funcția „${PERMISSION_LABELS[key]||key}” este dezactivată de Owner pentru contul tău.`;}
 function pluginHeaders(plugin) {
   const out = { "Content-Type": "application/json" };
@@ -98,7 +120,7 @@ function roError(e){
   return msg||"Eroare necunoscută.";
 }
 
-function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig: readOmniConfig, onAutomationResult, encryptSecret, decryptSecret, streamIdleMs, streamTotalMs, webDir }) {
+function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig: readOmniConfig, onAutomationResult, encryptSecret, decryptSecret, streamIdleMs, streamTotalMs, webDir, updateDir, serverSettings }) {
   // The configuration is read many times per request; one read is reused for 2 seconds.
   let configMemo = null, configMemoAt = 0;
   const getOmniConfig = () => { const now = Date.now(); if (!configMemo || now - configMemoAt > 2000) { configMemo = (typeof readOmniConfig === "function" ? readOmniConfig() : null) || {}; configMemoAt = now; } return configMemo; };
@@ -637,7 +659,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const id=String(typeof entry==="string"?entry:entry?.id||"").trim();
       const provider=String(typeof entry==="string"?"":entry?.provider||"").trim().toLowerCase();
       const first=id.toLowerCase().split("/")[0];
-      const alreadyScoped=["openai","anthropic","google","gemini","cerebras","groq","cloudflare","openrouter","@cf"].includes(first);
+      const alreadyScoped=["openai","anthropic","google","gemini","cerebras","groq","cloudflare","openrouter","@cf","xai"].includes(first);
       const policyId=provider&&!alreadyScoped?`${provider}/${id}`:id;
       return {entry,id,policyId};
     }).filter(x=>x.id);
@@ -647,11 +669,24 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const allowed=new Set(policy.data.filter(x=>x.allowed).map(x=>String(x.model)));
     return rows.filter(x=>allowed.has(x.policyId)).map(x=>x.entry);
   }
-  let omniIdsCache={at:0,ids:[]};
+  let omniEntriesCache={at:0,entries:[]};
+  async function omniEntriesCached(cfg){
+    if(Date.now()-omniEntriesCache.at<60000)return omniEntriesCache.entries;
+    let entries=[];try{entries=await omniModelEntries(cfg)}catch{}
+    omniEntriesCache={at:Date.now(),entries};return entries;
+  }
   async function omniModelIds(cfg){
-    if(Date.now()-omniIdsCache.at<60000)return omniIdsCache.ids;
-    let ids=[];try{ids=(await omniModelEntries(cfg)).map(x=>String(typeof x==="string"?x:x?.id||"")).filter(Boolean)}catch{}
-    omniIdsCache={at:Date.now(),ids};return ids;
+    return (await omniEntriesCached(cfg)).map(x=>String(typeof x==="string"?x:x?.id||"")).filter(Boolean);
+  }
+  // A request without a model (a client that left the choice to AI Stoica) goes to your own OmniRoute combination
+  // ("Ai principal"), then to OmniRoute's auto/* ones; the direct APIs only when OmniRoute has none.
+  async function defaultOmniModel(cfg,context){
+    const entries=await omniEntriesCached(cfg);
+    const combos=entries.map(x=>({id:String(typeof x==="string"?x:x?.id||"").trim(),combo:x?.owned_by==="combo"})).filter(x=>x.id&&(x.combo||!x.id.includes("/")));
+    for(const id of [...combos.filter(x=>!/^auto\//i.test(x.id)),...combos.filter(x=>/^auto\//i.test(x.id))].map(x=>x.id)){
+      try{await requireModelAccess(context?.cloudToken,id);return id}catch{}
+    }
+    return "";
   }
   // "Ai principal" / "AI Stoica …" (mobile default): an OmniRoute combo with that name if one exists, otherwise the configured default model.
   async function resolveModelAlias(cfg,requested){
@@ -662,16 +697,32 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const fallback=[cfg.defaultModel,cfg.model].map(x=>String(x||"").trim()).find(x=>x&&!isSmartAlias(x));
     return fallback||"";
   }
-  async function resolveChatRoute(context, messages, requestedModel) {
+  // A model from the direct APIs list (groq/…, cerebras/…, as /api/models offers it) that OmniRoute does not have:
+  // that API answers it.
+  const DIRECT_PROVIDERS=["cerebras","groq","gemini","mistral","nvidia","github","openrouter","cloudflare","cohere","huggingface","openai","xai"];
+  async function isDirectModel(cfg,allowed,id){
+    const v=String(id||"").trim(),provider=(v.split("/")[0]||"").toLowerCase();
+    if(!allowed||cfg.directChatEnabled===false||!v.includes("/")||!DIRECT_PROVIDERS.includes(provider))return false;
+    if((await omniModelIds(cfg)).some(x=>x.toLowerCase()===v.toLowerCase()))return false;
+    try{return (await directChatCandidates(cfg,v)).some(c=>c.provider===provider)}catch{return false}
+  }
+  // chosen=false: the client sent no model (or the mobile "AI Stoica …" name), so AI Stoica picks and may fall back.
+  async function resolveChatRoute(context, messages, requestedModel, {chosen=true}={}) {
     const cfg=getOmniConfig();
     const asked=String(requestedModel||cfg.model||"").trim();
     const requested=await resolveModelAlias(cfg,asked);
     if(!requested){
-      if(directApisAllowed(context)&&cfg.directChatEnabled!==false)return {task:"direct-fallback",reasons:["OmniRoute fără model selectat; folosesc API-urile directe configurate"],selectedModel:"",candidates:[]};
+      const auto=await defaultOmniModel(cfg,context);
+      if(auto)return {task:"auto",automatic:true,reasons:["niciun model ales: folosesc combinația principală OmniRoute"],selectedModel:auto,candidates:[{id:auto,provider:inferProvider(auto),score:0}]};
+      if(directApisAllowed(context)&&cfg.directChatEnabled!==false)return {task:"direct-fallback",automatic:true,reasons:["OmniRoute fără model selectat; folosesc API-urile directe configurate"],selectedModel:"",candidates:[]};
       throw policyFailure("Alege manual un model AI înainte de a trimite mesajul.",400);
     }
     await requireModelAccess(context?.cloudToken,requested);
-    return {task:"manual",reasons:[requested===asked?"model ales manual":"model implicit configurat"],selectedModel:requested,candidates:[{id:requested,provider:inferProvider(requested),score:0}]};
+    requirePersonalAccess(context,requested);
+    if(modelBlocked(cfg,requested))throw policyFailure(`Furnizorul modelului «${requested}» este oprit în Setări → API-uri AI → Furnizori folosiți. Alege alt model din listă.`,403);
+    const automatic=chosen===false||!String(requestedModel||"").trim()||requested!==asked;
+    if(await isDirectModel(cfg,directApisAllowed(context),requested))return {task:"direct",automatic,direct:true,reasons:["model API direct ales"],selectedModel:requested,candidates:[]};
+    return {task:"manual",automatic,reasons:[automatic?"model implicit configurat":"model ales manual"],selectedModel:requested,candidates:[{id:requested,provider:inferProvider(requested),score:0}]};
   }
   const BUILTIN_PROMPT="Ești AI Stoica, asistentul principal Stoica Enterprises AI. Răspunde clar, riguros și util, în limba utilizatorului.";
   function builtInAssistant(userId){return {id:crypto.randomUUID(),userId,name:"AI Stoica",icon:"S",systemPrompt:BUILTIN_PROMPT,createdAt:Date.now(),builtIn:true};}
@@ -714,18 +765,37 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     return String(user?.role || "").toLowerCase() === "owner" ? "owner" : "user";
   }
   function ownerRequest(req){return roleFor(req.user,req.cloudUser)==="owner";}
+  // Models that run on the Owner's own accounts connected in OmniRoute by login or cookie (ChatGPT / Codex, Gemini,
+  // Claude Code): their terms forbid making an account available to anyone else, so only the Owner may use them
+  // (or the single person of a PC with no Owner email set). Other accounts use the free models and the paid APIs.
+  const PERSONAL_PROVIDERS=/^(codex|cx|chatgpt-web|cgpt-web|gemini-web|gweb|claude-code|cc|gemini-cli|gc)\//i;
+  function personalAllowed(user,cloudUser){
+    if(roleFor(user,cloudUser)==="owner")return true;
+    return !cloudBase()&&!normalizeEmail(getOmniConfig().ownerEmail);
+  }
+  function requirePersonalAccess(req,model){
+    if(PERSONAL_PROVIDERS.test(String(model||"").trim())&&!personalAllowed(req.user,req.cloudUser))
+      throw policyFailure(`Modelul «${model}» folosește abonamentul personal al Owner-ului și nu poate fi folosit din alt cont. Alege alt model din listă.`,403);
+  }
   // Local mode (no AI Stoica Cloud): the account on this PC uses the API keys configured on this PC.
   // Code execution, SSH and GitHub write stay Owner-only.
   function directApisAllowed(req){return ownerRequest(req)||!cloudBase();}
   function normalizePermissions(raw, owner) {
     const out = {};
     for (const k of PERMISSION_KEYS) { const v = raw?.[k]; out[k] = owner || !(v === false || v === "false" || v === 0); }
+    // "Code AI Stoica" is opt-in: only the Owner, or an account the Owner gave it to.
+    out.code = owner || raw?.code === true || raw?.code === "true";
     return out;
   }
   // Missing keys are allowed. In Cloud mode without a verified Cloud session (Cloud unreachable) gated features stay off.
   function permissionsFor(req) {
-    if (!cloudBase() || ownerRequest(req)) return normalizePermissions({}, true);
-    if (!req.cloudUser) return Object.fromEntries(PERMISSION_KEYS.map((k) => [k, false]));
+    if (!cloudBase() || ownerRequest(req)) {
+      const all = normalizePermissions({}, true);
+      // A PC with an Owner email: the other local accounts do not get Code (it runs on the Owner's subscriptions).
+      if (!ownerRequest(req) && normalizeEmail(getOmniConfig().ownerEmail)) all.code = false;
+      return all;
+    }
+    if (!req.cloudUser) return { ...Object.fromEntries(PERMISSION_KEYS.map((k) => [k, false])), code: false };
     return normalizePermissions(req.permissions || {}, false);
   }
   function hasPermission(req, key) { return permissionsFor(req)[key] !== false; }
@@ -805,6 +875,62 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       res.status(503).json({ error: cloudDownMessage(0) });
     }
   }
+
+  // Setări on the web site, for the Owner (apps/cloud/server.cjs passes serverSettings; the Windows app keeps its own
+  // config through Electron and has no such route). Keys come back masked; a saved change applies to the next request.
+  function requireSettingsOwner(req){
+    if(!serverSettings)throw policyFailure("Setările serverului există doar pe site (aistoica.ro); în Windows sunt în aplicație.",404);
+    if(!ownerRequest(req))throw policyFailure("Doar Owner-ul poate schimba setările serverului.",403);
+  }
+  app.get("/api/server/settings", auth, (req,res) => {
+    try{requireSettingsOwner(req);res.json({data:serverSettings.publicView()})}
+    catch(e){sendError(res,e,500)}
+  });
+  app.put("/api/server/settings", auth, (req,res) => {
+    try{
+      requireSettingsOwner(req);
+      const input=req.body&&typeof req.body==="object"&&!Array.isArray(req.body)?req.body:{};
+      serverSettings.save(input);
+      // The model list and the OmniRoute list follow the new keys and addresses right away.
+      omniEntriesCache={at:0,entries:[]};configMemo=null;
+      res.json({ok:true,config:serverSettings.publicView()});
+    }catch(e){sendError(res,e,500)}
+  });
+
+  // "Actualizează site-ul" (Owner, web server only). The site never runs anything on the server itself: it drops a
+  // request file in updateDir, and the server's systemd service (deploy/hetzner/install-updater.sh) runs update.sh and
+  // writes status.json / available.json back here.
+  const readUpdateJson=(name)=>{try{return JSON.parse(fs.readFileSync(path.join(updateDir,name),"utf8"))}catch{return null}};
+  function requireUpdateOwner(req){
+    if(!ownerRequest(req))throw policyFailure("Doar Owner-ul poate actualiza site-ul.",403);
+    if(!updateDir)throw policyFailure("Actualizarea din aplicație există doar pe serverul aistoica.ro.",404);
+  }
+  const UPDATE_SETUP="Serviciul de actualizare nu e instalat pe server. Rulează o dată pe server: sudo bash /opt/ai-stoica/deploy/hetzner/update.sh";
+  app.get("/api/server/update", auth, (req,res) => {
+    if(!ownerRequest(req)||!updateDir)return res.json({data:{enabled:false}});
+    const exists=(name)=>{try{return fs.existsSync(path.join(updateDir,name))}catch{return false}};
+    res.json({data:{enabled:true,installed:exists("installed"),pending:exists("request"),auto:exists("auto"),
+      status:readUpdateJson("status.json"),available:readUpdateJson("available.json"),setupHint:exists("installed")?"":UPDATE_SETUP}});
+  });
+  app.post("/api/server/update", auth, (req,res) => {
+    try{
+      requireUpdateOwner(req);
+      if(!fs.existsSync(path.join(updateDir,"installed")))throw policyFailure(UPDATE_SETUP,503);
+      if(readUpdateJson("status.json")?.state==="running")throw policyFailure("O actualizare rulează deja. Așteaptă să se termine.",409);
+      fs.writeFileSync(path.join(updateDir,"request"),JSON.stringify({by:req.user?.email||"",at:new Date().toISOString()}));
+      res.status(202).json({data:{pending:true}});
+    }catch(e){sendError(res,e.status?e:policyFailure("Cererea de actualizare nu a putut fi scrisă pe server: "+e.message,500))}
+  });
+  app.patch("/api/server/update", auth, (req,res) => {
+    try{
+      requireUpdateOwner(req);
+      const auto=toBool(req.body?.auto,undefined);
+      if(typeof auto!=="boolean")throw policyFailure("Câmpul „auto” trebuie să fie true sau false.",400);
+      const file=path.join(updateDir,"auto");
+      if(auto)fs.writeFileSync(file,new Date().toISOString());else fs.rmSync(file,{force:true});
+      res.json({data:{auto}});
+    }catch(e){sendError(res,e.status?e:policyFailure("Setarea nu a putut fi salvată pe server: "+e.message,500))}
+  });
 
   app.get("/health", async (_req, res) => {
     const cfg = getOmniConfig(); let omni = false, omniNeedsKey = false, cloudOnline = false;
@@ -954,6 +1080,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         for(const x of directEntries)if(!seen.has(x.id.toLowerCase())){filtered.push(x);seen.add(x.id.toLowerCase())}
       }catch(e){policyError=policyError||("API direct: "+roError(e))}
     }
+    if(!personalAllowed(req.user,req.cloudUser))filtered=filtered.filter(x=>!PERSONAL_PROVIDERS.test(String(typeof x==="string"?x:x?.id||"")));
+    filtered=filtered.filter(x=>!modelBlocked(cfg,String(typeof x==="string"?x:x?.id||"")));
     if(!filtered.length&&omniError)return res.status(502).json({error:"Nu pot încărca modele OmniRoute și nu există API-uri directe configurate: "+omniError});
     res.json({
       data:filtered,
@@ -975,6 +1103,53 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(res.headersSent)return;
     res.status(Number.isInteger(e?.status)&&e.status>=400&&e.status<600?e.status:fallback).json({error:e?.status?e.message:roError(e)});
   }
+
+  // "Code AI Stoica": a programming workspace. The Owner codes with the subscriptions connected in OmniRoute (Codex = cx/…,
+  // Claude Code = cc/…). An account the Owner gave "code" to (Control Center) gets the paid APIs only (OpenAI / Claude
+  // through OmniRoute, or the OpenAI key): the subscriptions' terms forbid sharing them.
+  const CODE_SUBSCRIPTION=/^(cx|codex|cc|claude-code)\//i,CODE_API=/^(openai|anthropic)\//i;
+  const CODE_PROMPT="Ești AI Stoica Code, asistentul de programare Stoica Enterprises AI. Scrii cod corect, complet și ușor de testat, în blocuri de cod cu limbajul indicat. Explici pe scurt ce schimbi și de ce. Când îți lipsesc fișiere, versiuni sau erori, le ceri. Răspunzi în limba utilizatorului.";
+  function codeAllowed(req){return permissionsFor(req).code===true;}
+  async function codeModels(req){
+    const cfg=getOmniConfig(),personal=personalAllowed(req.user,req.cloudUser),rows=[];
+    for(const x of await omniEntriesCached(cfg)){
+      const id=String(typeof x==="string"?x:x?.id||"").trim();
+      if(!id||modelBlocked(cfg,id))continue;
+      if(CODE_SUBSCRIPTION.test(id)){if(personal)rows.push({id,group:/^(cc|claude-code)\//i.test(id)?"claude-code":"codex",source:"subscription"});}
+      else if(CODE_API.test(id))rows.push({id,group:/^anthropic\//i.test(id)?"claude-api":"openai-api",source:"api"});
+    }
+    if(directApisAllowed(req)&&cfg.directChatEnabled!==false&&!blockedProviders(cfg).has("openai")){
+      try{for(const c of await directChatCandidates(cfg,""))if(c.provider==="openai")rows.push({id:"openai/"+c.model,group:"openai-api",source:"api"})}catch{}
+    }
+    let list=[...new Map(rows.map(r=>[r.id.toLowerCase(),r])).values()];
+    if(cloudBase()){
+      try{const ok=new Set((await allowedOmniEntries(req,list.map(r=>r.id))).map(x=>String(typeof x==="string"?x:x?.id||"")));list=list.filter(r=>ok.has(r.id))}
+      catch{list=[]}
+    }
+    return list;
+  }
+  app.get("/api/code", auth, async (req,res) => {
+    try{
+      if(!codeAllowed(req))return res.json({data:{allowed:false}});
+      const cfg=getOmniConfig();
+      res.json({data:{allowed:true,subscriptions:personalAllowed(req.user,req.cloudUser),owner:ownerRequest(req),models:await codeModels(req),repo:String(cfg.githubRepo||""),branch:String(cfg.githubBranch||"main")}});
+    }catch(e){sendError(res,e,500)}
+  });
+  // Starts a Code conversation: the "AI Stoica Code" assistant (made once per account) and the chosen code model.
+  app.post("/api/code/session", auth, async (req,res) => {
+    try{
+      if(!codeAllowed(req))return res.status(403).json({error:"Code AI Stoica este disponibil doar pentru Owner și pentru conturile cărora Owner-ul le-a dat acces."});
+      const models=await codeModels(req),model=String(req.body?.model||"").trim()||models[0]?.id||"";
+      if(!model||!models.some(m=>m.id===model))return res.status(400).json({error:"Alege unul dintre modelele de cod din listă."});
+      const db=store.read();
+      let assistant=db.assistants.find(a=>a.userId===req.user.id&&a.codeAssistant);
+      if(!assistant){assistant={id:crypto.randomUUID(),userId:req.user.id,name:"AI Stoica Code",icon:"</>",systemPrompt:CODE_PROMPT,createdAt:Date.now(),codeAssistant:true};db.assistants.push(assistant);}
+      const now=Date.now(),label=model.split("/").slice(1).join("/")||model;
+      const conversation={id:crypto.randomUUID(),userId:req.user.id,title:"Code · "+label.slice(0,80),projectId:null,assistantId:assistant.id,model,messages:[],createdAt:now,updatedAt:now};
+      db.conversations.push(conversation);store.write(db);
+      res.json({data:conversation,assistant});
+    }catch(e){sendError(res,e,500)}
+  });
 
   app.post("/api/tools/code/run", auth, ownerOnlyLocal, async (req,res) => {
     try{
@@ -1289,7 +1464,40 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(item.text!=null){res.type(item.mime||"text/plain");return res.send(String(item.text));}
     return res.status(404).json({error:"Conținutul fișierului nu mai există pe disc."});
   });
+  // The text of a Word / PowerPoint / Excel / PDF file, to show it inside AI Stoica without downloading it.
+  app.get("/api/library/:id/preview", auth, async (req,res) => {
+    const item=store.read().library.find(x=>x.id===req.params.id&&x.userId===req.user.id);
+    if(!item)return res.status(404).json({error:"Fișierul nu a fost găsit."});
+    let text=item.text!=null?String(item.text):"",status=item.textStatus||(text?"ok":"");
+    if(!text&&await libraryFileStat(item)){
+      try{const r=await extractText(item.filePath,item.mime,item.name);text=r.text||"";status=r.status||status}catch{status="error"}
+    }else if(!text&&item.dataUrl){
+      const m=String(item.dataUrl).match(/^data:([^;]+);base64,(.+)$/s);
+      if(m){
+        const tmp=path.join(os.tmpdir(),"ai-stoica-preview-"+crypto.randomUUID()+path.extname(String(item.name||"")));
+        try{await fs.promises.writeFile(tmp,Buffer.from(m[2],"base64"));const r=await extractText(tmp,item.mime,item.name);text=r.text||"";status=r.status||status}
+        catch{status="error"}
+        finally{fs.promises.rm(tmp,{force:true}).catch(()=>{})}
+      }
+    }
+    const LIMIT=200000;
+    res.json({data:{text:text.length>LIMIT?text.slice(0,LIMIT)+"\n\n… (fișierul continuă; descarcă-l pentru tot conținutul)":text,status,truncated:text.length>LIMIT}});
+  });
   app.get("/api/library/:id", auth, (req,res) => {const db=store.read(),item=db.library.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Fișierul nu a fost găsit."});const {filePath,...safe}=item;res.json({data:safe});});
+  // Rename a file (only its name: the file on disk is stored under its id). Without an extension the old one is kept, so
+  // the file still opens with the right program. Conversations that show the file get the new name as well.
+  app.patch("/api/library/:id", auth, (req,res) => {
+    const raw=String(req.body?.name??"").replace(/[\u0000-\u001f\u007f<>:"/\\|?*]+/g," ").replace(/\s+/g," ").trim().replace(/^[.\s]+|[.\s]+$/g,"").slice(0,180);
+    if(!raw)return res.status(400).json({error:"Scrie un nume pentru fișier."});
+    const db=store.read(),item=db.library.find(x=>x.id===req.params.id&&x.userId===req.user.id);
+    if(!item)return res.status(404).json({error:"Fișierul nu a fost găsit."});
+    const oldExt=path.extname(String(item.name||""));
+    const name=/\.[a-z0-9]{1,10}$/i.test(raw)||!oldExt?raw:raw+oldExt;
+    item.name=name;item.updatedAt=Date.now();
+    for(const c of db.conversations)if(c.userId===req.user.id)for(const m of c.messages||[])for(const a of m.attachments||[])if(a&&(a.libraryId===item.id||a.id===item.id))a.name=name;
+    store.write(db);
+    res.json({data:{id:item.id,name}});
+  });
   app.delete("/api/library/:id", auth, async (req,res) => {
     const db=store.read(),item=db.library.find(x=>x.id===req.params.id&&x.userId===req.user.id);
     if(!item)return res.status(404).json({error:"Fișierul nu a fost găsit."});
@@ -1515,6 +1723,44 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     return {...resolved,model:`openai/${model}`,provider:"openai-direct"};
   }
 
+  // Grok Imagine (xAI): https://api.x.ai/v1/images/generations, OpenAI-style request and answer.
+  async function directXaiImage(cfg,prompt){
+    const key=String(cfg.xaiApiKey||"").trim();if(!key)return null;
+    const model=String(cfg.xaiImageModel||"grok-imagine-image").trim().replace(/^(xai|x-ai)\//i,"");
+    const r=await fetch("https://api.x.ai/v1/images/generations",{
+      method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${key}`},
+      body:JSON.stringify({model,prompt:String(prompt).slice(0,4000),n:1,response_format:"b64_json"}),
+      signal:mediaSignal(180000)
+    });
+    const resolved=await fetchBinaryOrCandidate(r,"image");
+    return {...resolved,model:`xai/${model}`,provider:"xai-direct"};
+  }
+  // Gemini image models ("Nano Banana") answer generateContent with the picture as inline data. The first name Google
+  // does not know (404) moves on to the next one in the list.
+  async function directGeminiImage(cfg,prompt){
+    const key=String(cfg.geminiApiKey||"").trim();if(!key)return null;
+    const models=csvValues(cfg.geminiImageModel,"gemini-3.1-flash-image,gemini-3.1-flash-image-preview,gemini-2.5-flash-image");
+    let lastError="";
+    for(const model of models){
+      const r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(model)+":generateContent",{
+        method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},
+        body:JSON.stringify({contents:[{parts:[{text:String(prompt).slice(0,4000)}]}],generationConfig:{responseModalities:["IMAGE"]}}),
+        signal:mediaSignal(180000)
+      });
+      const text=await r.text();
+      if(r.status===404){lastError=`${model}: HTTP 404`;continue}
+      if(!r.ok)throw new Error("HTTP "+r.status+": "+text.slice(0,700));
+      let body={};try{body=JSON.parse(text)}catch{throw new Error("Gemini a returnat un răspuns invalid.")}
+      const part=(body?.candidates||[]).flatMap(c=>c?.content?.parts||[]).find(x=>x?.inlineData?.data||x?.inline_data?.data);
+      const data=part?.inlineData||part?.inline_data;
+      if(!data?.data)throw new Error("Gemini nu a returnat nicio imagine"+(body?.promptFeedback?.blockReason?` (${body.promptFeedback.blockReason})`:"")+".");
+      const bytes=Buffer.from(String(data.data),"base64");
+      if(bytes.length>MEDIA_MAX.image)throw new Error("Imaginea Gemini depășește limita locală de siguranță.");
+      return {bytes,mime:inferMediaMime(bytes,data.mimeType||data.mime_type||"image/png","image"),model:`gemini/${model}`,provider:"gemini-image-direct"};
+    }
+    throw new Error("Niciun model de imagine Gemini nu este disponibil ("+lastError+"). Pune numele corect în Setări → Poze.");
+  }
+
   function directOpenRouterKey(cfg){
     const explicit=String(cfg.openRouterApiKey||"").trim();
     if(explicit)return explicit;
@@ -1699,13 +1945,13 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   // Orders saved before 0.7.13 do not know "pollinations-free": it goes right after "pollinations".
   function imageProviderOrder(cfg){
-    const known=["cloudflare","pollinations","pollinations-free","huggingface","together","openrouter","fal","replicate","stability","openai"];
+    const known=["cloudflare","pollinations","pollinations-free","huggingface","together","openrouter","fal","replicate","stability","openai","gemini","xai"];
     const configured=String(cfg.imageProviderOrder||"").split(",").map(x=>x.trim().toLowerCase()).filter(x=>known.includes(x));
     if(!configured.includes("pollinations-free")&&configured.includes("pollinations"))configured.splice(configured.indexOf("pollinations")+1,0,"pollinations-free");
     const base=[...new Set([...configured,...known])];
     const mode=String(cfg.imageProviderMode||"auto");
-    if(mode==="fast")return ["cloudflare","pollinations","pollinations-free","openrouter","fal","huggingface","together","replicate","stability","openai"];
-    if(mode==="quality")return ["openai","openrouter","stability","fal","cloudflare","huggingface","together","replicate","pollinations","pollinations-free"];
+    if(mode==="fast")return ["cloudflare","pollinations","pollinations-free","openrouter","fal","huggingface","together","replicate","stability","gemini","xai","openai"];
+    if(mode==="quality")return ["openai","gemini","xai","openrouter","stability","fal","cloudflare","huggingface","together","replicate","pollinations","pollinations-free"];
     return base;
   }
 
@@ -1744,6 +1990,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       huggingface:{label:"Hugging Face",configured:!!String(cfg.hfToken||"").trim(),paidRisk:true,run:()=>directHuggingFaceImage(cfg,prompt,size)},
       together:{label:"Together AI",configured:!!String(cfg.togetherApiKey||"").trim(),paidRisk:true,run:()=>directTogetherImage(cfg,prompt,size)},
       openai:{label:"OpenAI",configured:!!String(cfg.openAiApiKey||"").trim(),paidRisk:true,run:()=>directOpenAiImage(cfg,prompt,size)},
+      gemini:{label:"Google Gemini",configured:!!String(cfg.geminiApiKey||"").trim(),paidRisk:true,run:()=>directGeminiImage(cfg,prompt)},
+      xai:{label:"Grok (xAI)",configured:!!String(cfg.xaiApiKey||"").trim(),paidRisk:true,run:()=>directXaiImage(cfg,prompt)},
       openrouter:{label:"OpenRouter",configured:!!directOpenRouterKey(cfg),paidRisk:!openRouterFree,run:()=>directOpenRouterImage(cfg,prompt)},
       stability:{label:"Stability AI",configured:!!String(cfg.stabilityApiKey||"").trim(),paidRisk:true,run:()=>directStabilityImage(cfg,prompt)},
       fal:{label:"fal.ai",configured:!!String(cfg.falApiKey||"").trim(),paidRisk:true,run:()=>directFalImage(cfg,prompt)},
@@ -1965,12 +2213,65 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     throw new Error("Replicate nu a finalizat videoclipul în intervalul permis.");
   }
 
+  // OpenAI Sora: create the job, poll it, then download /content (the file comes with the API key, not as a public URL).
+  async function directOpenAiVideo(cfg,prompt,duration,aspectRatio){
+    const key=String(cfg.openAiApiKey||"").trim();if(!key)return null;
+    const model=String(cfg.openAiVideoModel||"sora-2").trim().replace(/^openai\//i,"");
+    const seconds=[4,8,12].sort((a,b)=>Math.abs(a-Number(duration||4))-Math.abs(b-Number(duration||4)))[0];
+    const size=String(aspectRatio)==="9:16"?"720x1280":"1280x720";
+    const headers={"Content-Type":"application/json",Authorization:`Bearer ${key}`};
+    const submit=await fetch("https://api.openai.com/v1/videos",{method:"POST",headers,body:JSON.stringify({model,prompt:String(prompt).slice(0,4000),seconds:String(seconds),size}),signal:mediaSignal(60000)});
+    const text=await submit.text();let job={};try{job=JSON.parse(text)}catch{}
+    if(!submit.ok)throw new Error("HTTP "+submit.status+": "+text.slice(0,700));
+    const id=String(job?.id||"").trim();if(!id)throw new Error("OpenAI nu a returnat ID-ul videoclipului.");
+    const deadline=Date.now()+10*60*1000;
+    while(Date.now()<deadline){
+      const status=String(job?.status||"").toLowerCase();
+      if(status==="completed"){
+        const file=await providerFetch("https://api.openai.com/v1/videos/"+encodeURIComponent(id)+"/content",{headers:{Authorization:`Bearer ${key}`},signal:mediaSignal(180000)},["api.openai.com"]);
+        const resolved=await fetchBinaryOrCandidate(file,"video");
+        return {...resolved,model:`openai/${model}`,provider:"openai-video-direct"};
+      }
+      if(["failed","cancelled","canceled","expired"].includes(status))throw new Error("OpenAI Sora: "+String(job?.error?.message||status));
+      await mediaSleep(5000);
+      const r=await fetch("https://api.openai.com/v1/videos/"+encodeURIComponent(id),{headers:{Authorization:`Bearer ${key}`},signal:mediaSignal(20000)});
+      const st=await r.text();try{job=JSON.parse(st)}catch{job={status:"unknown"}}
+      if(!r.ok)throw new Error("OpenAI Sora status HTTP "+r.status+": "+st.slice(0,500));
+    }
+    throw new Error("OpenAI Sora nu a finalizat videoclipul în intervalul permis.");
+  }
+  // Grok Imagine Video (xAI): start with /v1/videos/generations, poll /v1/videos/{request_id} until "done".
+  async function directXaiVideo(cfg,prompt,duration,aspectRatio){
+    const key=String(cfg.xaiApiKey||"").trim();if(!key)return null;
+    const model=String(cfg.xaiVideoModel||"grok-imagine-video").trim().replace(/^(xai|x-ai)\//i,"");
+    const headers={"Content-Type":"application/json",Authorization:`Bearer ${key}`};
+    const submit=await fetch("https://api.x.ai/v1/videos/generations",{method:"POST",headers,body:JSON.stringify({model,prompt:String(prompt).slice(0,4000),duration:Math.max(1,Math.min(15,Number(duration||5))),aspect_ratio:String(aspectRatio||"16:9")}),signal:mediaSignal(60000)});
+    const text=await submit.text();let job={};try{job=JSON.parse(text)}catch{}
+    if(!submit.ok)throw new Error("HTTP "+submit.status+": "+text.slice(0,700));
+    const id=String(job?.request_id||job?.id||"").trim();if(!id)throw new Error("xAI nu a returnat ID-ul cererii video.");
+    const deadline=Date.now()+10*60*1000;let state=job;
+    while(Date.now()<deadline){
+      const status=String(state?.status||"").toLowerCase();
+      const url=state?.video?.url||state?.url||state?.data?.[0]?.url||"";
+      if(url&&(status==="done"||status==="completed"||!status)){
+        const resolved=await resolveGeneratedMedia({type:"url",value:String(url)},"video");
+        return {...resolved,model:`xai/${model}`,provider:"xai-video-direct"};
+      }
+      if(["failed","expired","error","cancelled","canceled"].includes(status))throw new Error("Grok Imagine: "+String(state?.error?.message||state?.error||status));
+      await mediaSleep(5000);
+      const r=await fetch("https://api.x.ai/v1/videos/"+encodeURIComponent(id),{headers:{Authorization:`Bearer ${key}`},signal:mediaSignal(20000)});
+      const st=await r.text();try{state=JSON.parse(st)}catch{state={status:"unknown"}}
+      if(!r.ok)throw new Error("Grok Imagine status HTTP "+r.status+": "+st.slice(0,500));
+    }
+    throw new Error("Grok Imagine nu a finalizat videoclipul în intervalul permis.");
+  }
+
   function videoProviderOrder(cfg){
-    const known=["pollinations","openrouter","gemini","fal","replicate"];
+    const known=["pollinations","openrouter","gemini","fal","replicate","openai","xai"];
     const configured=String(cfg.videoProviderOrder||known.join(",")).split(",").map(x=>x.trim().toLowerCase()).filter(x=>known.includes(x));
     const base=[...new Set([...configured,...known])];
-    if(cfg.videoMode==="quality")return ["gemini","openrouter","fal","replicate","pollinations"];
-    if(cfg.videoMode==="fast")return ["pollinations","openrouter","fal","replicate","gemini"];
+    if(cfg.videoMode==="quality")return ["gemini","openai","xai","openrouter","fal","replicate","pollinations"];
+    if(cfg.videoMode==="fast")return ["pollinations","openrouter","xai","fal","replicate","gemini","openai"];
     return base;
   }
   async function directVideoAttempts(cfg,prompt,duration,aspectRatio){
@@ -1983,7 +2284,9 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       openrouter:{label:"OpenRouter",configured:!!directOpenRouterKey(cfg),paidRisk:!orFree,run:()=>directOpenRouterVideo(cfg,prompt,duration,aspectRatio)},
       gemini:{label:"Gemini Veo",configured:!!String(cfg.geminiApiKey||"").trim(),paidRisk:true,run:()=>directGeminiVideo(cfg,prompt,duration,aspectRatio)},
       fal:{label:"fal.ai",configured:!!String(cfg.falApiKey||"").trim(),paidRisk:true,run:()=>directFalVideo(cfg,prompt,duration,aspectRatio)},
-      replicate:{label:"Replicate",configured:!!String(cfg.replicateApiToken||"").trim(),paidRisk:true,run:()=>directReplicateVideo(cfg,prompt,duration,aspectRatio)}
+      replicate:{label:"Replicate",configured:!!String(cfg.replicateApiToken||"").trim(),paidRisk:true,run:()=>directReplicateVideo(cfg,prompt,duration,aspectRatio)},
+      openai:{label:"OpenAI Sora",configured:!!String(cfg.openAiApiKey||"").trim(),paidRisk:true,run:()=>directOpenAiVideo(cfg,prompt,duration,aspectRatio)},
+      xai:{label:"Grok Imagine (xAI)",configured:!!String(cfg.xaiApiKey||"").trim(),paidRisk:true,run:()=>directXaiVideo(cfg,prompt,duration,aspectRatio)}
     };
     return videoProviderOrder(cfg).map(id=>({id,...defs[id]})).filter(x=>x.configured&&(!strictFree||!x.paidRisk));
   }
@@ -2007,7 +2310,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       : /video|runway|veo|kling|sora|seedance|hailuo|wan|ltx|minimax|hunyuan/.test(meta));
     if(!matches)return null;
     const first=id.toLowerCase().split("/")[0];
-    const alreadyScoped=["openai","anthropic","google","gemini","cerebras","groq","cloudflare","openrouter","@cf"].includes(first);
+    const alreadyScoped=["openai","anthropic","google","gemini","cerebras","groq","cloudflare","openrouter","@cf","xai"].includes(first);
     const policyId=provider&&!alreadyScoped?`${provider}/${id}`:id;
     return {entry,id,provider,policyId};
   }
@@ -2031,6 +2334,43 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }catch{}
     const seen=new Set();
     return rows.filter(row=>{const k=row.id.toLowerCase();if(seen.has(k))return false;seen.add(k);return true});
+  }
+  // Poză / Video stay on the model that worked for this account: it is tried first next time (other models only if it
+  // fails). Changing the image / video settings (model, providers, order, cost) starts over from those settings.
+  const mediaPrefsFile=path.join(dataDir,"media-prefs.json");
+  let mediaPrefs={};try{mediaPrefs=JSON.parse(fs.readFileSync(mediaPrefsFile,"utf8"))||{}}catch{}
+  const configuredMedia=(cfg,kind)=>JSON.stringify(kind==="image"
+    ?[cfg.imageModel,cfg.imageProviderOrder,cfg.imageProviderMode,cfg.imageCostPolicy]
+    :[cfg.videoModel,cfg.videoProviderOrder,cfg.videoMode,cfg.videoCostPolicy]).replace(/null/g,'""');
+  function mediaPref(req,cfg,kind){
+    const p=mediaPrefs[req.user?.id]?.[kind];
+    return p&&p.configured===configuredMedia(cfg,kind)?String(p.id||""):"";
+  }
+  function rememberMedia(req,cfg,kind,id){
+    const uid=req.user?.id;if(!uid||!id)return;
+    const entry={id:String(id).slice(0,200),configured:configuredMedia(cfg,kind)};
+    const cur=mediaPrefs[uid]?.[kind];
+    if(cur&&cur.id===entry.id&&cur.configured===entry.configured)return;
+    mediaPrefs={...mediaPrefs,[uid]:{...(mediaPrefs[uid]||{}),[kind]:entry}};
+    try{fs.writeFileSync(mediaPrefsFile,JSON.stringify(mediaPrefs))}catch{}
+  }
+  // Images through your ChatGPT subscription (OmniRoute's Codex / ChatGPT Web connections) or Gemini Web, and the
+  // free web video providers, come before the free no-key providers and the paid APIs.
+  function subscriptionMedia(kind,id){
+    const v=String(id||"");
+    return kind==="image"?/^(codex|cx|chatgpt-web|cgpt-web|gemini-web|gweb)\//i.test(v):/^(veoaifree-web|veo-free)\//i.test(v);
+  }
+  // The media models to try, in the given order, each once: a name is an OmniRoute model (when discovery found it) or
+  // the id of a direct-API attempt; an attempt object is a direct API.
+  function mediaSteps(found,direct,order){
+    const steps=[],seen=new Set();
+    for(const item of order){
+      if(!item)continue;
+      if(typeof item==="object"){if(!seen.has("d:"+item.id)){seen.add("d:"+item.id);steps.push({key:item.id,direct:item})}continue;}
+      if(found.includes(item)&&!seen.has("o:"+item)){seen.add("o:"+item);steps.push({key:"omniroute:"+item,omni:item})}
+      for(const a of direct)if(a.id===item&&!seen.has("d:"+a.id)){seen.add("d:"+a.id);steps.push({key:a.id,direct:a})}
+    }
+    return steps;
   }
   function localPaidHint(row){
     const p=String(row?.provider||inferProvider(row?.policyId||row?.id)||"").toLowerCase();
@@ -2073,6 +2413,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       localRows.sort((a,b)=>{
         const configuredBoost=Number(b.id===configured)-Number(a.id===configured);
         if(configuredBoost)return configuredBoost;
+        const subscriptionBoost=Number(subscriptionMedia(kind,b.id))-Number(subscriptionMedia(kind,a.id));
+        if(subscriptionBoost)return subscriptionBoost;
         return Number(localPaidHint(a))-Number(localPaidHint(b));
       });
       if(strictFree&&!localRows.length)throw policyFailure("Protecția «Doar gratuit» este activă și OmniRoute nu are un model de imagine gratuit identificat.",403);
@@ -2090,6 +2432,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       .sort((a,b)=>{
         const ac=Number(a.row.id===configured),bc=Number(b.row.id===configured);
         if(isOwner&&ac!==bc)return bc-ac;
+        const as=Number(subscriptionMedia(kind,a.row.id)),bs=Number(subscriptionMedia(kind,b.row.id));
+        if(as!==bs)return bs-as;
         const ap=Number(a.decision?.paidRequired===true||localPaidHint(a.row));
         const bp=Number(b.decision?.paidRequired===true||localPaidHint(b.row));
         if(ap!==bp)return ap-bp;
@@ -2136,7 +2480,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           if(signal.aborted)return true;
           try{
             const resolved=await attempt.run();
-            if(resolved?.bytes?.length){noteProviderResult("image",attempt.id,"");if(await done(resolved,{model:resolved.model||attempt.label,provider:resolved.provider||attempt.id}))return true;}
+            if(resolved?.bytes?.length){noteProviderResult("image",attempt.id,"");rememberMedia(req,cfg,"image",attempt.id);if(await done(resolved,{model:resolved.model||attempt.label,provider:resolved.provider||attempt.id}))return true;}
           }catch(e){if(signal.aborted)return true;const msg=roError(e);noteProviderResult("image",attempt.id,msg);errors.push(attempt.label+": "+msg)}
         }
         return false;
@@ -2144,16 +2488,17 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const direct=directApisAllowed(req)&&!explicitModel?await directImageAttempts(cfg,prompt,size):[];
       // An image model chosen in Settings is tried before the no-key Pollinations fallback.
       const late=String(cfg.imageModel||"").trim()?direct.filter(a=>a.id==="pollinations-free"):[];
-      if(await runDirect(direct.filter(a=>!late.includes(a))))return;
-
-      let models=[];
-      try{models=(await discoverPermittedMediaModels(req,cfg,"image",explicitModel)).slice(0,4)}
+      if(explicitModel)requirePersonalAccess(req,explicitModel);
+      let found=[];
+      try{found=await discoverPermittedMediaModels(req,cfg,"image",explicitModel)}
       catch(e){if(e.status===403&&explicitModel)throw e;errors.push("OmniRoute: "+(e.status?e.message:roError(e)))}
-      if(models.length){
-        const imageUrl=String(cfg.baseUrl).replace(/\/+$/,"")+"/images/generations";
-        const imageHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:"Bearer "+cfg.apiKey}:{})};
-        for(const model of byCooldown("image",models,m=>"omniroute:"+m)){
-          if(signal.aborted)return;
+      if(!personalAllowed(req.user,req.cloudUser))found=found.filter(m=>!PERSONAL_PROVIDERS.test(m));
+      const models=found.slice(0,4);
+      const imageUrl=String(cfg.baseUrl).replace(/\/+$/,"")+"/images/generations";
+      const imageHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:"Bearer "+cfg.apiKey}:{})};
+      const runOmni=async(list)=>{
+        for(const model of byCooldown("image",list,m=>"omniroute:"+m)){
+          if(signal.aborted)return true;
           try{
             let upstream=await fetch(imageUrl,{method:"POST",headers:imageHeaders,body:JSON.stringify({model,prompt,size,n:1,response_format:"b64_json"}),signal:mediaSignal(180000)});
             if(!upstream.ok&&[400,404,405,409,422].includes(upstream.status)){
@@ -2167,11 +2512,22 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
             if(ctype.startsWith("image/")){const bytes=await readCapped(upstream,"image");resolved={bytes,mime:inferMediaMime(bytes,ctype,"image")};}
             else{const body=JSON.parse((await readCapped(upstream,"image")).toString("utf8")),candidate=findMediaCandidate(body,"image");resolved=await resolveGeneratedMedia(candidate,"image");}
             if(!resolved.bytes.length){errors.push(model+": imagine goală");continue}
-            if(await done(resolved,{model,provider:"omniroute"}))return;
-          }catch(e){if(signal.aborted)return;errors.push(model+": "+roError(e))}
+            rememberMedia(req,cfg,"image",model);
+            if(await done(resolved,{model,provider:"omniroute"}))return true;
+          }catch(e){if(signal.aborted)return true;errors.push(model+": "+roError(e))}
         }
+        return false;
+      };
+      // Order: the image model chosen in Settings, the model bound to this account, the subscription models (ChatGPT /
+      // Gemini through OmniRoute), the direct APIs, OmniRoute's other models, the no-key fallback. A provider out of
+      // credits goes to the end of the whole list (it is still tried, last).
+      const steps=mediaSteps(found,direct,[
+        explicitModel?"":String(cfg.imageModel||"").trim(),explicitModel?"":mediaPref(req,cfg,"image"),
+        ...models.filter(m=>subscriptionMedia("image",m)),...direct.filter(a=>!late.includes(a)),...models,...late
+      ]);
+      for(const step of byCooldown("image",steps,x=>x.key)){
+        if(step.omni?await runOmni([step.omni]):await runDirect([step.direct]))return;
       }
-      if(await runDirect(late))return;
 
       const configuredProviders=[
         cfg.cloudflareAccountId&&cfg.cloudflareApiToken&&"Cloudflare",cfg.pollinationsApiKey&&"Pollinations",cfg.hfToken&&"Hugging Face",cfg.togetherApiKey&&"Together AI",
@@ -2198,45 +2554,51 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const strictFree=directApisAllowed(req)&&(cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free");
       const done=async(resolved,meta)=>{if(signal.aborted)return true;res.json({data:await saveGeneratedMedia(req,{...resolved,kind:"video",prompt,...meta})});return true;};
 
-      let tried=0;
-      if(directApisAllowed(req)&&!explicitModel){
-        const attempts=await directVideoAttempts(cfg,prompt,duration,aspectRatio);
-        tried+=attempts.length;
-        for(const attempt of byCooldown("video",attempts)){
-          if(signal.aborted)return;
+      if(explicitModel)requirePersonalAccess(req,explicitModel);
+      const attempts=directApisAllowed(req)&&!explicitModel?await directVideoAttempts(cfg,prompt,duration,aspectRatio):[];
+      // «Doar gratuit» keeps the paid OmniRoute video models out, but not the free web ones (veoaifree-web: VEO 3.1,
+      // Seedance), which OmniRoute serves without a key or cost.
+      let found=[];
+      try{found=await discoverPermittedMediaModels(req,cfg,"video",explicitModel)}
+      catch(e){if(e.status===403&&explicitModel)throw e;errors.push("OmniRoute: "+(e.status?e.message:roError(e)))}
+      if(strictFree)found=found.filter(m=>subscriptionMedia("video",m));
+      const models=found.slice(0,3);
+      // Order: the video model chosen in Settings, the model bound to this account, the free web models, the direct
+      // APIs, OmniRoute's other models; a provider out of credits goes to the end of the whole list.
+      const steps=mediaSteps(found,attempts,[
+        explicitModel?"":String(cfg.videoModel||"").trim(),explicitModel?"":mediaPref(req,cfg,"video"),
+        ...models.filter(m=>subscriptionMedia("video",m)),...attempts,...models
+      ]);
+      const tried=steps.length;
+      const videoUrl=String(cfg.baseUrl).replace(/\/+$/,"")+"/videos/generations";
+      const videoHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:"Bearer "+cfg.apiKey}:{})};
+      for(const step of byCooldown("video",steps,x=>x.key)){
+        if(signal.aborted)return;
+        if(step.direct){
+          const attempt=step.direct;
           try{
             const resolved=await attempt.run();
-            if(resolved?.bytes?.length){noteProviderResult("video",attempt.id,"");if(await done(resolved,{model:resolved.model||attempt.label,provider:resolved.provider||attempt.id}))return;}
+            if(resolved?.bytes?.length){noteProviderResult("video",attempt.id,"");rememberMedia(req,cfg,"video",attempt.id);if(await done(resolved,{model:resolved.model||attempt.label,provider:resolved.provider||attempt.id}))return;}
           }catch(e){if(signal.aborted)return;const msg=roError(e);noteProviderResult("video",attempt.id,msg);errors.push(attempt.label+": "+msg)}
+          continue;
         }
-      }
-
-      if(!strictFree){
-        let models=[];
-        try{models=(await discoverPermittedMediaModels(req,cfg,"video",explicitModel)).slice(0,3)}
-        catch(e){if(e.status===403&&explicitModel)throw e;errors.push("OmniRoute: "+(e.status?e.message:roError(e)))}
-        tried+=models.length;
-        if(models.length){
-          const videoUrl=String(cfg.baseUrl).replace(/\/+$/,"")+"/videos/generations";
-          const videoHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:"Bearer "+cfg.apiKey}:{})};
-          for(const model of byCooldown("video",models,m=>"omniroute:"+m)){
-            if(signal.aborted)return;
-            try{
-              let upstream=await fetch(videoUrl,{method:"POST",headers:videoHeaders,body:JSON.stringify({model,prompt,duration,aspect_ratio:aspectRatio}),signal:mediaSignal(360000)});
-              if(!upstream.ok&&[400,404,405,409,422].includes(upstream.status)){
-                await cancelBody(upstream);
-                upstream=await fetch(videoUrl,{method:"POST",headers:videoHeaders,body:JSON.stringify({model,prompt}),signal:mediaSignal(360000)});
-              }
-              const ctype=upstream.headers.get("content-type")||"";
-              if(!upstream.ok){const msg="HTTP "+upstream.status+" "+(await upstream.text()).slice(0,350);noteProviderResult("video","omniroute:"+model,msg);errors.push(model+": "+msg);continue}
-              let resolved;
-              if(ctype.startsWith("video/")){const bytes=await readCapped(upstream,"video");resolved={bytes,mime:inferMediaMime(bytes,ctype,"video")};}
-              else{const body=JSON.parse((await readCapped(upstream,"image")).toString("utf8"));const candidate=await pollVideoResult(cfg,body);resolved=await resolveGeneratedMedia(candidate,"video");}
-              if(!resolved.bytes.length){errors.push(model+": video gol");continue}
-              if(await done(resolved,{model,provider:"omniroute"}))return;
-            }catch(e){if(signal.aborted)return;errors.push(model+": "+roError(e))}
+        const model=step.omni;
+        try{
+          let upstream=await fetch(videoUrl,{method:"POST",headers:videoHeaders,body:JSON.stringify({model,prompt,duration,aspect_ratio:aspectRatio}),signal:mediaSignal(360000)});
+          if(!upstream.ok&&[400,404,405,409,422].includes(upstream.status)){
+            await cancelBody(upstream);
+            upstream=await fetch(videoUrl,{method:"POST",headers:videoHeaders,body:JSON.stringify({model,prompt}),signal:mediaSignal(360000)});
           }
-        }
+          const ctype=upstream.headers.get("content-type")||"";
+          if(!upstream.ok){const msg="HTTP "+upstream.status+" "+(await upstream.text()).slice(0,350);noteProviderResult("video","omniroute:"+model,msg);errors.push(model+": "+msg);continue}
+          let resolved;
+          if(ctype.startsWith("video/")){const bytes=await readCapped(upstream,"video");resolved={bytes,mime:inferMediaMime(bytes,ctype,"video")};}
+          else{const body=JSON.parse((await readCapped(upstream,"image")).toString("utf8"));const candidate=await pollVideoResult(cfg,body);resolved=await resolveGeneratedMedia(candidate,"video");}
+          if(!resolved.bytes.length){errors.push(model+": video gol");continue}
+          noteProviderResult("video","omniroute:"+model,"");
+          rememberMedia(req,cfg,"video",model);
+          if(await done(resolved,{model,provider:"omniroute"}))return;
+        }catch(e){if(signal.aborted)return;errors.push(model+": "+roError(e))}
       }
 
       if(!tried&&directApisAllowed(req))throw policyFailure(VIDEO_NEEDS_PROVIDER,400);
@@ -2246,7 +2608,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const hint=!configuredProviders.length
         ?" Nu există nicio cheie video configurată în Setări > Video."
         :strictFree
-          ?" Protecția «Doar gratuit» este activă. AI Stoica nu pornește niciun job dacă nu poate confirma costul $0 din catalogul providerului."
+          ?" Protecția «Doar gratuit» este activă: AI Stoica pornește doar modelele web gratuite din OmniRoute (VEO 3.1, Seedance) și joburile al căror cost $0 îl poate confirma din catalogul providerului."
           :"";
       throw policyFailure(("Generarea videoclipului nu a produs un fișier MP4 real."+hint+" "+errors.slice(0,10).join(" | ")).trim(),502);
     }catch(e){if(!signal.aborted)sendError(res,e)}
@@ -2692,6 +3054,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const latestText=textFromContent(latest?.content),query=typedText(latest?.content)||latestText.slice(0,4000);
     const cfg=getOmniConfig(),system=[];
     system.push("Când utilizatorul cere un fișier descărcabil (PDF, DOCX/Word, PPTX/PowerPoint, XLSX/Excel, CSV, JSON, Markdown, TXT, HTML, XML, RTF, ZIP, notebook sau fișier de cod), redactează direct conținutul final care trebuie introdus în acel fișier. Pentru XLSX/CSV folosește preferabil un tabel Markdown cu antete; pentru JSON produce JSON valid; pentru HTML/XML/SVG și cod produce conținut valid, fără explicații în afara lui. Nu afișa pseudo-comenzi de tool: aplicația creează fișierul real și îl atașează separat.");
+    system.push("Formule matematice: scrie-le în LaTeX, $…$ în text și $$…$$ pe un rând separat (de exemplu $$x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}$$), inclusiv în conținutul unui fișier Word. AI Stoica le afișează ca formule în chat și le transformă în ecuații Microsoft Word (Inserare → Ecuație), editabile. Nu folosi $ pentru sume de bani lângă cifre (scrie «10 USD» sau «10 lei»).");
     system.push("Capabilități AI Stoica: aplicația are memorie persistentă, poate primi context din alte conversații ale aceluiași Proiect, poate căuta internetul în timp real, poate căuta fragmente relevante într-un repository GitHub configurat, iar Owner-ul poate rula cod JavaScript sau Python doar prin butonul explicit de rulare și poate lucra cu serverul SSH configurat. Nu afirma că aceste capabilități nu există atunci când contextul lor este prezent. Nu pretinde că un cod a fost executat dacă nu ai primit explicit un rezultat de rulare. Pentru proiecte mari, lucrează modular și folosește contextul relevant recuperat, fără a cere utilizatorului să copieze manual întreaga bază de cod.");
     system.push("Fiabilitate: pentru informații actuale despre biblioteci, API-uri, modele, versiuni, prețuri sau servicii folosește prioritar contextul WEB LIVE dacă este disponibil și include la final o secțiune scurtă «Surse» cu linkurile folosite. Pentru cod, separă clar ce ai analizat de ce a fost efectiv rulat/testat. Pentru medical, juridic și financiar poți analiza și cita surse, dar păstrează recomandarea de validare umană atunci când decizia are consecințe importante.");
     const assistant=db.assistants.find(a=>a.id===assistantId&&a.userId===userId);if(assistant?.systemPrompt)system.push(assistant.systemPrompt);
@@ -2730,8 +3093,9 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       webAllowed:hasPermission(req,"web_search"),deepAllowed:hasPermission(req,"deep_research"),githubAllowed:hasPermission(req,"github_access"),pluginsAllowed:hasPermission(req,"plugins"),
       owner:ownerRequest(req),responseMode:String(req.body?.responseMode||"rapid")
     });
-    const requestedModel=(typeof req.body?.model==="string"?req.body.model.trim().slice(0,200):"")||String(cfg.model||"").trim();
-    return {cfg,requestedModel,messages};
+    const sent=typeof req.body?.model==="string"?req.body.model.trim().slice(0,200):"";
+    const requestedModel=sent||String(cfg.model||"").trim();
+    return {cfg,requestedModel,messages,chosen:!!sent};
   }
 
 
@@ -2760,7 +3124,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   async function directChatCandidates(cfg,requestedModel=""){
     if(cfg.directChatEnabled===false)return [];
     const strictFree=cfg.directChatCostPolicy!=="allow_paid";
-    const known=["cerebras","groq","gemini","mistral","nvidia","github","openrouter","cloudflare","cohere","huggingface","openai"];
+    const known=["cerebras","groq","gemini","mistral","nvidia","github","openrouter","cloudflare","cohere","huggingface","openai","xai"];
     const configured=String(cfg.directChatProviderOrder||known.join(",")).split(",").map(x=>x.trim().toLowerCase()).filter(x=>known.includes(x));
     const baseOrder=[...new Set([...configured,...known])];
     const requested=String(requestedModel||"").trim();
@@ -2795,9 +3159,11 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       cloudflare:()=>push("cloudflare",cfg.cloudflareAccountId?"https://api.cloudflare.com/client/v4/accounts/"+encodeURIComponent(String(cfg.cloudflareAccountId).trim())+"/ai/v1":"",String(cfg.cloudflareApiToken||"").trim(),csvValues(cfg.cloudflareChatModel,MODEL_DEFAULTS.cloudflareChatModel),{label:"Cloudflare Workers AI"}),
       cohere:()=>push("cohere","https://api.cohere.ai/compatibility/v1",String(cfg.cohereApiKey||"").trim(),csvValues(cfg.cohereModel,MODEL_DEFAULTS.cohereModel),{label:"Cohere"}),
       huggingface:()=>push("huggingface","https://router.huggingface.co/v1",String(cfg.hfToken||"").trim(),csvValues(cfg.huggingFaceChatModel,MODEL_DEFAULTS.huggingFaceChatModel),{label:"Hugging Face"}),
-      openai:()=>push("openai","https://api.openai.com/v1",String(cfg.openAiApiKey||"").trim(),csvValues(cfg.openAiChatModels,MODEL_DEFAULTS.openAiChatModels),{label:"OpenAI",paidRisk:true})
+      openai:()=>push("openai","https://api.openai.com/v1",String(cfg.openAiApiKey||"").trim(),csvValues(cfg.openAiChatModels,MODEL_DEFAULTS.openAiChatModels),{label:"OpenAI",paidRisk:true}),
+      xai:()=>push("xai","https://api.x.ai/v1",String(cfg.xaiApiKey||"").trim(),csvValues(cfg.xaiModels,MODEL_DEFAULTS.xaiModels),{label:"Grok (xAI)",paidRisk:true})
     };
-    for(const id of order)defs[id]?.();
+    const blocked=blockedProviders(cfg);
+    for(const id of order)if(!blocked.has(id))defs[id]?.();
     return result;
   }
 
@@ -2832,9 +3198,28 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     return r;
   }
 
+  // A model you chose is the one that answers. If it fails, the error says so instead of another provider answering
+  // in its place; the direct APIs step in for a direct-API model you chose (only that model), when no model was
+  // chosen, or when «Rezervă automată» is turned on.
+  const fallbackOn=(cfg,route)=>route?.automatic===true||cfg.chatFallbackOnFailure===true;
+  function directFallbackAllowed(req,cfg,route){
+    return directApisAllowed(req)&&cfg.directChatEnabled!==false&&(route?.direct===true||fallbackOn(cfg,route));
+  }
+  // The direct model to keep to, or "" when any configured direct API may answer.
+  const directOnly=(cfg,route)=>route?.direct===true&&!fallbackOn(cfg,route)?route.selectedModel:"";
+  const directReason=(route)=>route?.direct?(route.reasons||[]):["rezervă automată: modelul ales nu a răspuns, a răspuns un API direct"];
+  function chosenModelFailure(req,cfg,route,errors){
+    if(route?.automatic)return policyFailure("Niciun model selectat de AI Stoica nu a putut răspunde. "+errors.slice(0,14).join(" | "),502);
+    // «Rezervă automată» is in the Windows Settings for the Owner; on the server it is AI_STOICA_CHAT_FALLBACK.
+    const hint=!directApisAllowed(req)||cfg.directChatEnabled===false?" Alege alt model din listă."
+      :webDir?" Alege alt model din listă (Owner-ul poate porni rezerva automată pe server: AI_STOICA_CHAT_FALLBACK=true).":" Alege alt model din listă sau pornește «Rezervă automată» în Setări → API-uri AI.";
+    return policyFailure(`Modelul ales «${route?.selectedModel||"?"}» nu a răspuns, iar AI Stoica nu trece singur la alt model.${hint} Motiv: `+errors.slice(0,6).join(" | "),502);
+  }
   // After 401/403/429 the remaining models of the same provider are skipped (same key, same limit).
-  async function directChatFallback(cfg,messages,requestedModel,stream,timer=chatTimer(stream,null)){
-    const candidates=byCooldown("chat",await directChatCandidates(cfg,requestedModel),c=>c.provider),errors=[],skip=new Set();
+  async function directChatFallback(cfg,messages,requestedModel,stream,timer=chatTimer(stream,null),only=""){
+    let list=await directChatCandidates(cfg,only||requestedModel);
+    if(only)list=list.filter(c=>`${c.provider}/${c.model}`.toLowerCase()===only.toLowerCase());
+    const candidates=byCooldown("chat",list,c=>c.provider),errors=[],skip=new Set();
     for(const candidate of candidates){
       if(timer.cancelled())break;
       if(skip.has(candidate.provider))continue;
@@ -2909,8 +3294,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.post("/api/chat", auth, async (req,res) => {
     const clientSignal=clientAbortSignal(res);
     try{
-      const {cfg,requestedModel,messages}=await prepareChat(req);
-      const route=await resolveChatRoute(req,messages,requestedModel);
+      const {cfg,requestedModel,messages,chosen}=await prepareChat(req);
+      const route=await resolveChatRoute(req,messages,requestedModel,{chosen});
       const timer=chatTimer(false,clientSignal),errors=[];
       for(const candidate of route.candidates){
         if(clientSignal.aborted)return;
@@ -2923,19 +3308,19 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           return res.status(200).type(r.headers.get("content-type")||"application/json").send(withCleanQuestions(body));
         }catch(e){if(clientSignal.aborted)return;errors.push(`${candidate.id}: ${roError(e)}`)}
       }
-      if(directApisAllowed(req)&&cfg.directChatEnabled!==false){
-        const direct=await directChatFallback(cfg,messages,requestedModel,false,timer);
+      if(directFallbackAllowed(req,cfg,route)){
+        const direct=await directChatFallback(cfg,messages,requestedModel,false,timer,directOnly(cfg,route));
         errors.push(...direct.errors);
         if(direct.response){
           const body=await direct.response.text();
-          res.setHeader("X-AI-Stoica-Route","direct-fallback");
+          res.setHeader("X-AI-Stoica-Route",route.direct?"direct":"direct-fallback");
           res.setHeader("X-AI-Stoica-Model",headerSafe(direct.candidate.model));
           res.setHeader("X-AI-Stoica-Provider",direct.candidate.provider);
           return res.status(200).type(direct.response.headers.get("content-type")||"application/json").send(withCleanQuestions(body));
         }
       }
       if(clientSignal.aborted)return;
-      throw policyFailure("Niciun model selectat de AI Stoica nu a putut răspunde. "+errors.slice(0,14).join(" | "),502);
+      throw chosenModelFailure(req,cfg,route,errors);
     }catch(e){if(!clientSignal.aborted)sendError(res,e)}
   });
   app.post("/api/chat/stream", auth, async (req,res) => {
@@ -2944,10 +3329,10 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     res.on("close",()=>{if(!res.writableFinished)clientGone.abort()});
     let prepared;
     try{prepared=await prepareChat(req)}catch(e){return sendError(res,e,400)}
-    const {cfg,requestedModel,messages}=prepared;
+    const {cfg,requestedModel,messages,chosen}=prepared;
     const timer=chatTimer(true,clientGone.signal);
     try{
-      const route=await resolveChatRoute(req,messages,requestedModel);
+      const route=await resolveChatRoute(req,messages,requestedModel,{chosen});
       const errors=[];let upstream=null,usedModel="",directCandidate=null;
       for(const candidate of route.candidates){
         if(clientGone.signal.aborted)return;
@@ -2957,25 +3342,26 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           upstream=r;usedModel=candidate.id;break;
         }catch(e){if(clientGone.signal.aborted)return;errors.push(`${candidate.id}: ${timer.signal.aborted?timeoutMessage(timer):roError(e)}`)}
       }
-      if(!upstream&&directApisAllowed(req)&&cfg.directChatEnabled!==false&&!timer.signal.aborted){
+      if(!upstream&&directFallbackAllowed(req,cfg,route)&&!timer.signal.aborted){
         if(clientGone.signal.aborted)return;
-        const direct=await directChatFallback(cfg,messages,requestedModel,true,timer);
+        const direct=await directChatFallback(cfg,messages,requestedModel,true,timer,directOnly(cfg,route));
         errors.push(...direct.errors);
         if(direct.response){upstream=direct.response;usedModel=direct.candidate.model;directCandidate=direct.candidate}
       }
       if(clientGone.signal.aborted)return;
-      if(!upstream)throw policyFailure("Niciun model selectat de AI Stoica nu a putut răspunde. "+errors.slice(0,14).join(" | "),502);
+      if(!upstream)throw chosenModelFailure(req,cfg,route,errors);
       timer.touch();
       const ctype=upstream.headers.get("content-type")||"";
       res.status(200);
       res.setHeader("Content-Type","text/event-stream; charset=utf-8");
       res.setHeader("Cache-Control","no-cache, no-transform");
       res.setHeader("Connection","keep-alive");
-      res.setHeader("X-AI-Stoica-Route",directCandidate?"direct-fallback":route.task);
+      const routeTask=directCandidate?(route.direct?"direct":"direct-fallback"):route.task;
+      res.setHeader("X-AI-Stoica-Route",routeTask);
       res.setHeader("X-AI-Stoica-Model",headerSafe(usedModel));
       if(directCandidate)res.setHeader("X-AI-Stoica-Provider",directCandidate.provider);
       const usedCandidate=directCandidate||route.candidates.find(x=>x.id===usedModel)||{};
-      res.write(`data: ${JSON.stringify({ai_stoica_route:{task:directCandidate?"direct-fallback":route.task,model:usedModel,provider:usedCandidate.provider||inferProvider(usedModel),reasons:directCandidate?["fallback API direct după indisponibilitatea OmniRoute"]:(route.reasons||[])}})}\n\n`);
+      res.write(`data: ${JSON.stringify({ai_stoica_route:{task:routeTask,model:usedModel,provider:usedCandidate.provider||inferProvider(usedModel),reasons:directCandidate?directReason(route):(route.reasons||[])}})}\n\n`);
       if(!ctype.includes("text/event-stream")){const data=await upstream.json(),text=sanitizeQuestions(data?.choices?.[0]?.message?.content||"");res.write(`data: ${JSON.stringify({choices:[{delta:{content:text}}]})}\n\n`);res.write("data: [DONE]\n\n");return res.end();}
       const reader=upstream.body.getReader();
       while(true){
@@ -3007,8 +3393,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         errors.push(`${candidate.id}: răspuns gol`);
       }catch(e){if(signal?.aborted)throw e;errors.push(`${candidate.id}: ${roError(e)}`)}
     }
-    if(directApisAllowed(req)&&cfg.directChatEnabled!==false){
-      const direct=await directChatFallback(cfg,messages,requestedModel,false,timer);
+    if(directFallbackAllowed(req,cfg,route)){
+      const direct=await directChatFallback(cfg,messages,requestedModel,false,timer,directOnly(cfg,route));
       errors.push(...direct.errors);
       if(direct.response){const text=await textOf(direct.response);if(text.trim())return {text,model:`${direct.candidate.provider}/${direct.candidate.model}`};errors.push(`${direct.candidate.label}: răspuns gol`);}
     }
@@ -3152,24 +3538,31 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const cfg=getOmniConfig(),user=store.read().users.find(u=>u.id===item.userId);if(!user)throw new Error("Contul automatizării nu mai există.");
       const ctx=await automationContext(user,cloudToken,req);
       if(!hasPermission(ctx,"automations"))throw policyFailure(deniedMessage("automations"),403);
-      const selectedModel=await resolveModelAlias(cfg,String(item.model||cfg.model||"").trim());
+      const askedModel=String(item.model||cfg.model||"").trim();
+      const selectedModel=await resolveModelAlias(cfg,askedModel);
       if(!selectedModel)throw policyFailure("Automatizarea nu are un model AI valid. Selectează un model permis de Owner.",400);
+      if(PERSONAL_PROVIDERS.test(selectedModel)&&!personalAllowed(user,ctx.cloudUser))throw policyFailure(`Modelul «${selectedModel}» folosește abonamentul personal al Owner-ului și nu poate rula din alt cont.`,403);
+      // Same rule as chat: no model chosen for the automation (or "Ai principal" / "AI Stoica …") lets AI Stoica fall back.
+      const automaticModel=!String(item.model||"").trim()||selectedModel!==askedModel;
       await requireModelAccess(cloudToken,selectedModel);
       const isWatch=item.timingMode==="condition_watch";
       const taskPrompt=isWatch
         ? `${item.prompt}\n\nAceasta este o verificare condițională. Dacă nu există o schimbare relevantă sau condiția nu este îndeplinită, răspunde exact: AI_STOICA_NO_NOTIFICATION. Dacă este îndeplinită, răspunde numai cu informația utilă care trebuie notificată.`
         : item.prompt;
       const messages=await prepareMessages([{role:"user",content:taskPrompt}],null,item.userId,{webAllowed:hasPermission(ctx,"web_search"),deepAllowed:hasPermission(ctx,"deep_research"),githubAllowed:hasPermission(ctx,"github_access"),pluginsAllowed:hasPermission(ctx,"plugins"),owner:false});
-      // OmniRoute first; if it is not running or the model fails, the Owner's direct free APIs answer instead.
+      // Same rule as chat: a direct-API model goes to its API; any other model to OmniRoute, and when it fails the direct
+      // APIs answer only if no model was chosen or «Rezervă automată» is on.
       const errors=[];let data=null;
-      try{
+      const directAllowed=(roleFor(user,ctx.cloudUser)==="owner"||!cloudBase())&&cfg.directChatEnabled!==false;
+      const directModel=await isDirectModel(cfg,directAllowed,selectedModel),fallback=automaticModel||cfg.chatFallbackOnFailure===true;
+      if(!directModel)try{
         const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},body:JSON.stringify({model:selectedModel,messages,stream:false,temperature:0.25}),signal:AbortSignal.timeout(NONSTREAM_MS)});
         if(r.ok)data=await r.json();
         else errors.push(`OmniRoute HTTP ${r.status}: ${(await r.text()).slice(0,300)}`);
       }catch(e){errors.push(`OmniRoute: ${roError(e)}`)}
       let usedModel=selectedModel;
-      if(!data&&(roleFor(user,ctx.cloudUser)==="owner"||!cloudBase())&&cfg.directChatEnabled!==false){
-        const direct=await directChatFallback(cfg,messages,selectedModel,false);
+      if(!data&&directAllowed&&(directModel||fallback)){
+        const direct=await directChatFallback(cfg,messages,selectedModel,false,undefined,directModel&&!fallback?selectedModel:"");
         errors.push(...direct.errors);
         if(direct.response){usedModel=`${direct.candidate.provider}/${direct.candidate.model}`;try{data=JSON.parse(await direct.response.text())}catch{errors.push("API direct: răspuns invalid")}}
       }
@@ -3229,7 +3622,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   if(webDir){
     // Web version and installable phone app (PWA): the same React interface as the Windows app, served at "/".
     // The policy matches the page's own <meta> policy, with the page's own address as gateway and Design preview frame.
-    const WEB_CSP="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; frame-src 'self'; frame-ancestors 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'";
+    const WEB_CSP="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; frame-src 'self' blob:; frame-ancestors 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'";
     app.use(express.static(webDir,{index:"index.html",setHeaders:(res,file)=>{
       res.set("Content-Security-Policy",WEB_CSP);
       // Vite puts a content hash in every file under assets/; everything else (index.html, sw.js, manifest) must be re-checked so updates arrive.
