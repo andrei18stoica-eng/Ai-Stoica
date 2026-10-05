@@ -697,6 +697,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       throw policyFailure("Alege manual un model AI înainte de a trimite mesajul.",400);
     }
     await requireModelAccess(context?.cloudToken,requested);
+    requirePersonalAccess(context,requested);
     const automatic=chosen===false||!String(requestedModel||"").trim()||requested!==asked;
     if(await isDirectModel(cfg,directApisAllowed(context),requested))return {task:"direct",automatic,direct:true,reasons:["model API direct ales"],selectedModel:requested,candidates:[]};
     return {task:"manual",automatic,reasons:[automatic?"model implicit configurat":"model ales manual"],selectedModel:requested,candidates:[{id:requested,provider:inferProvider(requested),score:0}]};
@@ -742,6 +743,18 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     return String(user?.role || "").toLowerCase() === "owner" ? "owner" : "user";
   }
   function ownerRequest(req){return roleFor(req.user,req.cloudUser)==="owner";}
+  // Models that run on the Owner's own accounts connected in OmniRoute by login or cookie (ChatGPT / Codex, Gemini,
+  // Claude Code): their terms forbid making an account available to anyone else, so only the Owner may use them
+  // (or the single person of a PC with no Owner email set). Other accounts use the free models and the paid APIs.
+  const PERSONAL_PROVIDERS=/^(codex|cx|chatgpt-web|cgpt-web|gemini-web|gweb|claude-code|cc|gemini-cli|gc)\//i;
+  function personalAllowed(user,cloudUser){
+    if(roleFor(user,cloudUser)==="owner")return true;
+    return !cloudBase()&&!normalizeEmail(getOmniConfig().ownerEmail);
+  }
+  function requirePersonalAccess(req,model){
+    if(PERSONAL_PROVIDERS.test(String(model||"").trim())&&!personalAllowed(req.user,req.cloudUser))
+      throw policyFailure(`Modelul «${model}» folosește abonamentul personal al Owner-ului și nu poate fi folosit din alt cont. Alege alt model din listă.`,403);
+  }
   // Local mode (no AI Stoica Cloud): the account on this PC uses the API keys configured on this PC.
   // Code execution, SSH and GitHub write stay Owner-only.
   function directApisAllowed(req){return ownerRequest(req)||!cloudBase();}
@@ -982,6 +995,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         for(const x of directEntries)if(!seen.has(x.id.toLowerCase())){filtered.push(x);seen.add(x.id.toLowerCase())}
       }catch(e){policyError=policyError||("API direct: "+roError(e))}
     }
+    if(!personalAllowed(req.user,req.cloudUser))filtered=filtered.filter(x=>!PERSONAL_PROVIDERS.test(String(typeof x==="string"?x:x?.id||"")));
     if(!filtered.length&&omniError)return res.status(502).json({error:"Nu pot încărca modele OmniRoute și nu există API-uri directe configurate: "+omniError});
     res.json({
       data:filtered,
@@ -2232,9 +2246,11 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const direct=directApisAllowed(req)&&!explicitModel?await directImageAttempts(cfg,prompt,size):[];
       // An image model chosen in Settings is tried before the no-key Pollinations fallback.
       const late=String(cfg.imageModel||"").trim()?direct.filter(a=>a.id==="pollinations-free"):[];
+      if(explicitModel)requirePersonalAccess(req,explicitModel);
       let found=[];
       try{found=await discoverPermittedMediaModels(req,cfg,"image",explicitModel)}
       catch(e){if(e.status===403&&explicitModel)throw e;errors.push("OmniRoute: "+(e.status?e.message:roError(e)))}
+      if(!personalAllowed(req.user,req.cloudUser))found=found.filter(m=>!PERSONAL_PROVIDERS.test(m));
       const models=found.slice(0,4);
       const imageUrl=String(cfg.baseUrl).replace(/\/+$/,"")+"/images/generations";
       const imageHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:"Bearer "+cfg.apiKey}:{})};
@@ -2296,6 +2312,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const strictFree=directApisAllowed(req)&&(cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free");
       const done=async(resolved,meta)=>{if(signal.aborted)return true;res.json({data:await saveGeneratedMedia(req,{...resolved,kind:"video",prompt,...meta})});return true;};
 
+      if(explicitModel)requirePersonalAccess(req,explicitModel);
       const attempts=directApisAllowed(req)&&!explicitModel?await directVideoAttempts(cfg,prompt,duration,aspectRatio):[];
       // «Doar gratuit» keeps the paid OmniRoute video models out, but not the free web ones (veoaifree-web: VEO 3.1,
       // Seedance), which OmniRoute serves without a key or cost.
@@ -3280,6 +3297,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const askedModel=String(item.model||cfg.model||"").trim();
       const selectedModel=await resolveModelAlias(cfg,askedModel);
       if(!selectedModel)throw policyFailure("Automatizarea nu are un model AI valid. Selectează un model permis de Owner.",400);
+      if(PERSONAL_PROVIDERS.test(selectedModel)&&!personalAllowed(user,ctx.cloudUser))throw policyFailure(`Modelul «${selectedModel}» folosește abonamentul personal al Owner-ului și nu poate rula din alt cont.`,403);
       // Same rule as chat: no model chosen for the automation (or "Ai principal" / "AI Stoica …") lets AI Stoica fall back.
       const automaticModel=!String(item.model||"").trim()||selectedModel!==askedModel;
       await requireModelAccess(cloudToken,selectedModel);

@@ -110,6 +110,18 @@ async function main() {
     expect(r.status === 200 && asked.image[firstAsked] === "openrouter/flux-image", "the image model chosen in Settings must be tried first: " + JSON.stringify(asked.image.slice(firstAsked)));
     cfg.imageModel = ""; await new Promise((x) => setTimeout(x, 2100));
 
+    // The Owner's personal subscriptions (ChatGPT/Codex connected in OmniRoute) are for the Owner only: another account
+    // does not see them, cannot choose them, and its images skip them.
+    cfg.ownerEmail = "boss@example.com"; await new Promise((x) => setTimeout(x, 2100));
+    r = await call("/api/models", { token }); j = await r.json();
+    expect(r.status === 200 && !(j.data || []).some((x) => /^codex\//.test(x.id || x)), "another account must not see the Owner's subscription models: " + JSON.stringify(j.data).slice(0, 300));
+    r = await chat("codex/gpt-5.6-sol"); j = await r.json();
+    expect(r.status === 403 && /abonamentul personal al Owner-ului/.test(j.error), "another account must not chat through the Owner's subscription: " + JSON.stringify(j));
+    const beforePersonal = asked.image.length;
+    r = await call("/api/generate/image", { method: "POST", token, body: { prompt: "un logo mov" } });
+    expect(r.status === 200 && !asked.image.slice(beforePersonal).includes("codex/gpt-5.6-sol"), "another account's images must skip the Owner's subscription: " + JSON.stringify(asked.image.slice(beforePersonal)));
+    cfg.ownerEmail = ""; await new Promise((x) => setTimeout(x, 2100));
+
     // Video under «Doar gratuit» (no cost policy set): the free OmniRoute web model, never the paid one.
     r = await call("/api/generate/video", { method: "POST", token, body: { prompt: "un apus pe mare" } }); j = await r.json();
     expect(r.status === 200 && asked.video.length === 1 && asked.video[0] === "veoaifree-web/veo", "free web video must work under «Doar gratuit»: " + JSON.stringify({ status: r.status, asked: asked.video, j }).slice(0, 400));
