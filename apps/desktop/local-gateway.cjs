@@ -30,6 +30,7 @@ function inferProvider(entry){
   const first=id.split("/")[0];
   const prefix={openai:"openai",anthropic:"anthropic",google:"gemini",gemini:"gemini",cerebras:"cerebras",groq:"groq",cloudflare:"cloudflare",openrouter:"openrouter","@cf":"cloudflare",xai:"xai","x-ai":"xai"};
   if(prefix[first])return prefix[first];
+  if(/^(cx|codex|chatgpt-web|cgpt-web|cc|claude-code|gc|gemini-cli|gweb|gemini-web|gh|kr|ag)\//.test(id)&&/\bgrok/.test(id))return "xai";
   if(/groq/.test(id))return "groq";
   if(/\bgrok/.test(id))return "xai";
   if(/cerebras/.test(id))return "cerebras";
@@ -48,10 +49,23 @@ const FAMILY_PREFIX={openai:"openai",cx:"openai",codex:"openai","chatgpt-web":"o
   gemini:"gemini",google:"gemini",gc:"gemini","gemini-cli":"gemini",gweb:"gemini","gemini-web":"gemini",
   xai:"xai","x-ai":"xai",grok:"xai",groq:"groq",cerebras:"cerebras",mistral:"mistral",openrouter:"openrouter",nvidia:"nvidia",
   github:"github",cloudflare:"cloudflare","@cf":"cloudflare",cohere:"cohere",huggingface:"huggingface"};
+// Subscription prefixes are shared: OmniRoute uses gc/ for Gemini CLI and for Grok Build. Behind them the model's own
+// name says whose it is (gc/grok-4.6 is Grok, gc/gemini-3-pro is Gemini); hosts such as groq/ or openrouter/ stay hosts.
+const SUBSCRIPTION_PREFIXES=new Set(["cx","codex","chatgpt-web","cgpt-web","cc","claude-code","gc","gemini-cli","gweb","gemini-web","gh","kr","ag"]);
+function makerFromName(name){
+  const n=String(name||"").toLowerCase();
+  if(/\bgrok/.test(n))return "xai";
+  if(/claude|anthropic/.test(n))return "anthropic";
+  if(/gemini|gemma/.test(n))return "gemini";
+  if(/codex|\bo[134]\b|(^|[^-])gpt(?![-_. ]?oss)/.test(n))return "openai";
+  return "";
+}
 function providerFamily(id){
   const v=normalizeModelKey(id);
   if(!v.includes("/"))return "";
-  return FAMILY_PREFIX[v.split("/")[0]]||"";
+  const [prefix,...rest]=v.split("/");
+  if(SUBSCRIPTION_PREFIXES.has(prefix))return makerFromName(rest.join("/"))||FAMILY_PREFIX[prefix]||"";
+  return FAMILY_PREFIX[prefix]||"";
 }
 // Cerebras is off unless the Owner turns it back on (its answers were the weakest); an empty value means none is off.
 const DEFAULT_BLOCKED_PROVIDERS="cerebras";
@@ -636,6 +650,17 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   function omniHttpError(status,text){
     if(status===401||status===403)return (cfg=>cfg.apiKey?"OmniRoute a refuzat cheia API (HTTP "+status+"): cheia e greșită, expirată sau revocată. ":"")(getOmniConfig())+OMNI_KEY_HINT;
     return `OmniRoute HTTP ${status}: ${String(text||"").slice(0,300)}`;
+  }
+  // A 401/403 on a chat request comes either from OmniRoute itself (its client key) or from the provider behind the model:
+  // OmniRoute passes the provider's refusal through (an expired login of a subscription such as Grok Build or Codex, a
+  // revoked provider key, a model the key may not use). /models answers with the same key only when the key is good,
+  // so it tells the two apart; the reason OmniRoute gave is kept either way.
+  async function omniAuthError(cfg,status,body){
+    let keyOk=false;
+    try{const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/models`,{headers:cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{},signal:AbortSignal.timeout(8000)});keyOk=r.ok;await cancelBody(r);}catch{}
+    const why=upstreamErrorText(body).trim();
+    if(!keyOk)return omniHttpError(status,"")+(why?` Răspunsul OmniRoute: ${why}`:"");
+    return `furnizorul acestui model a refuzat accesul (HTTP ${status})${why?": "+why:""}. Cheia OmniRoute e bună (lista de modele merge); reconectează contul sau cheia acestui furnizor în panoul OmniRoute → Providers, sau alege alt model.`;
   }
   // The reason an OpenAI-compatible service gives (OmniRoute lists which provider of a combination failed and why).
   function upstreamErrorText(body){
@@ -3302,7 +3327,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         try{
           const r=await fetchChatCandidate(cfg,candidate.id,messages,false,timer);
           const body=await r.text();
-          if(!r.ok){errors.push(`${candidate.id}: ${r.status===401||r.status===403?omniHttpError(r.status,""):"HTTP "+r.status+" "+upstreamErrorText(body)}`);continue;}
+          if(!r.ok){errors.push(`${candidate.id}: ${r.status===401||r.status===403?await omniAuthError(cfg,r.status,body):"HTTP "+r.status+" "+upstreamErrorText(body)}`);continue;}
           res.setHeader("X-AI-Stoica-Route",route.task);
           res.setHeader("X-AI-Stoica-Model",headerSafe(candidate.id));
           return res.status(200).type(r.headers.get("content-type")||"application/json").send(withCleanQuestions(body));
@@ -3338,7 +3363,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         if(clientGone.signal.aborted)return;
         try{
           const r=await fetchChatCandidate(cfg,candidate.id,messages,true,timer);
-          if(!r.ok){errors.push(`${candidate.id}: ${r.status===401||r.status===403?(await cancelBody(r),omniHttpError(r.status,"")):"HTTP "+r.status+" "+(await r.text()).slice(0,300)}`);continue;}
+          if(!r.ok){const body=(await r.text()).slice(0,4000);errors.push(`${candidate.id}: ${r.status===401||r.status===403?await omniAuthError(cfg,r.status,body):"HTTP "+r.status+" "+body.slice(0,300)}`);continue;}
           upstream=r;usedModel=candidate.id;break;
         }catch(e){if(clientGone.signal.aborted)return;errors.push(`${candidate.id}: ${timer.signal.aborted?timeoutMessage(timer):roError(e)}`)}
       }

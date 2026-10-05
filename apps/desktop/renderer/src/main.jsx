@@ -67,6 +67,10 @@ function inferModelProvider(model,provider="") {
   if(p)return p;
   const m=String(model||"").toLowerCase();
   const first=m.split("/")[0];
+  // Subscription prefixes are shared (OmniRoute: gc/ is Gemini CLI and Grok Build): the model's name decides.
+  if(/^(cx|codex|cc|claude-code|gc|gemini-cli|gh|kr|ag)$/.test(first)){
+    if(/\bgrok/.test(m))return "xai";if(/claude/.test(m))return "anthropic";if(/gemini|gemma/.test(m))return "gemini";if(/codex|gpt/.test(m))return "openai";
+  }
   const prefixMap={openai:"openai",anthropic:"anthropic",google:"gemini",gemini:"gemini",cerebras:"cerebras",groq:"groq",cloudflare:"cloudflare",openrouter:"openrouter",runway:"runway","@cf":"cloudflare",xai:"xai","x-ai":"xai",cx:"openai",codex:"openai",cc:"anthropic","claude-code":"anthropic",gc:"gemini","gemini-cli":"gemini"};
   if(prefixMap[first])return prefixMap[first];
   if(/groq/.test(m))return "groq";

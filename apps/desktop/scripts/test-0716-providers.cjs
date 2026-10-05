@@ -16,14 +16,17 @@ async function main() {
   const omni = http.createServer((req, res) => {
     let body = ""; req.on("data", (c) => body += c); req.on("end", () => {
       res.setHeader("content-type", "application/json");
+      if (req.headers.authorization !== "Bearer sk-omni") { res.statusCode = 401; return res.end(JSON.stringify({ error: { message: "Invalid API key" } })); }
       if (req.url === "/v1/models") return res.end(JSON.stringify({ data: [
         { id: "Ai principal", owned_by: "combo" }, { id: "cerebras/gpt-oss-120b", owned_by: "cerebras" },
-        { id: "openai/gpt-4o-mini", owned_by: "openai" }, { id: "groq/llama-omni", owned_by: "groq" }, { id: "broken/model", owned_by: "broken" }
+        { id: "openai/gpt-4o-mini", owned_by: "openai" }, { id: "groq/llama-omni", owned_by: "groq" }, { id: "broken/model", owned_by: "broken" },
+        { id: "gc/grok-4.6-low", owned_by: "grok-build" }, { id: "gc/gemini-3-pro", owned_by: "gemini-cli" }
       ] }));
       const j = body ? JSON.parse(body) : {};
       if (req.url === "/v1/chat/completions") {
         omniAsked.push(j.model);
         if (j.model === "broken/model") { res.statusCode = 500; return res.end(JSON.stringify({ error: { message: "down" } })); }
+        if (j.model === "gc/grok-4.6-low") { res.statusCode = 401; return res.end(JSON.stringify({ error: { message: "Grok Build: the sign-in expired, connect the account again" } })); }
         return res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "OMNI " + j.model } }] }));
       }
       res.statusCode = 404; res.end("{}");
@@ -87,6 +90,25 @@ async function main() {
     r = await chat("broken/model"); j = await r.json();
     expect(r.status === 200 && calls.cerebras === 0 && calls.groq === 1, "the fallback must skip Cerebras: " + JSON.stringify({ status: r.status, j, calls }));
     cfg.chatFallbackOnFailure = false;
+
+    // gc/ is shared by Gemini CLI and Grok Build in OmniRoute: the model's name says whose it is.
+    cfg.blockedProviders = "cerebras,xai"; await wait();
+    list = await ids();
+    expect(!list.includes("gc/grok-4.6-low") && list.includes("gc/gemini-3-pro"), "Grok left out hides gc/grok but not gc/gemini: " + list.join(", "));
+    delete cfg.blockedProviders; await wait();
+
+    // A 401 from the provider behind the model (an expired subscription login) is not reported as a bad OmniRoute key,
+    // and OmniRoute's own reason reaches the user.
+    r = await chat("gc/grok-4.6-low"); j = await r.json();
+    expect(r.status === 502 && /furnizorul acestui model a refuzat accesul \(HTTP 401\)/.test(j.error) && /sign-in expired/.test(j.error) && !/OmniRoute a refuzat cheia API/.test(j.error), "provider 401 must say so: " + j.error);
+    r = await call("/api/chat/stream", { method: "POST", token, body: { model: "gc/grok-4.6-low", messages: [{ role: "user", content: "salut" }] } });
+    j = await r.json();
+    expect(r.status === 502 && /sign-in expired/.test(j.error), "streaming too: " + j.error);
+    // A wrong OmniRoute key is reported as such, with OmniRoute's answer.
+    cfg.apiKey = "sk-wrong"; await wait();
+    r = await chat("openai/gpt-4o-mini"); j = await r.json();
+    expect(/OmniRoute a refuzat cheia API \(HTTP 401\)/.test(j.error) && /Invalid API key/.test(j.error), "a bad OmniRoute key must say so: " + j.error);
+    cfg.apiKey = "sk-omni"; await wait();
 
     // Everything ticked again: Cerebras comes back.
     cfg.blockedProviders = ""; await wait();
