@@ -22,6 +22,7 @@ import { FileViewer, canView } from "./viewer.jsx";
 import { ServerUpdate } from "./serverUpdate.jsx";
 import { ScheduledPage } from "./pages/Scheduled.jsx";
 import { CodePage } from "./pages/Code.jsx";
+import { requestedMediaGeneration } from "./mediaIntent.mjs";
 import { PluginsPage } from "./pages/Plugins.jsx";
 import { MemoryPage, PreferenceSwitches } from "./pages/Memory.jsx";
 import { LibraryPage } from "./pages/Library.jsx";
@@ -159,16 +160,6 @@ function standaloneExportRequest(value){
   stripped=stripped.replace(/\b(trimite|da|dami|descarca|exporta|export|salveaza|creeaza|genereaza|fa|fami|in|ca|te|rog|mi|un|o|acum|si|imi|mie|format|fisier|fisierul|document|documentul)\b/g," ").replace(/[-.\s]+/g," ").trim();
   return !stripped;
 }
-const MEDIA_COMMAND=/^(?:(?:creeaza|genereaza|deseneaza)(?:-mi)?|fa[- ]?mi|make|generate|create|draw)\s+(?:(?:o|un|mi|me|an|a)\s+)?(imagine|poza|fotografie|logo|desen|ilustratie|video|videoclip|animatie|image|picture|photo|drawing|illustration|animation)\b/;
-function requestedMediaGeneration(value){
-  const t=normalizeIntent(value);
-  if(!t||t.includes("?"))return null;
-  if(/\b(script|scenariu|text|plan|idee|idei|descriere|prompt|titlu|caption)\b/.test(t))return null;
-  const m=t.match(MEDIA_COMMAND);
-  if(!m)return null;
-  return /^(video|videoclip|animatie|animation)$/.test(m[1])?"video":"image";
-}
-
 function groupLabel(ts) {
   const d = new Date(ts || Date.now()), now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -1085,6 +1076,8 @@ function ServerKeysBox() {
   </div>;
 }
 
+// OmniRoute's connection names, as people know them.
+const OMNI_CONNECTIONS={codex:"Codex (ChatGPT)","grok-cli":"Grok CLI",github:"GitHub Copilot","claude-code":"Claude Code",claude:"Claude Code","gemini-cli":"Gemini CLI",antigravity:"Antigravity","gemini-web":"Gemini Web","chatgpt-web":"ChatGPT Web"};
 function ProviderTestBox() {
   const [state,setState]=useState({busy:false,data:null,media:[],omni:null,error:""});
   async function run(){
@@ -1097,6 +1090,7 @@ function ProviderTestBox() {
       <button className="secondary" onClick={run} disabled={state.busy}>{state.busy?"Se testează…":"Testează acum"}</button></div>
     {state.error&&<div className="providerRow bad"><X size={15}/><span>{state.error}</span></div>}
     {state.omni&&<div className={cx("providerRow",state.omni.ok?"good":"bad")}>{state.omni.ok?<Check size={15}/>:<X size={15}/>}<b>OmniRoute</b><span>{state.omni.ok?`cheia e bună · ${state.omni.models} modele, ${state.omni.combos} combinații · ${(state.omni.ms/1000).toFixed(1)} s`:state.omni.error}</span></div>}
+    {state.omni?.expired?.length>0&&<div className="providerRow bad omniExpired"><X size={15}/><b>Reconectează în OmniRoute</b><span>Loginul a expirat la: {state.omni.expired.map(x=>OMNI_CONNECTIONS[x]||x).join(", ")}. Panoul OmniRoute de pe server → Providers → fiecare cont → Reconnect (sau pune o cheie API).</span></div>}
     {(state.omni?.checks||[]).map(c=><div key={c.model} className={cx("providerRow omniCheck",c.ok?"good":"bad")}>{c.ok?<Check size={15}/>:<X size={15}/>}<b>{c.model}</b><span>{c.ok?`răspunde · ${(c.ms/1000).toFixed(1)} s`:c.error||("HTTP "+c.status)}</span></div>)}
     {state.data&&!state.data.length&&!state.omni?.ok&&<div className="providerRow bad"><X size={15}/><span>Nu ai nicio cheie de chat salvată. Adaugă de exemplu o cheie Gemini sau Groq și salvează.</span></div>}
     {(state.data||[]).map(x=><div key={x.provider} className={cx("providerRow",x.ok?"good":"bad")}>{x.ok?<Check size={15}/>:<X size={15}/>}<b>{x.label}</b><span>{x.model}{x.ok?` · ${(x.ms/1000).toFixed(1)} s`:` · ${x.error||("HTTP "+x.status)}`}{x.paid?" · cu plată":""}</span></div>)}
@@ -1171,8 +1165,9 @@ function MediaMakers({kind,cfg,set,paidOff}) {
     <label>Furnizori<select value={value} onChange={e=>set({[field]:e.target.value})}>{options.map(([v,l])=><option key={v||"all"} value={v}>{l}</option>)}</select></label>
     <label>{kind==="image"?"Model Gemini (Nano Banana)":"Model Gemini (Veo)"}<select value={model} onChange={e=>set({[modelField]:e.target.value})}>{models.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>
     <p className="settingsHelp">{geminiOnly
-      ?`Doar Gemini: prin cheia Gemini de la API-uri AI sau prin Gemini conectat în OmniRoute. Ceilalți furnizori de mai jos nu sunt folosiți.${paidOff?" Gemini prin API e cu plată: ca să meargă cu cheia, alege mai jos «Permite provideri cu plată».":""}`
-      :"Dacă modelul Gemini ales nu există pentru cheia ta, AI Stoica încearcă singur celelalte nume Gemini, apoi furnizorii permiși aici."}</p>
+      ?`Doar Gemini: prin Gemini conectat în OmniRoute (abonament, fără API) sau prin cheia Gemini de la API-uri AI. Ceilalți furnizori de mai jos nu sunt folosiți.${paidOff?" Gemini prin API e cu plată: ca să meargă cu cheia, alege mai jos «Permite provideri cu plată».":""}`
+      :"Dacă modelul Gemini ales nu există pentru cheia ta, AI Stoica încearcă singur celelalte nume Gemini, apoi furnizorii permiși aici."}
+      {" "}Când în chat ai ales un model Gemini, ChatGPT sau Grok, {kind==="image"?"poza o face":"videoclipul îl face"} compania acelui model: întâi abonamentul conectat în OmniRoute, apoi API-ul ei. Setarea de aici e pentru combinații („Ai principal”) și modelele care nu fac {kind==="image"?"poze":"video"}.</p>
   </fieldset>;
 }
 function KeyField({label,name,cfg,keys,setKeys,placeholder,token=false}) {
@@ -1799,6 +1794,8 @@ function App() {
       if(storage.get(TOKEN_KEY)){try{await saveConversation(working)}catch(saveError){if(!isAuthLost(saveError.status,saveError.message))toast("Conversația nu a putut fi salvată: "+saveError.message)}}
     }finally{finishGeneration(convId,controller)}
   }
+  // A picture or video (asked for in the chat or with the Poză / Video button) is made by the company of the chosen
+  // model (Gemini, ChatGPT, Grok); with a combination or a model that cannot make pictures, by Setări → Poze / Video.
   async function generateMediaAssistant(baseConv,messages,kind,prompt){
     const convId=baseConv.id;
     const controller=startGeneration(convId);
@@ -1807,7 +1804,7 @@ function App() {
     try{
       let message;
       try{
-        const d=await api(kind==="video"?"/api/generate/video":"/api/generate/image",{method:"POST",body:JSON.stringify({prompt}),signal:controller.signal});
+        const d=await api(kind==="video"?"/api/generate/video":"/api/generate/image",{method:"POST",body:JSON.stringify({prompt,via:baseConv.model||model||""}),signal:controller.signal});
         const file={...d.data,type:d.data?.kind||kind,kind:d.data?.kind||kind};
         message={...base,content:"",attachments:[file],routeInfo:{task:kind==="video"?"video_generation":"image_generation",model:file.model||"",provider:inferModelProvider(file.model||"")}};
       }catch(e){

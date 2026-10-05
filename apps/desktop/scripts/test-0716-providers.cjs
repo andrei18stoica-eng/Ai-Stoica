@@ -20,13 +20,15 @@ async function main() {
       if (req.url === "/v1/models") return res.end(JSON.stringify({ data: [
         { id: "Ai principal", owned_by: "combo" }, { id: "cerebras/gpt-oss-120b", owned_by: "cerebras" },
         { id: "openai/gpt-4o-mini", owned_by: "openai" }, { id: "groq/llama-omni", owned_by: "groq" }, { id: "broken/model", owned_by: "broken" },
-        { id: "gc/grok-4.6-low", owned_by: "grok-build" }, { id: "gc/gemini-3-pro", owned_by: "gemini-cli" }
+        { id: "gc/grok-4.6-low", owned_by: "grok-build" }, { id: "gc/gemini-3-pro", owned_by: "gemini-cli" }, { id: "anthropic/claude-x", owned_by: "anthropic" }
       ] }));
       const j = body ? JSON.parse(body) : {};
       if (req.url === "/v1/chat/completions") {
         omniAsked.push(j.model);
         if (j.model === "broken/model") { res.statusCode = 500; return res.end(JSON.stringify({ error: { message: "down" } })); }
-        if (j.model === "gc/grok-4.6-low") { res.statusCode = 401; return res.end(JSON.stringify({ error: { message: "Grok Build: the sign-in expired, connect the account again" } })); }
+        // What OmniRoute 3.8 answers when a subscription login expired, and when a provider refuses its API key.
+        if (j.model === "gc/grok-4.6-low") { res.statusCode = 401; return res.end(JSON.stringify({ error: { message: "gc/grok-4.6-low: auth — [grok-cli] All 1 connection(s) authentication expired — please reconnect in the dashboard (HTTP 401)" } })); }
+        if (j.model === "anthropic/claude-x") { res.statusCode = 401; return res.end(JSON.stringify({ error: { message: "invalid x-api-key" } })); }
         return res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "OMNI " + j.model } }] }));
       }
       res.statusCode = 404; res.end("{}");
@@ -46,6 +48,8 @@ async function main() {
     if (u.startsWith("http://127.0.0.1")) return realFetch(url, init);
     if (u === "https://api.cerebras.ai/v1/chat/completions") { calls.cerebras++; return json({ choices: [{ message: { content: "CEREBRAS" } }] }); }
     if (u === "https://api.groq.com/openai/v1/chat/completions") { calls.groq++; return json({ choices: [{ message: { content: "GROQ " + body.model } }] }); }
+    // OpenAI answers 429 "insufficient_quota" when the account has no credit (not a daily limit).
+    if (u === "https://api.openai.com/v1/chat/completions") return json({ error: { message: "You have no credits remaining. Add credits to continue using the API.", type: "insufficient_quota" } }, 429);
     if (u === "https://api.x.ai/v1/chat/completions") { calls.xaiChat.push(body.model); return json({ model: body.model, choices: [{ message: { content: "GROK " + body.model } }] }); }
     if (u === "https://api.x.ai/v1/images/generations") { calls.xaiImage.push(body); return json({ data: [{ b64_json: png.toString("base64") }] }); }
     if (u.startsWith("https://generativelanguage.googleapis.com/v1beta/models/") && u.endsWith(":generateContent")) {
@@ -100,10 +104,12 @@ async function main() {
     // A 401 from the provider behind the model (an expired subscription login) is not reported as a bad OmniRoute key,
     // and OmniRoute's own reason reaches the user.
     r = await chat("gc/grok-4.6-low"); j = await r.json();
-    expect(r.status === 502 && /furnizorul acestui model a refuzat accesul \(HTTP 401\)/.test(j.error) && /sign-in expired/.test(j.error) && !/OmniRoute a refuzat cheia API/.test(j.error), "provider 401 must say so: " + j.error);
+    expect(r.status === 502 && /loginul a expirat în OmniRoute pentru: grok-cli \(HTTP 401\)/.test(j.error) && /authentication expired/.test(j.error) && !/OmniRoute a refuzat cheia API/.test(j.error), "an expired login must say so: " + j.error);
+    r = await chat("anthropic/claude-x"); j = await r.json();
+    expect(r.status === 502 && /furnizorul acestui model a refuzat accesul \(HTTP 401\)/.test(j.error) && /invalid x-api-key/.test(j.error), "provider 401 must say so: " + j.error);
     r = await call("/api/chat/stream", { method: "POST", token, body: { model: "gc/grok-4.6-low", messages: [{ role: "user", content: "salut" }] } });
     j = await r.json();
-    expect(r.status === 502 && /sign-in expired/.test(j.error), "streaming too: " + j.error);
+    expect(r.status === 502 && /authentication expired/.test(j.error), "streaming too: " + j.error);
     // A wrong OmniRoute key is reported as such, with OmniRoute's answer.
     cfg.apiKey = "sk-wrong"; await wait();
     r = await chat("openai/gpt-4o-mini"); j = await r.json();
@@ -114,8 +120,13 @@ async function main() {
     r = await call("/api/providers/test", { method: "POST", token, body: {} }); j = await r.json();
     const checks = Object.fromEntries((j.omni?.checks || []).map((c) => [c.model, c]));
     expect(j.omni?.ok && checks["Ai principal"]?.ok && checks["gc/gemini-3-pro"]?.ok && checks["openai/gpt-4o-mini"]?.ok, "OmniRoute checks: " + JSON.stringify(j.omni));
-    expect(checks["gc/grok-4.6-low"]?.ok === false && /furnizorul a refuzat accesul \(cheia OmniRoute e bună\)/.test(checks["gc/grok-4.6-low"].error) && /sign-in expired/.test(checks["gc/grok-4.6-low"].error), "the refusing connection is named: " + JSON.stringify(checks["gc/grok-4.6-low"]));
-    expect(!Object.keys(checks).some((m) => /^cerebras\//.test(m)) && Object.keys(checks).length === 4, "one model per company, none from a left-out provider: " + Object.keys(checks).join(", "));
+    expect(checks["gc/grok-4.6-low"]?.ok === false && /login expirat în OmniRoute \(grok-cli\)/.test(checks["gc/grok-4.6-low"].error) && j.omni.expired.join() === "grok-cli", "the expired connection is named: " + JSON.stringify(j.omni));
+    expect(checks["anthropic/claude-x"]?.ok === false && /furnizorul a refuzat accesul \(cheia OmniRoute e bună\)/.test(checks["anthropic/claude-x"].error), "the refusing provider is named: " + JSON.stringify(checks["anthropic/claude-x"]));
+    expect(!Object.keys(checks).some((m) => /^cerebras\//.test(m)) && Object.keys(checks).length === 5, "one model per company, none from a left-out provider: " + Object.keys(checks).join(", "));
+    // Pictures and video: the line under the test names the «Făcute de» providers (Gemini) and whether the key is saved.
+    expect(j.media.map((m) => m.label + ":" + m.configured).join() === "Poze: Gemini (Nano Banana):true,Video: Gemini (Veo):true", "media line: " + JSON.stringify(j.media));
+    const openAiRow = (j.data || []).find((x) => x.provider === "openai");
+    expect(openAiRow && openAiRow.ok === false && /nu are credit/.test(openAiRow.error), "an OpenAI key without credit is not reported as a daily limit: " + JSON.stringify(j.data));
     omniAsked.length = 0;
 
     // Everything ticked again: Cerebras comes back.
