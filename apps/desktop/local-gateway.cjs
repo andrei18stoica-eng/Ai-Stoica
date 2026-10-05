@@ -1430,6 +1430,20 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     res.json({data:{text:text.length>LIMIT?text.slice(0,LIMIT)+"\n\n… (fișierul continuă; descarcă-l pentru tot conținutul)":text,status,truncated:text.length>LIMIT}});
   });
   app.get("/api/library/:id", auth, (req,res) => {const db=store.read(),item=db.library.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Fișierul nu a fost găsit."});const {filePath,...safe}=item;res.json({data:safe});});
+  // Rename a file (only its name: the file on disk is stored under its id). Without an extension the old one is kept, so
+  // the file still opens with the right program. Conversations that show the file get the new name as well.
+  app.patch("/api/library/:id", auth, (req,res) => {
+    const raw=String(req.body?.name??"").replace(/[\u0000-\u001f\u007f<>:"/\\|?*]+/g," ").replace(/\s+/g," ").trim().replace(/^[.\s]+|[.\s]+$/g,"").slice(0,180);
+    if(!raw)return res.status(400).json({error:"Scrie un nume pentru fișier."});
+    const db=store.read(),item=db.library.find(x=>x.id===req.params.id&&x.userId===req.user.id);
+    if(!item)return res.status(404).json({error:"Fișierul nu a fost găsit."});
+    const oldExt=path.extname(String(item.name||""));
+    const name=/\.[a-z0-9]{1,10}$/i.test(raw)||!oldExt?raw:raw+oldExt;
+    item.name=name;item.updatedAt=Date.now();
+    for(const c of db.conversations)if(c.userId===req.user.id)for(const m of c.messages||[])for(const a of m.attachments||[])if(a&&(a.libraryId===item.id||a.id===item.id))a.name=name;
+    store.write(db);
+    res.json({data:{id:item.id,name}});
+  });
   app.delete("/api/library/:id", auth, async (req,res) => {
     const db=store.read(),item=db.library.find(x=>x.id===req.params.id&&x.userId===req.user.id);
     if(!item)return res.status(404).json({error:"Fișierul nu a fost găsit."});

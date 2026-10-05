@@ -1,6 +1,34 @@
 import React, { useEffect, useState } from "react";
-import { Download, X } from "lucide-react";
-import { authedFetch, useAuthedBlobUrl, useModal, mediaKind, downloadLibraryFile, toast, formatBytes } from "./core.jsx";
+import { Download, X, Pencil } from "lucide-react";
+import { api, authedFetch, useAuthedBlobUrl, useModal, mediaKind, downloadLibraryFile, toast, formatBytes } from "./core.jsx";
+
+// The file's name, with "Redenumește": the name changes in the Library and in the conversations that show the file
+// (the app hears "ai-stoica:file-renamed"). Without an extension the server keeps the old one.
+export function FileName({ id, name, onRenamed }) {
+  const [editing, setEditing] = useState(false), [value, setValue] = useState(name || ""), [busy, setBusy] = useState(false);
+  useEffect(() => { if (!editing) setValue(name || ""); }, [name, editing]);
+  const cancel = () => { setEditing(false); setValue(name || ""); };
+  async function save(e) {
+    e?.preventDefault();
+    const next = value.trim();
+    if (!next || next === name) { cancel(); return; }
+    setBusy(true);
+    try {
+      const r = await api(`/api/library/${id}`, { method: "PATCH", body: JSON.stringify({ name: next }) });
+      const saved = r?.data?.name || next;
+      window.dispatchEvent(new CustomEvent("ai-stoica:file-renamed", { detail: { id, name: saved } }));
+      onRenamed?.(saved); setEditing(false);
+      toast(`Fișierul se numește acum „${saved}”.`, "ok");
+    } catch (err) { toast("Redenumire: " + err.message); }
+    finally { setBusy(false); }
+  }
+  if (!editing) return <span className="fileNameRow"><b title={name}>{name || "Fișier"}</b>{id && <button type="button" className="iconOnly smallIcon" onClick={() => setEditing(true)} aria-label="Redenumește fișierul" title="Redenumește"><Pencil size={14}/></button>}</span>;
+  return <form className="renameForm" onSubmit={save}>
+    <input value={value} onChange={e => setValue(e.target.value)} autoFocus maxLength={180} aria-label="Numele fișierului" onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancel(); } }}/>
+    <button type="submit" className="smallBtn" disabled={busy}>{busy ? "Se salvează…" : "Salvează"}</button>
+    <button type="button" className="smallBtn" onClick={cancel}>Anulează</button>
+  </form>;
+}
 
 // Opens a file from the Library or a generated file inside AI Stoica, without downloading it: images, video and audio
 // play here, PDFs open in the built-in reader, and Word / PowerPoint / Excel / text show their content.
@@ -26,6 +54,7 @@ export function FileViewer({ file, onClose }) {
   const { src, failed } = useAuthedBlobUrl(blobPath);
   const [text, setText] = useState({ value: "", loading: kind === "text" || kind === "office", error: "" });
   const { ref, backdropProps } = useModal(onClose);
+  const [name, setName] = useState(file?.name || "");
   useEffect(() => {
     if (!id || (kind !== "text" && kind !== "office")) return;
     let active = true;
@@ -38,22 +67,22 @@ export function FileViewer({ file, onClose }) {
     })();
     return () => { active = false; };
   }, [id, kind]);
-  async function download() { try { await downloadLibraryFile({ libraryId: id, name: file?.name }); } catch (e) { toast(e.message); } }
+  async function download() { try { await downloadLibraryFile({ libraryId: id, name }); } catch (e) { toast(e.message); } }
   const loading = blobPath ? !src && !failed : text.loading;
   return <div className="modalBackdrop viewerBackdrop" {...backdropProps}>
-    <div className={"fileViewer " + kind} ref={ref} role="dialog" aria-modal="true" aria-label={file?.name || "Fișier"} tabIndex={-1}>
+    <div className={"fileViewer " + kind} ref={ref} role="dialog" aria-modal="true" aria-label={name || "Fișier"} tabIndex={-1}>
       <div className="viewerHead">
-        <div><b>{file?.name || "Fișier"}</b>{file?.size ? <small>{formatBytes(file.size)}</small> : null}</div>
+        <div><FileName id={id} name={name} onRenamed={setName}/>{file?.size ? <small>{formatBytes(file.size)}</small> : null}</div>
         <button type="button" className="secondary" onClick={download}><Download size={15}/> Descarcă</button>
         <button type="button" className="iconOnly" onClick={onClose} aria-label="Închide" title="Închide"><X size={20}/></button>
       </div>
       <div className="viewerBody">
         {loading && <div className="mediaPlaceholder">Se deschide…</div>}
         {failed && <div className="mediaPlaceholder">Fișierul nu mai este disponibil.</div>}
-        {src && kind === "image" && <img src={src} alt={file?.name || ""}/>}
+        {src && kind === "image" && <img src={src} alt={name || ""}/>}
         {src && kind === "video" && <video src={src} controls autoPlay playsInline/>}
         {src && kind === "audio" && <audio src={src} controls autoPlay/>}
-        {src && kind === "pdf" && <iframe src={src} title={file?.name || "PDF"}/>}
+        {src && kind === "pdf" && <iframe src={src} title={name || "PDF"}/>}
         {!text.loading && (kind === "text" || kind === "office") && (text.error ? <div className="mediaPlaceholder">{text.error}</div> : <pre className="viewerText">{text.value}</pre>)}
         {kind === "file" && <div className="mediaPlaceholder">Acest tip de fișier nu poate fi deschis aici. Folosește „Descarcă”.</div>}
       </div>

@@ -148,6 +148,23 @@ async function main() {
     const other = (await r.json()).token;
     r = await call(`/api/library/${fileId}/preview`, { token: other });
     expect(r.status === 404 || r.status === 403, "another account must not open the file: " + r.status);
+
+    // Renaming a file: the extension stays, forbidden characters go, the conversations showing it follow.
+    r = await call("/api/conversations", { method: "POST", token, body: { title: "Raport", messages: [{ id: "m1", role: "assistant", content: "Iată raportul.", attachments: [{ id: fileId, libraryId: fileId, name: "raport.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }] }] } });
+    const convId = (await r.json()).data?.id; expect(convId, "conversation with the file");
+    r = await call(`/api/library/${fileId}`, { method: "PATCH", token, body: { name: "  Raport final: T4/2026  " } }); j = await r.json();
+    expect(r.status === 200 && j.data.name === "Raport final T4 2026.docx", "rename keeps the extension and drops : / — got " + JSON.stringify(j));
+    r = await call("/api/library", { token }); j = await r.json();
+    expect(j.data.find((x) => x.id === fileId)?.name === "Raport final T4 2026.docx", "the Library shows the new name");
+    r = await call("/api/conversations", { token }); j = await r.json();
+    const att = ((j.data || []).find((c) => c.id === convId)?.messages || [])[0]?.attachments?.[0];
+    expect(att && att.name === "Raport final T4 2026.docx", "the conversation shows the new name: " + JSON.stringify(att));
+    r = await call(`/api/library/${fileId}`, { method: "PATCH", token, body: { name: "contract.pdf" } }); j = await r.json();
+    expect(j.data.name === "contract.pdf", "a name with its own extension is kept as written");
+    r = await call(`/api/library/${fileId}`, { method: "PATCH", token, body: { name: " ../ " } });
+    expect(r.status === 400, "an empty name is refused: " + r.status);
+    r = await call(`/api/library/${fileId}`, { method: "PATCH", token: other, body: { name: "furat" } });
+    expect(r.status === 404, "another account must not rename the file: " + r.status);
     console.log("0.7.16 model choice and media checks OK");
   } finally {
     globalThis.fetch = realFetch;

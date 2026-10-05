@@ -1553,6 +1553,14 @@ function App() {
       patchConversation(id,{model:value}).catch(e=>toast("Modelul nu a putut fi salvat pentru conversație: "+e.message));
     }
   }
+  // A file renamed in the Library or the viewer keeps its new name in the conversations on screen too.
+  useEffect(()=>{
+    const renamed=e=>{const {id,name}=e.detail||{};if(!id||!name)return;
+      const fix=a=>a&&(a.libraryId===id||a.id===id)?{...a,name}:a;
+      setConversations(cs=>cs.map(c=>(c.messages||[]).some(m=>m.attachments?.some(a=>a&&(a.libraryId===id||a.id===id)))?{...c,messages:c.messages.map(m=>m.attachments?{...m,attachments:m.attachments.map(fix)}:m)}:c));};
+    window.addEventListener("ai-stoica:file-renamed",renamed);
+    return()=>window.removeEventListener("ai-stoica:file-renamed",renamed);
+  },[]);
   async function loadData({initial=false}={}){
     if(!storage.get(TOKEN_KEY)){setBoot(false);return}
     setLoadError("");

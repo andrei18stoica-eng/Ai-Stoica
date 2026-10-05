@@ -1040,3 +1040,10 @@ h1,h2,h3{text-wrap:balance}
 .providerUseGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:4px 12px}
 .providerUseItem{display:flex!important;flex-direction:row!important;align-items:center;gap:8px;font-size:13px;padding:5px 0;cursor:pointer}
 .providerUseItem input{width:16px;height:16px;margin:0;flex:none}
+
+/* Renaming a file (viewer, Library) */
+.fileNameRow{display:flex;align-items:center;gap:4px;min-width:0}
+.fileNameRow b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.renameForm{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:wrap}
+.renameForm input{flex:1;min-width:140px;border:1px solid #2f6db1;background:#080d14;color:#e9eef7;border-radius:8px;padding:6px 9px;outline:0;font:inherit}
+@media (max-width:480px){.renameForm input{flex-basis:100%}}
