@@ -7,7 +7,7 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const rateLimit = require("express-rate-limit");
 const { Pool } = require("pg");
-const { PAID_PROVIDERS, evaluateModelAccess, providerAccess, hasPaidAccess } = require("./ai-policy.cjs");
+const { PAID_PROVIDERS, evaluateModelAccess, providerAccess } = require("./ai-policy.cjs");
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -55,19 +55,15 @@ const DEFAULT_USER_PERMISSIONS = {
   gemini: true,
   groq: true,
   cloudflare: true,
-  mistral: true,
-  nvidia: true,
-  huggingface: true,
-  cohere: true,
   openrouter: false,
   image_generation: true,
-  video_generation: true,
+  video_generation: false,
   document_generation: true,
   file_upload: true,
   web_search: true,
-  deep_research: true,
-  automations: true,
-  plugins: true,
+  deep_research: false,
+  automations: false,
+  plugins: false,
   github_access: false,
   openai: false,
   anthropic: false
@@ -86,11 +82,6 @@ function intQuery(value, def, min, max) {
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
 }
 
-// Paid AI for one account: offered free by the Owner, or paid until a date.
-function hasPaidRow(row) {
-  return row?.paid_gift === true || (row?.paid_until != null && new Date(row.paid_until).getTime() > Date.now());
-}
-
 async function loadAiContext(user) {
   const [permissionsRow, paidRow, combinationsRow] = await Promise.all([
     pool.query("SELECT permissions FROM user_permissions WHERE user_id=$1", [user.id]),
@@ -101,7 +92,6 @@ async function loadAiContext(user) {
     user,
     permissions: { ...DEFAULT_USER_PERMISSIONS, ...(permissionsRow.rows[0]?.permissions || {}) },
     paidEnabled: paidRow.rows[0]?.value === true,
-    personalPaid: hasPaidRow(user),
     combinations: combinationsRow.rows
   };
 }
@@ -256,10 +246,7 @@ function publicUser(row) {
     status: row.status,
     createdAt: row.created_at,
     approvedAt: row.approved_at,
-    lastLoginAt: row.last_login_at,
-    paidAccess: isOwnerRow(row) || hasPaidRow(row),
-    paidGift: row.paid_gift === true,
-    paidUntil: row.paid_until || null
+    lastLoginAt: row.last_login_at
   };
 }
 function inactiveBody(status) { return { error: status === "pending" ? MSG.pending : MSG.inactive, status }; }
@@ -436,7 +423,7 @@ app.get("/api/admin/users", auth, ownerOnly, async (req, res, next) => {
   try {
     const limit = intQuery(req.query?.limit, 500, 1, 1000), offset = intQuery(req.query?.offset, 0, 0, 1e9);
     const q = await pool.query(
-      `SELECT u.id,u.email,u.name,u.role,u.status,u.created_at,u.approved_at,u.last_login_at,u.paid_gift,u.paid_until,
+      `SELECT u.id,u.email,u.name,u.role,u.status,u.created_at,u.approved_at,u.last_login_at,
               COALESCE(p.permissions,'{}'::jsonb) AS permissions,
               (SELECT COUNT(*)::int FROM sessions s WHERE s.user_id=u.id AND s.expires_at>NOW()) AS active_sessions
        FROM users u
@@ -445,7 +432,7 @@ app.get("/api/admin/users", auth, ownerOnly, async (req, res, next) => {
        LIMIT $1 OFFSET $2`,
       [limit, offset]
     );
-    res.json({ data: q.rows.map(row => ({ ...row, role: isOwnerRow(row) ? "owner" : "user", paid_access: isOwnerRow(row) || hasPaidRow(row), permissions: { ...DEFAULT_USER_PERMISSIONS, ...(row.permissions || {}) } })) });
+    res.json({ data: q.rows.map(row => ({ ...row, role: isOwnerRow(row) ? "owner" : "user", permissions: { ...DEFAULT_USER_PERMISSIONS, ...(row.permissions || {}) } })) });
   } catch (e) { next(e); }
 });
 
@@ -512,23 +499,6 @@ app.patch("/api/admin/users/:id/permissions", auth, ownerOnly, async (req, res, 
     );
     await audit(req.user.id, "admin.permissions", target.id, { permissions: nextPermissions });
     res.json({ permissions: nextPermissions });
-  } catch (e) { next(e); }
-});
-
-// The Owner's button: GPT and Claude (paid AI) free for this account, or taken back. A paid period is kept.
-app.patch("/api/admin/users/:id/paid", auth, ownerOnly, async (req, res, next) => {
-  try {
-    const gift = toBool(req.body?.gift);
-    if (typeof gift !== "boolean") return res.status(400).json({ error: "Câmpul „gift” trebuie să fie true sau false." });
-    const target = await adminTarget(req.params.id);
-    if (isOwnerRow(target)) return res.status(400).json({ error: "Owner-ul are deja acces la toate modelele." });
-    await pool.query("UPDATE users SET paid_gift=$1, updated_at=NOW() WHERE id=$2", [gift, target.id]);
-    await audit(req.user.id, "admin.paid_gift", target.id, { gift });
-    await notify(target.id, "paid_access",
-      gift ? "Acces la Claude și GPT" : "Acces la Claude și GPT retras",
-      gift ? "Owner-ul ți-a oferit gratuit modelele plătite (Claude, GPT). Le găsești în lista de modele." : "Accesul gratuit la modelele plătite s-a încheiat. Modelele gratuite rămân disponibile.");
-    const updated = await pool.query("SELECT * FROM users WHERE id=$1", [target.id]);
-    res.json({ user: publicUser(updated.rows[0] || { ...target, paid_gift: gift }) });
   } catch (e) { next(e); }
 });
 
@@ -623,7 +593,7 @@ app.post("/api/ai/access", auth, async (req, res, next) => {
     if (models.length > 1000) return res.status(413).json({ error:"Prea multe modele într-o singură verificare (maximum 1000)." });
     const context = await loadAiContext(req.user);
     const data = models.map(model => evaluateModelAccess(context, model));
-    res.json({ data, policyEnforced:true, paidAiEnabled:context.paidEnabled, paidAccess:hasPaidAccess(context) });
+    res.json({ data, policyEnforced:true, paidAiEnabled:context.paidEnabled });
   } catch (e) { next(e); }
 });
 
@@ -646,7 +616,6 @@ app.get("/api/ai/catalog", auth, async (req, res, next) => {
     res.json({
       freeOnly: !paidAvailable,
       paidAiEnabled: context.paidEnabled,
-      paidAccess: hasPaidAccess(context),
       providers,
       combinations
     });

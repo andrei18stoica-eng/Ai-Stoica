@@ -1,15 +1,6 @@
-# AI Stoica 0.7.17 — Stoica Enterprises AI
+# AI Stoica 0.7.16 — Stoica Enterprises AI
 
 Asistent AI pentru Windows, web (aistoica.ro) și telefon cu chat, proiecte, asistenți, memorie, bibliotecă de fișiere, pluginuri, automatizări, generare de imagini și video, export PDF/Word/PowerPoint/Excel și panou de Owner.
-
-## Noutăți 0.7.17 — gratuit pentru toți, Claude și GPT cu plată sau oferite de Owner
-
-- **Owner-ul doar aprobă contul.** Un cont aprobat folosește tot ce e gratuit: chat cu modelele gratuite (Groq, Cerebras, Gemini, Cloudflare, Mistral, NVIDIA, Hugging Face, Cohere, direct sau prin OmniRoute), poze și video gratuite, fișiere, căutare pe internet, Deep Research, automatizări și pluginuri. Owner-ul poate opri oricare dintre ele pe un cont, din Control Center.
-- **Claude și GPT (plătite) cer acces plătit:** abonament (plata cu cardul se activează după ce ai firma și contul Stripe) sau acces oferit de Owner. Fără acces plătit, contul nu vede modelele plătite, iar lista de modele îi spune cum le poate primi.
-- **Butonul Owner-ului:** Control Center → contul → **„Oferă gratis Claude și GPT”** (și „Retrage Claude și GPT”). Costul API-urilor îl plătește Owner-ul. Contul primește o notificare, iar în listă apare **PRO**.
-- **Owner-ul are totul gratis**, ca până acum.
-- Abonamentele tale personale (ChatGPT / Codex, Claude Code, Gemini conectate în OmniRoute) rămân doar ale tale, și pentru conturile PRO: condițiile furnizorilor nu permit folosirea lor de alte persoane. Conturile PRO folosesc Claude și GPT prin API-urile plătite (chei OpenAI / Anthropic sau furnizorii cu cheie API din OmniRoute).
-- Comutatorul vechi „AI plătit · toate conturile” rămâne, pentru cine îl folosea.
 
 ## Noutăți 0.7.16 — modelul ales răspunde, poze prin ChatGPT, ecuații în Word
 
@@ -93,7 +84,7 @@ Asistent AI pentru Windows, web (aistoica.ro) și telefon cu chat, proiecte, asi
 - **Telefon (Cloudflare):** butoane PDF/DOCX/PPTX, defilare automată, butonul Înapoi pe Android, tastatura nu mai acoperă câmpul de scris; Worker-ul are migrarea `0005`, cod de configurare Owner (`OWNER_SETUP_CODE`) și deconectare reală.
 - **Server Hetzner și `apps/cloud`:** erori JSON corecte, parole cu orice caractere în baza de date, Owner prin `AI_STOICA_OWNER_EMAIL`, containere care nu mai rulează ca root.
 
-Pași după actualizare: vezi „Pași pentru Owner după 0.7.17” mai jos.
+Pași după actualizare: vezi „Pași pentru Owner după 0.7.16” mai jos.
 
 ## OmniRoute pe Windows (cheia API)
 
@@ -156,15 +147,15 @@ La actualizări, `sudo bash /opt/ai-stoica/deploy/hetzner/update.sh` reconstruie
 | `renderer/src/main.jsx` | interfața |
 | `scripts/test-*.cjs` | teste rulate automat de GitHub la fiecare modificare |
 
-## Pași pentru Owner după 0.7.17
+## Pași pentru Owner după 0.7.16
 
 1. **Cloudflare (aplicația de telefon):** în `apps/cloudflare` rulează migrările (`npx wrangler d1 migrations apply ai-stoica --remote`, include `0005`), setează secretele `OWNER_EMAIL` și `OWNER_SETUP_CODE`, publică Worker-ul și creează imediat contul Owner (cu codul de configurare). Detalii în `apps/cloudflare/README.md`.
 2. **Telefon:** în `apps/mobile/eas.json` înlocuiește `https://ai-stoica.SUBDOMENIUL-TAU.workers.dev` cu adresa Worker-ului tău (sau folosește `eas env:create`), apoi pornește „Build AI Stoica Mobile with EAS”.
 3. **Server Hetzner:** în `.env` păstrează `OWNER_EMAIL` și `OWNER_INITIAL_PASSWORD`; la actualizare rulează `deploy/hetzner/update.sh`.
-4. **Windows:** după ce apare release-ul v0.7.17 (cu `latest.yml`), aplicațiile cu „Actualizări automate” pornite se actualizează singure la următoarea pornire. Release-urile v0.7.11 și v0.7.13 au fost publicate fără reparația de publicare: dacă aplicația nu se actualizează, instalează 0.7.17 o dată de mână, de aici înainte actualizările vin singure.
+4. **Windows:** după ce apare release-ul v0.7.16 (cu `latest.yml`), aplicațiile cu „Actualizări automate” pornite se actualizează singure la următoarea pornire. Release-urile v0.7.11 și v0.7.13 au fost publicate fără reparația de publicare: dacă aplicația nu se actualizează, instalează 0.7.16 o dată de mână, de aici înainte actualizările vin singure.
 5. **Site-ul aistoica.ro:** DNS-ul, apoi `sudo bash deploy/hetzner/setup-web.sh` (vezi „Site-ul aistoica.ro” mai sus).
 6. **Windows pe server:** Setări → AI & OmniRoute → Adresa serviciului AI Stoica: `https://aistoica.ro`, apoi intri cu contul de pe server.
-7. **Site-ul la 0.7.17:** pe server, `sudo bash /opt/ai-stoica/deploy/hetzner/update.sh` (reconstruiește API-ul și site-ul; baza de date primește singură coloanele noi pentru accesul plătit).
+7. **Site-ul la 0.7.16:** pe server, `sudo bash /opt/ai-stoica/deploy/hetzner/update.sh` (reconstruiește API-ul și site-ul).
 8. **Poze prin abonamentul ChatGPT pe site:** în panoul OmniRoute de pe server (prin tunel), la furnizori, conectează **Codex** (autentificare cu contul ChatGPT). Opțional, în `deploy/hetzner/.env`: `AI_STOICA_IMAGE_MODEL=codex/gpt-5.6-sol`, apoi `update.sh`.
 
 ---

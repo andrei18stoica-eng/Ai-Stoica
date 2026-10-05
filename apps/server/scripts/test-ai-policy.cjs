@@ -12,8 +12,8 @@ const defaults={
   chat:true,cerebras:true,gemini:true,groq:true,cloudflare:true,openrouter:false,
   openai:false,anthropic:false
 };
-function ctx({role="user",paidEnabled=true,personalPaid=false,permissions={}}={}) {
-  return {user:{role},paidEnabled,personalPaid,permissions:{...defaults,...permissions},combinations:combos};
+function ctx({role="user",paidEnabled=true,permissions={}}={}) {
+  return {user:{role},paidEnabled,permissions:{...defaults,...permissions},combinations:combos};
 }
 function allowed(context, model){return evaluateModelAccess(context,model).allowed}
 function deniedReason(context, model){const r=evaluateModelAccess(context,model);expect(!r.allowed,model+" should be denied");return r.reason}
@@ -54,16 +54,4 @@ expect(!allowed(ctx(),"openai/gpt-5-oss-like"),"Real OpenAI models stay paid");
 expect(!allowed(ctx(),"constructor/x"),"Prototype keys are not providers");
 expect(evaluateModelAccess(ctx({role:"owner"}),"constructor/x").providers.every(p=>typeof p==="string"),"Providers are always strings");
 expect(evaluateModelAccess(ctx(),"AI Stoica Performance Max").source==="unknown","Only the exact legacy alias names count as the paid managed alias");
-// 0.7.17: paid access of the account itself (paid, or offered by the Owner with the button) opens GPT, Claude and the
-// paid combinations without the global switch and without per-provider permissions; free models need none of it.
-{
-  const paid=ctx({paidEnabled:false,personalPaid:true});
-  for(const m of ["openai/gpt-5","anthropic/claude-sonnet","GPT + Claude","Ai principal","openrouter/auto","groq/llama-3.3-70b-versatile"])expect(allowed(paid,m),"paid access must allow "+m);
-  const free=ctx({paidEnabled:false});
-  expect(/abonament sau acces oferit de Owner/.test(deniedReason(free,"openai/gpt-5"))&&/abonament/.test(deniedReason(free,"GPT + Claude")),"without paid access the reason must say how to get it");
-  expect(allowed(free,"groq/llama-3.3-70b-versatile")&&allowed(free,"Free Mix"),"free models need no paid access");
-}
-// The other free providers (direct APIs and OmniRoute's free web video) work for every approved account too.
-for(const m of ["mistral/mistral-small-latest","nvidia/meta/llama-3.3-70b-instruct","huggingface/meta-llama/Llama-3.3-70B-Instruct","veoaifree-web/veo"])expect(allowed(ctx({paidEnabled:false}),m),"free provider must be allowed: "+m);
-expect(!allowed(ctx({paidEnabled:false,permissions:{mistral:false}}),"mistral/mistral-small-latest"),"the Owner can still turn a free provider off");
 console.log("AI_POLICY_TESTS_PASSED");

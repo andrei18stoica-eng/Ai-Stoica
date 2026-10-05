@@ -1,6 +1,5 @@
 const PAID_PROVIDERS = new Set(["openai","anthropic","openrouter"]);
-// Free providers every approved account may use (the Owner can still turn one off for an account), then the paid ones.
-const KNOWN_PROVIDERS = ["cerebras","gemini","groq","cloudflare","mistral","nvidia","cohere","huggingface","pollinations","veoaifree-web","openrouter","openai","anthropic"];
+const KNOWN_PROVIDERS = ["cerebras","gemini","groq","cloudflare","openrouter","openai","anthropic"];
 
 function normalizeKey(value) {
   return String(value || "")
@@ -22,9 +21,7 @@ function providerSignals(model) {
   const prefixMap = {
     openai:"openai", anthropic:"anthropic", claude:"anthropic",
     google:"gemini", gemini:"gemini", cerebras:"cerebras", groq:"groq",
-    cloudflare:"cloudflare", "@cf":"cloudflare", openrouter:"openrouter",
-    mistral:"mistral", nvidia:"nvidia", cohere:"cohere", huggingface:"huggingface", hf:"huggingface",
-    pollinations:"pollinations", "veoaifree-web":"veoaifree-web", "veo-free":"veoaifree-web"
+    cloudflare:"cloudflare", "@cf":"cloudflare", openrouter:"openrouter"
   };
   if (Object.hasOwn(prefixMap, first)) return [prefixMap[first]];
 
@@ -53,13 +50,6 @@ function comboForModel(combinations, model) {
   }) || null;
 }
 
-// Paid models (GPT, Claude, OpenRouter) need paid access: the account's own (paid, or offered free by the Owner with
-// the button in Control Center), or the older global switch together with the account's provider permission.
-const PAID_REASON = "Modelele plătite (GPT, Claude) cer abonament sau acces oferit de Owner. Modelele gratuite rămân disponibile.";
-function hasPaidAccess(context) {
-  return context?.user?.role === "owner" || context?.personalPaid === true || context?.paidEnabled === true;
-}
-
 function providerAccess(context, provider) {
   const user = context?.user || {};
   const permissions = context?.permissions || {};
@@ -71,9 +61,8 @@ function providerAccess(context, provider) {
   }
 
   if (PAID_PROVIDERS.has(provider)) {
-    if (!isOwner && context?.personalPaid === true) return { allowed:true, reason:"" };
     if (!isOwner && !paidEnabled) {
-      return { allowed:false, reason:PAID_REASON };
+      return { allowed:false, reason:"AI-ul plătit este disponibil doar pentru Owner sau pentru conturile cărora Owner le activează explicit accesul." };
     }
     if (!isOwner && permissions[provider] !== true) {
       const label = provider === "openai" ? "OpenAI / GPT" : provider === "anthropic" ? "Claude / Anthropic" : "OpenRouter";
@@ -109,8 +98,8 @@ function evaluateModelAccess(context, model) {
     if (combo.enabled === false) {
       return { model:requested, allowed:false, providers, paidRequired, source:"combination", combinationId:combo.id, reason:"Combinația AI este dezactivată." };
     }
-    if (paidRequired && !hasPaidAccess(context)) {
-      return { model:requested, allowed:false, providers, paidRequired:true, source:"combination", combinationId:combo.id, reason:PAID_REASON };
+    if (!isOwner && paidRequired && context?.paidEnabled !== true) {
+      return { model:requested, allowed:false, providers, paidRequired:true, source:"combination", combinationId:combo.id, reason:"AI-ul plătit este disponibil doar pentru Owner sau pentru conturile cărora Owner le activează explicit accesul." };
     }
     for (const provider of providers) {
       const access = providerAccess(context, provider);
@@ -123,8 +112,8 @@ function evaluateModelAccess(context, model) {
 
   if (isManagedPaidAlias(requested)) {
     const providers = ["openai","anthropic"];
-    if (!hasPaidAccess(context)) {
-      return { model:requested, allowed:false, providers, paidRequired:true, source:"managed_alias", reason:PAID_REASON };
+    if (!isOwner && context?.paidEnabled !== true) {
+      return { model:requested, allowed:false, providers, paidRequired:true, source:"managed_alias", reason:"AI-ul plătit este disponibil doar pentru Owner sau pentru conturile cărora Owner le activează explicit accesul." };
     }
     for (const provider of providers) {
       const access = providerAccess(context, provider);
@@ -161,8 +150,6 @@ function evaluateModelAccess(context, model) {
 }
 
 module.exports = {
-  hasPaidAccess,
-  PAID_REASON,
   PAID_PROVIDERS,
   KNOWN_PROVIDERS,
   normalizeKey,

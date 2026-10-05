@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.7.17",
+  "version": "0.7.16",
   "private": true,
-  "description": "AI Stoica 0.7.17 - free models for every approved account, Claude and GPT with paid access or offered by the Owner",
+  "description": "AI Stoica 0.7.16 - the chosen model answers, images through the ChatGPT subscription, math as Word equations, files open without downloading",
   "main": "main.cjs",
   "repository": {
     "type": "git",
