@@ -72,7 +72,7 @@ AI_STOICA_OPEN_REGISTRATION=false
 OMNIROUTE_WS_BRIDGE_SECRET=SECRETUL_GENERAT_MAI_SUS
 ```
 
-`AI_STOICA_DEFAULT_MODEL` gol înseamnă că Gateway-ul alege modelul; poți pune un id exact din OmniRoute (de exemplu `groq/openai/gpt-oss-120b`). Nu folosi „Ai principal”: selectarea automată este dezactivată și Gateway-ul ar refuza cererile. Celelalte variabile opționale sunt descrise în `.env.example`.
+`AI_STOICA_DEFAULT_MODEL` gol înseamnă că Gateway-ul alege modelul: prima ta combinație OmniRoute (de exemplu „Ai principal”). Poți pune și un id exact din OmniRoute (de exemplu `groq/openai/gpt-oss-120b`). Celelalte variabile opționale sunt descrise în `.env.example`.
 
 ## 6. Pornește serviciile
 

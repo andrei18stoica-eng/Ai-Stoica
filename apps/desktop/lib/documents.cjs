@@ -98,17 +98,25 @@ function inlineTokens(value) {
 // Word equations are written into the document after it is built: a placeholder run marks where each one goes.
 const mathMark = (i) => `\ue000M${i}\ue001`;
 function inlineRuns(text, size = 22, extra = {}, maths = null) {
-  const textRuns = (value) => inlineTokens(value).map((t) => new TextRun({ text: t.text, size, bold: t.bold || extra.bold, italics: t.italic || extra.italics, strike: t.strike, font: t.code ? "Consolas" : undefined, color: extra.color }));
+  const run = (t, value) => new TextRun({ text: value, size, bold: t.bold || extra.bold, italics: t.italic || extra.italics, strike: t.strike, font: t.code ? "Consolas" : undefined, color: extra.color });
   let runs;
   if (maths && hasMath(text)) {
+    // Formulas are set aside first (their _ and * are not Markdown), so bold or italic around a formula
+    // (**Rezultat: $x=5$**) still pairs up; then each formula goes back in its place.
+    const formulas = [];
+    const joined = splitInlineMath(text).map((p) => (p.text != null ? p.text : `\ue002${formulas.push(p) - 1}\ue003`)).join("");
     runs = [];
-    for (const part of splitInlineMath(text)) {
-      if (part.text != null) { runs.push(...textRuns(part.text)); continue; }
-      const omml = latexToOmml(part.math, { display: part.display, size });
-      if (omml) { runs.push(new TextRun({ text: mathMark(maths.length), size })); maths.push(ommlInline(omml)); }
-      else runs.push(new TextRun({ text: part.raw, size, color: extra.color }));
+    for (const t of inlineTokens(joined)) {
+      for (const piece of t.text.split(/(\ue002\d+\ue003)/)) {
+        if (!piece) continue;
+        const f = /^\ue002(\d+)\ue003$/.test(piece) ? formulas[Number(piece.slice(1, -1))] : null;
+        if (!f) { runs.push(run(t, piece)); continue; }
+        const omml = latexToOmml(f.math, { display: f.display, size });
+        if (omml) { runs.push(new TextRun({ text: mathMark(maths.length), size })); maths.push(ommlInline(omml)); }
+        else runs.push(run(t, f.raw));
+      }
     }
-  } else runs = textRuns(text);
+  } else runs = inlineTokens(text).map((t) => run(t, t.text));
   return runs.length ? runs : [new TextRun({ text: "", size })];
 }
 async function insertWordMath(buffer, maths) {

@@ -86,7 +86,7 @@ function routeTaskLabel(task) {
     coding:"Programare",reasoning:"Matematică / logică",legal_analysis:"Analiză juridică",
     long_context:"Document / context lung",research:"Cercetare",creative:"Creativitate",
     vision:"Imagine / viziune",fast:"Răspuns rapid",general:"General",manual:"Model ales manual",
-    "direct-fallback":"API direct",auto:"Combinația principală (automat)",image_generation:"Generare imagine",video_generation:"Generare video"
+    "direct-fallback":"Rezervă automată: API direct",direct:"API direct ales manual",auto:"Combinația principală (automat)",image_generation:"Generare imagine",video_generation:"Generare video"
   })[task]||"General";
 }
 function RouteBadge({info}) {
@@ -466,7 +466,7 @@ function Header({deniedCount,onMenu,model,onSelectModel,models,onRefreshModels,r
     <button className="iconOnly menuBtn" onClick={onMenu} aria-label="Afișează sau ascunde meniul" title="Meniu"><Menu size={20}/></button>
     <ModelPicker model={model} onSelect={onSelectModel} models={models} onRefresh={onRefreshModels} refreshing={refreshingModels} policyEnforced={policyEnforced} deniedCount={deniedCount}/>
     <div className="topSpacer"/>
-    {showOmni&&<div className={cx("connection",omni===true?"ok":"bad")} title={omni===true?"OmniRoute răspunde.":omni==="key"?"OmniRoute rulează, dar cere cheia API: creează una în OmniRoute → API Manager și pune-o în Setări → AI & OmniRoute. Până atunci chatul folosește API-urile directe.":"OmniRoute nu răspunde. Chatul continuă prin API-urile directe configurate, dacă există."}>{omni===true?<Wifi size={15}/>:<WifiOff size={15}/>} {omni===true?"OmniRoute conectat":omni==="key"?"OmniRoute cere cheie API":"OmniRoute oprit"}</div>}
+    {showOmni&&<div className={cx("connection",omni===true?"ok":"bad")} title={omni===true?"OmniRoute răspunde.":omni==="key"?"OmniRoute rulează, dar cere cheia API: creează una în OmniRoute → API Manager și pune-o în Setări → AI & OmniRoute. Până atunci răspund modelele API-urilor directe (Groq, Gemini…), dacă le alegi din listă.":"OmniRoute nu răspunde. Alege din listă un model al API-urilor directe configurate (Groq, Gemini…) sau pornește «Rezervă automată»."}>{omni===true?<Wifi size={15}/>:<WifiOff size={15}/>} {omni===true?"OmniRoute conectat":omni==="key"?"OmniRoute cere cheie API":"OmniRoute oprit"}</div>}
     <button className="topAction" onClick={onShare} disabled={!current} title="Copiază conversația în clipboard"><Share2 size={16}/> Copiază conversația</button>
     <div className="moreWrap" ref={moreRef}>
       <button className="iconOnly" onClick={()=>{setMore(v=>!v);setMoveOpen(false)}} aria-label="Opțiuni conversație" title="Opțiuni conversație" aria-haspopup="menu" aria-expanded={more}><MoreHorizontal size={20}/></button>
@@ -1233,7 +1233,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <label className="toggleRow"><div><b>Pornește OmniRoute automat</b><span>Dacă serviciul cade, AI Stoica încearcă să îl repornească.</span></div><input type="checkbox" checked={!!cfg.autoStartOmniRoute} onChange={e=>set({autoStartOmniRoute:e.target.checked})}/></label>
         <div className="statusGrid"><div><span>Serviciul AI Stoica</span><b>{status?.gatewayRunning?"Pornit":"Indisponibil"}</b></div><div><span>OmniRoute</span><b>{status?.omniRunning?"Conectat":status?.omniInstalled===false?"Neinstalat — npm install -g omniroute":"Indisponibil"}</b></div></div>
       </>}
-      {tab==="chatapis"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><Plug size={22}/></div><div><h3>API-uri AI</h3><p>Folosite direct pentru chat când OmniRoute nu răspunde.</p></div></div>
+      {tab==="chatapis"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><Plug size={22}/></div><div><h3>API-uri AI</h3><p>Modelele lor apar în listă și răspund direct, fără OmniRoute.</p></div></div>
         <ProviderTestBox/>
         <ServerKeysBox/>
         <label className="toggleRow"><div><b>Folosește API-urile directe</b><span>Modelele lor apar în listă (Groq, Gemini, Cerebras…). Răspund când le alegi sau când nu ai ales niciun model.</span></div><input type="checkbox" checked={cfg.directChatEnabled!==false} onChange={e=>set({directChatEnabled:e.target.checked})}/></label>

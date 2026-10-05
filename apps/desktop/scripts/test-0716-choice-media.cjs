@@ -12,7 +12,7 @@ const mp4 = Buffer.concat([Buffer.from("000000186674797069736f6d0000020069736f6d
 async function main() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-0716-"));
   const asked = { chat: [], image: [], video: [] };
-  let codexDown = false;
+  let codexDown = false, groqDown = false;
   const omni = http.createServer((req, res) => {
     let body = ""; req.on("data", (c) => body += c); req.on("end", () => {
       res.setHeader("content-type", "application/json");
@@ -45,7 +45,7 @@ async function main() {
   globalThis.fetch = async (url, init) => {
     const u = String(url);
     if (u === "https://api.cerebras.ai/v1/chat/completions") { calls.cerebras++; return new Response(JSON.stringify({ choices: [{ message: { content: "CEREBRAS" } }] }), { status: 200, headers: { "content-type": "application/json" } }); }
-    if (u === "https://api.groq.com/openai/v1/chat/completions") { calls.groq++; return new Response(JSON.stringify({ choices: [{ message: { content: "GROQ" } }] }), { status: 200, headers: { "content-type": "application/json" } }); }
+    if (u === "https://api.groq.com/openai/v1/chat/completions") { calls.groq++; if (groqDown) return new Response(JSON.stringify({ error: { message: "groq down" } }), { status: 500, headers: { "content-type": "application/json" } }); return new Response(JSON.stringify({ choices: [{ message: { content: "GROQ " + JSON.parse(init.body).model } }] }), { status: 200, headers: { "content-type": "application/json" } }); }
     if (u.startsWith("https://api.openai.com/v1/images")) { calls.openai++; return new Response(png, { status: 200, headers: { "content-type": "image/png" } }); }
     if (u.startsWith("http://127.0.0.1")) return realFetch(url, init);
     return new Response("{}", { status: 503 });
@@ -65,6 +65,16 @@ async function main() {
     // Streaming too.
     r = await call("/api/chat/stream", { method: "POST", token, body: { model: "broken/model", messages: [{ role: "user", content: "salut" }] } });
     expect(r.status === 502 && calls.cerebras === 0, "streaming must not switch provider either: " + r.status);
+
+    // A direct-API model from the list (not in OmniRoute) is answered by that API, and only by it.
+    r = await chat("groq/llama-test"); j = await r.json();
+    expect(r.status === 200 && r.headers.get("x-ai-stoica-route") === "direct" && j.choices[0].message.content === "GROQ llama-test" && calls.cerebras === 0, "a chosen direct-API model must answer: " + JSON.stringify({ status: r.status, j, calls }));
+    r = await call("/api/chat/stream", { method: "POST", token, body: { model: "groq/llama-test", messages: [{ role: "user", content: "salut" }] } });
+    expect(r.status === 200 && /GROQ llama-test/.test(await r.text()), "streaming with a chosen direct-API model");
+    groqDown = true;
+    r = await chat("groq/llama-test"); j = await r.json();
+    expect(r.status === 502 && /Modelul ales «groq\/llama-test»/.test(j.error) && calls.cerebras === 0, "a failing direct-API model must not be replaced by another API: " + JSON.stringify({ j, calls }));
+    groqDown = false;
 
     // «Rezervă automată» on: the direct APIs answer when the chosen model fails.
     cfg.chatFallbackOnFailure = true; await new Promise((x) => setTimeout(x, 2100));
@@ -92,6 +102,13 @@ async function main() {
     const prefs = JSON.parse(fs.readFileSync(path.join(dir, "media-prefs.json"), "utf8"));
     expect(Object.keys(prefs).length === 1 && Object.values(prefs)[0].image?.id === "openai", "the bound image model must be saved for this account: " + JSON.stringify(prefs));
     codexDown = false;
+
+    // An image model chosen in Settings goes before the subscription models and the bound one.
+    cfg.imageModel = "openrouter/flux-image"; await new Promise((x) => setTimeout(x, 2100));
+    const firstAsked = asked.image.length;
+    r = await call("/api/generate/image", { method: "POST", token, body: { prompt: "un logo galben" } });
+    expect(r.status === 200 && asked.image[firstAsked] === "openrouter/flux-image", "the image model chosen in Settings must be tried first: " + JSON.stringify(asked.image.slice(firstAsked)));
+    cfg.imageModel = ""; await new Promise((x) => setTimeout(x, 2100));
 
     // Video under «Doar gratuit» (no cost policy set): the free OmniRoute web model, never the paid one.
     r = await call("/api/generate/video", { method: "POST", token, body: { prompt: "un apus pe mare" } }); j = await r.json();

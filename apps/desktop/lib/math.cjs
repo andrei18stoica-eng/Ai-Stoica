@@ -5,8 +5,9 @@ const temml = require("temml");
 
 const MAX_TEX = 4000;
 
+// Characters XML does not allow (temml can produce them from \char) would make Word refuse the whole file.
 function esc(value) {
-  return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return String(value).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 const ENTITIES = { amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'", nbsp: " " };
 function unescapeXml(value) {
@@ -262,11 +263,13 @@ function splitInlineMath(text) {
       const end = s.indexOf("$$", i + 2);
       if (end > i + 2) { flush(); out.push({ math: s.slice(i + 2, end), display: true, raw: s.slice(i, end + 2) }); i = end + 2; continue; }
     }
-    if (ch === "$" && s[i + 1] && !/\s|\$/.test(s[i + 1])) {
+    // A digit before the opening $ (5$, 10$/lună) or a letter or digit right after the closing one ($HOME/$USER)
+    // means money or a variable, not a formula.
+    if (ch === "$" && s[i + 1] && !/\s|\$/.test(s[i + 1]) && !/\d/.test(s[i - 1] || "")) {
       let j = i + 1, end = -1;
       while (j < s.length) {
         if (s[j] === "\\") { j += 2; continue; }
-        if (s[j] === "$") { if (!/\s/.test(s[j - 1]) && !/\d/.test(s[j + 1] || "")) end = j; break; }
+        if (s[j] === "$") { if (!/\s/.test(s[j - 1]) && !/[\p{L}\p{N}]/u.test(s[j + 1] || "")) end = j; break; }
         j++;
       }
       if (end > i + 1) { flush(); out.push({ math: s.slice(i + 1, end), display: false, raw: s.slice(i, end + 1) }); i = end + 1; continue; }

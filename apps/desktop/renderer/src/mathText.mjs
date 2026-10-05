@@ -24,11 +24,13 @@ function splitInline(s) {
       const end = s.indexOf("$$", i + 2);
       if (end > i + 2) { flush(); out.push({ math: s.slice(i + 2, end), display: true }); i = end + 2; continue; }
     }
-    if (ch === "$" && s[i + 1] && !/\s|\$/.test(s[i + 1])) {
+    // A digit before the opening $ (5$, 10$/lună) or a letter or digit right after the closing one ($HOME/$USER)
+    // means money or a variable, not a formula.
+    if (ch === "$" && s[i + 1] && !/\s|\$/.test(s[i + 1]) && !/\d/.test(s[i - 1] || "")) {
       let j = i + 1, end = -1;
       while (j < s.length) {
         if (s[j] === "\\") { j += 2; continue; }
-        if (s[j] === "$") { if (!/\s/.test(s[j - 1]) && !/\d/.test(s[j + 1] || "")) end = j; break; }
+        if (s[j] === "$") { if (!/\s/.test(s[j - 1]) && !/[\p{L}\p{N}]/u.test(s[j + 1] || "")) end = j; break; }
         j++;
       }
       if (end > i + 1) { flush(); out.push({ math: s.slice(i + 1, end), display: false }); i = end + 1; continue; }

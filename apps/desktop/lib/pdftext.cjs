@@ -1,10 +1,9 @@
 // PDF text through the fonts' own character maps (ToUnicode). Word, browsers and AI Stoica itself write PDFs whose text
 // is glyph numbers (fonts with ș, ț, ă, emoji…), which cannot be read without the font's map. pdf-lib (already used to
 // make PDFs) opens the file; the page content is read here, following the font in use for every piece of text.
-const { PDFDocument, PDFName, PDFDict, PDFArray, PDFRef, PDFRawStream, PDFStream, decodePDFRawStream } = require("pdf-lib");
+const { PDFDocument, PDFName, PDFDict, PDFArray, PDFRef, PDFRawStream, PDFStream } = require("pdf-lib");
 
 const MAX_CHARS = 3_000_000;
-const MAX_DECODED = 160 * 1024 * 1024;
 
 function utf16Hex(hex) {
   const b = Buffer.from(hex.length % 4 ? hex.padEnd(hex.length + (4 - hex.length % 4), "0") : hex, "hex");
@@ -106,20 +105,22 @@ function lex(src) {
   return toks;
 }
 
-async function extractPdfText(buf) {
+// decodeStream(rawBytes, "/Filter …") must unpack with size limits and return null when it cannot (extract.cjs passes
+// the same capped decoder its plain reader uses), so a small "zip bomb" stream cannot exhaust memory here either.
+async function extractPdfText(buf, { decodeStream } = {}) {
+  if (typeof decodeStream !== "function") throw new Error("decodeStream is required");
   const doc = await PDFDocument.load(buf, { ignoreEncryption: true, updateMetadata: false, throwOnInvalidObject: false });
   if (doc.isEncrypted) return "";
   const ctx = doc.context;
   const look = (o) => (o instanceof PDFRef ? ctx.lookup(o) : o);
-  let decoded = 0;
   const bytesOf = (obj) => {
     const s = look(obj);
-    if (!s || decoded > MAX_DECODED) return "";
+    if (!(s instanceof PDFRawStream)) return "";
     try {
-      const data = s instanceof PDFRawStream ? decodePDFRawStream(s).decode() : s instanceof PDFStream && s.getContents ? s.getContents() : null;
-      if (!data) return "";
-      decoded += data.length;
-      return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString("latin1");
+      const filter = look(s.dict.get(PDFName.of("Filter")));
+      const spec = filter instanceof PDFArray ? `/Filter [${filter.asArray().map((f) => String(look(f))).join(" ")}]` : filter ? `/Filter ${String(filter)}` : "";
+      const data = decodeStream(Buffer.from(s.contents.buffer, s.contents.byteOffset, s.contents.byteLength), spec);
+      return data ? data.toString("latin1") : "";
     } catch { return ""; }
   };
   const fonts = new Map();
@@ -154,19 +155,20 @@ async function extractPdfText(buf) {
   }
 
   // Text position, to put line breaks and spaces where the page has them (glyph widths are estimated from the size).
-  let lastY = null, endX = 0, size = 10, leading = 0, lm = [1, 0, 0, 1, 0, 0];
+  // lm is the start of the current line (Td / TD / T* move from it); x, y is where the next text goes.
+  let lastY = null, endX = 0, size = 10, leading = 0, lm = [1, 0, 0, 1, 0, 0], x = 0, y = 0;
   function show(text) {
     if (!text) return;
-    const fs = Math.abs(size * (Math.hypot(lm[2], lm[3]) || 1)) || 10, y = lm[5], x = lm[4];
+    const fs = Math.abs(size * (Math.hypot(lm[2], lm[3]) || 1)) || 10;
     if (lastY !== null) {
       if (Math.abs(y - lastY) > fs * 0.5) push("\n");
       else if (x - endX > fs * 0.25 && !/\s$/.test(out[out.length - 1] || "") && !/^\s/.test(text)) push(" ");
     }
     push(text);
-    lastY = y; endX = x + text.length * fs * 0.5;
-    lm = [lm[0], lm[1], lm[2], lm[3], endX, y];
+    lastY = y; endX = x + text.length * fs * 0.5; x = endX;
   }
-  function move(tx, ty) { lm = [lm[0], lm[1], lm[2], lm[3], lm[4] + tx * lm[0] + ty * lm[2], lm[5] + tx * lm[1] + ty * lm[3]]; }
+  function setLine(m) { lm = m; x = m[4]; y = m[5]; }
+  function move(tx, ty) { setLine([lm[0], lm[1], lm[2], lm[3], lm[4] + tx * lm[0] + ty * lm[2], lm[5] + tx * lm[1] + ty * lm[3]]); }
 
   function run(content, resources, depth, seen) {
     const fontDict = look(resources?.get?.(PDFName.of("Font")));
@@ -183,8 +185,8 @@ async function extractPdfText(buf) {
         const name = stack.find((x) => x.name)?.name;
         font = name && fontDict instanceof PDFDict ? fontInfo(fontDict.get(PDFName.of(name))) : null;
         if (nums.length) size = nums[nums.length - 1];
-      } else if (op === "BT") lm = [1, 0, 0, 1, 0, 0];
-      else if (op === "Tm" && nums.length >= 6) lm = nums.slice(-6);
+      } else if (op === "BT") setLine([1, 0, 0, 1, 0, 0]);
+      else if (op === "Tm" && nums.length >= 6) setLine(nums.slice(-6));
       else if (op === "Td" && nums.length >= 2) move(nums[nums.length - 2], nums[nums.length - 1]);
       else if (op === "TD" && nums.length >= 2) { leading = -nums[nums.length - 1]; move(nums[nums.length - 2], nums[nums.length - 1]); }
       else if (op === "TL" && nums.length) leading = nums[nums.length - 1];
@@ -220,7 +222,7 @@ async function extractPdfText(buf) {
     lastY = null;
     run(parts.map(bytesOf).join("\n"), resources, 0, new Set());
     push("\n\n");
-    if (chars >= MAX_CHARS || decoded > MAX_DECODED) break;
+    if (chars >= MAX_CHARS) break;
   }
   return out.join("").replace(/[^\S\n]+/g, " ").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n");
 }

@@ -676,7 +676,17 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const fallback=[cfg.defaultModel,cfg.model].map(x=>String(x||"").trim()).find(x=>x&&!isSmartAlias(x));
     return fallback||"";
   }
-  async function resolveChatRoute(context, messages, requestedModel) {
+  // A model from the direct APIs list (groq/…, cerebras/…, as /api/models offers it) that OmniRoute does not have:
+  // that API answers it.
+  const DIRECT_PROVIDERS=["cerebras","groq","gemini","mistral","nvidia","github","openrouter","cloudflare","cohere","huggingface","openai"];
+  async function isDirectModel(cfg,allowed,id){
+    const v=String(id||"").trim(),provider=(v.split("/")[0]||"").toLowerCase();
+    if(!allowed||cfg.directChatEnabled===false||!v.includes("/")||!DIRECT_PROVIDERS.includes(provider))return false;
+    if((await omniModelIds(cfg)).some(x=>x.toLowerCase()===v.toLowerCase()))return false;
+    try{return (await directChatCandidates(cfg,v)).some(c=>c.provider===provider)}catch{return false}
+  }
+  // chosen=false: the client sent no model (or the mobile "AI Stoica …" name), so AI Stoica picks and may fall back.
+  async function resolveChatRoute(context, messages, requestedModel, {chosen=true}={}) {
     const cfg=getOmniConfig();
     const asked=String(requestedModel||cfg.model||"").trim();
     const requested=await resolveModelAlias(cfg,asked);
@@ -687,7 +697,9 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       throw policyFailure("Alege manual un model AI înainte de a trimite mesajul.",400);
     }
     await requireModelAccess(context?.cloudToken,requested);
-    return {task:"manual",automatic:false,reasons:[requested===asked?"model ales manual":"model implicit configurat"],selectedModel:requested,candidates:[{id:requested,provider:inferProvider(requested),score:0}]};
+    const automatic=chosen===false||!String(requestedModel||"").trim()||requested!==asked;
+    if(await isDirectModel(cfg,directApisAllowed(context),requested))return {task:"direct",automatic,direct:true,reasons:["model API direct ales"],selectedModel:requested,candidates:[]};
+    return {task:"manual",automatic,reasons:[automatic?"model implicit configurat":"model ales manual"],selectedModel:requested,candidates:[{id:requested,provider:inferProvider(requested),score:0}]};
   }
   const BUILTIN_PROMPT="Ești AI Stoica, asistentul principal Stoica Enterprises AI. Răspunde clar, riguros și util, în limba utilizatorului.";
   function builtInAssistant(userId){return {id:crypto.randomUUID(),userId,name:"AI Stoica",icon:"S",systemPrompt:BUILTIN_PROMPT,createdAt:Date.now(),builtIn:true};}
@@ -2092,6 +2104,18 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const v=String(id||"");
     return kind==="image"?/^(codex|cx|chatgpt-web|cgpt-web|gemini-web|gweb)\//i.test(v):/^(veoaifree-web|veo-free)\//i.test(v);
   }
+  // The media models to try, in the given order, each once: a name is an OmniRoute model (when discovery found it) or
+  // the id of a direct-API attempt; an attempt object is a direct API.
+  function mediaSteps(found,direct,order){
+    const steps=[],seen=new Set();
+    for(const item of order){
+      if(!item)continue;
+      if(typeof item==="object"){if(!seen.has("d:"+item.id)){seen.add("d:"+item.id);steps.push({key:item.id,direct:item})}continue;}
+      if(found.includes(item)&&!seen.has("o:"+item)){seen.add("o:"+item);steps.push({key:"omniroute:"+item,omni:item})}
+      for(const a of direct)if(a.id===item&&!seen.has("d:"+a.id)){seen.add("d:"+a.id);steps.push({key:a.id,direct:a})}
+    }
+    return steps;
+  }
   function localPaidHint(row){
     const p=String(row?.provider||inferProvider(row?.policyId||row?.id)||"").toLowerCase();
     return ["openai","anthropic","openrouter","runway"].includes(p)||/^(openai|anthropic|openrouter|runway)\//i.test(String(row?.policyId||row?.id||""));
@@ -2208,9 +2232,10 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const direct=directApisAllowed(req)&&!explicitModel?await directImageAttempts(cfg,prompt,size):[];
       // An image model chosen in Settings is tried before the no-key Pollinations fallback.
       const late=String(cfg.imageModel||"").trim()?direct.filter(a=>a.id==="pollinations-free"):[];
-      let models=[];
-      try{models=(await discoverPermittedMediaModels(req,cfg,"image",explicitModel)).slice(0,4)}
+      let found=[];
+      try{found=await discoverPermittedMediaModels(req,cfg,"image",explicitModel)}
       catch(e){if(e.status===403&&explicitModel)throw e;errors.push("OmniRoute: "+(e.status?e.message:roError(e)))}
+      const models=found.slice(0,4);
       const imageUrl=String(cfg.baseUrl).replace(/\/+$/,"")+"/images/generations";
       const imageHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:"Bearer "+cfg.apiKey}:{})};
       const runOmni=async(list)=>{
@@ -2235,15 +2260,16 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         }
         return false;
       };
-      const pref=explicitModel?"":mediaPref(req,cfg,"image");
-      if(pref&&models.includes(pref)&&await runOmni([pref]))return;
-      if(pref&&await runDirect(direct.filter(a=>a.id===pref)))return;
-      const rest=models.filter(m=>m!==pref),others=direct.filter(a=>a.id!==pref);
-      const subscription=explicitModel?[]:rest.filter(m=>subscriptionMedia("image",m));
-      if(await runOmni(subscription))return;
-      if(await runDirect(others.filter(a=>!late.includes(a))))return;
-      if(await runOmni(rest.filter(m=>!subscription.includes(m))))return;
-      if(await runDirect(late.filter(a=>a.id!==pref)))return;
+      // Order: the image model chosen in Settings, the model bound to this account, the subscription models (ChatGPT /
+      // Gemini through OmniRoute), the direct APIs, OmniRoute's other models, the no-key fallback. A provider out of
+      // credits goes to the end of the whole list (it is still tried, last).
+      const steps=mediaSteps(found,direct,[
+        explicitModel?"":String(cfg.imageModel||"").trim(),explicitModel?"":mediaPref(req,cfg,"image"),
+        ...models.filter(m=>subscriptionMedia("image",m)),...direct.filter(a=>!late.includes(a)),...models,...late
+      ]);
+      for(const step of byCooldown("image",steps,x=>x.key)){
+        if(step.omni?await runOmni([step.omni]):await runDirect([step.direct]))return;
+      }
 
       const configuredProviders=[
         cfg.cloudflareAccountId&&cfg.cloudflareApiToken&&"Cloudflare",cfg.pollinationsApiKey&&"Pollinations",cfg.hfToken&&"Hugging Face",cfg.togetherApiKey&&"Together AI",
@@ -2270,51 +2296,50 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const strictFree=directApisAllowed(req)&&(cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free");
       const done=async(resolved,meta)=>{if(signal.aborted)return true;res.json({data:await saveGeneratedMedia(req,{...resolved,kind:"video",prompt,...meta})});return true;};
 
-      let tried=0;
-      const pref=explicitModel?"":mediaPref(req,cfg,"video");
-      if(directApisAllowed(req)&&!explicitModel){
-        const attempts=await directVideoAttempts(cfg,prompt,duration,aspectRatio);
-        tried+=attempts.length;
-        const ordered=[...attempts.filter(a=>a.id===pref),...byCooldown("video",attempts.filter(a=>a.id!==pref))];
-        for(const attempt of ordered){
-          if(signal.aborted)return;
+      const attempts=directApisAllowed(req)&&!explicitModel?await directVideoAttempts(cfg,prompt,duration,aspectRatio):[];
+      // «Doar gratuit» keeps the paid OmniRoute video models out, but not the free web ones (veoaifree-web: VEO 3.1,
+      // Seedance), which OmniRoute serves without a key or cost.
+      let found=[];
+      try{found=await discoverPermittedMediaModels(req,cfg,"video",explicitModel)}
+      catch(e){if(e.status===403&&explicitModel)throw e;errors.push("OmniRoute: "+(e.status?e.message:roError(e)))}
+      if(strictFree)found=found.filter(m=>subscriptionMedia("video",m));
+      const models=found.slice(0,3);
+      // Order: the video model chosen in Settings, the model bound to this account, the free web models, the direct
+      // APIs, OmniRoute's other models; a provider out of credits goes to the end of the whole list.
+      const steps=mediaSteps(found,attempts,[
+        explicitModel?"":String(cfg.videoModel||"").trim(),explicitModel?"":mediaPref(req,cfg,"video"),
+        ...models.filter(m=>subscriptionMedia("video",m)),...attempts,...models
+      ]);
+      const tried=steps.length;
+      const videoUrl=String(cfg.baseUrl).replace(/\/+$/,"")+"/videos/generations";
+      const videoHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:"Bearer "+cfg.apiKey}:{})};
+      for(const step of byCooldown("video",steps,x=>x.key)){
+        if(signal.aborted)return;
+        if(step.direct){
+          const attempt=step.direct;
           try{
             const resolved=await attempt.run();
             if(resolved?.bytes?.length){noteProviderResult("video",attempt.id,"");rememberMedia(req,cfg,"video",attempt.id);if(await done(resolved,{model:resolved.model||attempt.label,provider:resolved.provider||attempt.id}))return;}
           }catch(e){if(signal.aborted)return;const msg=roError(e);noteProviderResult("video",attempt.id,msg);errors.push(attempt.label+": "+msg)}
+          continue;
         }
-      }
-
-      // «Doar gratuit» keeps the paid OmniRoute video models out, but not the free web ones (VEO 3.1 / Seedance).
-      {
-        let models=[];
-        try{models=(await discoverPermittedMediaModels(req,cfg,"video",explicitModel)).slice(0,6)}
-        catch(e){if(e.status===403&&explicitModel)throw e;errors.push("OmniRoute: "+(e.status?e.message:roError(e)))}
-        models=(strictFree?models.filter(m=>subscriptionMedia("video",m)):models).slice(0,3);
-        if(pref&&models.includes(pref))models=[pref,...models.filter(m=>m!==pref)];
-        tried+=models.length;
-        if(models.length){
-          const videoUrl=String(cfg.baseUrl).replace(/\/+$/,"")+"/videos/generations";
-          const videoHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:"Bearer "+cfg.apiKey}:{})};
-          for(const model of byCooldown("video",models,m=>"omniroute:"+m)){
-            if(signal.aborted)return;
-            try{
-              let upstream=await fetch(videoUrl,{method:"POST",headers:videoHeaders,body:JSON.stringify({model,prompt,duration,aspect_ratio:aspectRatio}),signal:mediaSignal(360000)});
-              if(!upstream.ok&&[400,404,405,409,422].includes(upstream.status)){
-                await cancelBody(upstream);
-                upstream=await fetch(videoUrl,{method:"POST",headers:videoHeaders,body:JSON.stringify({model,prompt}),signal:mediaSignal(360000)});
-              }
-              const ctype=upstream.headers.get("content-type")||"";
-              if(!upstream.ok){const msg="HTTP "+upstream.status+" "+(await upstream.text()).slice(0,350);noteProviderResult("video","omniroute:"+model,msg);errors.push(model+": "+msg);continue}
-              let resolved;
-              if(ctype.startsWith("video/")){const bytes=await readCapped(upstream,"video");resolved={bytes,mime:inferMediaMime(bytes,ctype,"video")};}
-              else{const body=JSON.parse((await readCapped(upstream,"image")).toString("utf8"));const candidate=await pollVideoResult(cfg,body);resolved=await resolveGeneratedMedia(candidate,"video");}
-              if(!resolved.bytes.length){errors.push(model+": video gol");continue}
-              rememberMedia(req,cfg,"video",model);
-              if(await done(resolved,{model,provider:"omniroute"}))return;
-            }catch(e){if(signal.aborted)return;errors.push(model+": "+roError(e))}
+        const model=step.omni;
+        try{
+          let upstream=await fetch(videoUrl,{method:"POST",headers:videoHeaders,body:JSON.stringify({model,prompt,duration,aspect_ratio:aspectRatio}),signal:mediaSignal(360000)});
+          if(!upstream.ok&&[400,404,405,409,422].includes(upstream.status)){
+            await cancelBody(upstream);
+            upstream=await fetch(videoUrl,{method:"POST",headers:videoHeaders,body:JSON.stringify({model,prompt}),signal:mediaSignal(360000)});
           }
-        }
+          const ctype=upstream.headers.get("content-type")||"";
+          if(!upstream.ok){const msg="HTTP "+upstream.status+" "+(await upstream.text()).slice(0,350);noteProviderResult("video","omniroute:"+model,msg);errors.push(model+": "+msg);continue}
+          let resolved;
+          if(ctype.startsWith("video/")){const bytes=await readCapped(upstream,"video");resolved={bytes,mime:inferMediaMime(bytes,ctype,"video")};}
+          else{const body=JSON.parse((await readCapped(upstream,"image")).toString("utf8"));const candidate=await pollVideoResult(cfg,body);resolved=await resolveGeneratedMedia(candidate,"video");}
+          if(!resolved.bytes.length){errors.push(model+": video gol");continue}
+          noteProviderResult("video","omniroute:"+model,"");
+          rememberMedia(req,cfg,"video",model);
+          if(await done(resolved,{model,provider:"omniroute"}))return;
+        }catch(e){if(signal.aborted)return;errors.push(model+": "+roError(e))}
       }
 
       if(!tried&&directApisAllowed(req))throw policyFailure(VIDEO_NEEDS_PROVIDER,400);
@@ -2324,7 +2349,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const hint=!configuredProviders.length
         ?" Nu există nicio cheie video configurată în Setări > Video."
         :strictFree
-          ?" Protecția «Doar gratuit» este activă. AI Stoica nu pornește niciun job dacă nu poate confirma costul $0 din catalogul providerului."
+          ?" Protecția «Doar gratuit» este activă: AI Stoica pornește doar modelele web gratuite din OmniRoute (VEO 3.1, Seedance) și joburile al căror cost $0 îl poate confirma din catalogul providerului."
           :"";
       throw policyFailure(("Generarea videoclipului nu a produs un fișier MP4 real."+hint+" "+errors.slice(0,10).join(" | ")).trim(),502);
     }catch(e){if(!signal.aborted)sendError(res,e)}
@@ -2809,8 +2834,9 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       webAllowed:hasPermission(req,"web_search"),deepAllowed:hasPermission(req,"deep_research"),githubAllowed:hasPermission(req,"github_access"),pluginsAllowed:hasPermission(req,"plugins"),
       owner:ownerRequest(req),responseMode:String(req.body?.responseMode||"rapid")
     });
-    const requestedModel=(typeof req.body?.model==="string"?req.body.model.trim().slice(0,200):"")||String(cfg.model||"").trim();
-    return {cfg,requestedModel,messages};
+    const sent=typeof req.body?.model==="string"?req.body.model.trim().slice(0,200):"";
+    const requestedModel=sent||String(cfg.model||"").trim();
+    return {cfg,requestedModel,messages,chosen:!!sent};
   }
 
 
@@ -2911,19 +2937,28 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     return r;
   }
 
-  // After 401/403/429 the remaining models of the same provider are skipped (same key, same limit).
   // A model you chose is the one that answers. If it fails, the error says so instead of another provider answering
-  // in its place; the direct APIs step in only when no model was chosen, or when «Rezervă automată» is turned on.
+  // in its place; the direct APIs step in for a direct-API model you chose (only that model), when no model was
+  // chosen, or when «Rezervă automată» is turned on.
+  const fallbackOn=(cfg,route)=>route?.automatic===true||cfg.chatFallbackOnFailure===true;
   function directFallbackAllowed(req,cfg,route){
-    return directApisAllowed(req)&&cfg.directChatEnabled!==false&&(route?.automatic===true||cfg.chatFallbackOnFailure===true);
+    return directApisAllowed(req)&&cfg.directChatEnabled!==false&&(route?.direct===true||fallbackOn(cfg,route));
   }
-  function chosenModelFailure(cfg,route,errors){
+  // The direct model to keep to, or "" when any configured direct API may answer.
+  const directOnly=(cfg,route)=>route?.direct===true&&!fallbackOn(cfg,route)?route.selectedModel:"";
+  const directReason=(route)=>route?.direct?(route.reasons||[]):["rezervă automată: modelul ales nu a răspuns, a răspuns un API direct"];
+  function chosenModelFailure(req,cfg,route,errors){
     if(route?.automatic)return policyFailure("Niciun model selectat de AI Stoica nu a putut răspunde. "+errors.slice(0,14).join(" | "),502);
-    const hint=cfg.directChatEnabled!==false?" Alege alt model din listă sau pornește «Rezervă automată» în Setări → API-uri AI.":" Alege alt model din listă.";
+    // «Rezervă automată» is in the Windows Settings for the Owner; on the server it is AI_STOICA_CHAT_FALLBACK.
+    const hint=!directApisAllowed(req)||cfg.directChatEnabled===false?" Alege alt model din listă."
+      :webDir?" Alege alt model din listă (Owner-ul poate porni rezerva automată pe server: AI_STOICA_CHAT_FALLBACK=true).":" Alege alt model din listă sau pornește «Rezervă automată» în Setări → API-uri AI.";
     return policyFailure(`Modelul ales «${route?.selectedModel||"?"}» nu a răspuns, iar AI Stoica nu trece singur la alt model.${hint} Motiv: `+errors.slice(0,6).join(" | "),502);
   }
-  async function directChatFallback(cfg,messages,requestedModel,stream,timer=chatTimer(stream,null)){
-    const candidates=byCooldown("chat",await directChatCandidates(cfg,requestedModel),c=>c.provider),errors=[],skip=new Set();
+  // After 401/403/429 the remaining models of the same provider are skipped (same key, same limit).
+  async function directChatFallback(cfg,messages,requestedModel,stream,timer=chatTimer(stream,null),only=""){
+    let list=await directChatCandidates(cfg,only||requestedModel);
+    if(only)list=list.filter(c=>`${c.provider}/${c.model}`.toLowerCase()===only.toLowerCase());
+    const candidates=byCooldown("chat",list,c=>c.provider),errors=[],skip=new Set();
     for(const candidate of candidates){
       if(timer.cancelled())break;
       if(skip.has(candidate.provider))continue;
@@ -2998,8 +3033,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.post("/api/chat", auth, async (req,res) => {
     const clientSignal=clientAbortSignal(res);
     try{
-      const {cfg,requestedModel,messages}=await prepareChat(req);
-      const route=await resolveChatRoute(req,messages,requestedModel);
+      const {cfg,requestedModel,messages,chosen}=await prepareChat(req);
+      const route=await resolveChatRoute(req,messages,requestedModel,{chosen});
       const timer=chatTimer(false,clientSignal),errors=[];
       for(const candidate of route.candidates){
         if(clientSignal.aborted)return;
@@ -3013,18 +3048,18 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         }catch(e){if(clientSignal.aborted)return;errors.push(`${candidate.id}: ${roError(e)}`)}
       }
       if(directFallbackAllowed(req,cfg,route)){
-        const direct=await directChatFallback(cfg,messages,requestedModel,false,timer);
+        const direct=await directChatFallback(cfg,messages,requestedModel,false,timer,directOnly(cfg,route));
         errors.push(...direct.errors);
         if(direct.response){
           const body=await direct.response.text();
-          res.setHeader("X-AI-Stoica-Route","direct-fallback");
+          res.setHeader("X-AI-Stoica-Route",route.direct?"direct":"direct-fallback");
           res.setHeader("X-AI-Stoica-Model",headerSafe(direct.candidate.model));
           res.setHeader("X-AI-Stoica-Provider",direct.candidate.provider);
           return res.status(200).type(direct.response.headers.get("content-type")||"application/json").send(withCleanQuestions(body));
         }
       }
       if(clientSignal.aborted)return;
-      throw chosenModelFailure(cfg,route,errors);
+      throw chosenModelFailure(req,cfg,route,errors);
     }catch(e){if(!clientSignal.aborted)sendError(res,e)}
   });
   app.post("/api/chat/stream", auth, async (req,res) => {
@@ -3033,10 +3068,10 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     res.on("close",()=>{if(!res.writableFinished)clientGone.abort()});
     let prepared;
     try{prepared=await prepareChat(req)}catch(e){return sendError(res,e,400)}
-    const {cfg,requestedModel,messages}=prepared;
+    const {cfg,requestedModel,messages,chosen}=prepared;
     const timer=chatTimer(true,clientGone.signal);
     try{
-      const route=await resolveChatRoute(req,messages,requestedModel);
+      const route=await resolveChatRoute(req,messages,requestedModel,{chosen});
       const errors=[];let upstream=null,usedModel="",directCandidate=null;
       for(const candidate of route.candidates){
         if(clientGone.signal.aborted)return;
@@ -3048,23 +3083,24 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       }
       if(!upstream&&directFallbackAllowed(req,cfg,route)&&!timer.signal.aborted){
         if(clientGone.signal.aborted)return;
-        const direct=await directChatFallback(cfg,messages,requestedModel,true,timer);
+        const direct=await directChatFallback(cfg,messages,requestedModel,true,timer,directOnly(cfg,route));
         errors.push(...direct.errors);
         if(direct.response){upstream=direct.response;usedModel=direct.candidate.model;directCandidate=direct.candidate}
       }
       if(clientGone.signal.aborted)return;
-      if(!upstream)throw chosenModelFailure(cfg,route,errors);
+      if(!upstream)throw chosenModelFailure(req,cfg,route,errors);
       timer.touch();
       const ctype=upstream.headers.get("content-type")||"";
       res.status(200);
       res.setHeader("Content-Type","text/event-stream; charset=utf-8");
       res.setHeader("Cache-Control","no-cache, no-transform");
       res.setHeader("Connection","keep-alive");
-      res.setHeader("X-AI-Stoica-Route",directCandidate?"direct-fallback":route.task);
+      const routeTask=directCandidate?(route.direct?"direct":"direct-fallback"):route.task;
+      res.setHeader("X-AI-Stoica-Route",routeTask);
       res.setHeader("X-AI-Stoica-Model",headerSafe(usedModel));
       if(directCandidate)res.setHeader("X-AI-Stoica-Provider",directCandidate.provider);
       const usedCandidate=directCandidate||route.candidates.find(x=>x.id===usedModel)||{};
-      res.write(`data: ${JSON.stringify({ai_stoica_route:{task:directCandidate?"direct-fallback":route.task,model:usedModel,provider:usedCandidate.provider||inferProvider(usedModel),reasons:directCandidate?["fallback API direct după indisponibilitatea OmniRoute"]:(route.reasons||[])}})}\n\n`);
+      res.write(`data: ${JSON.stringify({ai_stoica_route:{task:routeTask,model:usedModel,provider:usedCandidate.provider||inferProvider(usedModel),reasons:directCandidate?directReason(route):(route.reasons||[])}})}\n\n`);
       if(!ctype.includes("text/event-stream")){const data=await upstream.json(),text=sanitizeQuestions(data?.choices?.[0]?.message?.content||"");res.write(`data: ${JSON.stringify({choices:[{delta:{content:text}}]})}\n\n`);res.write("data: [DONE]\n\n");return res.end();}
       const reader=upstream.body.getReader();
       while(true){
@@ -3097,7 +3133,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       }catch(e){if(signal?.aborted)throw e;errors.push(`${candidate.id}: ${roError(e)}`)}
     }
     if(directFallbackAllowed(req,cfg,route)){
-      const direct=await directChatFallback(cfg,messages,requestedModel,false,timer);
+      const direct=await directChatFallback(cfg,messages,requestedModel,false,timer,directOnly(cfg,route));
       errors.push(...direct.errors);
       if(direct.response){const text=await textOf(direct.response);if(text.trim())return {text,model:`${direct.candidate.provider}/${direct.candidate.model}`};errors.push(`${direct.candidate.label}: răspuns gol`);}
     }
@@ -3241,24 +3277,30 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const cfg=getOmniConfig(),user=store.read().users.find(u=>u.id===item.userId);if(!user)throw new Error("Contul automatizării nu mai există.");
       const ctx=await automationContext(user,cloudToken,req);
       if(!hasPermission(ctx,"automations"))throw policyFailure(deniedMessage("automations"),403);
-      const selectedModel=await resolveModelAlias(cfg,String(item.model||cfg.model||"").trim());
+      const askedModel=String(item.model||cfg.model||"").trim();
+      const selectedModel=await resolveModelAlias(cfg,askedModel);
       if(!selectedModel)throw policyFailure("Automatizarea nu are un model AI valid. Selectează un model permis de Owner.",400);
+      // Same rule as chat: no model chosen for the automation (or "Ai principal" / "AI Stoica …") lets AI Stoica fall back.
+      const automaticModel=!String(item.model||"").trim()||selectedModel!==askedModel;
       await requireModelAccess(cloudToken,selectedModel);
       const isWatch=item.timingMode==="condition_watch";
       const taskPrompt=isWatch
         ? `${item.prompt}\n\nAceasta este o verificare condițională. Dacă nu există o schimbare relevantă sau condiția nu este îndeplinită, răspunde exact: AI_STOICA_NO_NOTIFICATION. Dacă este îndeplinită, răspunde numai cu informația utilă care trebuie notificată.`
         : item.prompt;
       const messages=await prepareMessages([{role:"user",content:taskPrompt}],null,item.userId,{webAllowed:hasPermission(ctx,"web_search"),deepAllowed:hasPermission(ctx,"deep_research"),githubAllowed:hasPermission(ctx,"github_access"),pluginsAllowed:hasPermission(ctx,"plugins"),owner:false});
-      // OmniRoute first; if it is not running or the model fails, the Owner's direct free APIs answer instead.
+      // Same rule as chat: a direct-API model goes to its API; any other model to OmniRoute, and when it fails the direct
+      // APIs answer only if no model was chosen or «Rezervă automată» is on.
       const errors=[];let data=null;
-      try{
+      const directAllowed=(roleFor(user,ctx.cloudUser)==="owner"||!cloudBase())&&cfg.directChatEnabled!==false;
+      const directModel=await isDirectModel(cfg,directAllowed,selectedModel),fallback=automaticModel||cfg.chatFallbackOnFailure===true;
+      if(!directModel)try{
         const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},body:JSON.stringify({model:selectedModel,messages,stream:false,temperature:0.25}),signal:AbortSignal.timeout(NONSTREAM_MS)});
         if(r.ok)data=await r.json();
         else errors.push(`OmniRoute HTTP ${r.status}: ${(await r.text()).slice(0,300)}`);
       }catch(e){errors.push(`OmniRoute: ${roError(e)}`)}
       let usedModel=selectedModel;
-      if(!data&&(roleFor(user,ctx.cloudUser)==="owner"||!cloudBase())&&cfg.directChatEnabled!==false){
-        const direct=await directChatFallback(cfg,messages,selectedModel,false);
+      if(!data&&directAllowed&&(directModel||fallback)){
+        const direct=await directChatFallback(cfg,messages,selectedModel,false,undefined,directModel&&!fallback?selectedModel:"");
         errors.push(...direct.errors);
         if(direct.response){usedModel=`${direct.candidate.provider}/${direct.candidate.model}`;try{data=JSON.parse(await direct.response.text())}catch{errors.push("API direct: răspuns invalid")}}
       }

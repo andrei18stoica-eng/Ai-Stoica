@@ -7,7 +7,8 @@ const host = process.env.HOST || "0.0.0.0";
 const dataDir = process.env.DATA_DIR || "/data";
 const env = name => String(process.env[name] || "").trim();
 
-// "Ai principal"/"AI Stoica" are automatic-routing names that the gateway refuses (409); an empty model lets the gateway choose.
+// "Ai principal"/"AI Stoica" as the default are dropped: an empty model lets the gateway choose, and it picks your first
+// OmniRoute combination ("Ai principal" when you have it).
 function defaultModel() {
   const value = env("AI_STOICA_DEFAULT_MODEL") || env("AI_STOICA_MODEL");
   return /^ai[ _-]*(principal|stoica)$/i.test(value) ? "" : value;

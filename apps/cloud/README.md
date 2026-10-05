@@ -35,7 +35,7 @@ Creează imediat după pornire contul tău (cu e-mailul Owner): cât timp `AI_ST
 
 ## Model implicit
 
-`AI_STOICA_DEFAULT_MODEL` este modelul folosit când aplicația nu trimite unul. Pune un id exact din OmniRoute (de exemplu `groq/openai/gpt-oss-120b`) sau lasă-l gol ca Gateway-ul să aleagă. Numele „Ai principal” / „AI Stoica” nu mai sunt acceptate (selectarea automată este dezactivată); dacă au rămas în `.env` (`AI_STOICA_MODEL`), sunt ignorate.
+`AI_STOICA_DEFAULT_MODEL` este modelul folosit când aplicația nu trimite unul. Pune un id exact din OmniRoute (de exemplu `groq/openai/gpt-oss-120b`) sau lasă-l gol ca Gateway-ul să aleagă. Gol înseamnă prima ta combinație OmniRoute (de exemplu „Ai principal”); numele „Ai principal” / „AI Stoica” scrise aici sunt ignorate, cu același efect.
 
 ## Configurarea OmniRoute
 
