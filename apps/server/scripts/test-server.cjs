@@ -21,6 +21,7 @@ function query(sql, params = []) {
   }
   if (/^\s*SELECT \* FROM users WHERE email=\$1/.test(q)) return result(db.users.filter(u => u.email === params[0]));
   if (/^\s*SELECT \* FROM users WHERE id=\$1/.test(q)) return result(db.users.filter(u => u.id === params[0]));
+  if (/^\s*UPDATE users SET paid_gift=\$1/.test(q)) { const u = db.users.find(x => x.id === params[1]); if (u) u.paid_gift = params[0]; return result([]); }
   if (/^\s*INSERT INTO sessions/.test(q)) { db.sessions.set(params[0], { user_id: params[1], expires_at: params[2] }); return result([]); }
   if (/FROM sessions s\s+JOIN users u/.test(q)) {
     const s = db.sessions.get(params[0]);
@@ -115,6 +116,19 @@ function freePort() {
   assert.equal(r.status, 400);
   r = await call("PATCH", `/api/admin/users/${ana.id}/permissions`, { token: owner, body: { permissions: { web_search: "false" } } });
   assert.equal(r.data.permissions.web_search, false);
+
+  // 0.7.17: the Owner's button gives one account GPT and Claude free, and takes them back.
+  r = await call("PATCH", `/api/admin/users/${ana.id}/paid`, { token: owner, body: { gift: "poate" } });
+  assert.equal(r.status, 400);
+  r = await call("PATCH", `/api/admin/users/${ana.id}/paid`, { token: owner, body: { gift: true } });
+  assert.deepEqual([r.status, r.data.user.paidAccess, r.data.user.paidGift], [200, true, true]);
+  r = await call("PATCH", `/api/admin/users/${ana.id}/paid`, { token: owner, body: { gift: false } });
+  assert.deepEqual([r.status, r.data.user.paidAccess], [200, false]);
+  const ownerRow = db.users.find(u => u.email === "owner@example.com");
+  r = await call("PATCH", `/api/admin/users/${ownerRow.id}/paid`, { token: owner, body: { gift: true } });
+  assert.equal(r.status, 400);
+  r = await call("GET", "/auth/me", { token: owner });
+  assert.equal(r.data.user.paidAccess, true, "the Owner always has paid access");
 
   r = await call("POST", "/auth/logout", { token: owner });
   assert.equal(r.status, 200);

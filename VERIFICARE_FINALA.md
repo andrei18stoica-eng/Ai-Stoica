@@ -1,4 +1,4 @@
-# AI Stoica v0.7.16 — verificare
+# AI Stoica v0.7.17 — verificare
 
 Verificări automate în GitHub Actions:
 
@@ -20,9 +20,10 @@ Verificări automate în GitHub Actions:
   - `test-release-workflows.cjs` – doar „Build AI Stoica Windows” publică `latest.yml` și `.blockmap` (la fel ca `.exe`), workflow-ul ZIP publică doar ZIP-ul.
   - `test-0716-choice-media.cjs` – modelul ales răspunde (fără trecere ascunsă la Cerebras/Groq, nici la streaming), „Rezervă automată” o permite, fără model răspunde combinația principală, pozele încearcă întâi abonamentul ChatGPT (Codex), modelul care a reușit rămâne legat per cont, video web gratuit cu „Doar gratuit”, deschiderea unui Word fără descărcare (doar pentru contul lui);
   - `test-0716-math.cjs` – LaTeX → ecuații Word (fracții, radicali, sume, integrale, funcții, matrice, ecuații aliniate), banii și codul rămân text, LaTeX greșit rămâne scris, XML valid în DOCX, aceleași reguli pentru formulele din chat, textul PDF-urilor cu diacritice și tabelele ToUnicode;
+  - `test-0717-paid-access.cjs` – pe site (conturi în `apps/server`, cu politica reală `ai-policy.cjs`): un cont gratuit folosește API-urile directe gratuite și modelele gratuite din OmniRoute, dar nu GPT (nici direct, nici prin OmniRoute) și nici API-ul plătit de poze; un cont cu acces plătit (abonament sau oferit de Owner) folosește și GPT; Owner-ul are tot;
   - `test-hetzner-setup.cjs` – „Copiază cheile pentru server” (toate cheile Windows, sub numele citite de server, fără să ajungă în interfață) și `deploy/hetzner/setup-web.sh` rulat cu Docker, rețea și DNS simulate: păstrează valorile din `.env`, salvează exact cheile lipite și le refuză pe cele necunoscute, nu dublează rânduri, cere din nou o cheie OmniRoute refuzată, explică DNS-ul lipsă, creează `.env` pe un server nou.
 - **Build AI Stoica Windows**: aceleași teste pe Windows, apoi installerul + `latest.yml` + `.blockmap` în Releases.
-- **AI Stoica Server Check**: `apps/server` (politica AI și contractul HTTP) + Docker.
+- **AI Stoica Server Check**: `apps/server` (politica AI și contractul HTTP, inclusiv butonul „Oferă gratis Claude și GPT” și accesul plătit) + Docker.
 - **Check AI Stoica Cloudflare**: `npm test` (scenarii cu bază D1 simulată) + `wrangler deploy --dry-run`.
 - **Check AI Stoica Mobile**: `expo-doctor` și export iOS/Android.
 

@@ -415,6 +415,7 @@ function groupModels(list){
   return order.filter(k=>groups.has(k)).map(k=>groups.get(k));
 }
 function ModelPicker({model,onSelect,models,onRefresh,refreshing,policyEnforced,deniedCount=0}) {
+  const {paidAccess=true}=useAccess();
   const [open,setOpen]=useState(false),[query,setQuery]=useState("");
   const ref=useRef(null),listRef=useRef(null);
   useDismiss(open,()=>setOpen(false),ref);
@@ -450,6 +451,7 @@ function ModelPicker({model,onSelect,models,onRefresh,refreshing,policyEnforced,
         {!list.length&&<div className="modelEmpty">Nu există modele disponibile. {policyEnforced?"Cere Owner-ului acces la cel puțin un model.":IS_WEB?"Owner-ul serverului trebuie să adauge o cheie AI (în fișierul .env de pe server).":"Pornește OmniRoute sau adaugă o cheie API în Setări."}</div>}
         {list.length>0&&!filtered.length&&<div className="modelEmpty">Nu am găsit modelul căutat.</div>}
       </div>
+      {!paidAccess&&<div className="modelPaidHint"><b>Claude și GPT (plătite)</b><span>Sunt disponibile cu abonament (în curând) sau dacă Owner-ul ți le oferă. Modelele gratuite de mai sus le poți folosi oricând.</span></div>}
       <div className="modelPickerFoot">{refreshing?"Actualizez lista de modele…":policyEnforced?"Owner-ul stabilește ce modele sunt disponibile pentru contul tău."+(deniedCount>0?` ${plural(deniedCount,"model OmniRoute este ascuns","modele OmniRoute sunt ascunse")} de Owner.`:""):(IS_WEB?"Modelele vin din OmniRoute și din API-urile configurate pe server.":"Modelele vin din OmniRoute și din API-urile configurate pe acest PC.")}</div>
     </div>}
     </div>
@@ -896,10 +898,10 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
 }
 
 const ADMIN_STATUS_LABELS={pending:"În așteptare",active:"Activ",rejected:"Respins",suspended:"Suspendat",blocked:"Blocat"};
-const AUDIT_LABELS={"admin.user_status":"Status cont modificat","admin.permissions":"Permisiuni modificate","admin.sessions_revoke":"Sesiuni închise","admin.paid_ai":"AI plătit modificat","auth.register":"Cont nou","auth.login":"Autentificare","auth.logout":"Deconectare"};
+const AUDIT_LABELS={"admin.user_status":"Status cont modificat","admin.permissions":"Permisiuni modificate","admin.sessions_revoke":"Sesiuni închise","admin.paid_ai":"AI plătit modificat","admin.paid_gift":"Claude și GPT oferite / retrase","auth.register":"Cont nou","auth.login":"Autentificare","auth.logout":"Deconectare"};
 function AdminPanel({onClose}) {
   const permissionLabels={
-    chat:"Chat AI",cerebras:"Cerebras",gemini:"Gemini",groq:"Groq",cloudflare:"Cloudflare AI",
+    chat:"Chat AI",cerebras:"Cerebras",gemini:"Gemini",groq:"Groq",cloudflare:"Cloudflare AI",mistral:"Mistral",nvidia:"NVIDIA",huggingface:"Hugging Face",cohere:"Cohere",
     openrouter:"OpenRouter (poate genera costuri)",image_generation:"Generare imagini",video_generation:"Generare videoclipuri",document_generation:"Fișiere: PDF / Word / PowerPoint / Excel / CSV / ZIP / cod",
     file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",
     automations:"Scheduled (sarcini programate)",plugins:"Pluginuri",github_access:"GitHub",openai:"OpenAI (plătit)",anthropic:"Claude / Anthropic (plătit)"
@@ -939,6 +941,16 @@ function AdminPanel({onClose}) {
     }catch(e){toast("Permisiuni: "+e.message)}
     finally{if(mounted.current)setPending(p=>{const n={...p};delete n[`${user.id}:${key}`];return n})}
   }
+  async function setPaidGift(user,gift){
+    if(!user||user.role==="owner"||actionBusy)return;
+    setActionBusy(true);
+    try{
+      await api(`/api/admin/users/${user.id}/paid`,{method:"PATCH",body:JSON.stringify({gift})});
+      await load();
+      toast(gift?`${user.email} poate folosi acum Claude și GPT, gratuit.`:`Accesul gratuit la Claude și GPT pentru ${user.email} a fost retras.`,"ok");
+    }catch(e){toast("Acces plătit: "+e.message)}
+    finally{if(mounted.current)setActionBusy(false)}
+  }
   async function revokeSessions(user){
     if(!user||user.role==="owner"||actionBusy)return;
     if(!confirm(`Închizi toate sesiunile active pentru ${user.email}?`))return;
@@ -966,7 +978,7 @@ function AdminPanel({onClose}) {
         <div><span>Utilizatori</span><b>{users.length}</b></div>
         <div className={pendingCount?"warn":""}><span>În așteptare</span><b>{pendingCount}</b></div>
         <div><span>Activi</span><b>{activeCount}</b></div>
-        <button className={cx("adminPaidAi",paidAi&&"on")} onClick={togglePaid} disabled={actionBusy} aria-pressed={paidAi} title="Controlează AI-ul plătit pentru conturile normale. Owner-ul rămâne permis."><span>AI plătit · utilizatori</span><b>{paidAi?"PORNIT":"OPRIT"}</b></button>
+        <button className={cx("adminPaidAi",paidAi&&"on")} onClick={togglePaid} disabled={actionBusy} aria-pressed={paidAi} title="Comutatorul vechi, pentru toate conturile odată (cu permisiunile OpenAI / Claude bifate pe fiecare cont). Pentru un singur cont folosește butonul «Oferă gratis Claude și GPT»."><span>AI plătit · toate conturile</span><b>{paidAi?"PORNIT":"OPRIT"}</b></button>
       </div>
       <div className="adminToolbar">
         <div className="adminFilters" role="tablist">
@@ -978,7 +990,7 @@ function AdminPanel({onClose}) {
         <div className="adminUsers">
           {visible.map(u=><button key={u.id} className={cx("adminUserRow",selectedId===u.id&&"active")} onClick={()=>setSelectedId(u.id)}>
             <span className="accountAvatar">{(u.name||u.email||"U")[0].toUpperCase()}</span>
-            <span className="adminUserCopy"><b>{u.name||u.email}</b><small>{u.email}</small></span>
+            <span className="adminUserCopy"><b>{u.name||u.email}{u.role!=="owner"&&u.paid_access&&<span className="adminPaidBadge" title="Are acces la Claude și GPT">PRO</span>}</b><small>{u.email}</small></span>
             <span className={cx("adminStatus","s-"+u.status)}>{u.role==="owner"?"Owner":ADMIN_STATUS_LABELS[u.status]||u.status}</span>
           </button>)}
           {!visible.length&&<div className="stoicaPluginEmpty">{busy?"Se încarcă utilizatorii…":"Nu există utilizatori în această categorie."}</div>}
@@ -995,6 +1007,17 @@ function AdminPanel({onClose}) {
               {selected.status!=="blocked"&&<button className="dangerButton" onClick={()=>setStatus(selected,"blocked")} disabled={actionBusy}>Blochează</button>}
               {selected.status==="pending"&&<button className="secondary" onClick={()=>setStatus(selected,"rejected")} disabled={actionBusy}><X size={15}/> Respinge</button>}
               <button className="secondary" onClick={()=>revokeSessions(selected)} disabled={actionBusy}>Închide sesiunile</button>
+            </div>}
+            {selected.role!=="owner"&&<div className={cx("adminPaidAccess",(selected.paid_gift||selected.paid_access)&&"on")}>
+              <div>
+                <b>Claude și GPT (plătite)</b>
+                <span>{selected.paid_gift?"Oferite gratuit de tine. Costul API-urilor îl plătești tu."
+                  :selected.paid_access?`Abonament plătit${selected.paid_until?` până pe ${new Date(selected.paid_until).toLocaleDateString("ro-RO")}`:""}.`
+                  :"Contul folosește doar modelele gratuite. Cu un clic îi oferi gratuit Claude și GPT."}</span>
+              </div>
+              {selected.paid_gift
+                ?<button className="secondary" onClick={()=>setPaidGift(selected,false)} disabled={actionBusy}>Retrage Claude și GPT</button>
+                :<button className="primary" onClick={()=>setPaidGift(selected,true)} disabled={actionBusy}><Sparkles size={15}/> Oferă gratis Claude și GPT</button>}
             </div>}
             <div className="adminPermissionHead"><div><h4>Permisiuni</h4><p>Se aplică pe server pentru acest cont.</p></div></div>
             <div className="adminPermissions">
@@ -1451,7 +1474,8 @@ function App() {
   generationsRef.current=generations;
   const current=conversations.find(c=>c.id===currentId)||null;
   const isOwner=user?.role==="owner";
-  const access=useMemo(()=>({can:key=>isOwner||permissions?.[key]!==false,deny:key=>toast(deniedMessage(key)),isOwner}),[isOwner,permissions]);
+  const paidAccess=isOwner||user?.paidAccess!==false;
+  const access=useMemo(()=>({can:key=>isOwner||permissions?.[key]!==false,deny:key=>toast(deniedMessage(key)),isOwner,paidAccess}),[isOwner,permissions,paidAccess]);
   const {can,deny}=access;
   const currentGen=currentId?generations[currentId]:null;
   const busy=!!currentGen;

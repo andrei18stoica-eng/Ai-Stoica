@@ -638,7 +638,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const id=String(typeof entry==="string"?entry:entry?.id||"").trim();
       const provider=String(typeof entry==="string"?"":entry?.provider||"").trim().toLowerCase();
       const first=id.toLowerCase().split("/")[0];
-      const alreadyScoped=["openai","anthropic","google","gemini","cerebras","groq","cloudflare","openrouter","@cf"].includes(first);
+      const alreadyScoped=["openai","anthropic","google","gemini","cerebras","groq","cloudflare","openrouter","@cf","mistral","nvidia","cohere","huggingface","hf","pollinations","veoaifree-web","veo-free"].includes(first);
       const policyId=provider&&!alreadyScoped?`${provider}/${id}`:id;
       return {entry,id,policyId};
     }).filter(x=>x.id);
@@ -693,13 +693,13 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(!requested){
       const auto=await defaultOmniModel(cfg,context);
       if(auto)return {task:"auto",automatic:true,reasons:["niciun model ales: folosesc combinația principală OmniRoute"],selectedModel:auto,candidates:[{id:auto,provider:inferProvider(auto),score:0}]};
-      if(directApisAllowed(context)&&cfg.directChatEnabled!==false)return {task:"direct-fallback",automatic:true,reasons:["OmniRoute fără model selectat; folosesc API-urile directe configurate"],selectedModel:"",candidates:[]};
+      if(cfg.directChatEnabled!==false&&(await directChatCandidates(cfgFor(context,cfg),"")).length)return {task:"direct-fallback",automatic:true,reasons:["OmniRoute fără model selectat; folosesc API-urile directe configurate"],selectedModel:"",candidates:[]};
       throw policyFailure("Alege manual un model AI înainte de a trimite mesajul.",400);
     }
     await requireModelAccess(context?.cloudToken,requested);
     requirePersonalAccess(context,requested);
     const automatic=chosen===false||!String(requestedModel||"").trim()||requested!==asked;
-    if(await isDirectModel(cfg,directApisAllowed(context),requested))return {task:"direct",automatic,direct:true,reasons:["model API direct ales"],selectedModel:requested,candidates:[]};
+    if(await isDirectModel(cfgFor(context,cfg),true,requested))return {task:"direct",automatic,direct:true,reasons:["model API direct ales"],selectedModel:requested,candidates:[]};
     return {task:"manual",automatic,reasons:[automatic?"model implicit configurat":"model ales manual"],selectedModel:requested,candidates:[{id:requested,provider:inferProvider(requested),score:0}]};
   }
   const BUILTIN_PROMPT="Ești AI Stoica, asistentul principal Stoica Enterprises AI. Răspunde clar, riguros și util, în limba utilizatorului.";
@@ -758,6 +758,27 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   // Local mode (no AI Stoica Cloud): the account on this PC uses the API keys configured on this PC.
   // Code execution, SSH and GitHub write stay Owner-only.
   function directApisAllowed(req){return ownerRequest(req)||!cloudBase();}
+  // The direct APIs (keys in Settings, or in the server's .env) for one account: the Owner (or the PC's own user) as
+  // configured; any other approved account the free providers, and the paid ones (GPT, Claude, OpenRouter, paid image
+  // and video) only with paid access, bought or offered by the Owner (apps/server: paid_gift / paid_until).
+  function apiAccess(user,cloudUser){
+    if(roleFor(user,cloudUser)==="owner"||!cloudBase())return "all";
+    return cloudUser?.paidAccess===true?"paid":"free";
+  }
+  const reqApiAccess=(req)=>apiAccess(req.user,req.cloudUser);
+  const PROVIDER_KEYS={cerebras:["cerebrasApiKey"],groq:["groqApiKey"],gemini:["geminiApiKey"],mistral:["mistralApiKey"],nvidia:["nvidiaApiKey"],
+    cohere:["cohereApiKey"],huggingface:["hfToken"],cloudflare:["cloudflareApiToken"],github:["githubToken"],openrouter:["openRouterApiKey"],openai:["openAiApiKey"]};
+  function cfgForAccess(cfg,access,permissions={}){
+    if(access==="all")return cfg;
+    const out={...cfg};
+    // A free provider the Owner turned off for this account in Control Center (paid access covers all paid providers).
+    for(const [provider,keys] of Object.entries(PROVIDER_KEYS))if(!["openai","openrouter"].includes(provider)&&permissions?.[provider]===false)for(const k of keys)out[k]="";
+    if(access==="paid")return out;
+    Object.assign(out,{directChatCostPolicy:"free_only",imageCostPolicy:"free_only",imageProviderMode:"free",videoCostPolicy:"free_only",videoMode:"free",
+      openAiApiKey:"",openRouterApiKey:"",openRouterDisabled:true,stabilityApiKey:"",falApiKey:"",replicateApiToken:"",togetherApiKey:""});
+    return out;
+  }
+  const cfgFor=(req,cfg)=>cfgForAccess(cfg,reqApiAccess(req),req.permissions);
   function normalizePermissions(raw, owner) {
     const out = {};
     for (const k of PERMISSION_KEYS) { const v = raw?.[k]; out[k] = owner || !(v === false || v === "false" || v === 0); }
@@ -944,7 +965,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
   app.get("/auth/me", auth, (req, res) => res.json({
     token: req.cloudToken || sign(req.user, req.localSession?.sid),
-    user: publicUser({ ...req.user, status: req.cloudUser?.status || req.user.status }, roleFor(req.user, req.cloudUser)),
+    user: { ...publicUser({ ...req.user, status: req.cloudUser?.status || req.user.status }, roleFor(req.user, req.cloudUser)), paidAccess: reqApiAccess(req) !== "free", paidGift: req.cloudUser?.paidGift === true, paidUntil: req.cloudUser?.paidUntil || null },
     permissions: permissionsFor(req)
   }));
   app.patch("/api/me/preferences", auth, (req, res) => {
@@ -987,10 +1008,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       try{filtered=await allowedOmniEntries(req,manualModels)}
       catch(e){filtered=[];policyError=e.message}
     }
-    if(directApisAllowed(req)&&cfg.directChatEnabled!==false){
+    if(cfg.directChatEnabled!==false){
       try{
-        const direct=await directChatCandidates(cfg,"");
-        const directEntries=[...new Map(direct.map(x=>[x.provider+"/"+x.model,{id:x.provider+"/"+x.model,provider:x.provider,source:"direct-api"}])).values()];
+        const direct=await directChatCandidates(cfgFor(req,cfg),"");
+        let directEntries=[...new Map(direct.map(x=>[x.provider+"/"+x.model,{id:x.provider+"/"+x.model,provider:x.provider,source:"direct-api"}])).values()];
+        // Another account sees only the direct models its policy allows (free ones; paid ones with paid access).
+        if(cloudBase()&&reqApiAccess(req)!=="all")directEntries=await allowedOmniEntries(req,directEntries);
         const seen=new Set(filtered.map(x=>String(typeof x==="string"?x:x?.id||"").toLowerCase()));
         for(const x of directEntries)if(!seen.has(x.id.toLowerCase())){filtered.push(x);seen.add(x.id.toLowerCase())}
       }catch(e){policyError=policyError||("API direct: "+roError(e))}
@@ -1577,6 +1600,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   }
 
   function directOpenRouterKey(cfg){
+    if(cfg.openRouterDisabled)return "";
     const explicit=String(cfg.openRouterApiKey||"").trim();
     if(explicit)return explicit;
     const omniKey=String(cfg.apiKey||"").trim();
@@ -2243,7 +2267,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         }
         return false;
       };
-      const direct=directApisAllowed(req)&&!explicitModel?await directImageAttempts(cfg,prompt,size):[];
+      const direct=!explicitModel?await directImageAttempts(cfgFor(req,cfg),prompt,size):[];
       // An image model chosen in Settings is tried before the no-key Pollinations fallback.
       const late=String(cfg.imageModel||"").trim()?direct.filter(a=>a.id==="pollinations-free"):[];
       if(explicitModel)requirePersonalAccess(req,explicitModel);
@@ -2309,11 +2333,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       requireFeaturePermission(req,"video_generation");
       const {prompt,model:explicitModel,duration,aspectRatio}=mediaRequest(req,"video");
       const cfg=getOmniConfig(),errors=[];
+      // The Owner's «Doar gratuit» for OmniRoute's video models; other accounts are already limited by their policy.
       const strictFree=directApisAllowed(req)&&(cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free");
       const done=async(resolved,meta)=>{if(signal.aborted)return true;res.json({data:await saveGeneratedMedia(req,{...resolved,kind:"video",prompt,...meta})});return true;};
 
       if(explicitModel)requirePersonalAccess(req,explicitModel);
-      const attempts=directApisAllowed(req)&&!explicitModel?await directVideoAttempts(cfg,prompt,duration,aspectRatio):[];
+      const attempts=!explicitModel?await directVideoAttempts(cfgFor(req,cfg),prompt,duration,aspectRatio):[];
       // «Doar gratuit» keeps the paid OmniRoute video models out, but not the free web ones (veoaifree-web: VEO 3.1,
       // Seedance), which OmniRoute serves without a key or cost.
       let found=[];
@@ -2959,7 +2984,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   // chosen, or when «Rezervă automată» is turned on.
   const fallbackOn=(cfg,route)=>route?.automatic===true||cfg.chatFallbackOnFailure===true;
   function directFallbackAllowed(req,cfg,route){
-    return directApisAllowed(req)&&cfg.directChatEnabled!==false&&(route?.direct===true||fallbackOn(cfg,route));
+    return cfg.directChatEnabled!==false&&(route?.direct===true||fallbackOn(cfg,route));
   }
   // The direct model to keep to, or "" when any configured direct API may answer.
   const directOnly=(cfg,route)=>route?.direct===true&&!fallbackOn(cfg,route)?route.selectedModel:"";
@@ -3065,7 +3090,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         }catch(e){if(clientSignal.aborted)return;errors.push(`${candidate.id}: ${roError(e)}`)}
       }
       if(directFallbackAllowed(req,cfg,route)){
-        const direct=await directChatFallback(cfg,messages,requestedModel,false,timer,directOnly(cfg,route));
+        const direct=await directChatFallback(cfgFor(req,cfg),messages,requestedModel,false,timer,directOnly(cfg,route));
         errors.push(...direct.errors);
         if(direct.response){
           const body=await direct.response.text();
@@ -3100,7 +3125,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       }
       if(!upstream&&directFallbackAllowed(req,cfg,route)&&!timer.signal.aborted){
         if(clientGone.signal.aborted)return;
-        const direct=await directChatFallback(cfg,messages,requestedModel,true,timer,directOnly(cfg,route));
+        const direct=await directChatFallback(cfgFor(req,cfg),messages,requestedModel,true,timer,directOnly(cfg,route));
         errors.push(...direct.errors);
         if(direct.response){upstream=direct.response;usedModel=direct.candidate.model;directCandidate=direct.candidate}
       }
@@ -3150,7 +3175,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       }catch(e){if(signal?.aborted)throw e;errors.push(`${candidate.id}: ${roError(e)}`)}
     }
     if(directFallbackAllowed(req,cfg,route)){
-      const direct=await directChatFallback(cfg,messages,requestedModel,false,timer,directOnly(cfg,route));
+      const direct=await directChatFallback(cfgFor(req,cfg),messages,requestedModel,false,timer,directOnly(cfg,route));
       errors.push(...direct.errors);
       if(direct.response){const text=await textOf(direct.response);if(text.trim())return {text,model:`${direct.candidate.provider}/${direct.candidate.model}`};errors.push(`${direct.candidate.label}: răspuns gol`);}
     }
@@ -3309,8 +3334,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       // Same rule as chat: a direct-API model goes to its API; any other model to OmniRoute, and when it fails the direct
       // APIs answer only if no model was chosen or «Rezervă automată» is on.
       const errors=[];let data=null;
-      const directAllowed=(roleFor(user,ctx.cloudUser)==="owner"||!cloudBase())&&cfg.directChatEnabled!==false;
-      const directModel=await isDirectModel(cfg,directAllowed,selectedModel),fallback=automaticModel||cfg.chatFallbackOnFailure===true;
+      const directAllowed=cfg.directChatEnabled!==false,directCfg=cfgForAccess(cfg,apiAccess(user,ctx.cloudUser),ctx.permissions);
+      const directModel=await isDirectModel(directCfg,directAllowed,selectedModel),fallback=automaticModel||cfg.chatFallbackOnFailure===true;
       if(!directModel)try{
         const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},body:JSON.stringify({model:selectedModel,messages,stream:false,temperature:0.25}),signal:AbortSignal.timeout(NONSTREAM_MS)});
         if(r.ok)data=await r.json();
@@ -3318,7 +3343,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       }catch(e){errors.push(`OmniRoute: ${roError(e)}`)}
       let usedModel=selectedModel;
       if(!data&&directAllowed&&(directModel||fallback)){
-        const direct=await directChatFallback(cfg,messages,selectedModel,false,undefined,directModel&&!fallback?selectedModel:"");
+        const direct=await directChatFallback(directCfg,messages,selectedModel,false,undefined,directModel&&!fallback?selectedModel:"");
         errors.push(...direct.errors);
         if(direct.response){usedModel=`${direct.candidate.provider}/${direct.candidate.model}`;try{data=JSON.parse(await direct.response.text())}catch{errors.push("API direct: răspuns invalid")}}
       }

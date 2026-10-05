@@ -12,7 +12,7 @@ AI Stoica (Stoica Enterprises AI) este o platformă AI proprie, multi-model: cha
 
 GitHub (`andrei18stoica-eng/Ai-Stoica`, privat) este atelierul: cod, versiuni, teste, build, Releases. Producția rulează pe serverul Hetzner. Aplicația nu depinde de GitHub la fiecare mesaj.
 
-Versiune curentă: **0.7.16** (ramura `claude/pensive-galileo-nwwkea`, PR în lucru; pe `main` e 0.7.15). 0.7.12 și 0.7.13 au fost făcute în cowork.
+Versiune curentă: **0.7.17** (în lucru pe `claude/pensive-galileo-nwwkea`); 0.7.16 e PR #35 (verde, de unit de Owner). 0.7.12 și 0.7.13 au fost făcute în cowork.
 
 ## Structura
 
@@ -35,7 +35,7 @@ Folderul `gateway/` (0.4.1) a fost șters în 0.7.11 și nu trebuie să reapară
 1. workflow-urile YAML (chei duplicate);
 2. aceeași versiune peste tot;
 3. `gateway/` absent;
-4. desktop: `node --check`, `npm run build:ui`, toate `scripts/test-*.cjs` (19 teste);
+4. desktop: `node --check`, `npm run build:ui`, toate `scripts/test-*.cjs` (20 de teste);
 5. server: `npm test`;
 6. Cloudflare: `npm test` și `npm run check`.
 
@@ -69,8 +69,9 @@ Nu rulează local: Mobile (`expo-doctor`, `expo export`), build-ul Windows și D
 - După fiecare Release compară `sha512` al `.exe` cu cel din `latest.yml` (comenzile sunt în `docs/PUBLICARE_RELEASE.md`). Fără potrivire, actualizarea automată nu funcționează.
 - Un workflow cu aceeași cheie de două ori (de exemplu `concurrency:`) e invalid și nu pornește deloc.
 
-## Stare curentă (2026-10-04)
+## Stare curentă (2026-10-05)
 
+- **0.7.17** (în lucru): conturile aprobate folosesc tot ce e gratuit; Claude/GPT (furnizori plătiți: openai, anthropic, openrouter) cer acces plătit. `apps/server`: `users.paid_gift` (butonul Owner-ului „Oferă gratis Claude și GPT”, `PATCH /api/admin/users/:id/paid`) și `users.paid_until` (pentru abonamentul cu plată, încă neimplementat: Stripe după ce Owner-ul are PFA/SRL și cont Stripe); `hasPaidRow` → `context.personalPaid`, `publicUser().paidAccess`; `ai-policy.cjs`: `hasPaidAccess`, `PAID_REASON`, furnizori gratuiți în plus (mistral, nvidia, cohere, huggingface, pollinations, veoaifree-web). Gateway: `apiAccess` / `cfgFor` (all = Owner/PC, paid, free: chei plătite golite, politici „free_only”), listele directe filtrate prin politică pentru alte conturi. Test: `test-0717-paid-access.cjs`. Abonamentele personale rămân doar ale Owner-ului (`PERSONAL_PROVIDERS`), și pentru conturile PRO.
 - **0.7.16** (în lucru): modelul ales răspunde, fără trecere ascunsă la API-urile directe (`directFallbackAllowed`, `chosenModelFailure` în `local-gateway.cjs`; „Rezervă automată” = `chatFallbackOnFailure`, pe server `AI_STOICA_CHAT_FALLBACK`); fără model → prima combinație OmniRoute (`defaultOmniModel`); un model `groq/…` etc. care nu e în OmniRoute merge direct la acel API (`isDirectModel`, `directOnly`); automatizările urmează aceeași regulă. Modelele din abonamentele personale ale Owner-ului (`PERSONAL_PROVIDERS`: codex, chatgpt-web, gemini-web, claude-code, gemini-cli…) sunt doar pentru Owner (`personalAllowed`, `requirePersonalAccess`); condițiile furnizorilor interzic partajarea contului, deci un abonament plătit pentru alții se face doar prin API-uri. Poze/Video: ordinea din `mediaSteps` — modelul din Setări, modelul legat per cont (`media-prefs.json`, resetat când se schimbă setările de imagine/video), abonamentul (`subscriptionMedia`: codex, chatgpt-web, gemini-web; video: veoaifree-web), API-urile directe, restul; `byCooldown` pe toată lista. Ecuații: `lib/math.cjs` (temml, MIT → MathML → OMML, inserat în DOCX după build), chat: `renderer/src/mathText.mjs` + `math.jsx` (temml încărcat la nevoie). Vizualizare fișiere: `renderer/src/viewer.jsx`, ruta `GET /api/library/:id/preview`, `frame-src ... blob:`. PDF: `lib/pdftext.cjs` (pdf-lib + ToUnicode), folosit de `extract.cjs` cu decodorul limitat al acestuia (`decodeStream`) și după `pdfLibSafe` (fluxurile ObjStm/XRef verificate întâi), ca un „PDF bomb” să nu umple memoria. Teste: `test-0716-choice-media.cjs`, `test-0716-math.cjs`.
 - **Site-ul aistoica.ro e pornit** (2026-10-04, confirmat de Owner prin capturi de pe server, nu verificat din mediul lui Claude): DNS A, certificat Let's Encrypt prin Caddy, OmniRoute pe server cu baza importată de pe PC și cheia `site-aistoica`. Rămân pentru Owner: ștergerea cheii vechi importate din API Manager (server), schimbarea parolelor/cheilor expuse în poze și chat.
 - **0.7.15** (PR #32, merge `744ecdd`, Release `v0.7.15` cu `.exe`, `latest.yml`, `.blockmap` din același run): „Copiază cheile pentru server” în Windows (`lib/serverenv.cjs`, IPC `server-env:copy`; Setările arată cheile doar mascat) și instalarea pe server dintr-o comandă, `deploy/hetzner/setup-web.sh`; `test-hetzner-setup.cjs` le păzește pe amândouă.
