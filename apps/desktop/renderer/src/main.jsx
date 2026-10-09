@@ -707,7 +707,7 @@ const VIDEO_PROVIDERS_TEXT="Încearcă pe rând providerii video configurați (P
 function imageProvidersText(policy){return `Încearcă pe rând: Cloudflare și Pollinations (dacă ai cheie), Pollinations fără cheie, Hugging Face${policy?.imagePaid?", apoi providerii cu plată configurați":""}.`;}
 function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAttachments,onOpenLibrary,responseMode,setResponseMode,mediaMode,setMediaMode,mentionsVersion,mediaPolicy}) {
   const {can,deny}=useAccess();
-  const ta=useRef(null),fileInput=useRef(null),imageInput=useRef(null),videoInput=useRef(null),audioInput=useRef(null),recorderRef=useRef(null),streamRef=useRef(null),chunksRef=useRef([]),attachRef=useRef(null),mountedRef=useRef(true);
+  const ta=useRef(null),fileInput=useRef(null),imageInput=useRef(null),videoInput=useRef(null),audioInput=useRef(null),recorderRef=useRef(null),streamRef=useRef(null),chunksRef=useRef([]),attachRef=useRef(null),mountedRef=useRef(true),autoSendRef=useRef(false);
   const [menu,setMenu]=useState(false),[recording,setRecording]=useState(false),[transcribing,setTranscribing]=useState(false),[uploading,setUploading]=useState(0),[mentions,setMentions]=useState([]),[mentionIndex,setMentionIndex]=useState(0),[mentionClosedFor,setMentionClosedFor]=useState(null),[dragOver,setDragOver]=useState(false);
   const pluginsOk=can("plugins"),automationsOk=can("automations");
   useDismiss(menu,()=>setMenu(false),attachRef);
@@ -826,9 +826,9 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
           const item=await uploadFileToLibrary(voiceFile);
           const attachment=await libraryItemToAttachment(item);
           if(!mountedRef.current)return;
-          setAttachments(v=>[...v,attachment]);
-          if(attachment.transcript)setDraft(v=>(v?v+" ":"")+attachment.transcript);
-          else toast("Vocalul a fost salvat și atașat, dar transcrierea automată nu a reușit.","info");
+          // Voice message: the spoken text is written in the box and sent; the recording stays in the Library.
+          if(attachment.transcript){autoSendRef.current=true;setDraft(v=>(v?v+" ":"")+attachment.transcript);}
+          else{setAttachments(v=>[...v,attachment]);toast("Vocalul a fost salvat și atașat, dar transcrierea automată nu a reușit.","info");}
         }catch(e){
           toast("Vocalul nu a putut fi salvat sau transcris: "+e.message);
         }finally{if(mountedRef.current)setTranscribing(false);}
@@ -839,6 +839,7 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
     }
   }
   const hasContent=!!draft.trim()||attachments.some(a=>a.part||a.parts?.length);
+  useEffect(()=>{if(autoSendRef.current&&!transcribing&&draft.trim()){autoSendRef.current=false;trySend();}},[draft,transcribing]);
   function trySend(){
     if(busy)return;
     if(uploading){toast("Așteaptă să se termine încărcarea fișierului.","info");return;}
