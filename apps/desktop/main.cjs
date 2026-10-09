@@ -6,7 +6,7 @@ const { spawn, spawnSync } = require("child_process");
 const { autoUpdater } = require("electron-updater");
 const { startLocalGateway } = require("./local-gateway.cjs");
 const { createOmniWatch } = require("./lib/omniwatch.cjs");
-const { DIRECT_MODEL_DEFAULTS, PROVIDER_KEY_PAGES, upgradeModelDefaults } = require("./lib/providers.cjs");
+const { DIRECT_MODEL_DEFAULTS, PROVIDER_KEY_PAGES, upgradeModelDefaults, comboNames } = require("./lib/providers.cjs");
 const { serverEnvLines } = require("./lib/serverenv.cjs");
 
 if (process.platform === "win32") app.disableHardwareAcceleration();
@@ -54,6 +54,7 @@ function defaults() {
     openAiApiKey: "",
     xaiApiKey: "",
     blockedProviders: "cerebras",
+    sharedCombos: "",
     imageProviders: "gemini",
     videoProviders: "gemini",
     openRouterApiKey: "",
@@ -144,6 +145,8 @@ function saveConfig(input) {
     directChatProviderOrder: String(cfg.directChatProviderOrder || "cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai,xai").trim(),
     // Providers left out of the chat; "" keeps them all. Older configs (no value) leave Cerebras out.
     blockedProviders: typeof cfg.blockedProviders === "string" ? cfg.blockedProviders.split(",").map(x => x.trim().toLowerCase()).filter(x => /^[a-z0-9@-]{2,20}$/.test(x)).join(",") : "cerebras",
+    // OmniRoute combinations the other accounts may use too (Setări → API-uri AI); "" = only the Owner's.
+    sharedCombos: comboNames(cfg.sharedCombos),
     // Who makes pictures and videos (Poze / Video → «Făcute de»); "" lets every provider in. Older configs: Gemini only.
     imageProviders: typeof cfg.imageProviders === "string" ? cfg.imageProviders.split(",").map(x => x.trim().toLowerCase()).filter(x => /^[a-z0-9@-]{2,20}$/.test(x)).join(",") : "gemini",
     videoProviders: typeof cfg.videoProviders === "string" ? cfg.videoProviders.split(",").map(x => x.trim().toLowerCase()).filter(x => /^[a-z0-9@-]{2,20}$/.test(x)).join(",") : "gemini",

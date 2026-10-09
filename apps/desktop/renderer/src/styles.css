@@ -201,6 +201,7 @@
 .modelOption{width:100%;border:0;background:transparent;color:#dbe4ef;border-radius:9px;padding:9px;display:grid;grid-template-columns:32px minmax(0,1fr) 20px;gap:8px;align-items:center;text-align:left;cursor:pointer}
 @media (hover:hover) and (pointer:fine){.modelOption:hover{background:#141e2b}}
 .modelOption.active{background:#17263a}
+.modelOption.locked{opacity:.55;cursor:not-allowed}.modelOption.locked .modelOptionIcon svg{color:#8a96a6}
 .modelOptionIcon{width:30px;height:30px;border-radius:8px;background:#15243a;color:#5aa7ff;display:grid;place-items:center}
 .modelOptionCopy{min-width:0}
 .modelOptionCopy b,.modelOptionCopy small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

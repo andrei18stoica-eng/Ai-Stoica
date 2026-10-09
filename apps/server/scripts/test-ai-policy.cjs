@@ -54,4 +54,20 @@ expect(!allowed(ctx(),"openai/gpt-5-oss-like"),"Real OpenAI models stay paid");
 expect(!allowed(ctx(),"constructor/x"),"Prototype keys are not providers");
 expect(evaluateModelAccess(ctx({role:"owner"}),"constructor/x").providers.every(p=>typeof p==="string"),"Providers are always strings");
 expect(evaluateModelAccess(ctx(),"AI Stoica Performance Max").source==="unknown","Only the exact legacy alias names count as the paid managed alias");
+// The free models of OmniRoute and of the direct APIs work for every account; the Owner's own subscriptions do not.
+for (const model of ["gemini/gemini-2.5-flash","mistral/mistral-small-latest","nvidia/meta/llama-3.3-70b-instruct","github/openai/gpt-4.1",
+  "cohere/command-r","hf/meta-llama/Llama-3.3-70B-Instruct","huggingface/meta-llama/Llama-3.3-70B-Instruct","cf/@cf/meta/llama-3.1-8b-instruct",
+  "openrouter/meta-llama/llama-3.3-70b-instruct:free","pol/openai","ddgw/gpt-4o-mini","duckduckgo-web/gpt-4o-mini","veoaifree-web/veo"])
+  expect(allowed(ctx({paidEnabled:false}),model),model+" is free and must work for a normal account");
+for (const model of ["cx/gpt-5.5","codex/gpt-5.5","cc/claude-sonnet-4.6","claude/claude-opus-4","gh/gpt-5","kr/claude-sonnet-4.5","agy/gemini-3-pro",
+  "gc/grok-4","gweb/gemini-3.1-flash-image","cgpt-web/gpt-5","grok-web/grok-4","cu/claude-4","kc/kilo"]) {
+  const r=evaluateModelAccess(ctx({permissions:{openai:true,anthropic:true,openrouter:true}}),model);
+  expect(!r.allowed&&r.providers.join()==="personal"&&/abonamentul personal/.test(r.reason),model+" runs on the Owner's own subscription: "+JSON.stringify(r));
+  expect(allowed(ctx({role:"owner"}),model),"the Owner keeps "+model);
+}
+expect(/plătit/.test(deniedReason(ctx({paidEnabled:false}),"xai/grok-4")),"Grok through its API is paid");
+expect(/plătit/.test(deniedReason(ctx({paidEnabled:false}),"ds/deepseek-chat")),"DeepSeek through its API is paid");
+expect(!allowed(ctx(),"openrouter/meta-llama/llama-3.3-70b-instruct"),"an OpenRouter model without :free stays paid");
+expect(!allowed(ctx({permissions:{mistral:false}}),"mistral/mistral-small-latest"),"the Owner can still switch a free provider off per account");
+expect(!allowed(ctx({permissions:{chat:false}}),"gemini/gemini-2.5-flash"),"free models obey the chat permission");
 console.log("AI_POLICY_TESTS_PASSED");

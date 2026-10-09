@@ -412,14 +412,18 @@ function groupModels(list){
   const order=["combo",...MODEL_PROVIDERS.map(([k])=>k),"omni"];
   return order.filter(k=>groups.has(k)).map(k=>groups.get(k));
 }
-function ModelPicker({model,onSelect,models,onRefresh,refreshing,policyEnforced,deniedCount=0}) {
+function ModelPicker({model,onSelect,models,onRefresh,refreshing,policyEnforced,deniedCount=0,locked=[]}) {
   const [open,setOpen]=useState(false),[query,setQuery]=useState("");
   const ref=useRef(null),listRef=useRef(null);
   useDismiss(open,()=>setOpen(false),ref);
   useEffect(()=>{if(!open)setQuery("")},[open]);
   useEffect(()=>{if(open)setTimeout(()=>{const el=ref.current?.querySelector(".modelSearch input")||listRef.current?.querySelector(".modelOption.active")||listRef.current?.querySelector(".modelOption");el?.focus()},0)},[open]);
   const list=policyEnforced?uniqueModels(models):uniqueModels([model,...models]);
-  const filtered=list.filter(x=>!query||x.toLowerCase().includes(query.toLowerCase()));
+  // The models the Owner does not allow this account: listed too, locked; choosing one only says why.
+  const lockedMap=new Map((locked||[]).filter(x=>x&&x.id&&!list.includes(x.id)).map(x=>[String(x.id),String(x.reason||"")]));
+  const all=[...list,...lockedMap.keys()];
+  const filtered=all.filter(x=>!query||x.toLowerCase().includes(query.toLowerCase()));
+  const notAllowed=x=>toast(`«${x}» nu îți este permis de Owner.${lockedMap.get(x)?" "+lockedMap.get(x):""} Cere-i acces sau alege alt model.`);
   function onListKey(e){
     if(e.key!=="ArrowDown"&&e.key!=="ArrowUp")return;
     const items=[...(listRef.current?.querySelectorAll(".modelOption")||[])];if(!items.length)return;
@@ -430,31 +434,34 @@ function ModelPicker({model,onSelect,models,onRefresh,refreshing,policyEnforced,
     <div className="modelPicker">
       <button className={cx("modelPickerButton",open&&"open")} onClick={()=>setOpen(v=>!v)} aria-haspopup="listbox" aria-expanded={open} aria-label={`Model AI: ${model||"neales"}`}>
         <span className="modelPickerDot"/>
-        <span className="modelPickerText"><b>{model||"Alege AI"}</b><small>{list.length?plural(list.length,"model disponibil","modele disponibile"):"Niciun model disponibil"}{policyEnforced?" · stabilite de Owner":""}</small></span>
+        <span className="modelPickerText"><b>{model||"Alege AI"}</b><small>{list.length?plural(list.length,"model disponibil","modele disponibile"):"Niciun model disponibil"}{lockedMap.size?` · ${lockedMap.size} nepermise`:policyEnforced?" · stabilite de Owner":""}</small></span>
         <ChevronDown size={15}/>
       </button>
     {open&&<div className="modelPickerMenu" onKeyDown={onListKey}>
       <div className="modelPickerHead"><div><b>Alege AI-ul</b><span>Schimbarea se aplică acestei conversații.</span></div><button className="modelRefresh" onClick={async e=>{e.stopPropagation();await onRefresh?.()}} disabled={refreshing} title="Actualizează lista de modele" aria-label="Actualizează lista de modele"><RotateCcw size={14} className={refreshing?"spin":""}/></button></div>
-      {list.length>7&&<div className="modelSearch"><Search size={14}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Caută model" aria-label="Caută model"/></div>}
+      {all.length>7&&<div className="modelSearch"><Search size={14}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Caută model" aria-label="Caută model"/></div>}
       <div className="modelPickerList" role="listbox" ref={listRef}>
         {groupModels(filtered).map(g=><div className="modelGroup" key={g.name} role="group" aria-label={g.name}>
           <div className="modelGroupName">{g.name}</div>
-          {g.items.map(x=><button key={x} className={cx("modelOption",x===model&&"active")} onClick={()=>{onSelect(x);setOpen(false)}} role="option" aria-selected={x===model}>
+          {g.items.map(x=>lockedMap.has(x)?<button key={x} className="modelOption locked" onClick={()=>notAllowed(x)} role="option" aria-selected={false} aria-disabled="true" title={lockedMap.get(x)||"Nepermis de Owner"}>
+            <span className="modelOptionIcon"><Lock size={15}/></span>
+            <span className="modelOptionCopy"><b>{g.short(x)}</b><small>Nepermis de Owner</small></span>
+          </button>:<button key={x} className={cx("modelOption",x===model&&"active")} onClick={()=>{onSelect(x);setOpen(false)}} role="option" aria-selected={x===model}>
             <span className="modelOptionIcon"><Sparkles size={15}/></span>
             <span className="modelOptionCopy"><b>{g.short(x)}</b><small>{x===model?"Selectat acum":g.combo?"Combinație OmniRoute":"Folosește acest AI"}</small></span>
             {x===model&&<Check size={16}/>}
           </button>)}
         </div>)}
-        {!list.length&&<div className="modelEmpty">Nu există modele disponibile. {policyEnforced?"Cere Owner-ului acces la cel puțin un model.":IS_WEB?"Owner-ul serverului trebuie să adauge o cheie AI (în fișierul .env de pe server).":"Pornește OmniRoute sau adaugă o cheie API în Setări."}</div>}
-        {list.length>0&&!filtered.length&&<div className="modelEmpty">Nu am găsit modelul căutat.</div>}
+        {!all.length&&<div className="modelEmpty">Nu există modele disponibile. {policyEnforced?"Cere Owner-ului acces la cel puțin un model.":IS_WEB?"Owner-ul serverului trebuie să adauge o cheie AI (în fișierul .env de pe server).":"Pornește OmniRoute sau adaugă o cheie API în Setări."}</div>}
+        {all.length>0&&!filtered.length&&<div className="modelEmpty">Nu am găsit modelul căutat.</div>}
       </div>
-      <div className="modelPickerFoot">{refreshing?"Actualizez lista de modele…":policyEnforced?"Owner-ul stabilește ce modele sunt disponibile pentru contul tău."+(deniedCount>0?` ${plural(deniedCount,"model OmniRoute este ascuns","modele OmniRoute sunt ascunse")} de Owner.`:""):(IS_WEB?"Modelele vin din OmniRoute și din API-urile configurate pe server.":"Modelele vin din OmniRoute și din API-urile configurate pe acest PC.")}</div>
+      <div className="modelPickerFoot">{refreshing?"Actualizez lista de modele…":policyEnforced||lockedMap.size?"Owner-ul stabilește ce modele sunt disponibile pentru contul tău."+(lockedMap.size?" Cele cu lacăt nu îți sunt permise de Owner.":deniedCount>0?` ${plural(deniedCount,"model OmniRoute este ascuns","modele OmniRoute sunt ascunse")} de Owner.`:""):(IS_WEB?"Modelele vin din OmniRoute și din API-urile configurate pe server.":"Modelele vin din OmniRoute și din API-urile configurate pe acest PC.")}</div>
     </div>}
     </div>
   </div>;
 }
 
-function Header({deniedCount,onMenu,model,onSelectModel,models,onRefreshModels,refreshingModels,policyEnforced,omni,showOmni,onShare,current,projects,onDetach,onMoveProject,onFiles,onGitHub,onGitHubRollback,hasGitHubBackup,onArchive,onUnarchive,onDelete}) {
+function Header({deniedCount,lockedModels=[],onMenu,model,onSelectModel,models,onRefreshModels,refreshingModels,policyEnforced,omni,showOmni,onShare,current,projects,onDetach,onMoveProject,onFiles,onGitHub,onGitHubRollback,hasGitHubBackup,onArchive,onUnarchive,onDelete}) {
   const {isOwner}=useAccess();
   const [more,setMore]=useState(false),[moveOpen,setMoveOpen]=useState(false);
   const moreRef=useRef(null);
@@ -462,7 +469,7 @@ function Header({deniedCount,onMenu,model,onSelectModel,models,onRefreshModels,r
   const close=()=>{setMore(false);setMoveOpen(false)};
   return <header className="topbar">
     <button className="iconOnly menuBtn" onClick={onMenu} aria-label="Afișează sau ascunde meniul" title="Meniu"><Menu size={20}/></button>
-    <ModelPicker model={model} onSelect={onSelectModel} models={models} onRefresh={onRefreshModels} refreshing={refreshingModels} policyEnforced={policyEnforced} deniedCount={deniedCount}/>
+    <ModelPicker model={model} onSelect={onSelectModel} models={models} onRefresh={onRefreshModels} refreshing={refreshingModels} policyEnforced={policyEnforced} deniedCount={deniedCount} locked={lockedModels}/>
     <div className="topSpacer"/>
     {showOmni&&<div className={cx("connection",omni===true?"ok":"bad")} title={omni===true?"OmniRoute răspunde.":omni==="key"?"OmniRoute rulează, dar cere cheia API: creează una în OmniRoute → API Manager și pune-o în Setări → AI & OmniRoute. Până atunci răspund modelele API-urilor directe (Groq, Gemini…), dacă le alegi din listă.":"OmniRoute nu răspunde. Alege din listă un model al API-urilor directe configurate (Groq, Gemini…) sau pornește «Rezervă automată»."}>{omni===true?<Wifi size={15}/>:<WifiOff size={15}/>} {omni===true?"OmniRoute conectat":omni==="key"?"OmniRoute cere cheie API":"OmniRoute oprit"}</div>}
     <button className="topAction" onClick={onShare} disabled={!current} title="Copiază conversația în clipboard"><Share2 size={16}/> Copiază conversația</button>
@@ -1145,6 +1152,20 @@ function ProviderUseList({cfg,set}) {
     <div className="providerUseGrid">{CHAT_FAMILIES.map(([id,label])=><label key={id} className="providerUseItem"><input type="checkbox" checked={!blocked.has(id)} onChange={e=>toggle(id,e.target.checked)}/><span>{label}</span></label>)}</div>
   </fieldset>;
 }
+// Site accounts other than the Owner: every free model works for them; an OmniRoute combination only when shared here,
+// since it may run on the Owner's subscriptions (Codex, Claude Code…), which their terms forbid sharing.
+function SharedCombos({cfg,set}) {
+  const [combos,setCombos]=useState(null);
+  useEffect(()=>{let live=true;api("/api/models").then(ms=>{if(live)setCombos(Array.isArray(ms?.combos)?ms.combos.map(String):[])}).catch(()=>{if(live)setCombos([])});return()=>{live=false}},[]);
+  const chosen=String(cfg.sharedCombos||"").split(",").map(x=>x.trim()).filter(Boolean);
+  const has=name=>chosen.some(x=>x.toLowerCase()===name.toLowerCase());
+  const toggle=(name,on)=>set({sharedCombos:(on?[...chosen.filter(x=>x.toLowerCase()!==name.toLowerCase()),name]:chosen.filter(x=>x.toLowerCase()!==name.toLowerCase())).join(",")});
+  const names=[...new Set([...(combos||[]),...chosen])];
+  return <fieldset className="providerUse"><legend>Combinații pentru toate conturile</legend>
+    <p className="settingsHelp">Celelalte conturi folosesc toate modelele gratuite (Gemini, Groq, Mistral, OpenRouter :free…). Abonamentele tale (Codex, Claude Code, Copilot, Kiro, conturile web) rămân doar ale tale: condițiile lor nu permit împărțirea contului. O combinație OmniRoute o folosesc și ei doar dacă o bifezi aici; bifează doar combinații făcute din modele gratuite.</p>
+    {combos===null?<p className="settingsHelp">Încarc combinațiile…</p>:names.length?<div className="providerUseGrid">{names.map(name=><label key={name} className="providerUseItem"><input type="checkbox" checked={has(name)} onChange={e=>toggle(name,e.target.checked)}/><span>{name}</span></label>)}</div>:<p className="settingsHelp">OmniRoute nu are încă nicio combinație.</p>}
+  </fieldset>;
+}
 // Poze / Video → «Făcute de»: Gemini only by default (Nano Banana, Veo); "" lets every provider in, the free ones too.
 const MEDIA_MAKERS={
   image:[["gemini","Doar Gemini · Nano Banana"],["gemini,openai,xai","Gemini, OpenAI și Grok"],["","Toți furnizorii, și cei gratuiți"]],
@@ -1298,6 +1319,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <label className="toggleRow"><div><b>Folosește API-urile directe</b><span>Modelele lor apar în listă (Groq, Gemini, Cerebras…). Răspund când le alegi sau când nu ai ales niciun model.</span></div><input type="checkbox" checked={cfg.directChatEnabled!==false} onChange={e=>set({directChatEnabled:e.target.checked})}/></label>
         <label className="toggleRow"><div><b>Rezervă automată</b><span>Dacă modelul ales nu răspunde, trece singur la API-urile directe. Oprit: răspunde doar modelul ales, iar altfel vezi eroarea.</span></div><input type="checkbox" checked={cfg.chatFallbackOnFailure===true} onChange={e=>set({chatFallbackOnFailure:e.target.checked})}/></label>
         <ProviderUseList cfg={cfg} set={set}/>
+        {(webServer||cfg.controlApiUrl)&&<SharedCombos cfg={cfg} set={set}/>}
         <label>Protecție costuri<select value={cfg.directChatCostPolicy||"free_only"} onChange={e=>set({directChatCostPolicy:e.target.value})}><option value="free_only">Doar provideri fără cost direct</option><option value="allow_paid">Permite și API-urile plătite (OpenAI, Grok)</option></select></label>
         <label>Ordinea de încercare<input value={cfg.directChatProviderOrder||"cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai,xai"} onChange={e=>set({directChatProviderOrder:e.target.value})}/></label>
         <p className="settingsHelp">Fiecare model din liste apare în lista de modele de sus. Dacă lipsește cheia, providerul răspunde cu 429/404/503 sau nu răspunde deloc, AI Stoica încearcă următorul model, apoi următorul provider.</p>
@@ -1504,7 +1526,7 @@ function App() {
   const [permissions,setPermissions]=useState(()=>storage.json(PERMISSIONS_KEY,{})||{});
   const [boot,setBoot]=useState(true),[loadError,setLoadError]=useState(""),[authNotice,setAuthNotice]=useState("");
   const [conversations,setConversations]=useState([]),[projects,setProjects]=useState([]),[assistants,setAssistants]=useState([]);
-  const [models,setModels]=useState(()=>cachedModels()),[modelPolicyEnforced,setModelPolicyEnforced]=useState(false),[refreshingModels,setRefreshingModels]=useState(false),[deniedModels,setDeniedModels]=useState(0),[modelsChecked,setModelsChecked]=useState(false);
+  const [models,setModels]=useState(()=>cachedModels()),[modelPolicyEnforced,setModelPolicyEnforced]=useState(false),[refreshingModels,setRefreshingModels]=useState(false),[deniedModels,setDeniedModels]=useState(0),[lockedModels,setLockedModels]=useState([]),[modelsChecked,setModelsChecked]=useState(false);
   const [currentId,setCurrentId]=useState(null),[model,setModel]=useState(()=>storage.get(MANUAL_MODEL_KEY)||"");
   // The model AI Stoica picked by itself (first in the list: your OmniRoute combination). Unlike a model you chose, it is
   // replaced as soon as a better one appears, so a direct API picked while OmniRoute was offline does not stay selected.
@@ -1557,8 +1579,11 @@ function App() {
       const live=uniqueModels((ms.manualModels||ms.data||[]).map(x=>typeof x==="string"?x:x?.id));
       if(Array.isArray(ms.combos)){COMBO_IDS=new Set(ms.combos.map(String));storage.set(COMBO_CACHE_KEY,JSON.stringify([...COMBO_IDS]));}
       const enforced=ms.policyEnforced===true;
-      const merged=enforced?live:uniqueModels([...live,...cachedModels()]);
-      setModelPolicyEnforced(enforced);setDeniedModels(enforced?Number(ms.deniedCount)||0:0);setModels(merged);storage.set(MODEL_CACHE_KEY,JSON.stringify(merged));
+      // The list is the one just received: a model that left OmniRoute (or never chatted) leaves the picker too. The
+      // remembered list fills in only while OmniRoute does not answer.
+      const merged=enforced||!ms.omniUnavailable?live:uniqueModels([...live,...cachedModels()]);
+      setModelPolicyEnforced(enforced);setDeniedModels(enforced?Number(ms.deniedCount)||0:0);setModels(merged);
+      setLockedModels(Array.isArray(ms.locked)?ms.locked.filter(x=>x&&typeof x.id==="string"&&!merged.includes(x.id)).map(x=>({id:x.id,reason:String(x.reason||"")})):[]);storage.set(MODEL_CACHE_KEY,JSON.stringify(merged));
       setModel(prev=>{
         const chosen=[prev&&prev!==autoPickRef.current?prev:"",storage.get(MANUAL_MODEL_KEY),machineCfgRef.current?.model];
         const pick=chosen.find(x=>x&&merged.includes(x))||merged[0]||"";
@@ -1715,7 +1740,9 @@ function App() {
     const convId=baseConv.id;
     const lastUser=[...messages].reverse().find(m=>m.role==="user");
     const desiredModel=String(baseConv.model||model||"").trim();
-    const effectiveModel=modelPolicyEnforced?(models.includes(desiredModel)?desiredModel:(models.includes(model)?model:(models[0]||""))):desiredModel;
+    // A conversation keeps the model it was made with; when that model has left the list (OmniRoute no longer has it, or it
+    // was never a chat model) the one chosen in the picker answers instead of an error.
+    const effectiveModel=modelPolicyEnforced||models.length?(models.includes(desiredModel)?desiredModel:(models.includes(model)?model:(models[0]||""))):desiredModel;
     const controller=startGeneration(convId);
     let answer="",routeInfo=null,started=false,streamError="",flushTimer=null;
     const assistantMessage={id:uid(),role:"assistant",content:"",createdAt:Date.now(),streaming:true};
@@ -1988,7 +2015,7 @@ function App() {
     <Sidebar open={sidebar} setOpen={setSidebar} user={user} search={search} setSearch={setSearch} projects={projects} assistants={assistants} conversations={conversations} currentId={currentId} busyIds={Object.keys(generations)} onSelect={id=>{setCurrentId(id);setSidebar(false)}} onDeleteConversation={deleteConversation} onUnarchive={unarchiveConversation} onNew={newConversation} selectedProject={selectedProject} setSelectedProject={setSelectedProject} activeAssistantId={activeAssistantId} onUseAssistant={startWithAssistant} onNewProject={()=>setEntityModal({type:"project",item:null})} onNewAssistant={()=>setEntityModal({type:"assistant",item:null})} onEditProject={p=>setEntityModal({type:"project",item:p})} onEditAssistant={a=>setEntityModal({type:"assistant",item:a})} onTool={name=>openTool(name)} onSettings={()=>setSettings(true)} onLogout={()=>logout()}/>
     {sidebar&&<div className="mobileScrim" onClick={()=>setSidebar(false)}/>}
     <main className="mainArea">
-      <Header deniedCount={deniedModels} onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} policyEnforced={modelPolicyEnforced} omni={omni} showOmni={machineSettingsAllowed} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={()=>setGithubModal(true)} onGitHubRollback={githubRollback} hasGitHubBackup={!!lastGithubBackup} onArchive={()=>current&&archiveConversation(current.id)} onUnarchive={()=>current&&unarchiveConversation(current.id)} onDelete={()=>current&&deleteConversation(current.id)}/>
+      <Header deniedCount={deniedModels} lockedModels={lockedModels} onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} policyEnforced={modelPolicyEnforced} omni={omni} showOmni={machineSettingsAllowed} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={()=>setGithubModal(true)} onGitHubRollback={githubRollback} hasGitHubBackup={!!lastGithubBackup} onArchive={()=>current&&archiveConversation(current.id)} onUnarchive={()=>current&&unarchiveConversation(current.id)} onDelete={()=>current&&deleteConversation(current.id)}/>
       <InstallApp banner/>
       {loadError&&<div className="loadErrorBanner" role="alert"><span>Nu am putut încărca datele: {loadError}</span><button onClick={()=>loadData()}>Reîncearcă</button>{GATEWAY!==DEFAULT_GATEWAY&&<button onClick={resetGatewayAndReload}>Folosește serviciul local implicit</button>}</div>}
       {updateReady&&!updateDismissed&&<div className="updateBanner" role="status"><button className="updateInstall" onClick={()=>window.AIStoica?.installUpdate?.()}>Actualizare AI Stoica disponibilă — instalează acum</button><button className="updateClose" onClick={()=>setUpdateDismissed(true)} aria-label="Ascunde notificarea" title="Mai târziu"><X size={14}/></button></div>}

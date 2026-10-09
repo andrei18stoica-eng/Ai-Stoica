@@ -4,7 +4,7 @@
 // server only masked; the file is written for the service's user alone (0600).
 const fs = require("fs");
 const path = require("path");
-const { PROVIDER_KEY_PAGES } = require("./providers.cjs");
+const { PROVIDER_KEY_PAGES, comboNames } = require("./providers.cjs");
 
 const MASK = "••••••••";
 // Same list as SECRET_KEYS in main.cjs (test-0716-web-settings.cjs keeps them equal).
@@ -16,7 +16,7 @@ const CHOICES = {
   speechLanguage: ["ro","en","fr"]
 };
 const TEXT_KEYS = [
-  "baseUrl","model","speechModel","directChatProviderOrder","blockedProviders","imageProviders","videoProviders",
+  "baseUrl","model","speechModel","directChatProviderOrder","blockedProviders","sharedCombos","imageProviders","videoProviders",
   "cerebrasModel","groqModel","geminiModels","mistralModel","nvidiaModel","githubModelsModel","openRouterChatModel","cloudflareChatModel","cohereModel","huggingFaceChatModel","openAiChatModels","xaiModels",
   "imageModel","imageProviderOrder","cloudflareAccountId","openAiImageModel","replicateImageModel","falImageModel","openRouterImageModel","pollinationsImageModel","geminiImageModel","xaiImageModel",
   "videoModel","videoProviderOrder","geminiVideoModel","falVideoModel","replicateVideoModel","openRouterVideoModel","pollinationsVideoModel","openAiVideoModel","xaiVideoModel",
@@ -29,6 +29,7 @@ function clean(key, value) {
   if (CHOICES[key]) return CHOICES[key].includes(String(value)) ? String(value) : undefined;
   const text = String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 2000);
   if (key === "baseUrl" && text && !/^https?:\/\/[^\s]+$/i.test(text)) return undefined;
+  if (key === "sharedCombos") return comboNames(text);
   if (["blockedProviders", "imageProviders", "videoProviders"].includes(key)) return text.split(",").map(x => x.trim().toLowerCase()).filter(x => /^[a-z0-9@-]{2,20}$/.test(x)).join(",");
   return text;
 }

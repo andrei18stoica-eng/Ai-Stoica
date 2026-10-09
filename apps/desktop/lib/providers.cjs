@@ -54,4 +54,15 @@ function upgradeModelDefaults(raw) {
   return out;
 }
 
-module.exports = { DIRECT_MODEL_DEFAULTS, OLD_DIRECT_MODEL_DEFAULTS, PROVIDER_KEY_PAGES, upgradeModelDefaults };
+// Names of OmniRoute combinations, comma-separated ("Ai principal, Gratuit"): what the Owner shares with the other accounts.
+function comboNames(value) {
+  const seen = new Set(), out = [];
+  for (const raw of String(value || "").split(",")) {
+    const name = raw.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 80);
+    const key = name.toLowerCase();
+    if (name && !seen.has(key) && out.length < 40) { seen.add(key); out.push(name); }
+  }
+  return out.join(",");
+}
+
+module.exports = { comboNames, DIRECT_MODEL_DEFAULTS, OLD_DIRECT_MODEL_DEFAULTS, PROVIDER_KEY_PAGES, upgradeModelDefaults };

@@ -1,5 +1,29 @@
-const PAID_PROVIDERS = new Set(["openai","anthropic","openrouter"]);
-const KNOWN_PROVIDERS = ["cerebras","gemini","groq","cloudflare","openrouter","openai","anthropic"];
+const PAID_PROVIDERS = new Set(["openai","anthropic","openrouter","xai","deepseek","together","fireworks","perplexity","moonshot","zai"]);
+// Free for the accounts: the free tiers of these APIs (also through OmniRoute), OpenRouter's ":free" models and the
+// OmniRoute services that need no account at all. The Owner can still switch one off per account (permission = false).
+const FREE_PROVIDERS = ["cerebras","gemini","groq","cloudflare","mistral","nvidia","github","cohere","huggingface","pollinations","openrouter-free","omniroute-free"];
+const KNOWN_PROVIDERS = [...FREE_PROVIDERS, ...PAID_PROVIDERS, "personal"];
+// OmniRoute connections made with the Owner's own login, subscription or browser session (Codex, Claude Code, GitHub
+// Copilot, Kiro, Grok CLI, Cursor, the "-web" accounts…): their terms forbid sharing the account, so only the Owner uses
+// them. Kept in step with PERSONAL_PREFIXES in apps/desktop/local-gateway.cjs (test-0716-shared-access.cjs).
+const PERSONAL_PREFIXES = [
+  "cx","codex","codex-app-server","cxa","cc","claude","claude-code","gc","grok-cli","gemini-cli","gweb","gemini-web","cgpt-web","chatgpt-web",
+  "gh","ghe-copilot","copilot-web","m365copilot","kr","kiro","amazon-q","cu","cursor","kc","kilocode","cl","cline","cp","clinepass",
+  "ag","agy","antigravity","tr","trae","dv","dva","devin-cli","devin-desktop","gld","gitlab-duo","cbcn","codebuddy-cn","of","openference",
+  "rc","raycast","xao","qw","qwen-code","aug","auggie","zed-hosted","gw","grok-web","zw","zai-web","nw","notion-web","t3chat","ybw","tasw","cnl"
+];
+// OmniRoute services without an account (Pollinations, Cloudflare Playground, DuckDuckGo AI, Felo…).
+const KEYLESS_PREFIXES = ["pol","pollinations","cfp","cloudflare-playground","ddgw","duckduckgo-web","felo","felo-web","veo-free","veoaifree-web","tllm","theoldllm","pepper","chipotle"];
+// "github/…" here is GitHub Models (AI Stoica's direct API, free). OmniRoute's own "github" is GitHub Copilot, a
+// subscription: the gateway knows the two apart (OmniRoute's list) and stops Copilot before asking here (isPersonalModel).
+const PREFIX_PROVIDERS = {
+  openai:"openai", anthropic:"anthropic",
+  google:"gemini", gemini:"gemini", cerebras:"cerebras", groq:"groq",
+  cloudflare:"cloudflare", "@cf":"cloudflare", cf:"cloudflare", "cloudflare-ai":"cloudflare", openrouter:"openrouter",
+  mistral:"mistral", nvidia:"nvidia", github:"github", cohere:"cohere", huggingface:"huggingface", hf:"huggingface",
+  xai:"xai", grok:"xai", deepseek:"deepseek", ds:"deepseek", together:"together", fireworks:"fireworks",
+  perplexity:"perplexity", pplx:"perplexity", moonshot:"moonshot", kimi:"moonshot", zai:"zai", glm:"zai"
+};
 
 function normalizeKey(value) {
   return String(value || "")
@@ -17,13 +41,11 @@ function providerSignals(model) {
   // GPT-OSS is open-weight and never billed by OpenAI: "openai/gpt-oss-…" is Groq's name, "gpt-oss-…" Cerebras'.
   if (/^openai\/gpt[-_. ]?oss/.test(raw)) return ["groq"];
   if (/^gpt[-_. ]?oss/.test(raw)) return ["cerebras"];
-  const first = raw.split("/")[0];
-  const prefixMap = {
-    openai:"openai", anthropic:"anthropic", claude:"anthropic",
-    google:"gemini", gemini:"gemini", cerebras:"cerebras", groq:"groq",
-    cloudflare:"cloudflare", "@cf":"cloudflare", openrouter:"openrouter"
-  };
-  if (Object.hasOwn(prefixMap, first)) return [prefixMap[first]];
+  const first = raw.includes("/") ? raw.split("/")[0] : "";
+  if (KEYLESS_PREFIXES.includes(first)) return ["omniroute-free"];
+  if (PERSONAL_PREFIXES.includes(first) || /-web$/.test(first)) return ["personal"];
+  if (raw.endsWith(":free") && (first === "openrouter" || !first)) return ["openrouter-free"];
+  if (Object.hasOwn(PREFIX_PROVIDERS, first)) return [PREFIX_PROVIDERS[first]];
 
   if (/openai|chatgpt/i.test(raw)) found.add("openai");
   if (!/gpt[-_. ]?oss/i.test(raw) && /(^|[\s_.:-])gpt(?:[\s_.:-]|\d)|(^|[\s_.:-])o[134](?:[\s_.:-]|$)/i.test(raw)) found.add("openai");
@@ -58,6 +80,9 @@ function providerAccess(context, provider) {
 
   if (!KNOWN_PROVIDERS.includes(provider)) {
     return { allowed: isOwner, reason: isOwner ? "" : "Furnizorul modelului nu este aprobat pentru acest cont." };
+  }
+  if (provider === "personal") {
+    return { allowed: isOwner, reason: isOwner ? "" : "Modelul folosește abonamentul personal al Owner-ului (Codex, Claude Code, Copilot, Kiro, conturi web): condițiile furnizorului nu permit împărțirea contului. Alege un model gratuit din listă." };
   }
 
   if (PAID_PROVIDERS.has(provider)) {
@@ -151,7 +176,10 @@ function evaluateModelAccess(context, model) {
 
 module.exports = {
   PAID_PROVIDERS,
+  FREE_PROVIDERS,
   KNOWN_PROVIDERS,
+  PERSONAL_PREFIXES,
+  KEYLESS_PREFIXES,
   normalizeKey,
   providerSignals,
   providerAccess,
