@@ -1145,6 +1145,20 @@ function ProviderUseList({cfg,set}) {
     <div className="providerUseGrid">{CHAT_FAMILIES.map(([id,label])=><label key={id} className="providerUseItem"><input type="checkbox" checked={!blocked.has(id)} onChange={e=>toggle(id,e.target.checked)}/><span>{label}</span></label>)}</div>
   </fieldset>;
 }
+// Site accounts other than the Owner: every free model works for them; an OmniRoute combination only when shared here,
+// since it may run on the Owner's subscriptions (Codex, Claude Code…), which their terms forbid sharing.
+function SharedCombos({cfg,set}) {
+  const [combos,setCombos]=useState(null);
+  useEffect(()=>{let live=true;api("/api/models").then(ms=>{if(live)setCombos(Array.isArray(ms?.combos)?ms.combos.map(String):[])}).catch(()=>{if(live)setCombos([])});return()=>{live=false}},[]);
+  const chosen=String(cfg.sharedCombos||"").split(",").map(x=>x.trim()).filter(Boolean);
+  const has=name=>chosen.some(x=>x.toLowerCase()===name.toLowerCase());
+  const toggle=(name,on)=>set({sharedCombos:(on?[...chosen.filter(x=>x.toLowerCase()!==name.toLowerCase()),name]:chosen.filter(x=>x.toLowerCase()!==name.toLowerCase())).join(",")});
+  const names=[...new Set([...(combos||[]),...chosen])];
+  return <fieldset className="providerUse"><legend>Combinații pentru toate conturile</legend>
+    <p className="settingsHelp">Celelalte conturi folosesc toate modelele gratuite (Gemini, Groq, Mistral, OpenRouter :free…). Abonamentele tale (Codex, Claude Code, Copilot, Kiro, conturile web) rămân doar ale tale: condițiile lor nu permit împărțirea contului. O combinație OmniRoute o folosesc și ei doar dacă o bifezi aici; bifează doar combinații făcute din modele gratuite.</p>
+    {combos===null?<p className="settingsHelp">Încarc combinațiile…</p>:names.length?<div className="providerUseGrid">{names.map(name=><label key={name} className="providerUseItem"><input type="checkbox" checked={has(name)} onChange={e=>toggle(name,e.target.checked)}/><span>{name}</span></label>)}</div>:<p className="settingsHelp">OmniRoute nu are încă nicio combinație.</p>}
+  </fieldset>;
+}
 // Poze / Video → «Făcute de»: Gemini only by default (Nano Banana, Veo); "" lets every provider in, the free ones too.
 const MEDIA_MAKERS={
   image:[["gemini","Doar Gemini · Nano Banana"],["gemini,openai,xai","Gemini, OpenAI și Grok"],["","Toți furnizorii, și cei gratuiți"]],
@@ -1298,6 +1312,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <label className="toggleRow"><div><b>Folosește API-urile directe</b><span>Modelele lor apar în listă (Groq, Gemini, Cerebras…). Răspund când le alegi sau când nu ai ales niciun model.</span></div><input type="checkbox" checked={cfg.directChatEnabled!==false} onChange={e=>set({directChatEnabled:e.target.checked})}/></label>
         <label className="toggleRow"><div><b>Rezervă automată</b><span>Dacă modelul ales nu răspunde, trece singur la API-urile directe. Oprit: răspunde doar modelul ales, iar altfel vezi eroarea.</span></div><input type="checkbox" checked={cfg.chatFallbackOnFailure===true} onChange={e=>set({chatFallbackOnFailure:e.target.checked})}/></label>
         <ProviderUseList cfg={cfg} set={set}/>
+        {(webServer||cfg.controlApiUrl)&&<SharedCombos cfg={cfg} set={set}/>}
         <label>Protecție costuri<select value={cfg.directChatCostPolicy||"free_only"} onChange={e=>set({directChatCostPolicy:e.target.value})}><option value="free_only">Doar provideri fără cost direct</option><option value="allow_paid">Permite și API-urile plătite (OpenAI, Grok)</option></select></label>
         <label>Ordinea de încercare<input value={cfg.directChatProviderOrder||"cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai,xai"} onChange={e=>set({directChatProviderOrder:e.target.value})}/></label>
         <p className="settingsHelp">Fiecare model din liste apare în lista de modele de sus. Dacă lipsește cheia, providerul răspunde cu 429/404/503 sau nu răspunde deloc, AI Stoica încearcă următorul model, apoi următorul provider.</p>
