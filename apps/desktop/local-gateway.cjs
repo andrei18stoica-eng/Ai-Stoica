@@ -749,6 +749,25 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     let entries=[];try{entries=await omniModelEntries(cfg)}catch{}
     omniEntriesCache={at:Date.now(),entries};return entries;
   }
+  // OmniRoute's list also holds the models that make pictures, video, sound, embeddings… (type "image", "video", "audio",
+  // "embedding", "rerank", "moderation", "music"): they do not answer a chat message, so the chat list leaves them out
+  // and choosing one in the chat says so instead of failing at the provider.
+  const NON_CHAT_TYPES=new Set(["image","video","audio","speech","transcription","tts","stt","embedding","embeddings","rerank","moderation","music"]);
+  function chatCapable(entry){
+    if(!entry||typeof entry!=="object"||entry.owned_by==="combo")return true;
+    if(NON_CHAT_TYPES.has(String(entry.type||"").toLowerCase()))return false;
+    const out=Array.isArray(entry.output_modalities)?entry.output_modalities.map(x=>String(x).toLowerCase()):[];
+    return !out.length||out.includes("text");
+  }
+  async function requireChatModel(cfg,id){
+    const v=String(id||"").trim().toLowerCase();
+    const same=(await omniEntriesCached(cfg)).filter(x=>typeof x==="object"&&String(x?.id||"").trim().toLowerCase()===v);
+    const entry=same[0];
+    if(entry&&!same.some(chatCapable)){
+      const kind={image:"poze",video:"video",embedding:"embedding-uri",embeddings:"embedding-uri",music:"muzică",rerank:"ordonare de rezultate",moderation:"moderare"}[String(entry.type||"").toLowerCase()]||"sunet";
+      throw policyFailure(`«${id}» nu este un model de chat (face ${kind}), deci nu poate răspunde la mesaje. Alege un model de chat din listă.${/poze|video/.test(kind)?` Pentru ${kind==="poze"?"o poză":"un video"} scrie în chat, de exemplu: „Generează ${kind==="poze"?"o poză":"un video"} cu…”.`:""}`,400);
+    }
+  }
   async function omniModelIds(cfg){
     return (await omniEntriesCached(cfg)).map(x=>String(typeof x==="string"?x:x?.id||"")).filter(Boolean);
   }
@@ -793,6 +812,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }
     await requireModelAccess(context,requested);
     await requirePersonalAccess(context,requested);
+    await requireChatModel(cfg,requested);
     if(modelBlocked(cfg,requested))throw policyFailure(`Furnizorul modelului «${requested}» este oprit în Setări → API-uri AI → Furnizori folosiți. Alege alt model din listă.`,403);
     const automatic=chosen===false||!String(requestedModel||"").trim()||requested!==asked;
     if(await isDirectModel(cfg,freeDirectAllowed(context),requested))return {task:"direct",automatic,direct:true,reasons:["model API direct ales"],selectedModel:requested,candidates:[]};
@@ -1169,7 +1189,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     try{entries=await omniModelEntries(cfg)}catch(e){omniError=roError(e);entries=omniEntriesLast}
     // Everything OmniRoute serves is listed: free and paid models and its combinations ("Ai principal", auto/* …).
     // OmniRoute marks a combination with owned_by "combo"; a name without "provider/" is one too. The interface groups them first.
-    const mapped=entries.map(x=>{const id=String(typeof x==="string"?x:x?.id||"").trim();if(!id)return null;const base=typeof x==="string"?{id}:{...x,id};return (x?.owned_by==="combo"||!id.includes("/"))?{...base,provider:"omniroute",kind:"combo"}:base;}).filter(Boolean);
+    const mapped=entries.filter(chatCapable).map(x=>{const id=String(typeof x==="string"?x:x?.id||"").trim();if(!id)return null;const base=typeof x==="string"?{id}:{...x,id};return (x?.owned_by==="combo"||!id.includes("/"))?{...base,provider:"omniroute",kind:"combo"}:base;}).filter(Boolean);
     // Your own combinations first ("Ai principal" becomes the default pick), then OmniRoute's auto/* ones, then the models.
     const rank=x=>x.kind==="combo"?(/^auto\//i.test(x.id)?1:0):2;
     const manualModels=mapped.map((x,i)=>[x,i]).sort((a,b)=>rank(a[0])-rank(b[0])||a[1]-b[1]).map(([x])=>x);
@@ -1220,7 +1240,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const cfg=getOmniConfig(),personal=personalAllowed(req.user,req.cloudUser),rows=[];
     for(const x of await omniEntriesCached(cfg)){
       const id=String(typeof x==="string"?x:x?.id||"").trim();
-      if(!id||modelBlocked(cfg,id))continue;
+      if(!id||modelBlocked(cfg,id)||!chatCapable(x))continue;
       if(CODE_SUBSCRIPTION.test(id)){if(personal)rows.push({id,group:/^(cc|claude-code)\//i.test(id)?"claude-code":"codex",source:"subscription"});}
       else if(CODE_API.test(id))rows.push({id,group:/^anthropic\//i.test(id)?"claude-api":"openai-api",source:"api"});
     }
@@ -2994,6 +3014,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(!model)throw policyFailure("Alege mai întâi un model AI din lista de sus, apoi creează automatizarea.",400);
     await requireModelAccess(req,model);
     await requirePersonalAccess(req,model);
+    await requireChatModel(cfg,model);
     return model;
   }
   app.get("/api/automations", auth, (req,res) => {const db=store.read();res.json({data:db.automations.filter(x=>x.userId===req.user.id).sort((a,b)=>b.createdAt-a.createdAt).map(publicAutomation)});});
@@ -3722,6 +3743,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       // Same rule as chat: no model chosen for the automation (or "Ai principal" / "AI Stoica …") lets AI Stoica fall back.
       const automaticModel=!String(item.model||"").trim()||selectedModel!==askedModel;
       await requireModelAccess(ctx,selectedModel);
+      await requireChatModel(cfg,selectedModel);
       const isWatch=item.timingMode==="condition_watch";
       const taskPrompt=isWatch
         ? `${item.prompt}\n\nAceasta este o verificare condițională. Dacă nu există o schimbare relevantă sau condiția nu este îndeplinită, răspunde exact: AI_STOICA_NO_NOTIFICATION. Dacă este îndeplinită, răspunde numai cu informația utilă care trebuie notificată.`

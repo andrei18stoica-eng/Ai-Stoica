@@ -22,6 +22,7 @@ async function main() {
         { id: "fal-ai/kling-video", owned_by: "fal-ai", type: "video" },
         { id: "openrouter/flux-image", owned_by: "openrouter", type: "image" },
         { id: "codex/gpt-5.6-sol", owned_by: "codex", name: "GPT 5.6 Sol (Codex Image)", type: "image" },
+        { id: "codex/gpt-5.6", owned_by: "codex", name: "GPT 5.6 (Codex)" },
         { id: "veoaifree-web/veo", owned_by: "veoaifree-web", name: "VEO 3.1", type: "video" }
       ] }));
       const j = body ? JSON.parse(body) : {};
@@ -115,7 +116,7 @@ async function main() {
     cfg.ownerEmail = "boss@example.com"; await new Promise((x) => setTimeout(x, 2100));
     r = await call("/api/models", { token }); j = await r.json();
     expect(r.status === 200 && !(j.data || []).some((x) => /^codex\//.test(x.id || x)), "another account must not see the Owner's subscription models: " + JSON.stringify(j.data).slice(0, 300));
-    r = await chat("codex/gpt-5.6-sol"); j = await r.json();
+    r = await chat("codex/gpt-5.6"); j = await r.json();
     expect(r.status === 403 && /abonamentul personal al Owner-ului/.test(j.error), "another account must not chat through the Owner's subscription: " + JSON.stringify(j));
     const beforePersonal = asked.image.length;
     r = await call("/api/generate/image", { method: "POST", token, body: { prompt: "un logo mov" } });
@@ -125,9 +126,10 @@ async function main() {
     // The Owner keeps them all: the Owner's account sees, chooses and draws with the subscription models.
     cfg.ownerEmail = "owner@example.com"; await new Promise((x) => setTimeout(x, 2100));
     r = await call("/api/models", { token }); j = await r.json();
-    expect(r.status === 200 && (j.data || []).some((x) => (x.id || x) === "codex/gpt-5.6-sol"), "the Owner must see the subscription models: " + JSON.stringify(j.data).slice(0, 300));
-    r = await chat("codex/gpt-5.6-sol"); j = await r.json();
-    expect(r.status === 200 && j.choices[0].message.content === "OMNI codex/gpt-5.6-sol", "the Owner must chat through the subscription: " + JSON.stringify(j));
+    // (The Codex picture model stays out of the chat list: it makes pictures, it does not chat. test-0716-chat-models.cjs)
+    expect(r.status === 200 && (j.data || []).some((x) => (x.id || x) === "codex/gpt-5.6"), "the Owner must see the subscription models: " + JSON.stringify(j.data).slice(0, 300));
+    r = await chat("codex/gpt-5.6"); j = await r.json();
+    expect(r.status === 200 && j.choices[0].message.content === "OMNI codex/gpt-5.6", "the Owner must chat through the subscription: " + JSON.stringify(j));
     const beforeOwner = asked.image.length;
     r = await call("/api/generate/image", { method: "POST", token, body: { prompt: "un logo auriu", model: "codex/gpt-5.6-sol" } });
     expect(r.status === 200 && asked.image.slice(beforeOwner).includes("codex/gpt-5.6-sol"), "the Owner's images may use the subscription: " + JSON.stringify(asked.image.slice(beforeOwner)));

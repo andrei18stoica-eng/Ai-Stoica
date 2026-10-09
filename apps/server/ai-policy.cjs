@@ -14,6 +14,8 @@ const PERSONAL_PREFIXES = [
 ];
 // OmniRoute services without an account (Pollinations, Cloudflare Playground, DuckDuckGo AI, Felo…).
 const KEYLESS_PREFIXES = ["pol","pollinations","cfp","cloudflare-playground","ddgw","duckduckgo-web","felo","felo-web","veo-free","veoaifree-web","tllm","theoldllm","pepper","chipotle"];
+// "github/…" here is GitHub Models (AI Stoica's direct API, free). OmniRoute's own "github" is GitHub Copilot, a
+// subscription: the gateway knows the two apart (OmniRoute's list) and stops Copilot before asking here (isPersonalModel).
 const PREFIX_PROVIDERS = {
   openai:"openai", anthropic:"anthropic",
   google:"gemini", gemini:"gemini", cerebras:"cerebras", groq:"groq",

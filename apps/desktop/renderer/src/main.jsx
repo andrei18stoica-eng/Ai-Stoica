@@ -1572,7 +1572,9 @@ function App() {
       const live=uniqueModels((ms.manualModels||ms.data||[]).map(x=>typeof x==="string"?x:x?.id));
       if(Array.isArray(ms.combos)){COMBO_IDS=new Set(ms.combos.map(String));storage.set(COMBO_CACHE_KEY,JSON.stringify([...COMBO_IDS]));}
       const enforced=ms.policyEnforced===true;
-      const merged=enforced?live:uniqueModels([...live,...cachedModels()]);
+      // The list is the one just received: a model that left OmniRoute (or never chatted) leaves the picker too. The
+      // remembered list fills in only while OmniRoute does not answer.
+      const merged=enforced||!ms.omniUnavailable?live:uniqueModels([...live,...cachedModels()]);
       setModelPolicyEnforced(enforced);setDeniedModels(enforced?Number(ms.deniedCount)||0:0);setModels(merged);storage.set(MODEL_CACHE_KEY,JSON.stringify(merged));
       setModel(prev=>{
         const chosen=[prev&&prev!==autoPickRef.current?prev:"",storage.get(MANUAL_MODEL_KEY),machineCfgRef.current?.model];
@@ -1730,7 +1732,9 @@ function App() {
     const convId=baseConv.id;
     const lastUser=[...messages].reverse().find(m=>m.role==="user");
     const desiredModel=String(baseConv.model||model||"").trim();
-    const effectiveModel=modelPolicyEnforced?(models.includes(desiredModel)?desiredModel:(models.includes(model)?model:(models[0]||""))):desiredModel;
+    // A conversation keeps the model it was made with; when that model has left the list (OmniRoute no longer has it, or it
+    // was never a chat model) the one chosen in the picker answers instead of an error.
+    const effectiveModel=modelPolicyEnforced||models.length?(models.includes(desiredModel)?desiredModel:(models.includes(model)?model:(models[0]||""))):desiredModel;
     const controller=startGeneration(convId);
     let answer="",routeInfo=null,started=false,streamError="",flushTimer=null;
     const assistantMessage={id:uid(),role:"assistant",content:"",createdAt:Date.now(),streaming:true};
