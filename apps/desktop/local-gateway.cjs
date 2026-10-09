@@ -668,14 +668,14 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(cloudBase()&&!ownerRequest(context)){
       if(!omniEntriesLast.length)await omniEntriesCached(getOmniConfig());
       if(isOmniCombo(model)){
-        if(!sharedComboSet(getOmniConfig()).has(normalizeModelKey(model)))throw policyFailure(`Combinația «${model}» este doar a Owner-ului (poate folosi abonamentele lui). Alege un model din listă sau cere Owner-ului s-o împartă din Setări → API-uri AI → «Combinații pentru toate conturile».`,403);
+        if(!sharedComboSet(getOmniConfig()).has(normalizeModelKey(model)))throw notPermitted(model,COMBO_REASON);
         if(!hasPermission(context,"chat"))throw policyFailure("Chat AI este dezactivat pentru acest cont.",403);
         return {model,allowed:true,source:"shared_combination"};
       }
     }
     const policy=await cloudModelPolicy(context?.cloudToken,[model]);
     const decision=policy.data.find(x=>String(x.model)===String(model))||policy.data[0];
-    if(!decision?.allowed)throw policyFailure(decision?.reason||"Modelul nu este permis pentru acest cont.",403);
+    if(!decision?.allowed)throw cloudBase()&&!ownerRequest(context)?notPermitted(model,decision?.reason||""):policyFailure(decision?.reason||"Modelul nu este permis pentru acest cont.",403);
     return decision;
   }
   // OmniRoute 3.8 refuses /v1/* without a client key (Docker: REQUIRE_API_KEY=true; /v1/models once the dashboard has a password).
@@ -719,8 +719,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(list.length)omniEntriesLast=list;
     return list;
   }
-  async function allowedOmniEntries(context, entries) {
-    const rows=(Array.isArray(entries)?entries:[]).map(entry=>{
+  function omniRows(entries){
+    return (Array.isArray(entries)?entries:[]).map(entry=>{
       const id=String(typeof entry==="string"?entry:entry?.id||"").trim();
       const provider=String(typeof entry==="string"?"":entry?.provider||"").trim().toLowerCase();
       const first=id.toLowerCase().split("/")[0];
@@ -728,20 +728,36 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const policyId=provider&&!alreadyScoped?`${provider}/${id}`:id;
       return {entry,id,policyId};
     }).filter(x=>x.id);
-    if(!rows.length)return [];
-    if(!cloudBase())return rows.map(x=>x.entry);
-    if(ownerRequest(context)){
-      const policy=await cloudModelPolicy(context?.cloudToken,rows.map(x=>x.policyId));
-      const allowed=new Set(policy.data.filter(x=>x.allowed).map(x=>String(x.model)));
-      return rows.filter(x=>allowed.has(x.policyId)).map(x=>x.entry);
-    }
-    const isCombo=x=>x.entry?.owned_by==="combo"||x.entry?.kind==="combo"||!x.id.includes("/");
+  }
+  // Model by model: may this account use it, and if not, why. The other accounts on the site see every model; the ones
+  // the Owner does not allow them are shown locked («nu îți este permis de Owner»).
+  const COMBO_REASON="Combinația poate folosi abonamentele Owner-ului; o folosești doar dacă Owner-ul o împarte (Setări → API-uri AI → «Combinații pentru toate conturile»).";
+  const PERSONAL_REASON="Folosește abonamentul personal al Owner-ului (condițiile furnizorului nu permit împărțirea contului).";
+  function notPermitted(model,reason){return policyFailure(`«${model}» nu îți este permis de Owner.${reason?" "+reason:""}`,403);}
+  async function modelDecisions(context,rows){
+    const out=new Map();
+    if(!cloudBase()){for(const x of rows)out.set(x.id,{allowed:true,reason:""});return out;}
+    const owner=ownerRequest(context),ask=[];
     const shared=sharedComboSet(getOmniConfig()),chat=hasPermission(context,"chat");
-    const combos=new Set(rows.filter(x=>isCombo(x)&&chat&&shared.has(normalizeModelKey(x.id))).map(x=>x.id));
-    const rest=rows.filter(x=>!isCombo(x)&&!(x.entry?.source!=="direct-api"&&isPersonalModel(x.id)));
-    const policy=rest.length?await cloudModelPolicy(context?.cloudToken,rest.map(x=>x.policyId)):{data:[]};
-    const allowed=new Set(policy.data.filter(x=>x.allowed).map(x=>String(x.model)));
-    return rows.filter(x=>combos.has(x.id)||(rest.includes(x)&&allowed.has(x.policyId))).map(x=>x.entry);
+    const isCombo=x=>x.entry?.owned_by==="combo"||x.entry?.kind==="combo"||!x.id.includes("/");
+    for(const x of rows){
+      if(owner)ask.push(x);
+      else if(isCombo(x))out.set(x.id,!chat?{allowed:false,reason:"Chat AI este dezactivat pentru acest cont."}:shared.has(normalizeModelKey(x.id))?{allowed:true,reason:""}:{allowed:false,reason:COMBO_REASON});
+      else if(x.entry?.source!=="direct-api"&&isPersonalModel(x.id))out.set(x.id,{allowed:false,reason:PERSONAL_REASON});
+      else ask.push(x);
+    }
+    if(ask.length){
+      const policy=await cloudModelPolicy(context?.cloudToken,ask.map(x=>x.policyId));
+      const byId=new Map(policy.data.map(d=>[String(d.model),d]));
+      for(const x of ask){const d=byId.get(x.policyId);out.set(x.id,{allowed:d?.allowed===true,reason:d?.allowed?"":String(d?.reason||"Modelul nu este permis pentru acest cont.")});}
+    }
+    return out;
+  }
+  async function allowedOmniEntries(context, entries) {
+    const rows=omniRows(entries);
+    if(!rows.length)return [];
+    const d=await modelDecisions(context,rows);
+    return rows.filter(x=>d.get(x.id)?.allowed).map(x=>x.entry);
   }
   let omniEntriesCache={at:0,entries:[]};
   async function omniEntriesCached(cfg){
@@ -889,7 +905,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(personalAllowed(req.user,req.cloudUser))return;
     if(!omniEntriesLast.length)await omniEntriesCached(getOmniConfig());
     if(isPersonalModel(model))
-      throw policyFailure(`Modelul «${model}» folosește abonamentul personal al Owner-ului (condițiile furnizorului nu permit împărțirea contului) și nu poate fi folosit din alt cont. Alege alt model din listă.`,403);
+      throw notPermitted(model,PERSONAL_REASON);
   }
   // Local mode (no AI Stoica Cloud): the account on this PC uses the API keys configured on this PC.
   // Code execution, SSH and GitHub write stay Owner-only. All direct APIs, testing the keys: the Owner.
@@ -1193,20 +1209,22 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     // Your own combinations first ("Ai principal" becomes the default pick), then OmniRoute's auto/* ones, then the models.
     const rank=x=>x.kind==="combo"?(/^auto\//i.test(x.id)?1:0):2;
     const manualModels=mapped.map((x,i)=>[x,i]).sort((a,b)=>rank(a[0])-rank(b[0])||a[1]-b[1]).map(([x])=>x);
-    let filtered=manualModels,policyError="";
+    let filtered=manualModels,policyError="";const locked=[];
+    const lockedOnes=(rows,d)=>{if(!ownerRequest(req))for(const x of rows){const v=d.get(x.id);if(v&&!v.allowed)locked.push({id:x.id,reason:v.reason})}};
     if(cloudBase()){
-      try{filtered=await allowedOmniEntries(req,manualModels)}
+      try{const rows=omniRows(manualModels),d=await modelDecisions(req,rows);filtered=rows.filter(x=>d.get(x.id)?.allowed).map(x=>x.entry);lockedOnes(rows,d)}
       catch(e){filtered=[];policyError=e.message}
     }
     if(freeDirectAllowed(req)&&cfg.directChatEnabled!==false){
       try{
-        const direct=await directCandidatesFor(req,cfg,"");
-        const directEntries=[...new Map(direct.map(x=>[x.provider+"/"+x.model,{id:x.provider+"/"+x.model,provider:x.provider,source:"direct-api"}])).values()];
+        const direct=await directChatCandidates(cfg,"");
+        let directEntries=[...new Map(direct.map(x=>[x.provider+"/"+x.model,{id:x.provider+"/"+x.model,provider:x.provider,source:"direct-api"}])).values()];
+        if(!directApisAllowed(req)){const rows=directEntries.map(e=>({entry:e,id:e.id,policyId:e.id})),d=await modelDecisions(req,rows);directEntries=directEntries.filter(e=>d.get(e.id)?.allowed);lockedOnes(rows,d)}
         const seen=new Set(filtered.map(x=>String(typeof x==="string"?x:x?.id||"").toLowerCase()));
         for(const x of directEntries)if(!seen.has(x.id.toLowerCase())){filtered.push(x);seen.add(x.id.toLowerCase())}
       }catch(e){policyError=policyError||("API direct: "+roError(e))}
     }
-    if(!personalAllowed(req.user,req.cloudUser))filtered=filtered.filter(x=>x?.source==="direct-api"||!isPersonalModel(String(typeof x==="string"?x:x?.id||"")));
+    if(!personalAllowed(req.user,req.cloudUser))filtered=filtered.filter(x=>{const id=String(typeof x==="string"?x:x?.id||"");if(x?.source==="direct-api"||!isPersonalModel(id))return true;locked.push({id,reason:PERSONAL_REASON});return false;});
     filtered=filtered.filter(x=>!modelBlocked(cfg,String(typeof x==="string"?x:x?.id||"")));
     if(!filtered.length&&omniError)return res.status(502).json({error:"Nu pot încărca modele OmniRoute și nu există API-uri directe configurate: "+omniError});
     res.json({
@@ -1220,7 +1238,9 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       omniError,
       automaticRouting:false,
       ownerControlled:true,
-      deniedCount:Math.max(0,manualModels.length-filtered.filter(x=>x?.source!=="direct-api").length)
+      deniedCount:Math.max(0,manualModels.length-filtered.filter(x=>x?.source!=="direct-api").length),
+      // Every model this account may not use, with the reason: the list shows them locked («nu îți este permis de Owner»).
+      locked:[...new Map(locked.filter(x=>!modelBlocked(cfg,x.id)&&!filtered.some(f=>String(typeof f==="string"?f:f?.id||"")===x.id)).map(x=>[x.id,x])).values()]
     });
   });
 

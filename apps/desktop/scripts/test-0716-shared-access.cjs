@@ -1,7 +1,8 @@
-// 0.7.16, at the Owner's request: the accounts other than the Owner get every model that costs nothing, from OmniRoute
+// 0.7.16, at the Owner's request: the accounts other than the Owner see every model, and use every one that costs nothing, from OmniRoute
 // and from the direct APIs (Gemini, Groq, Mistral, GitHub Models, OpenRouter :free, Pollinations…). The Owner's own
 // subscriptions (Codex, Claude Code, GitHub Copilot, Kiro, the "-web" accounts) stay his: their terms forbid sharing the
 // account. An OmniRoute combination does not say what it uses, so the others get only the ones the Owner shares.
+// The models they may not use are listed locked; using one says «nu îți este permis de Owner» and why.
 // The policy below is the real apps/server/ai-policy.cjs.
 const fs = require("fs"), http = require("http"), os = require("os"), path = require("path");
 const { startLocalGateway } = require("../local-gateway.cjs");
@@ -73,11 +74,18 @@ async function main() {
   try {
     // A normal account: the free models of OmniRoute, the shared combination and the free direct APIs.
     let r = await call("/api/models", "normal-token");
-    let ids = (await r.json()).data.map((x) => typeof x === "string" ? x : x.id);
+    const listed = await r.json();
+    let ids = listed.data.map((x) => typeof x === "string" ? x : x.id);
     for (const id of ["Gratuit", "gemini/gemini-2.5-flash", "groq/llama-3.3-70b-versatile", "openrouter/meta-llama/llama-3.3-70b-instruct:free", "pol/openai", "mistral/mistral-small-latest", "github/openai/gpt-4.1"])
       expect(ids.includes(id), `a normal account must see ${id}: ${ids.join(", ")}`);
     for (const id of ["Ai principal", "auto/fast", "cx/gpt-5.5", "cc/claude-sonnet-4.6", "gh/gpt-5", "github/gpt-4.1", "kr/claude-sonnet-4.5", "grok-web/grok-4", "openai/gpt-5", "openai/gpt-5-mini"])
-      expect(!ids.includes(id), `a normal account must not see ${id}: ${ids.join(", ")}`);
+      expect(!ids.includes(id), `a normal account must not be able to pick ${id}: ${ids.join(", ")}`);
+    // …but it sees them, locked, each with the reason.
+    const locked = new Map((listed.locked || []).map((x) => [x.id, x.reason]));
+    for (const [id, why] of [["Ai principal", /abonamentele Owner-ului/], ["auto/fast", /abonamentele Owner-ului/], ["cx/gpt-5.5", /abonamentul personal/], ["gh/gpt-5", /abonamentul personal/],
+      ["github/gpt-4.1", /abonamentul personal/], ["grok-web/grok-4", /abonamentul personal/], ["openai/gpt-5", /plătit/], ["openai/gpt-5-mini", /plătit/]])
+      expect(why.test(locked.get(id) || ""), `${id} must be listed locked with its reason: ` + JSON.stringify(listed.locked));
+    expect(!ids.some((id) => locked.has(id)), "a model is either usable or locked, never both");
 
     let out = await chat("normal-token", "mistral/mistral-small-latest");
     expect(out.status === 200 && out.text === "mistral mistral-small-latest" && omniAsked.length === 0, "a free direct API answers a normal account: " + JSON.stringify(out));
@@ -88,9 +96,9 @@ async function main() {
     out = await chat("normal-token", "Gratuit");
     expect(out.status === 200 && omniAsked.at(-1) === "Gratuit", "the shared combination answers a normal account: " + JSON.stringify(out));
     const asked = omniAsked.length;
-    for (const [model, why] of [["Ai principal", /doar a Owner-ului/], ["cx/gpt-5.5", /abonamentul personal/], ["github/gpt-4.1", /abonamentul personal/], ["kr/claude-sonnet-4.5", /abonamentul personal/], ["openai/gpt-5", /plătit/]]) {
+    for (const [model, why] of [["Ai principal", /abonamentele Owner-ului/], ["cx/gpt-5.5", /abonamentul personal/], ["github/gpt-4.1", /abonamentul personal/], ["kr/claude-sonnet-4.5", /abonamentul personal/], ["openai/gpt-5", /plătit/]]) {
       out = await chat("normal-token", model);
-      expect(out.status === 403 && why.test(out.error), `${model} must be refused for a normal account: ` + JSON.stringify(out));
+      expect(out.status === 403 && /nu îți este permis de Owner/.test(out.error) && why.test(out.error), `${model} must be refused for a normal account: ` + JSON.stringify(out));
     }
     expect(omniAsked.length === asked && !direct.some((x) => x.startsWith("openai/")), "nothing refused may reach OmniRoute or OpenAI: " + JSON.stringify({ omniAsked, direct }));
 
@@ -103,7 +111,9 @@ async function main() {
     cfg.sharedCombos = "Gratuit";
 
     // The Owner keeps everything: his subscriptions, every combination and the paid direct APIs.
-    ids = (await (await call("/api/models", "owner-token")).json()).data.map((x) => typeof x === "string" ? x : x.id);
+    const ownerList = await (await call("/api/models", "owner-token")).json();
+    ids = ownerList.data.map((x) => typeof x === "string" ? x : x.id);
+    expect(!(ownerList.locked || []).length, "nothing is locked for the Owner: " + JSON.stringify(ownerList.locked));
     for (const id of ["Ai principal", "cx/gpt-5.5", "gh/gpt-5", "github/gpt-4.1", "openai/gpt-5", "openai/gpt-5-mini", "mistral/mistral-small-latest"])
       expect(ids.includes(id), `the Owner must see ${id}: ${ids.join(", ")}`);
     out = await chat("owner-token", "cx/gpt-5.5");
@@ -125,7 +135,9 @@ async function main() {
   expect(/sharedCombos:[^\n]*AI_STOICA_SHARED_COMBOS/.test(fs.readFileSync(path.join(repo, "apps", "cloud", "server.cjs"), "utf8")), "apps/cloud reads AI_STOICA_SHARED_COMBOS");
   for (const f of [["apps", "cloud", "docker-compose.yml"], ["deploy", "hetzner", "docker-compose.yml"]])
     expect(fs.readFileSync(path.join(repo, ...f), "utf8").includes("AI_STOICA_SHARED_COMBOS: ${AI_STOICA_SHARED_COMBOS-}"), f.join("/") + " passes AI_STOICA_SHARED_COMBOS");
-  expect(/function SharedCombos/.test(fs.readFileSync(path.join(__dirname, "..", "renderer", "src", "main.jsx"), "utf8")), "Settings show «Combinații pentru toate conturile»");
+  const ui = fs.readFileSync(path.join(__dirname, "..", "renderer", "src", "main.jsx"), "utf8");
+  expect(/function SharedCombos/.test(ui), "Settings show «Combinații pentru toate conturile»");
+  expect(ui.includes("locked={lockedModels}") && ui.includes('className="modelOption locked" onClick={()=>notAllowed(x)}') && ui.includes("nu îți este permis de Owner"), "the model list shows the locked models and says why when one is chosen");
   console.log("0.7.16 free models for every account, the Owner's subscriptions his alone OK");
 }
 
