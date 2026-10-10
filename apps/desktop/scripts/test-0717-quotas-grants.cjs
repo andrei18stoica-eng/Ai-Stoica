@@ -21,6 +21,7 @@ async function main() {
   expect(!policy.evaluateModelAccess(ctx({ "groq/llama-3.3-70b-versatile": "deny" }), "groq/llama-3.3-70b-versatile").allowed, "'deny' closes an open model");
   expect(!policy.evaluateModelAccess(ctx({ "openai/gpt-5": "allow" }, { chat: false }), "openai/gpt-5").allowed, "no override opens a model while chat is off");
   expect(policy.evaluateModelAccess({ ...ctx({ "x/y": "deny" }), user: { role: "owner" } }, "groq/llama-3.3-70b-versatile").allowed, "the Owner is never restricted");
+  expect(!policy.evaluateModelAccess(ctx({ "cx/gpt-5.5": "allow" }), "cx/gpt-5.5").allowed, "a button never opens the Owner's personal subscriptions");
   const server = fs.readFileSync(path.join(__dirname, "../../server/server.cjs"), "utf8");
   expect(/app\.patch\("\/api\/admin\/users\/:id\/models", auth, ownerOnly/.test(server) && /admin\.model_override/.test(server), "the server needs the Owner-only route for per-model access");
 

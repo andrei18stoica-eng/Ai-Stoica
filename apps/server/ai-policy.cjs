@@ -117,7 +117,8 @@ function evaluateModelAccess(context, model) {
   if (context?.user?.role === "owner") return decision;
   const override = modelOverride(context?.permissions, model);
   if (override === "deny") return { ...decision, allowed:false, source:"override", reason:"Owner-ul a blocat acest model pentru contul tău." };
-  if (override === "allow" && context?.permissions?.chat === true) return { ...decision, allowed:true, source:"override", reason:"" };
+  // The Owner's own subscriptions (Codex, Claude Code, "-web" accounts…) are never opened by a button.
+  if (override === "allow" && context?.permissions?.chat === true && !(decision.providers || []).includes("personal")) return { ...decision, allowed:true, source:"override", reason:"" };
   return decision;
 }
 

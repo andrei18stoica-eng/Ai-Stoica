@@ -798,9 +798,9 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
     r.onend=()=>{
       speechRef.current=null;
       if(!mountedRef.current)return;
-      if(!(failed&&failed!=="no-speech"&&failed!=="aborted"&&!heard&&!stoppedRef.current&&failed!=="not-allowed"&&failed!=="service-not-allowed"))setRecording(false);
+      if(!(failed&&failed!=="no-speech"&&failed!=="aborted"&&!heard&&!stoppedRef.current&&failed!=="not-allowed"))setRecording(false);
       if(failed&&failed!=="no-speech"&&failed!=="aborted"){
-        if(failed==="not-allowed"||failed==="service-not-allowed"){toast("Microfonul este blocat. Permite accesul la microfon în browser.");return;}
+        if(failed==="not-allowed"){toast("Microfonul este blocat. Permite accesul la microfon în browser.");return;}
         // Text already heard is kept for the user to check; it is not sent half-finished.
         if(heard){toast("Recunoașterea vocală s-a oprit; verifică textul și trimite-l.","info");return;}
         // The browser cannot recognise speech here (no connection to its service…): record instead, unless the user already stopped.

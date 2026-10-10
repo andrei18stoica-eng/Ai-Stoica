@@ -747,6 +747,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       else if(ov==="deny")out.set(x.id,{allowed:false,reason:"Owner-ul l-a blocat pentru contul tău."});
       else if(isCombo(x))out.set(x.id,!chat?{allowed:false,reason:"Chat AI este dezactivat pentru acest cont."}:shared.has(normalizeModelKey(x.id))||ov==="allow"?{allowed:true,reason:""}:{allowed:false,reason:COMBO_REASON});
       else if(x.entry?.source!=="direct-api"&&isPersonalModel(x.id))out.set(x.id,{allowed:false,reason:PERSONAL_REASON});
+      else if(ov==="allow")out.set(x.id,{allowed:true,reason:""});
       else ask.push(x);
     }
     if(ask.length){
@@ -1691,10 +1692,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const limit=freeLimit(kind),used=quotaUsed(req.user.id,kind);
     if(used>=limit){
       const [one,many]=FREE_LIMIT_NOUNS[kind];
-      throw policyFailure(limit===0?`${kind==="image"?"Pozele":kind==="video"?"Videoclipurile":"Fișierele"} nu sunt activate pentru conturile gratuite.`:`Ai folosit cele ${limit} ${limit===1?one:many} de azi. Se reînnoiesc zilnic, la miezul nopții (UTC); Owner-ul poate da acces nelimitat.`,429);
+      const the={image:"poza gratuită",video:"videoclipul gratuit",document:"fișierul gratuit"}[kind],de=limit%100>=20||limit%100===0?" de":"";
+      throw policyFailure(limit===0?`${kind==="image"?"Pozele":kind==="video"?"Videoclipurile":"Fișierele"} nu sunt activate pentru conturile gratuite.`:`Ai folosit ${limit===1?the:`cele ${limit}${de} ${many}`} de azi. Se reînnoiesc zilnic, la miezul nopții (UTC); Owner-ul poate da acces nelimitat.`,429);
     }
     quotaAdd(req.user.id,kind,1);
-    res.once("close",()=>{if(res.statusCode>=400||!res.writableFinished)quotaAdd(req.user.id,kind,-1);});
+    // A cancelled request is not refunded: the provider may already have started (and been billed for) the job.
+    res.once("close",()=>{if(res.statusCode>=400)quotaAdd(req.user.id,kind,-1);});
   }
   app.get("/api/quota", auth, (req,res) => {
     const unlimited=quotaUnlimited(req),out={unlimited};
@@ -2640,7 +2643,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const strictFree=kind==="image"&&(cfg.imageCostPolicy==="free_only"||cfg.imageProviderMode==="free");
     const allowed=rows
       .map((row,index)=>({row,index,decision:decisions.get(row.policyId)}))
-      .filter(x=>x.decision?.allowed)
+      .filter(x=>{
+        if(isOwner)return x.decision?.allowed;
+        const ov=modelOverrideFor(req,x.row.id)||modelOverrideFor(req,x.row.policyId);
+        if(ov==="deny")return false;
+        return x.decision?.allowed||(ov==="allow"&&!isPersonalModel(x.row.id));
+      })
       .filter(x=>!strictFree||!(x.decision?.paidRequired===true||localPaidHint(x.row)))
       .sort((a,b)=>{
         const ac=Number(a.row.id===configured),bc=Number(b.row.id===configured);
@@ -2724,8 +2732,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       // name through the API still goes through the account's permissions.
       const explicitModel=requestedModel;
       const made=mediaConfigFor(getOmniConfig(),"image",freeTier?"":via),errors=[];
-      const cfg=freeTier?{...made.cfg,imageProviders:"",imageCostPolicy:"allow_paid",imageProviderMode:"auto"}:made.cfg,madeBy=freeTier?"":made.madeBy;
-      const strictFree=!freeTier&&(cfg.imageCostPolicy==="free_only"||cfg.imageProviderMode==="free");
+      const cfg=freeTier?{...made.cfg,imageProviders:""}:made.cfg,madeBy=freeTier?"":made.madeBy;
+      const strictFree=(cfg.imageCostPolicy==="free_only"||cfg.imageProviderMode==="free");
       const done=async(resolved,meta)=>{if(signal.aborted)return true;res.json({data:await saveGeneratedMedia(req,{...resolved,kind:"image",prompt,...meta})});return true;};
 
       const runDirect=async(attempts)=>{
@@ -2808,8 +2816,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       // Free tier: a short video from the free providers, whatever model the chat is on.
       const explicitModel=requestedModel,duration=freeTier?Math.min(askedDuration,6):askedDuration;
       const made=mediaConfigFor(getOmniConfig(),"video",freeTier?"":via),errors=[];
-      const cfg=freeTier?{...made.cfg,videoProviders:"",videoCostPolicy:"allow_paid",videoMode:"auto"}:made.cfg,madeBy=freeTier?"":made.madeBy;
-      const strictFree=directApisAllowed(req)&&(cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free");
+      const cfg=freeTier?{...made.cfg,videoProviders:""}:made.cfg,madeBy=freeTier?"":made.madeBy;
+      const strictFree=(directApisAllowed(req)||freeTier)&&(cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free");
       const done=async(resolved,meta)=>{if(signal.aborted)return true;res.json({data:await saveGeneratedMedia(req,{...resolved,kind:"video",prompt,...meta})});return true;};
 
       if(explicitModel)await requirePersonalAccess(req,explicitModel);
