@@ -61,7 +61,7 @@ async function main() {
   // The composer (rewritten in 0.7.17, see test-0717-voice.cjs): the spoken text is written in the box and sent by itself.
   const ui = fs.readFileSync(path.join(__dirname, "../renderer/src/main.jsx"), "utf8");
   expect(/function finishVoice\(text\)/.test(ui)&&/autoSendRef\.current=true;setVoiceTick/.test(ui), "the voice text must be marked for sending");
-  expect(/autoSendRef\.current&&!transcribing&&!recording&&draft\.trim\(\)\)\{autoSendRef\.current=false;trySend\(\);\}/.test(ui), "the voice text must be sent by itself");
+  expect(/autoSendRef\.current&&!transcribing&&!recording&&draft\.trim\(\)\)\{if\(busy\)/.test(ui)&&/autoSendRef\.current=false;trySend\(\);\}/.test(ui), "the voice text must be sent by itself");
   console.log("test-0716-voice: OK");
 }
 

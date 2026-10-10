@@ -1691,7 +1691,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const limit=freeLimit(kind),used=quotaUsed(req.user.id,kind);
     if(used>=limit){
       const [one,many]=FREE_LIMIT_NOUNS[kind];
-      throw policyFailure(limit===0?`${kind==="image"?"Pozele":kind==="video"?"Videoclipurile":"Fișierele"} nu sunt activate pentru conturile gratuite.`:`Ai folosit cele ${limit} ${limit===1?one:many} de azi. Se reînnoiesc mâine; Owner-ul poate da acces nelimitat.`,429);
+      throw policyFailure(limit===0?`${kind==="image"?"Pozele":kind==="video"?"Videoclipurile":"Fișierele"} nu sunt activate pentru conturile gratuite.`:`Ai folosit cele ${limit} ${limit===1?one:many} de azi. Se reînnoiesc zilnic, la miezul nopții (UTC); Owner-ul poate da acces nelimitat.`,429);
     }
     quotaAdd(req.user.id,kind,1);
     res.once("close",()=>{if(res.statusCode>=400||!res.writableFinished)quotaAdd(req.user.id,kind,-1);});
@@ -3221,14 +3221,25 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   // The microphone of the chat: a short recording (base64 in JSON) comes back as text, without saving anything in the
   // Library, so it needs no file permission. The browser's own speech recognition is tried first in the interface.
+  // Transcription spends the server's keys: an account other than the Owner gets 40 recordings an hour.
+  const voiceUse=new Map();
+  function voiceAllowed(userId){
+    const now=Date.now(),list=(voiceUse.get(userId)||[]).filter(t=>now-t<3600000);
+    if(list.length>=40){voiceUse.set(userId,list);return false;}
+    list.push(now);voiceUse.set(userId,list);
+    if(voiceUse.size>2000)for(const [k,v] of voiceUse)if(!v.some(t=>now-t<3600000))voiceUse.delete(k);
+    return true;
+  }
   app.post("/api/transcribe", auth, requirePermission("chat"), async (req,res) => {
     const signal=clientAbortSignal(res);
     try{
       const audio=typeof req.body?.audio==="string"?req.body.audio:"";
       if(!audio)return res.status(400).json({error:"Înregistrarea lipsește."});
-      if(audio.length>22*1024*1024)return res.status(413).json({error:"Înregistrarea este prea lungă (maximum 25 MB)."});
+      if(audio.length>15*1024*1024)return res.status(413).json({error:"Înregistrarea este prea lungă (maximum 10 MB)."});
       const bytes=Buffer.from(audio,"base64");
-      const mime=cleanMime(req.body?.mime)||"audio/webm";
+      if(bytes.length<100)return res.status(400).json({error:"Înregistrarea este goală sau nu e un fișier audio."});
+      const cleaned=cleanMime(req.body?.mime),mime=/^(audio|video)\//.test(cleaned)?cleaned:"audio/webm";
+      if(!quotaUnlimited(req)&&!voiceAllowed(req.user.id))return res.status(429).json({error:"Prea multe înregistrări într-un timp scurt. Încearcă peste câteva minute."});
       const result=await transcribeMedia(req,{bytes,mime,name:"Vocal."+mediaExtension(mime,""),language:req.body?.language,signal});
       res.json({text:String(result?.text||"").trim()});
     }catch(e){if(!signal.aborted)sendError(res,e)}

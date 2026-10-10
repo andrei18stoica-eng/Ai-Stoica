@@ -687,7 +687,7 @@ const VIDEO_PROVIDERS_TEXT="Încearcă pe rând providerii video configurați (P
 function imageProvidersText(policy){return `Încearcă pe rând: Cloudflare și Pollinations (dacă ai cheie), Pollinations fără cheie, Hugging Face${policy?.imagePaid?", apoi providerii cu plată configurați":""}.`;}
 function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAttachments,onOpenLibrary,responseMode,setResponseMode,mediaMode,setMediaMode,mentionsVersion,mediaPolicy}) {
   const {can,deny}=useAccess();
-  const ta=useRef(null),fileInput=useRef(null),imageInput=useRef(null),videoInput=useRef(null),audioInput=useRef(null),recorderRef=useRef(null),streamRef=useRef(null),chunksRef=useRef([]),attachRef=useRef(null),mountedRef=useRef(true),autoSendRef=useRef(false),speechRef=useRef(null),draftRef=useRef(draft);
+  const ta=useRef(null),fileInput=useRef(null),imageInput=useRef(null),videoInput=useRef(null),audioInput=useRef(null),recorderRef=useRef(null),streamRef=useRef(null),chunksRef=useRef([]),attachRef=useRef(null),mountedRef=useRef(true),autoSendRef=useRef(false),speechRef=useRef(null),stoppedRef=useRef(false),startingRef=useRef(false),draftRef=useRef(draft);
   const [menu,setMenu]=useState(false),[voiceTick,setVoiceTick]=useState(0),[recording,setRecording]=useState(false),[transcribing,setTranscribing]=useState(false),[uploading,setUploading]=useState(0),[mentions,setMentions]=useState([]),[mentionIndex,setMentionIndex]=useState(0),[mentionClosedFor,setMentionClosedFor]=useState(null),[dragOver,setDragOver]=useState(false);
   const pluginsOk=can("plugins"),automationsOk=can("automations");
   useDismiss(menu,()=>setMenu(false),attachRef);
@@ -787,7 +787,7 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
     if(!SR||window.AIStoica)return false;
     const r=new SR();r.lang=speechLocale();r.interimResults=true;r.continuous=true;
     const base=draftRef.current?draftRef.current.replace(/\s+$/,"")+" ":"";
-    let finals="",heard="",failed="";
+    let finals="",heard="",failed="";stoppedRef.current=false;
     r.onresult=e=>{
       let interim="";
       for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal)finals+=t+" ";else interim+=t;}
@@ -798,18 +798,22 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
     r.onend=()=>{
       speechRef.current=null;
       if(!mountedRef.current)return;
-      setRecording(false);
-      if(failed&&failed!=="no-speech"&&failed!=="aborted"&&!heard){
-        // The browser cannot recognise speech here (no connection to its service, microphone blocked…): record instead.
+      if(!(failed&&failed!=="no-speech"&&failed!=="aborted"&&!heard&&!stoppedRef.current&&failed!=="not-allowed"&&failed!=="service-not-allowed"))setRecording(false);
+      if(failed&&failed!=="no-speech"&&failed!=="aborted"){
         if(failed==="not-allowed"||failed==="service-not-allowed"){toast("Microfonul este blocat. Permite accesul la microfon în browser.");return;}
+        // Text already heard is kept for the user to check; it is not sent half-finished.
+        if(heard){toast("Recunoașterea vocală s-a oprit; verifică textul și trimite-l.","info");return;}
+        // The browser cannot recognise speech here (no connection to its service…): record instead, unless the user already stopped.
+        if(stoppedRef.current){toast("Recunoașterea vocală nu a mers. Apasă microfonul și încearcă din nou.");return;}
         startRecorder();return;
       }
       finishVoice(heard);
     };
-    try{r.start();}catch{return false;}
+    try{r.start();}catch(e){console.warn("Recunoaștere vocală indisponibilă:",e?.message||e);return false;}
     speechRef.current=r;setRecording(true);return true;
   }
   async function startRecorder(){
+    startingRef.current=true;
     try{
       if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder)throw new Error("Browserul nu poate înregistra sunet.");
       const stream=await navigator.mediaDevices.getUserMedia({audio:true});streamRef.current=stream;chunksRef.current=[];
@@ -822,7 +826,7 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
         stopTracks();recorderRef.current=null;
         if(!mountedRef.current)return;
         setRecording(false);setTranscribing(true);
-        let text="";
+        let text="",failedTranscript=true;
         try{
           const blob=new Blob(chunksRef.current,{type:rec.mimeType||"audio/webm"});
           if(!blob.size)throw new Error("Înregistrarea este goală.");
@@ -830,25 +834,28 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
           const d=await api("/api/transcribe",{method:"POST",body:JSON.stringify({audio,mime:blob.type,language:speechLocale().slice(0,2)})});
           text=String(d?.text||"").trim();
           if(text&&mountedRef.current)setDraft(v=>(v?v.replace(/\s+$/,"")+" ":"")+text);
+          failedTranscript=false;
         }catch(e){toast("Vocalul nu a putut fi transcris: "+friendlyError(e.message))}
-        finally{if(mountedRef.current){setTranscribing(false);if(text)finishVoice(text);}}
+        finally{if(mountedRef.current){setTranscribing(false);if(!failedTranscript)finishVoice(text);}}
       };
-      rec.start();setRecording(true);
+      rec.start();setRecording(true);startingRef.current=false;
     }catch(e){
+      startingRef.current=false;setRecording(false);
       toast(/denied|permission|NotAllowed/i.test(String(e?.name||e?.message))?"Accesul la microfon a fost refuzat. Permite microfonul în browser.":"Microfonul nu este disponibil: "+friendlyError(e.message));
     }
   }
   async function mic(){
     if(recording){
-      if(speechRef.current){try{speechRef.current.stop()}catch{}return;}
+      if(speechRef.current){stoppedRef.current=true;try{speechRef.current.stop()}catch{}return;}
       if(recorderRef.current){try{recorderRef.current.stop()}catch{}return;}
       return;
     }
+    if(startingRef.current)return;
     if(!startSpeech())await startRecorder();
   }
   const hasContent=!!draft.trim()||attachments.some(a=>a.part||a.parts?.length);
   draftRef.current=draft;
-  useEffect(()=>{if(autoSendRef.current&&!transcribing&&!recording&&draft.trim()){autoSendRef.current=false;trySend();}},[draft,transcribing,voiceTick]);
+  useEffect(()=>{if(autoSendRef.current&&!transcribing&&!recording&&draft.trim()){if(busy){toast("Textul vocal e în câmp; trimite-l când AI-ul termină răspunsul.","info");autoSendRef.current=false;return;}autoSendRef.current=false;trySend();}},[draft,transcribing,voiceTick]);
   function trySend(){
     if(busy)return;
     if(uploading){toast("Așteaptă să se termine încărcarea fișierului.","info");return;}
@@ -957,11 +964,12 @@ function AdminPanel({onClose}) {
     }catch(e){toast("Permisiuni: "+e.message)}
     finally{if(mounted.current)setPending(p=>{const n={...p};delete n[`${user.id}:${key}`];return n})}
   }
-  const [modelIds,setModelIds]=useState(null),[modelQuery,setModelQuery]=useState("");
-  useEffect(()=>{let live=true;api("/api/models").then(ms=>{if(live)setModelIds([...new Set((ms?.data||[]).map(x=>String(typeof x==="string"?x:x?.id||"")).filter(Boolean))].sort((a,b)=>a.localeCompare(b)))}).catch(()=>{if(live)setModelIds([])});return()=>{live=false}},[]);
+  const [modelIds,setModelIds]=useState(null),[modelQuery,setModelQuery]=useState(""),[modelsError,setModelsError]=useState(""),[modelsTry,setModelsTry]=useState(0);
+  useEffect(()=>{let live=true;api("/api/models").then(ms=>{if(live)setModelIds([...new Set((ms?.data||[]).map(x=>String(typeof x==="string"?x:x?.id||"")).filter(Boolean))].sort((a,b)=>a.localeCompare(b)))}).catch(e=>{if(live){setModelIds([]);setModelsError(e?.message||"eroare necunoscută")}});return()=>{live=false}},[modelsTry]);
   async function setModelMode(user,model,mode){
+    if(!user||user.role==="owner")return;
     const k=`${user.id}:model:${model}`;
-    if(!user||user.role==="owner"||pending[k])return;
+    if(pending[k])return;
     setPending(p=>({...p,[k]:true}));
     try{
       const d=await api(`/api/admin/users/${user.id}/models`,{method:"PATCH",body:JSON.stringify({model,mode})});
@@ -1042,8 +1050,8 @@ function AdminPanel({onClose}) {
               <input className="adminModelSearch" type="search" placeholder="Caută un model…" value={modelQuery} onChange={e=>setModelQuery(e.target.value)} aria-label="Caută un model"/>
               <div className="adminModels">
                 {modelIds===null&&<div className="stoicaPluginEmpty">Se încarcă modelele…</div>}
-                {modelIds!==null&&!modelIds.length&&<div className="stoicaPluginEmpty">Nu am putut încărca lista de modele.</div>}
-                {(modelIds||[]).filter(m=>m.toLowerCase().includes(modelQuery.trim().toLowerCase())).slice(0,200).map(m=>{
+                {modelIds!==null&&!modelIds.length&&<div className="stoicaPluginEmpty">{modelsError?`Nu am putut încărca lista de modele: ${modelsError}`:"Lista de modele este goală."} <button type="button" className="secondary" onClick={()=>{setModelIds(null);setModelsError("");setModelsTry(n=>n+1)}}>Reîncearcă</button></div>}
+                {[...new Set([...(modelIds||[]),...Object.keys(selected.permissions?.model_overrides||{})])].sort((a,b)=>a.localeCompare(b)).filter(m=>m.toLowerCase().includes(modelQuery.trim().toLowerCase())).slice(0,200).map(m=>{
                   const ov=Object.entries(selected.permissions?.model_overrides||{}).find(([k])=>k.toLowerCase()===m.toLowerCase())?.[1];
                   const mode=ov==="allow"||ov==="deny"?ov:"default",busyKey=!!pending[`${selected.id}:model:${m}`];
                   return <div key={m} className={cx("adminModelRow",mode)}>
