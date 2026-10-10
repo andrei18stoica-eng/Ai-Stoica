@@ -225,6 +225,21 @@ SECRET_ASSIGN_RE = re.compile(
     (["'`]?)([^\s"'`,;{}()<>]{6,})
     """
 )
+# The same secret names as XML elements: <password>value</password> (Maven
+# settings.xml, .NET config, Android resources ...).
+SECRET_XML_RE = re.compile(
+    r"(?i)(<([\w.-]*?(?:api[_-]?key|apikey|secret(?:[_-]?key)?|token|passw(?:or)?d|passwd|pwd|"
+    r"credentials?|private[_-]?key|access[_-]?key(?:[_-]?id)?|session[_-]?key|signing[_-]?key)s?)"
+    r"(?:\s[^>]*)?>)\s*([^<\s][^<]{4,}?)\s*(</\2\s*>)"
+)
+# Only in source code is an unquoted dotted value a reference (req.body.password);
+# in .env / .properties / .ini / YAML / XML it is the literal secret.
+CODE_EXT = {
+    ".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".cjs", ".mjs", ".cts", ".mts",
+    ".vue", ".svelte", ".astro", ".go", ".rs", ".java", ".kt", ".kts", ".scala",
+    ".groovy", ".c", ".h", ".cc", ".cpp", ".hpp", ".cs", ".fs", ".swift", ".m",
+    ".mm", ".php", ".rb", ".ex", ".exs", ".erl", ".dart", ".lua", ".r", ".jl", ".pl",
+}
 # Well-known token formats, redacted wherever they appear.
 TOKEN_RES = [
     re.compile(
@@ -383,24 +398,26 @@ def allowed(path: Path, rel: str, includes, excludes) -> bool:
     )
 
 
-def _assign(m) -> str:
+def _assign(m, code: bool) -> str:
     quote, value = m.group(2), m.group(3)
     nxt = m.string[m.end() : m.end() + 1]
     if value.lower() in NOT_SECRET or re.fullmatch(r"[\d.,_]+", value):
         return m.group(0)
-    # Unquoted code references (req.body.password, getToken(), cfg[k]) are not
-    # secrets; literal values in .env / YAML / JSON are.
-    if not quote and ("." in value or nxt in ("(", "[", ".")):
+    # In source code, unquoted references (req.body.password, getToken(),
+    # cfg[k]) are not secrets; in config files every literal value may be one.
+    if code and not quote and ("." in value or nxt in ("(", "[", ".")):
         return m.group(0)
     return m.group(1) + quote + "<REDACTED>"
 
 
-def redact(s: str) -> str:
+def redact(s: str, code: bool = False) -> str:
+    """Hide credentials in one line. `code` relaxes only the dotted-reference rule."""
     s = URL_CRED_RE.sub(r"\1<REDACTED>@", s)
     s = BEARER_RE.sub(lambda m: m.group(1) + " <REDACTED>", s)
     for rx in TOKEN_RES:
         s = rx.sub("<REDACTED>", s)
-    return SECRET_ASSIGN_RE.sub(_assign, s)
+    s = SECRET_XML_RE.sub(lambda m: m.group(1) + "<REDACTED>" + m.group(4), s)
+    return SECRET_ASSIGN_RE.sub(lambda m: _assign(m, code), s)
 
 
 def clip(s: str, original_len: int) -> str:
@@ -538,6 +555,7 @@ def read_windows(root: Path, rp: str, windows, encoding: str):
     for start, stop in windows:
         wanted.update(range(start, stop))
     last = max(wanted, default=-1)
+    code = Path(rp).suffix.lower() in CODE_EXT
     out = {}
     in_key = False
     with (root / rp).open("r", encoding=encoding, errors="replace", newline=None) as fh:
@@ -551,7 +569,7 @@ def read_windows(root: Path, rp: str, windows, encoding: str):
                 if in_key:
                     out[i] = "<REDACTED PRIVATE KEY LINE>"
                 else:
-                    out[i] = clip(redact(text[: MAX_LINE_CHARS + 200]), len(text))
+                    out[i] = clip(redact(text[: MAX_LINE_CHARS + 200], code), len(text))
             if KEY_END_RE.search(text):
                 in_key = False
     return out

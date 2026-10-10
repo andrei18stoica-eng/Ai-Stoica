@@ -75,6 +75,23 @@ class ContextPackTest(unittest.TestCase):
             self.assertNotIn(s, out)
         self.assertIn("req.body.password", out)  # code references stay readable
 
+    def test_redacts_dotted_values_in_config_files(self):
+        secret = "Sup3r.Secret1"
+        self.write("app.properties", f"db.password={secret}\n")
+        self.write("config.yaml", f"password: {secret}\n")
+        self.write(".env.example", f"DB_PASSWORD={secret}\n")
+        out = run(self.root, "--query", "password")
+        self.assertIn("app.properties", out)
+        self.assertNotIn(secret, out)
+
+    def test_redacts_xml_elements(self):
+        secret = "Xq9Lm2Vt8Rz4"
+        self.write("settings.xml", f"<server>\n  <password>{secret}</password>\n  <apiKey>{secret}</apiKey>\n</server>\n")
+        out = run(self.root, "--query", "password server")
+        self.assertIn("settings.xml", out)
+        self.assertNotIn(secret, out)
+        self.assertIn("<password><REDACTED></password>", out)
+
     def test_does_not_over_redact(self):
         self.write(
             "package.json",

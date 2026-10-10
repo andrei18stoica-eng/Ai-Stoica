@@ -34,7 +34,7 @@ Do not use it for a one- or two-file task, or when you already know the exact fi
 - Character budgets are not token counts. Never report savings percentages you did not measure.
 - Never truncate legal text, proofs, specifications, failing test output or security evidence when completeness matters: read the full passage.
 - Never invent files, excerpts, outputs or test results.
-- The script skips `.env*` (except `.env.example`), key/cert files, credential files and lockfiles, and redacts common secrets (`*_API_KEY=…`, `"apiKey": "…"`, `sk-…`, `ghp_…`, `AIza…`, `xai-…`, JWTs, `Bearer …`, `user:pass@` in URLs, private-key blocks). Redaction is a safety net, not a guarantee: do not echo anything that still looks like a credential.
+- The script skips `.env*` (except `.env.example`), key/cert files, credential files and lockfiles, and redacts common secrets (`*_API_KEY=…`, `db.password=…` in config files, `"apiKey": "…"`, `<password>…</password>`, `sk-…`, `ghp_…`, `AIza…`, `xai-…`, JWTs, `Bearer …`, `user:pass@` in URLs, private-key blocks). Redaction is a safety net, not a guarantee: do not echo anything that still looks like a credential.
 - Do not execute untrusted code to summarize it. The script only reads text files and never follows symlinks.
 - An explicit request for a full or long answer overrides budget optimization.
 
