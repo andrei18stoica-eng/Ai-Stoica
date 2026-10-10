@@ -24,16 +24,3 @@
     X-Frame-Options "SAMEORIGIN"
   }
 }
-
-# Claude MCP bridge, isolated from AI Stoica Web.
-# Enable DNS A record mcp.aistoica.ro -> Hetzner VPS before HTTPS activation.
-mcp.aistoica.ro {
-  encode zstd gzip
-  reverse_proxy ai-stoica-mcp:3010
-  header {
-    Strict-Transport-Security "max-age=31536000; includeSubDomains"
-    X-Content-Type-Options "nosniff"
-    Referrer-Policy "no-referrer"
-    X-Frame-Options "DENY"
-  }
-}
