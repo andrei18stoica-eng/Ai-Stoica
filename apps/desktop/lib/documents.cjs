@@ -1,13 +1,14 @@
 // Document export (PDF, Word, PowerPoint, Excel, CSV, JSON, HTML, XML, RTF, ZIP, notebook, SVG, code files).
 const fs = require("fs");
 const path = require("path");
-const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
+const { PDFDocument, StandardFonts, rgb, pushGraphicsState, popGraphicsState, concatTransformationMatrix } = require("pdf-lib");
 const fontkitModule = require("@pdf-lib/fontkit");
 const fontkit = fontkitModule.default || fontkitModule;
 const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Table, TableRow, TableCell, WidthType, ShadingType, BorderStyle } = require("docx");
 const PptxGenJS = require("pptxgenjs");
 const JSZip = require("jszip");
 const { latexToOmml, ommlInline, ommlDisplay, splitInlineMath, mathBlockAt, hasMath } = require("./math.cjs");
+const { layoutMath, loadMathFonts } = require("./mathpdf.cjs");
 
 // Characters that are not allowed in XML (all Office formats, SVG, XML) and unpaired surrogates.
 function sanitizeText(value) {
@@ -203,6 +204,8 @@ async function createPdfBytes(title, content, opts = {}) {
     }
   }
   if (!regular) { regular = await pdf.embedFont(StandardFonts.Helvetica); bold = await pdf.embedFont(StandardFonts.HelveticaBold); }
+  // Formulas are typeset like Word's equations when a serif font with math symbols can be embedded.
+  const mathFonts = !opts.standardFonts && hasMath(content) ? await loadMathFonts(pdf, (name) => { const p = findFont(name); try { return p ? fs.readFileSync(p) : null; } catch { return null; } }).catch(() => null) : null;
   if (!mono) mono = await pdf.embedFont(StandardFonts.Courier);
   const fit = new Map([[regular, fitterFor(regular)], [bold, fitterFor(bold)], [mono, fitterFor(mono)]]);
   const ink = rgb(0.12, 0.15, 0.2), muted = rgb(0.38, 0.42, 0.5), line = rgb(0.8, 0.83, 0.88);
@@ -210,7 +213,39 @@ async function createPdfBytes(title, content, opts = {}) {
   const newPage = () => { page = pdf.addPage(PAGE); y = PAGE[1] - TOP; };
   const ensure = (h) => { if (y - h < BOTTOM) newPage(); };
   const avail = PAGE[0] - 2 * MARGIN;
+  // A paragraph with formulas in it: words and formulas wrapped together, each line as tall as its tallest formula.
+  const writeWithMath = (text, { font, size, indent, color, after }) => {
+    const tokens = [], spaceW = widthOf(font, " ", size);
+    for (const part of splitInlineMath(text)) {
+      const b = part.math != null ? layoutMath(part.math, mathFonts, { display: false, size: size * 1.12 }) : null;
+      if (b) { tokens.push({ box: b, w: b.w }); continue; }
+      const words = fit.get(font)(plainMarkdownText(part.math != null ? part.raw : part.text));
+      for (const [k, word] of words.split(/ +/).entries()) {
+        if (k > 0) tokens.push({ space: true, w: spaceW });
+        for (const piece of word ? breakWord(word, font, size, avail - indent) : []) tokens.push({ text: piece, w: widthOf(font, piece, size) });
+      }
+    }
+    const lines = [[]]; let width = 0;
+    for (const t of tokens) {
+      if (t.space && !lines[lines.length - 1].length) continue;
+      if (!t.space && width + t.w > avail - indent && lines[lines.length - 1].length) { lines.push([]); width = 0; }
+      lines[lines.length - 1].push(t); width += t.w;
+    }
+    for (const l of lines) {
+      const up = Math.max(size, ...l.filter((t) => t.box).map((t) => t.box.a + size * 0.1)), down = Math.max(size * 0.3, ...l.filter((t) => t.box).map((t) => t.box.d + size * 0.1));
+      ensure(up + down); y -= up;
+      let x = MARGIN + indent;
+      for (const t of l) {
+        if (t.box) t.box.draw(page, x, y, color);
+        else if (t.text) page.drawText(t.text, { x, y, size, font, color });
+        x += t.w;
+      }
+      y -= down;
+    }
+    y -= after;
+  };
   const write = (text, { font = regular, size = 11, indent = 0, color = ink, after = 5, plain = true } = {}) => {
+    if (mathFonts && plain && hasMath(text)) return writeWithMath(text, { font, size, indent, color, after });
     const value = fit.get(font)(plain ? plainMarkdownText(text) : text);
     for (const l of wrapByWidth(value, font, size, avail - indent)) {
       ensure(size * 1.3); y -= size;
@@ -252,8 +287,20 @@ async function createPdfBytes(title, content, opts = {}) {
     y -= 10;
   };
   write(title || "AI Stoica", { font: bold, size: 20, after: 14 });
-  for (const b of parseDocumentBlocks(content)) {
+  for (const b of parseDocumentBlocks(content, { math: !!mathFonts })) {
     if (b.type === "blank") { y -= 6; continue; }
+    if (b.type === "math") {
+      // An equation on its own lines, centred like in Word; scaled down when wider than the page.
+      const eq = layoutMath(b.tex, mathFonts, { display: true, size: 13.5 });
+      if (!eq) { write(b.text, { after: 5 }); continue; }
+      const k = Math.min(1, avail / eq.w), h = (eq.a + eq.d) * k;
+      ensure(h + 14); y -= 7 + eq.a * k;
+      const x = MARGIN + (avail - eq.w * k) / 2;
+      if (k < 1) { page.pushOperators(pushGraphicsState(), concatTransformationMatrix(k, 0, 0, k, x, y)); eq.draw(page, 0, 0, ink); page.pushOperators(popGraphicsState()); }
+      else eq.draw(page, x, y, ink);
+      y -= eq.d * k + 9;
+      continue;
+    }
     if (b.type === "heading") { y -= 4; write(b.text, { font: bold, size: b.level === 1 ? 17 : b.level === 2 ? 15 : b.level === 3 ? 13 : 12, after: 6 }); continue; }
     if (b.type === "bullet") { write("• " + b.text, { indent: 10 + 12 * b.level, after: 3 }); continue; }
     if (b.type === "number") { write(String(b.number) + ". " + b.text, { indent: 10 + 12 * b.level, after: 3 }); continue; }

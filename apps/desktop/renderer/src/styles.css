@@ -362,6 +362,7 @@
 .generatedFileMeta b,.generatedFileMeta small{display:block}
 .generatedFileMeta b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .generatedFileMeta small{font-size:10px;color:#7d8da2;margin-top:3px}
+.generatedFile{display:flex;gap:8px;align-items:stretch}.generatedFile .generatedDownload{flex:1;min-width:0}.generatedOpen{flex:none;width:46px;display:grid;place-items:center;border:1px solid #2b3a4e;background:#101722;color:#78b8ff;border-radius:13px;cursor:pointer}@media (hover:hover) and (pointer:fine){.generatedOpen:hover{background:#151f2c;border-color:#3b526e}}
 .generatedDownloadAction{display:flex;align-items:center;gap:6px;color:#78b8ff;font-size:12px;font-weight:700}
 .generatedDownloadAction em{font-style:normal}
 @media(max-width:560px){.generatedDownloadAction em{display:none}.generatedDownload{grid-template-columns:38px 1fr auto}}
