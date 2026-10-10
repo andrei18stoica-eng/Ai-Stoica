@@ -546,7 +546,8 @@ function GeneratedAttachment({attachment}) {
     </div>;
   }
   const openable=canView(attachment);
-  return <>{viewer}<button className="generatedDownload" onClick={openable?()=>setViewing(true):download} disabled={downloading} title={(openable?"Deschide ":"Descarcă ")+(attachment?.name||"fișierul")}><span className="generatedFileIcon"><FileText size={20}/></span><span className="generatedFileMeta"><b>{attachment?.name}</b><small>{(attachment?.format||attachment?.name?.split(".").pop()||"FIȘIER").toUpperCase()} · {formatBytes(attachment?.size)}</small></span><span className="generatedDownloadAction">{openable?<Eye size={18}/>:<Download size={18}/>}<em>{openable?"Deschide":downloading?"Se descarcă…":"Descarcă"}</em></span></button></>;
+  // A generated document (PDF, Word, Excel, PowerPoint…): the card downloads it; "Deschide" shows it without downloading.
+  return <div className="generatedFile">{viewer}<button className="generatedDownload" onClick={download} disabled={downloading} title={"Descarcă "+(attachment?.name||"fișierul")}><span className="generatedFileIcon"><FileText size={20}/></span><span className="generatedFileMeta"><b>{attachment?.name}</b><small>{(attachment?.format||attachment?.name?.split(".").pop()||"FIȘIER").toUpperCase()} · {formatBytes(attachment?.size)}</small></span><span className="generatedDownloadAction"><Download size={18}/><em>{downloading?"Se descarcă…":"Descarcă"}</em></span></button>{openable&&<button className="generatedOpen" onClick={()=>setViewing(true)} title={"Deschide "+(attachment?.name||"fișierul")} aria-label="Deschide fără descărcare"><Eye size={18}/></button>}</div>;
 }
 
 function MediaAttachment({attachment}) {
@@ -1779,7 +1780,11 @@ function App() {
             const content=standaloneExportRequest(messageText(lastUser))&&previousSource?previousSource:answer;
             if(!String(content||"").trim())throw new Error("nu există conținut pentru fișier");
             const exported=await api("/api/export",{method:"POST",body:JSON.stringify({format,title:safeFileTitle(working.title||"AI Stoica - fișier"),content})});
-            if(exported?.data)files=[exported.data];
+            if(exported?.data){
+              files=[exported.data];
+              // The file the user asked for is downloaded right away; the card under the answer stays for later.
+              downloadGeneratedFile(exported.data).catch(()=>{});
+            }
           }catch(err){note+=`\n\n_Fișierul ${format.toUpperCase()} nu a putut fi creat: ${err.message}. Poți încerca din nou cu butoanele de sub răspuns._`}
         }
       }

@@ -13,6 +13,9 @@ FROM node:22-bookworm-slim
 
 WORKDIR /app
 
+# Fonts for the PDFs made on the site: Romanian diacritics and the formulas (a serif with a real italic, as in Word).
+RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core fonts-liberation2 && rm -rf /var/lib/apt/lists/*
+
 COPY apps/cloud/package.json ./package.json
 RUN npm install --omit=dev --legacy-peer-deps
 
