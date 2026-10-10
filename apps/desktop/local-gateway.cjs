@@ -2817,7 +2817,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const explicitModel=requestedModel,duration=freeTier?Math.min(askedDuration,6):askedDuration;
       const made=mediaConfigFor(getOmniConfig(),"video",freeTier?"":via),errors=[];
       const cfg=freeTier?{...made.cfg,videoProviders:""}:made.cfg,madeBy=freeTier?"":made.madeBy;
-      const strictFree=(directApisAllowed(req)||freeTier)&&(cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free");
+      const strictFree=directApisAllowed(req)&&(cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free");
       const done=async(resolved,meta)=>{if(signal.aborted)return true;res.json({data:await saveGeneratedMedia(req,{...resolved,kind:"video",prompt,...meta})});return true;};
 
       if(explicitModel)await requirePersonalAccess(req,explicitModel);
