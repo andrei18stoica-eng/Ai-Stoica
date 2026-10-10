@@ -23,6 +23,7 @@ import { ServerUpdate } from "./serverUpdate.jsx";
 import { ScheduledPage } from "./pages/Scheduled.jsx";
 import { CodePage } from "./pages/Code.jsx";
 import { requestedMediaGeneration } from "./mediaIntent.mjs";
+import { normalizeIntent, FILE_FORMATS, FORMAT_CANDIDATES, requestedDocumentFormat } from "./documentIntent.mjs";
 import { PluginsPage } from "./pages/Plugins.jsx";
 import { MemoryPage, PreferenceSwitches } from "./pages/Memory.jsx";
 import { LibraryPage } from "./pages/Library.jsx";
@@ -122,28 +123,6 @@ async function exportMessageFile(message,format,title) {
   await downloadGeneratedFile(d.data);
 }
 
-function normalizeIntent(value){
-  return String(value||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g," ").trim();
-}
-const QUESTION_START=/^(cum|ce|de ce|cand|care|cine|unde|cat|cata|cati|cate|explica|explicati|explica-mi|poti sa-mi explici|poti sa imi explici|ma poti ajuta sa inteleg|how|what|why|when|which|explain)\b/;
-function isQuestion(t){return t.includes("?")||QUESTION_START.test(t);}
-const FILE_FORMATS=["pdf","docx","pptx","xlsx","csv","json","md","txt","html","xml","rtf","zip","ipynb","svg","js","ts","jsx","tsx","py","java","c","cpp","cs","go","rs","php","rb","sh","ps1","sql","css","yaml","yml","toml","ini","tex"];
-const FILE_VERB=/^(?:te rog,? )?(trimite(?:-mi)?|da-mi|dami|exporta(?:-mi)?|salveaza(?:-mi)?|fa-mi|fami|creeaza(?:-mi)?|genereaza(?:-mi)?|descarca(?:-mi)?|pune(?:-mi)?|transforma|converteste|export|save|make|create|generate|download|send)\b/;
-const FORMAT_CANDIDATES=[
-  ["pptx",/\bpptx\b|powerpoint|prezentare/],["docx",/\bdocx\b|\bword\b/],["xlsx",/\bxlsx\b|\bexcel\b|foaie de calcul|spreadsheet/],
-  ["pdf",/\bpdf\b/],["csv",/\bcsv\b/],["json",/\bjson\b/],["html",/\bhtml\b/],["xml",/\bxml\b/],["rtf",/\brtf\b/],
-  ["zip",/\bzip\b|arhiva/],["ipynb",/\bipynb\b|jupyter|notebook/],["svg",/\bsvg\b/],["md",/\bmarkdown\b|\bmd\b/],["txt",/\btxt\b|text simplu/],
-  ["py",/\bpython\b/],["js",/\bjavascript\b/],["ts",/\btypescript\b/],["ps1",/\bpowershell\b/],["sql",/\bsql\b/],["yaml",/\byaml\b/],["tex",/\blatex\b/]
-];
-function requestedDocumentFormat(value){
-  const t=normalizeIntent(value);
-  if(!t||isQuestion(t))return null;
-  const explicit=t.match(new RegExp("\\.("+FILE_FORMATS.join("|")+")\\b"));
-  const found=explicit?[explicit[1]]:FORMAT_CANDIDATES.find(([,re])=>re.test(t));
-  if(!found)return null;
-  const onlyFormat=new RegExp("^(in |ca )?("+found[0]+"|word|powerpoint|excel|markdown|python|javascript|typescript|jupyter|notebook)( te rog)?[.!]?$");
-  return (FILE_VERB.test(t)||onlyFormat.test(t))?found[0]:null;
-}
 function answerFormat(answerText,messages){
   const request=[...messages].reverse().find(m=>m.role==="user");
   const original=request?requestedDocumentFormat(messageText(request)):null;
