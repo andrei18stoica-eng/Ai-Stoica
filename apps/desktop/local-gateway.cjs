@@ -3112,37 +3112,44 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       "groq/whisper-large-v3-turbo",
       "deepgram/nova-3"
     ].filter(Boolean))];
+    // Direct Groq (free key from Setări) when OmniRoute cannot transcribe; decided by the same account policy.
+    const groqKey=String(cfg.groqApiKey||"").trim();
+    const directGroq=groqKey&&freeDirectAllowed(req)?"groq/whisper-large-v3-turbo":"";
     let permittedCandidates=candidates;
+    let groqAllowed=!!directGroq;
     if(cloudBase()){
       const policy=await cloudModelPolicy(req.cloudToken,candidates);
       const allowed=new Set(policy.data.filter(x=>x.allowed).map(x=>String(x.model)));
       permittedCandidates=candidates.filter(x=>allowed.has(String(x)));
-      if(!permittedCandidates.length)throw policyFailure("Contul nu are acces la niciun model de transcriere disponibil.",403);
+      groqAllowed=groqAllowed&&allowed.has(directGroq);
+      if(!permittedCandidates.length&&!groqAllowed)throw policyFailure("Contul nu are acces la niciun model de transcriere disponibil.",403);
     }
     const errors=[];
     const ext=mediaExtension(mime,name);
-    for(const candidate of permittedCandidates){
+    const attempts=[...(String(cfg.baseUrl||"").trim()?permittedCandidates.map(model=>({model,base:String(cfg.baseUrl),key:cfg.apiKey,label:model})):[]),
+      ...(groqAllowed?[{model:"whisper-large-v3-turbo",base:"https://api.groq.com/openai/v1",key:groqKey,label:"Groq direct"}]:[])];
+    for(const {model:candidate,base,key,label} of attempts){
       try{
         const form=new FormData();
         form.append("file",new Blob([bytes],{type:mime||"application/octet-stream"}),String(name||`media.${ext}`));
         form.append("model",candidate);
         const lang=/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(String(language||"").trim())?String(language).trim():String(cfg.speechLanguage||"ro").trim();
         if(lang)form.append("language",lang);
-        const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/audio/transcriptions`,{
+        const r=await fetch(`${String(base).replace(/\/+$/,"")}/audio/transcriptions`,{
           method:"POST",
-          headers:cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{},
+          headers:key?{Authorization:`Bearer ${key}`}:{},
           body:form,
           signal:withAbort(60000,signal)
         });
         const body=await r.text();
-        if(!r.ok){errors.push(`${candidate}: HTTP ${r.status}`);continue;}
+        if(!r.ok){errors.push(`${label}: HTTP ${r.status}`);continue;}
         let data;try{data=JSON.parse(body)}catch{data={text:body}}
         const text=String(data?.text||data?.transcript||"").trim();
-        if(text)return {text,model:candidate};
-        errors.push(`${candidate}: răspuns fără text`);
-      }catch(e){if(signal?.aborted)throw e;errors.push(`${candidate}: ${roError(e)}`)}
+        if(text)return {text,model:label};
+        errors.push(`${label}: răspuns fără text`);
+      }catch(e){if(signal?.aborted)throw e;errors.push(`${label}: ${roError(e)}`)}
     }
-    throw policyFailure(`Nu am putut transcrie fișierul prin OmniRoute. ${errors.join(" | ")}`,502);
+    throw policyFailure(`Nu am putut transcrie fișierul (OmniRoute${groqAllowed?" și Groq":""}). ${errors.join(" | ")||"Niciun serviciu de transcriere configurat."}`,502);
   }
 
   app.post("/api/library/:id/transcribe", auth, async (req,res) => {
