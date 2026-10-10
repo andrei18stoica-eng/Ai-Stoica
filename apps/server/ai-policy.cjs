@@ -102,7 +102,27 @@ function providerAccess(context, provider) {
   return { allowed:true, reason:"" };
 }
 
+// Owner's per-model choice for one account (Control Center): "allow" opens a model the general permissions keep closed,
+// "deny" closes one they leave open. Stored in permissions.model_overrides as { "<model id>": "allow" | "deny" }.
+function modelOverride(permissions, model) {
+  const map = permissions && typeof permissions.model_overrides === "object" && !Array.isArray(permissions.model_overrides) ? permissions.model_overrides : null;
+  if (!map) return "";
+  const key = String(model || "").trim().toLowerCase();
+  for (const [k, v] of Object.entries(map)) if (String(k).trim().toLowerCase() === key) return v === "allow" || v === "deny" ? v : "";
+  return "";
+}
+
 function evaluateModelAccess(context, model) {
+  const decision = evaluateBase(context, model);
+  if (context?.user?.role === "owner") return decision;
+  const override = modelOverride(context?.permissions, model);
+  if (override === "deny") return { ...decision, allowed:false, source:"override", reason:"Owner-ul a blocat acest model pentru contul tău." };
+  // The Owner's own subscriptions (Codex, Claude Code, "-web" accounts…) are never opened by a button.
+  if (override === "allow" && context?.permissions?.chat === true && !(decision.providers || []).includes("personal")) return { ...decision, allowed:true, source:"override", reason:"" };
+  return decision;
+}
+
+function evaluateBase(context, model) {
   const requested = String(model || "").trim();
   const user = context?.user || {};
   const permissions = context?.permissions || {};
@@ -183,5 +203,6 @@ module.exports = {
   normalizeKey,
   providerSignals,
   providerAccess,
+  modelOverride,
   evaluateModelAccess
 };

@@ -687,8 +687,8 @@ const VIDEO_PROVIDERS_TEXT="Încearcă pe rând providerii video configurați (P
 function imageProvidersText(policy){return `Încearcă pe rând: Cloudflare și Pollinations (dacă ai cheie), Pollinations fără cheie, Hugging Face${policy?.imagePaid?", apoi providerii cu plată configurați":""}.`;}
 function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAttachments,onOpenLibrary,responseMode,setResponseMode,mediaMode,setMediaMode,mentionsVersion,mediaPolicy}) {
   const {can,deny}=useAccess();
-  const ta=useRef(null),fileInput=useRef(null),imageInput=useRef(null),videoInput=useRef(null),audioInput=useRef(null),recorderRef=useRef(null),streamRef=useRef(null),chunksRef=useRef([]),attachRef=useRef(null),mountedRef=useRef(true),autoSendRef=useRef(false);
-  const [menu,setMenu]=useState(false),[recording,setRecording]=useState(false),[transcribing,setTranscribing]=useState(false),[uploading,setUploading]=useState(0),[mentions,setMentions]=useState([]),[mentionIndex,setMentionIndex]=useState(0),[mentionClosedFor,setMentionClosedFor]=useState(null),[dragOver,setDragOver]=useState(false);
+  const ta=useRef(null),fileInput=useRef(null),imageInput=useRef(null),videoInput=useRef(null),audioInput=useRef(null),recorderRef=useRef(null),streamRef=useRef(null),chunksRef=useRef([]),attachRef=useRef(null),mountedRef=useRef(true),autoSendRef=useRef(false),speechRef=useRef(null),stoppedRef=useRef(false),startingRef=useRef(false),draftRef=useRef(draft);
+  const [menu,setMenu]=useState(false),[voiceTick,setVoiceTick]=useState(0),[recording,setRecording]=useState(false),[transcribing,setTranscribing]=useState(false),[uploading,setUploading]=useState(0),[mentions,setMentions]=useState([]),[mentionIndex,setMentionIndex]=useState(0),[mentionClosedFor,setMentionClosedFor]=useState(null),[dragOver,setDragOver]=useState(false);
   const pluginsOk=can("plugins"),automationsOk=can("automations");
   useDismiss(menu,()=>setMenu(false),attachRef);
   useEffect(()=>{if(ta.current){ta.current.style.height="0px";ta.current.style.height=Math.min(ta.current.scrollHeight,190)+"px"}},[draft]);
@@ -696,6 +696,7 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
     mountedRef.current=true;
     return()=>{
       mountedRef.current=false;
+      try{speechRef.current?.abort()}catch{}
       try{if(recorderRef.current&&recorderRef.current.state!=="inactive")recorderRef.current.stop()}catch{}
       try{streamRef.current?.getTracks().forEach(t=>t.stop())}catch{}
     };
@@ -773,53 +774,88 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
   function onDragOver(e){if(![...(e.dataTransfer?.types||[])].includes("Files"))return;e.preventDefault();e.dataTransfer.dropEffect=can("file_upload")?"copy":"none";setDragOver(true)}
   function onDragLeave(e){if(!e.currentTarget.contains(e.relatedTarget))setDragOver(false)}
   async function onDrop(e){if(![...(e.dataTransfer?.types||[])].includes("Files"))return;e.preventDefault();setDragOver(false);await addComposerFiles([...(e.dataTransfer.files||[])])}
-  function fallbackSpeech(){
-    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR)throw new Error("Recunoașterea vocală nu este disponibilă.");
-    const r=new SR();r.lang=speechLocale();r.interimResults=false;
-    r.onresult=e=>setDraft(v=>(v?v+" ":"")+e.results[0][0].transcript);
-    r.onerror=e=>toast("Microfon: "+(e.error==="network"?"recunoașterea vocală online nu este disponibilă":e.error||"eroare de recunoaștere"));
-    r.start();
+  // Microphone: the words appear in the box while you speak (the browser's speech recognition) and the message is sent
+  // when you stop. Where the browser has no recognition (the Windows app, Firefox) or it fails, the recording is sent to
+  // AI Stoica, which transcribes it (OmniRoute or Groq) and sends the text. No file permission is needed.
+  function finishVoice(text){
+    const t=String(text||"").trim();
+    if(!t){toast("Nu am auzit nimic. Apasă microfonul și vorbește din nou.","info");return;}
+    autoSendRef.current=true;setVoiceTick(n=>n+1);
   }
-  async function mic(){
-    if(recording&&recorderRef.current){recorderRef.current.stop();return;}
-    if(!can("file_upload")){deny("file_upload");return;}
+  function startSpeech(){
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR||window.AIStoica)return false;
+    const r=new SR();r.lang=speechLocale();r.interimResults=true;r.continuous=true;
+    const base=draftRef.current?draftRef.current.replace(/\s+$/,"")+" ":"";
+    let finals="",heard="",failed="";stoppedRef.current=false;
+    r.onresult=e=>{
+      let interim="";
+      for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal)finals+=t+" ";else interim+=t;}
+      heard=(finals+interim).trim();
+      setDraft(base+heard);
+    };
+    r.onerror=e=>{failed=e.error||"error";};
+    r.onend=()=>{
+      speechRef.current=null;
+      if(!mountedRef.current)return;
+      if(!(failed&&failed!=="no-speech"&&failed!=="aborted"&&!heard&&!stoppedRef.current&&failed!=="not-allowed"))setRecording(false);
+      if(failed&&failed!=="no-speech"&&failed!=="aborted"){
+        if(failed==="not-allowed"){toast("Microfonul este blocat. Permite accesul la microfon în browser.");return;}
+        // Text already heard is kept for the user to check; it is not sent half-finished.
+        if(heard){toast("Recunoașterea vocală s-a oprit; verifică textul și trimite-l.","info");return;}
+        // The browser cannot recognise speech here (no connection to its service…): record instead, unless the user already stopped.
+        if(stoppedRef.current){toast("Recunoașterea vocală nu a mers. Apasă microfonul și încearcă din nou.");return;}
+        startRecorder();return;
+      }
+      finishVoice(heard);
+    };
+    try{r.start();}catch(e){console.warn("Recunoaștere vocală indisponibilă:",e?.message||e);return false;}
+    speechRef.current=r;setRecording(true);return true;
+  }
+  async function startRecorder(){
+    startingRef.current=true;
     try{
-      if(!navigator.mediaDevices?.getUserMedia){fallbackSpeech();return;}
+      if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder)throw new Error("Browserul nu poate înregistra sunet.");
       const stream=await navigator.mediaDevices.getUserMedia({audio:true});streamRef.current=stream;chunksRef.current=[];
-      const candidates=["audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus"];
-      const mime=candidates.find(x=>window.MediaRecorder?.isTypeSupported?.(x))||"";
+      const mime=["audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus","audio/mp4"].find(x=>window.MediaRecorder?.isTypeSupported?.(x))||"";
       const rec=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);recorderRef.current=rec;
       const stopTracks=()=>{try{stream.getTracks().forEach(t=>t.stop())}catch{};streamRef.current=null;};
       rec.ondataavailable=e=>{if(e.data?.size)chunksRef.current.push(e.data)};
       rec.onerror=()=>{setRecording(false);stopTracks();toast("Înregistrarea vocală a eșuat.")};
       rec.onstop=async()=>{
-        stopTracks();
+        stopTracks();recorderRef.current=null;
         if(!mountedRef.current)return;
         setRecording(false);setTranscribing(true);
+        let text="",failedTranscript=true;
         try{
           const blob=new Blob(chunksRef.current,{type:rec.mimeType||"audio/webm"});
           if(!blob.size)throw new Error("Înregistrarea este goală.");
-          const ext=blob.type.includes("ogg")?"ogg":"webm";
-          const stamp=new Date().toISOString().replace(/[:.]/g,"-");
-          const voiceFile=new File([blob],`Vocal_AI_Stoica_${stamp}.${ext}`,{type:blob.type});
-          const item=await uploadFileToLibrary(voiceFile);
-          const attachment=await libraryItemToAttachment(item);
-          if(!mountedRef.current)return;
-          // Voice message: the spoken text is written in the box and sent; the recording stays in the Library.
-          if(attachment.transcript){autoSendRef.current=true;setDraft(v=>(v?v+" ":"")+attachment.transcript);}
-          else{setAttachments(v=>[...v,attachment]);toast("Vocalul a fost salvat și atașat, dar transcrierea automată nu a reușit.","info");}
-        }catch(e){
-          toast("Vocalul nu a putut fi salvat sau transcris: "+e.message);
-        }finally{if(mountedRef.current)setTranscribing(false);}
+          const audio=await new Promise((ok,no)=>{const fr=new FileReader();fr.onload=()=>ok(String(fr.result).split(",")[1]||"");fr.onerror=()=>no(new Error("Nu pot citi înregistrarea."));fr.readAsDataURL(blob)});
+          const d=await api("/api/transcribe",{method:"POST",body:JSON.stringify({audio,mime:blob.type,language:speechLocale().slice(0,2)})});
+          text=String(d?.text||"").trim();
+          if(text&&mountedRef.current)setDraft(v=>(v?v.replace(/\s+$/,"")+" ":"")+text);
+          failedTranscript=false;
+        }catch(e){toast("Vocalul nu a putut fi transcris: "+friendlyError(e.message))}
+        finally{if(mountedRef.current){setTranscribing(false);if(!failedTranscript)finishVoice(text);}}
       };
-      rec.start();setRecording(true);
-    }catch{
-      try{fallbackSpeech()}catch{toast("Accesul la microfon a fost refuzat sau microfonul nu este disponibil.")}
+      rec.start();setRecording(true);startingRef.current=false;
+    }catch(e){
+      startingRef.current=false;setRecording(false);
+      toast(/denied|permission|NotAllowed/i.test(String(e?.name||e?.message))?"Accesul la microfon a fost refuzat. Permite microfonul în browser.":"Microfonul nu este disponibil: "+friendlyError(e.message));
     }
   }
+  async function mic(){
+    if(recording){
+      if(speechRef.current){stoppedRef.current=true;try{speechRef.current.stop()}catch{}return;}
+      if(recorderRef.current){try{recorderRef.current.stop()}catch{}return;}
+      return;
+    }
+    if(startingRef.current)return;
+    if(!startSpeech())await startRecorder();
+  }
   const hasContent=!!draft.trim()||attachments.some(a=>a.part||a.parts?.length);
-  useEffect(()=>{if(autoSendRef.current&&!transcribing&&draft.trim()){autoSendRef.current=false;trySend();}},[draft,transcribing]);
+  draftRef.current=draft;
+  useEffect(()=>{if(autoSendRef.current&&!transcribing&&!recording&&draft.trim()){if(busy){toast("Textul vocal e în câmp; trimite-l când AI-ul termină răspunsul.","info");autoSendRef.current=false;return;}autoSendRef.current=false;trySend();}},[draft,transcribing,voiceTick]);
   function trySend(){
     if(busy)return;
     if(uploading){toast("Așteaptă să se termine încărcarea fișierului.","info");return;}
@@ -873,7 +909,7 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
         <button className={cx("mediaMake",mediaMode==="video"&&"active",!can("video_generation")&&"locked")} aria-pressed={mediaMode==="video"} aria-label="Video" title={can("video_generation")?`Video: următorul mesaj creează un videoclip. ${VIDEO_PROVIDERS_TEXT}`:deniedMessage("video_generation")} onClick={()=>toggleMedia("video")}><Clapperboard size={16}/><span>Video</span></button>
         <button className={cx("mediaMake thinkToggle",responseMode==="thinking"&&"active")} aria-pressed={responseMode==="thinking"} aria-label="Gândire" title={responseMode==="thinking"?"Gândire pornită: răspunsuri mai atente, puțin mai lente. Apasă pentru modul Rapid.":"Mod Rapid. Apasă pentru Gândire: răspunsuri mai atente, puțin mai lente."} onClick={()=>setResponseMode(responseMode==="thinking"?"rapid":"thinking")}><Brain size={16}/><span>Gândire</span></button>
         <span className="composerSpacer"/>
-        <button className={cx("composerIcon",recording&&"recording",uploadLocked&&"locked")} onClick={mic} title={uploadLocked?deniedMessage("file_upload"):recording?"Oprește vocalul":"Înregistrează vocal"} aria-label={recording?"Oprește înregistrarea vocală":"Înregistrează vocal"} aria-pressed={recording} disabled={transcribing}><Mic size={19}/></button>
+        <button className={cx("composerIcon",recording&&"recording")} onClick={mic} title={recording?"Oprește și trimite":"Vorbește: textul apare în câmp și se trimite singur"} aria-label={recording?"Oprește înregistrarea vocală":"Înregistrează vocal"} aria-pressed={recording} disabled={transcribing}><Mic size={19}/></button>
         {busy
           ? <button className="sendButton stopButton" onClick={onStop} title="Oprește răspunsul" aria-label="Oprește răspunsul"><Square size={15} fill="currentColor"/></button>
           : <button className="sendButton" disabled={!!uploading||recording||transcribing||!hasContent} onClick={trySend} title="Trimite" aria-label="Trimite mesajul"><ArrowUp size={20}/></button>}
@@ -884,7 +920,7 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
 }
 
 const ADMIN_STATUS_LABELS={pending:"În așteptare",active:"Activ",rejected:"Respins",suspended:"Suspendat",blocked:"Blocat"};
-const AUDIT_LABELS={"admin.user_status":"Status cont modificat","admin.permissions":"Permisiuni modificate","admin.sessions_revoke":"Sesiuni închise","admin.paid_ai":"AI plătit modificat","auth.register":"Cont nou","auth.login":"Autentificare","auth.logout":"Deconectare"};
+const AUDIT_LABELS={"admin.user_status":"Status cont modificat","admin.permissions":"Permisiuni modificate","admin.model_override":"Model activat / blocat","admin.sessions_revoke":"Sesiuni închise","admin.paid_ai":"AI plătit modificat","auth.register":"Cont nou","auth.login":"Autentificare","auth.logout":"Deconectare"};
 function AdminPanel({onClose}) {
   const permissionLabels={
     chat:"Chat AI",cerebras:"Cerebras",gemini:"Gemini",groq:"Groq",cloudflare:"Cloudflare AI",
@@ -927,6 +963,19 @@ function AdminPanel({onClose}) {
       if(mounted.current)setUsers(rows=>rows.map(x=>x.id===user.id?{...x,permissions:d.permissions||{...x.permissions,[key]:value}}:x));
     }catch(e){toast("Permisiuni: "+e.message)}
     finally{if(mounted.current)setPending(p=>{const n={...p};delete n[`${user.id}:${key}`];return n})}
+  }
+  const [modelIds,setModelIds]=useState(null),[modelQuery,setModelQuery]=useState(""),[modelsError,setModelsError]=useState(""),[modelsTry,setModelsTry]=useState(0);
+  useEffect(()=>{let live=true;api("/api/models").then(ms=>{if(live)setModelIds([...new Set((ms?.data||[]).map(x=>String(typeof x==="string"?x:x?.id||"")).filter(Boolean))].sort((a,b)=>a.localeCompare(b)))}).catch(e=>{if(live){setModelIds([]);setModelsError(e?.message||"eroare necunoscută")}});return()=>{live=false}},[modelsTry]);
+  async function setModelMode(user,model,mode){
+    if(!user||user.role==="owner")return;
+    const k=`${user.id}:model:${model}`;
+    if(pending[k])return;
+    setPending(p=>({...p,[k]:true}));
+    try{
+      const d=await api(`/api/admin/users/${user.id}/models`,{method:"PATCH",body:JSON.stringify({model,mode})});
+      if(mounted.current)setUsers(rows=>rows.map(x=>x.id===user.id?{...x,permissions:d.permissions||x.permissions}:x));
+    }catch(e){toast("Model: "+e.message)}
+    finally{if(mounted.current)setPending(p=>{const n={...p};delete n[k];return n})}
   }
   async function revokeSessions(user){
     if(!user||user.role==="owner"||actionBusy)return;
@@ -996,6 +1045,24 @@ function AdminPanel({onClose}) {
                 </label>;
               })}
             </div>
+            {selected.role!=="owner"&&<>
+              <div className="adminPermissionHead"><div><h4>Modele AI pentru acest cont</h4><p>«Implicit» urmează permisiunile de mai sus; «Activat» deschide modelul chiar dacă permisiunile îl țin închis; «Blocat» îl închide. Abonamentele personale ale Owner-ului rămân doar ale lui.</p></div></div>
+              <input className="adminModelSearch" type="search" placeholder="Caută un model…" value={modelQuery} onChange={e=>setModelQuery(e.target.value)} aria-label="Caută un model"/>
+              <div className="adminModels">
+                {modelIds===null&&<div className="stoicaPluginEmpty">Se încarcă modelele…</div>}
+                {modelIds!==null&&!modelIds.length&&<div className="stoicaPluginEmpty">{modelsError?`Nu am putut încărca lista de modele: ${modelsError}`:"Lista de modele este goală."} <button type="button" className="secondary" onClick={()=>{setModelIds(null);setModelsError("");setModelsTry(n=>n+1)}}>Reîncearcă</button></div>}
+                {[...new Set([...(modelIds||[]),...Object.keys(selected.permissions?.model_overrides||{})])].sort((a,b)=>a.localeCompare(b)).filter(m=>m.toLowerCase().includes(modelQuery.trim().toLowerCase())).slice(0,200).map(m=>{
+                  const ov=Object.entries(selected.permissions?.model_overrides||{}).find(([k])=>k.toLowerCase()===m.toLowerCase())?.[1];
+                  const mode=ov==="allow"||ov==="deny"?ov:"default",busyKey=!!pending[`${selected.id}:model:${m}`];
+                  return <div key={m} className={cx("adminModelRow",mode)}>
+                    <span title={m}>{m}</span>
+                    <div className="adminModelModes" role="group" aria-label={`Acces la ${m}`}>
+                      {[["default","Implicit"],["allow","Activat"],["deny","Blocat"]].map(([v,label])=><button key={v} type="button" className={cx(mode===v&&"on")} aria-pressed={mode===v} disabled={busyKey} onClick={()=>mode!==v&&setModelMode(selected,m,v)}>{label}</button>)}
+                    </div>
+                  </div>;
+                })}
+              </div>
+            </>}
           </>}
         </div>
       </div>

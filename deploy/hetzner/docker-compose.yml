@@ -119,6 +119,9 @@ services:
       AI_STOICA_SHARED_COMBOS: ${AI_STOICA_SHARED_COMBOS-}
       AI_STOICA_IMAGE_PROVIDERS: ${AI_STOICA_IMAGE_PROVIDERS-gemini}
       AI_STOICA_VIDEO_PROVIDERS: ${AI_STOICA_VIDEO_PROVIDERS-gemini}
+      AI_STOICA_FREE_IMAGES: ${AI_STOICA_FREE_IMAGES:-3}
+      AI_STOICA_FREE_VIDEOS: ${AI_STOICA_FREE_VIDEOS:-1}
+      AI_STOICA_FREE_DOCUMENTS: ${AI_STOICA_FREE_DOCUMENTS:-10}
       # "Actualizează site-ul" (Owner): the site drops a request here; the server's systemd service runs update.sh.
       AI_STOICA_UPDATE_DIR: /update
       OMNIROUTE_BASE_URL: ${OMNIROUTE_BASE_URL:-http://omniroute:20128/v1}
