@@ -58,11 +58,10 @@ async function main() {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 
-  // The composer: the spoken text goes in the box and is sent; the recording is attached only when transcription fails.
+  // The composer (rewritten in 0.7.17, see test-0717-voice.cjs): the spoken text is written in the box and sent by itself.
   const ui = fs.readFileSync(path.join(__dirname, "../renderer/src/main.jsx"), "utf8");
-  expect(/if\(attachment\.transcript\)\{autoSendRef\.current=true;setDraft/.test(ui), "the transcript must be written in the box and marked for sending");
-  expect(/autoSendRef\.current&&!transcribing&&draft\.trim\(\)\)\{autoSendRef\.current=false;trySend\(\);\}/.test(ui), "the voice text must be sent by itself");
-  expect(/else\{setAttachments\(v=>\[\.\.\.v,attachment\]\)/.test(ui), "a failed transcription keeps the recording attached");
+  expect(/function finishVoice\(text\)/.test(ui)&&/autoSendRef\.current=true;setVoiceTick/.test(ui), "the voice text must be marked for sending");
+  expect(/autoSendRef\.current&&!transcribing&&!recording&&draft\.trim\(\)\)\{autoSendRef\.current=false;trySend\(\);\}/.test(ui), "the voice text must be sent by itself");
   console.log("test-0716-voice: OK");
 }
 

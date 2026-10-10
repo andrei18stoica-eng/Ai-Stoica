@@ -1,6 +1,13 @@
-# AI Stoica 0.7.16 — Stoica Enterprises AI
+# AI Stoica 0.7.17 — Stoica Enterprises AI
 
 Asistent AI pentru Windows, web (aistoica.ro) și telefon cu chat, proiecte, asistenți, memorie, bibliotecă de fișiere, pluginuri, automatizări, generare de imagini și video, export PDF/Word/PowerPoint/Excel și panou de Owner.
+
+## Noutăți 0.7.17 — nivel gratuit pentru toți, buton pe fiecare model, microfon reparat
+
+- **Poze, video și fișiere pentru toate conturile.** Fiecare cont în afară de Owner primește pe zi **3 poze, 1 videoclip scurt (maximum 6 secunde) și 10 fișiere** (PDF / Word / Excel / PowerPoint…), din furnizori gratuiți (Cloudflare, Pollinations, Gemini cu cheia de pe server, Hugging Face; video prin modelele web gratuite din OmniRoute). Când ceri o poză sau un video în chat, ele sunt făcute de acești furnizori **indiferent de modelul pe care ești**; apoi conversația rămâne pe modelul tău. O încercare eșuată nu consumă din limită. **Owner-ul e nelimitat.** Limitele se schimbă pe server: `AI_STOICA_FREE_IMAGES`, `AI_STOICA_FREE_VIDEOS`, `AI_STOICA_FREE_DOCUMENTS`; `GET /api/quota` arată cât a rămas.
+- **Control Center: buton pe fiecare model.** Pentru fiecare cont, Owner-ul alege la fiecare model **Implicit / Activat / Blocat** (cu căutare). «Activat» deschide modelul chiar dacă permisiunile contului îl țin închis; «Blocat» îl închide. Abonamentele personale ale Owner-ului (Codex, Claude Code…) rămân doar ale lui, indiferent de buton.
+- **Microfon.** Cuvintele apar în câmpul de mesaj cât vorbești, iar mesajul pleacă singur când te oprești. Unde browserul nu recunoaște vocea (aplicația Windows, Firefox) sau recunoașterea eșuează, înregistrarea e transcrisă de AI Stoica (`POST /api/transcribe`: OmniRoute, apoi Groq cu cheia din Setări). Nu mai cere permisiunea pentru fișiere și nu salvează nimic în Bibliotecă.
+- **Pași pe server:** `sudo bash /opt/ai-stoica/deploy/hetzner/update.sh` (sau «Actualizează site-ul acum» din Setări). Pentru poze gratuite pe site e util `GEMINI_API_KEY` (cheie gratuită Google AI Studio); pentru video gratuit conectează `veoaifree-web` în OmniRoute. GitHub Models nu face poze.
 
 ## Noutăți 0.7.16 — modelul ales răspunde, poze prin ChatGPT, ecuații în Word
 

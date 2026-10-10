@@ -505,6 +505,34 @@ app.patch("/api/admin/users/:id/permissions", auth, ownerOnly, async (req, res, 
   } catch (e) { next(e); }
 });
 
+// Per-model choice for one account: { model: "<id>", mode: "allow" | "deny" | "default" }. Kept in the same permissions
+// document as model_overrides, so /auth/me and /api/ai/access carry it to the gateway.
+app.patch("/api/admin/users/:id/models", auth, ownerOnly, async (req, res, next) => {
+  try {
+    const model = String(req.body?.model || "").trim();
+    const mode = String(req.body?.mode || "").trim();
+    if (!model || model.length > 200) return res.status(400).json({ error: "Modelul lipsește sau este prea lung." });
+    if (!["allow", "deny", "default"].includes(mode)) return res.status(400).json({ error: "Modul trebuie să fie allow, deny sau default." });
+    const target = await adminTarget(req.params.id);
+    if (isOwnerRow(target)) return res.status(400).json({ error: "Owner-ul are acces la toate modelele." });
+    const current = await pool.query("SELECT permissions FROM user_permissions WHERE user_id=$1", [target.id]);
+    const nextPermissions = { ...DEFAULT_USER_PERMISSIONS, ...(current.rows[0]?.permissions || {}) };
+    const overrides = { ...(nextPermissions.model_overrides && typeof nextPermissions.model_overrides === "object" ? nextPermissions.model_overrides : {}) };
+    for (const k of Object.keys(overrides)) if (k.toLowerCase() === model.toLowerCase()) delete overrides[k];
+    if (mode !== "default") overrides[model] = mode;
+    if (Object.keys(overrides).length > 2000) return res.status(413).json({ error: "Prea multe modele setate pentru acest cont." });
+    nextPermissions.model_overrides = overrides;
+    await pool.query(
+      `INSERT INTO user_permissions(user_id,permissions,updated_at)
+       VALUES($1,$2::jsonb,NOW())
+       ON CONFLICT(user_id) DO UPDATE SET permissions=EXCLUDED.permissions, updated_at=NOW()`,
+      [target.id, JSON.stringify(nextPermissions)]
+    );
+    await audit(req.user.id, "admin.model_override", target.id, { model, mode });
+    res.json({ permissions: nextPermissions });
+  } catch (e) { next(e); }
+});
+
 app.post("/api/admin/users/:id/sessions/revoke", auth, ownerOnly, async (req, res, next) => {
   try {
     const target = await adminTarget(req.params.id);

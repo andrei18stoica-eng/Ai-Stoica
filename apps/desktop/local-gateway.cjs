@@ -666,9 +666,10 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   }
   async function requireModelAccess(context, model) {
     if(cloudBase()&&!ownerRequest(context)){
+      if(modelOverrideFor(context,model)==="deny")throw notPermitted(model,"Owner-ul l-a blocat pentru contul tău.");
       if(!omniEntriesLast.length)await omniEntriesCached(getOmniConfig());
       if(isOmniCombo(model)){
-        if(!sharedComboSet(getOmniConfig()).has(normalizeModelKey(model)))throw notPermitted(model,COMBO_REASON);
+        if(!sharedComboSet(getOmniConfig()).has(normalizeModelKey(model))&&modelOverrideFor(context,model)!=="allow")throw notPermitted(model,COMBO_REASON);
         if(!hasPermission(context,"chat"))throw policyFailure("Chat AI este dezactivat pentru acest cont.",403);
         return {model,allowed:true,source:"shared_combination"};
       }
@@ -741,8 +742,10 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const shared=sharedComboSet(getOmniConfig()),chat=hasPermission(context,"chat");
     const isCombo=x=>x.entry?.owned_by==="combo"||x.entry?.kind==="combo"||!x.id.includes("/");
     for(const x of rows){
+      const ov=owner?"":modelOverrideFor(context,x.id);
       if(owner)ask.push(x);
-      else if(isCombo(x))out.set(x.id,!chat?{allowed:false,reason:"Chat AI este dezactivat pentru acest cont."}:shared.has(normalizeModelKey(x.id))?{allowed:true,reason:""}:{allowed:false,reason:COMBO_REASON});
+      else if(ov==="deny")out.set(x.id,{allowed:false,reason:"Owner-ul l-a blocat pentru contul tău."});
+      else if(isCombo(x))out.set(x.id,!chat?{allowed:false,reason:"Chat AI este dezactivat pentru acest cont."}:shared.has(normalizeModelKey(x.id))||ov==="allow"?{allowed:true,reason:""}:{allowed:false,reason:COMBO_REASON});
       else if(x.entry?.source!=="direct-api"&&isPersonalModel(x.id))out.set(x.id,{allowed:false,reason:PERSONAL_REASON});
       else ask.push(x);
     }
@@ -875,6 +878,14 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     return String(user?.role || "").toLowerCase() === "owner" ? "owner" : "user";
   }
   function ownerRequest(req){return roleFor(req.user,req.cloudUser)==="owner";}
+  // The Owner's per-model choice for one account (Control Center): "allow", "deny" or "" (the general permissions decide).
+  function modelOverrideFor(context,model){
+    const map=context?.permissions?.model_overrides;
+    if(!map||typeof map!=="object"||Array.isArray(map))return "";
+    const key=String(model||"").trim().toLowerCase();
+    for(const [k,v] of Object.entries(map))if(String(k).trim().toLowerCase()===key)return v==="allow"||v==="deny"?v:"";
+    return "";
+  }
   // Models that run on the Owner's own accounts connected in OmniRoute by login, subscription or browser session (Codex,
   // Claude Code, GitHub Copilot, Kiro, Grok CLI, Cursor, the "-web" accounts…): their terms forbid making an account
   // available to anyone else, so only the Owner may use them (or the single person of a PC with no Owner email set).
@@ -1652,8 +1663,47 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     res.json({ok:true});
   });
 
+
+  // Free tier (0.7.17): every account except the Owner makes a few pictures, one short video and ten files a day. The Owner
+  // (and the single person of a PC with no Owner email) is unlimited. Limits: AI_STOICA_FREE_IMAGES / _VIDEOS / _DOCUMENTS.
+  const FREE_LIMIT_DEFAULTS={image:3,video:1,document:10};
+  const FREE_LIMIT_KEYS={image:"freeImagesPerDay",video:"freeVideosPerDay",document:"freeDocumentsPerDay"};
+  const FREE_LIMIT_NOUNS={image:["poză gratuită","poze gratuite"],video:["videoclip gratuit","videoclipuri gratuite"],document:["fișier gratuit","fișiere gratuite"]};
+  function quotaUnlimited(req){return personalAllowed(req.user,req.cloudUser);}
+  function freeLimit(kind){
+    const v=getOmniConfig()?.[FREE_LIMIT_KEYS[kind]];
+    if(v===undefined||v===null||String(v).trim()==="")return FREE_LIMIT_DEFAULTS[kind];
+    const n=Number(v);return Number.isFinite(n)&&n>=0?Math.floor(n):FREE_LIMIT_DEFAULTS[kind];
+  }
+  const quotaDay=()=>new Date().toISOString().slice(0,10);
+  function quotaUsed(userId,kind){const q=store.read().quotas?.[userId];return q&&q.day===quotaDay()?Number(q[kind])||0:0;}
+  function quotaAdd(userId,kind,delta){
+    const db=store.read();db.quotas=db.quotas&&typeof db.quotas==="object"?db.quotas:{};
+    const day=quotaDay();
+    // Other days' counters are dropped, so the file does not grow with the accounts' history.
+    for(const k of Object.keys(db.quotas))if(db.quotas[k]?.day!==day)delete db.quotas[k];
+    const q=db.quotas[userId]=db.quotas[userId]||{day};
+    q[kind]=Math.max(0,(Number(q[kind])||0)+delta);store.write(db);
+  }
+  // Takes one unit before the work starts; gives it back when the answer is an error or the request was cancelled.
+  function reserveQuota(req,res,kind){
+    if(quotaUnlimited(req))return;
+    const limit=freeLimit(kind),used=quotaUsed(req.user.id,kind);
+    if(used>=limit){
+      const [one,many]=FREE_LIMIT_NOUNS[kind];
+      throw policyFailure(limit===0?`${kind==="image"?"Pozele":kind==="video"?"Videoclipurile":"Fișierele"} nu sunt activate pentru conturile gratuite.`:`Ai folosit cele ${limit} ${limit===1?one:many} de azi. Se reînnoiesc mâine; Owner-ul poate da acces nelimitat.`,429);
+    }
+    quotaAdd(req.user.id,kind,1);
+    res.once("close",()=>{if(res.statusCode>=400||!res.writableFinished)quotaAdd(req.user.id,kind,-1);});
+  }
+  app.get("/api/quota", auth, (req,res) => {
+    const unlimited=quotaUnlimited(req),out={unlimited};
+    for(const kind of Object.keys(FREE_LIMIT_DEFAULTS))out[kind]=unlimited?{limit:null,used:0,left:null}:{limit:freeLimit(kind),used:quotaUsed(req.user.id,kind),left:Math.max(0,freeLimit(kind)-quotaUsed(req.user.id,kind))};
+    res.json(out);
+  });
   app.post("/api/export", auth, requirePermission("document_generation"), async (req,res) => {
     try {
+      reserveQuota(req,res,"document");
       const format=String(req.body?.format||"docx").toLowerCase().replace(/^\./,"");
       const title=String(req.body?.title||"AI Stoica").trim().slice(0,120)||"AI Stoica";
       const content=typeof req.body?.content==="string"?req.body.content:"";
@@ -1669,7 +1719,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const db=store.read(),item={id,userId:req.user.id,name,mime:generated.mime,size:generated.bytes.length,kind:generated.mime.startsWith("image/")?"image":"file",filePath:target,storage:"disk",source:"ai-export",format,createdAt:Date.now()};
       db.library.push(item);store.write(db);
       res.json({data:{id:item.id,name:item.name,mimeType:item.mime,size:item.size,source:item.source,format:item.format,createdAt:item.createdAt}});
-    } catch(e) { logError("Export: "+(e?.stack||e)); res.status(500).json({error:"Nu am putut genera fișierul. Încearcă din nou sau alege alt format."}); }
+    } catch(e) { if(e?.status===429)return res.status(429).json({error:e.message}); logError("Export: "+(e?.stack||e)); res.status(500).json({error:"Nu am putut genera fișierul. Încearcă din nou sau alege alt format."}); }
   });
 
   // ASCII name for old clients plus the exact UTF-8 name (RFC 5987) for diacritics.
@@ -2658,14 +2708,24 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   // The work stops (and nothing is saved) when the user cancels and the request closes.
   function clientAbortSignal(res){const c=new AbortController();res.on("close",()=>{if(!res.writableFinished)c.abort()});return c.signal;}
 
+  // Direct APIs that make pictures for the free tier: free by themselves (Cloudflare, Pollinations) or with the free tier of
+  // the key the Owner put on the server (Gemini, Hugging Face).
+  const FREE_TIER_IMAGE=new Set(["cloudflare","pollinations","pollinations-free","gemini","huggingface"]);
+  const FREE_TIER_VIDEO=new Set(["pollinations"]);
   app.post("/api/generate/image", auth, async (req,res) => {
     const signal=clientAbortSignal(res);
     await mediaAbort.run(signal,async()=>{
     try{
       requireFeaturePermission(req,"image_generation");
-      const {prompt,model:explicitModel,size,via}=mediaRequest(req,"image");
-      const {cfg,madeBy}=mediaConfigFor(getOmniConfig(),"image",via),errors=[];
-      const strictFree=cfg.imageCostPolicy==="free_only"||cfg.imageProviderMode==="free";
+      reserveQuota(req,res,"image");
+      const freeTier=!quotaUnlimited(req);
+      const {prompt,model:requestedModel,size,via}=mediaRequest(req,"image");
+      // Free tier: whatever model the chat is on («via»), the picture comes from the free providers; a model asked for by
+      // name through the API still goes through the account's permissions.
+      const explicitModel=requestedModel;
+      const made=mediaConfigFor(getOmniConfig(),"image",freeTier?"":via),errors=[];
+      const cfg=freeTier?{...made.cfg,imageProviders:"",imageCostPolicy:"allow_paid",imageProviderMode:"auto"}:made.cfg,madeBy=freeTier?"":made.madeBy;
+      const strictFree=!freeTier&&(cfg.imageCostPolicy==="free_only"||cfg.imageProviderMode==="free");
       const done=async(resolved,meta)=>{if(signal.aborted)return true;res.json({data:await saveGeneratedMedia(req,{...resolved,kind:"image",prompt,...meta})});return true;};
 
       const runDirect=async(attempts)=>{
@@ -2678,7 +2738,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         }
         return false;
       };
-      const direct=directApisAllowed(req)&&!explicitModel?await directImageAttempts(cfg,prompt,size):[];
+      const direct=freeTier?(await directImageAttempts(cfg,prompt,size)).filter(a=>FREE_TIER_IMAGE.has(a.id)):directApisAllowed(req)&&!explicitModel?await directImageAttempts(cfg,prompt,size):[];
       // An image model chosen in Settings is tried before the no-key Pollinations fallback.
       const late=String(cfg.imageModel||"").trim()?direct.filter(a=>a.id==="pollinations-free"):[];
       if(explicitModel)await requirePersonalAccess(req,explicitModel);
@@ -2742,19 +2802,25 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     await mediaAbort.run(signal,async()=>{
     try{
       requireFeaturePermission(req,"video_generation");
-      const {prompt,model:explicitModel,duration,aspectRatio,via}=mediaRequest(req,"video");
-      const {cfg,madeBy}=mediaConfigFor(getOmniConfig(),"video",via),errors=[];
+      reserveQuota(req,res,"video");
+      const freeTier=!quotaUnlimited(req);
+      const {prompt,model:requestedModel,duration:askedDuration,aspectRatio,via}=mediaRequest(req,"video");
+      // Free tier: a short video from the free providers, whatever model the chat is on.
+      const explicitModel=requestedModel,duration=freeTier?Math.min(askedDuration,6):askedDuration;
+      const made=mediaConfigFor(getOmniConfig(),"video",freeTier?"":via),errors=[];
+      const cfg=freeTier?{...made.cfg,videoProviders:"",videoCostPolicy:"allow_paid",videoMode:"auto"}:made.cfg,madeBy=freeTier?"":made.madeBy;
       const strictFree=directApisAllowed(req)&&(cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free");
       const done=async(resolved,meta)=>{if(signal.aborted)return true;res.json({data:await saveGeneratedMedia(req,{...resolved,kind:"video",prompt,...meta})});return true;};
 
       if(explicitModel)await requirePersonalAccess(req,explicitModel);
-      const attempts=directApisAllowed(req)&&!explicitModel?await directVideoAttempts(cfg,prompt,duration,aspectRatio):[];
+      const attempts=freeTier?(await directVideoAttempts(cfg,prompt,duration,aspectRatio)).filter(a=>FREE_TIER_VIDEO.has(a.id)):directApisAllowed(req)&&!explicitModel?await directVideoAttempts(cfg,prompt,duration,aspectRatio):[];
       // «Doar gratuit» keeps the paid OmniRoute video models out, but not the free web ones (veoaifree-web: VEO 3.1,
       // Seedance), which OmniRoute serves without a key or cost.
       let found=[];
       try{found=await discoverPermittedMediaModels(req,cfg,"video",explicitModel)}
       catch(e){if(e.status===403&&explicitModel)throw e;errors.push("OmniRoute: "+(e.status?e.message:roError(e)))}
       if(strictFree)found=found.filter(m=>subscriptionMedia("video",m));
+      if(!personalAllowed(req.user,req.cloudUser))found=found.filter(m=>!isPersonalModel(m));
       const models=found.slice(0,3);
       // Order: the video model chosen in Settings, the model bound to this account, the free web models, the direct
       // APIs, OmniRoute's other models; a provider out of credits goes to the end of the whole list.
@@ -2794,6 +2860,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         }catch(e){if(signal.aborted)return;errors.push(model+": "+roError(e))}
       }
 
+      if(!tried&&freeTier)throw policyFailure("Videoclipul gratuit nu este disponibil acum: serverul nu are un serviciu video gratuit conectat. Owner-ul îl pornește conectând «veoaifree-web» în OmniRoute sau cheia Pollinations în Setări.",503);
       if(!tried&&directApisAllowed(req))throw policyFailure(mediaProviders(cfg,"video").size?("Nu am cu ce face videoclipul."+mediaOnlyHint(cfg,"video",strictFree,madeBy)+" "+errors.slice(0,10).join(" | ")).trim():VIDEO_NEEDS_PROVIDER,400);
       const configuredProviders=[
         cfg.pollinationsApiKey&&"Pollinations",directOpenRouterKey(cfg)&&"OpenRouter",cfg.geminiApiKey&&"Gemini Veo",cfg.falApiKey&&"fal.ai",cfg.replicateApiToken&&"Replicate"
@@ -3152,6 +3219,20 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     throw policyFailure(`Nu am putut transcrie fișierul (OmniRoute${groqAllowed?" și Groq":""}). ${errors.join(" | ")||"Niciun serviciu de transcriere configurat."}`,502);
   }
 
+  // The microphone of the chat: a short recording (base64 in JSON) comes back as text, without saving anything in the
+  // Library, so it needs no file permission. The browser's own speech recognition is tried first in the interface.
+  app.post("/api/transcribe", auth, requirePermission("chat"), async (req,res) => {
+    const signal=clientAbortSignal(res);
+    try{
+      const audio=typeof req.body?.audio==="string"?req.body.audio:"";
+      if(!audio)return res.status(400).json({error:"Înregistrarea lipsește."});
+      if(audio.length>22*1024*1024)return res.status(413).json({error:"Înregistrarea este prea lungă (maximum 25 MB)."});
+      const bytes=Buffer.from(audio,"base64");
+      const mime=cleanMime(req.body?.mime)||"audio/webm";
+      const result=await transcribeMedia(req,{bytes,mime,name:"Vocal."+mediaExtension(mime,""),language:req.body?.language,signal});
+      res.json({text:String(result?.text||"").trim()});
+    }catch(e){if(!signal.aborted)sendError(res,e)}
+  });
   app.post("/api/library/:id/transcribe", auth, async (req,res) => {
     const signal=clientAbortSignal(res);
     try{
