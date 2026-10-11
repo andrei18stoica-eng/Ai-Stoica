@@ -1085,3 +1085,6 @@ h1,h2,h3{text-wrap:balance}
 .adminModelModes button.on{background:#2b8cff;color:#fff}
 .adminModelRow.allow .adminModelModes button.on{background:#2f8f5b}.adminModelRow.deny .adminModelModes button.on{background:#b04a4a}
 @media (max-width:640px){.adminModelRow{grid-template-columns:1fr}}
+.adminModelNote{color:#d8a14a;font-size:10px}
+.adminModelHint{font-size:11px;color:#d8a14a;border:1px solid #5a4422;background:#1d160b;border-radius:8px;padding:6px 8px;margin-bottom:6px}
+.adminModelModes button:disabled{opacity:.4;cursor:not-allowed}
