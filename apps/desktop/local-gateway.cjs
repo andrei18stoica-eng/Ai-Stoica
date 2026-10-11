@@ -1243,6 +1243,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       data:filtered,
       manualModels:filtered,
       combos:filtered.filter(x=>x?.kind==="combo").map(x=>x.id),
+      // The Owner's own subscription models: the Control Center marks them «doar Owner» (no button opens them for others).
+      ...(ownerRequest(req)?{personalModels:filtered.filter(x=>x?.source!=="direct-api"&&isPersonalModel(String(typeof x==="string"?x:x?.id||""))).map(x=>String(typeof x==="string"?x:x?.id||""))}:{}),
       policyEnforced:!!cloudBase(),
       policyUnavailable:!!policyError,
       policyError,

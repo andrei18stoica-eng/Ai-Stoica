@@ -964,8 +964,8 @@ function AdminPanel({onClose}) {
     }catch(e){toast("Permisiuni: "+e.message)}
     finally{if(mounted.current)setPending(p=>{const n={...p};delete n[`${user.id}:${key}`];return n})}
   }
-  const [modelIds,setModelIds]=useState(null),[modelQuery,setModelQuery]=useState(""),[modelsError,setModelsError]=useState(""),[modelsTry,setModelsTry]=useState(0);
-  useEffect(()=>{let live=true;api("/api/models").then(ms=>{if(live)setModelIds([...new Set((ms?.data||[]).map(x=>String(typeof x==="string"?x:x?.id||"")).filter(Boolean))].sort((a,b)=>a.localeCompare(b)))}).catch(e=>{if(live){setModelIds([]);setModelsError(e?.message||"eroare necunoscută")}});return()=>{live=false}},[modelsTry]);
+  const [modelIds,setModelIds]=useState(null),[modelQuery,setModelQuery]=useState(""),[modelsError,setModelsError]=useState(""),[modelsTry,setModelsTry]=useState(0),[personalIds,setPersonalIds]=useState(()=>new Set());
+  useEffect(()=>{let live=true;api("/api/models").then(ms=>{if(!live)return;setPersonalIds(new Set((ms?.personalModels||[]).map(x=>String(x).toLowerCase())));setModelIds([...new Set((ms?.data||[]).map(x=>String(typeof x==="string"?x:x?.id||"")).filter(Boolean))].sort((a,b)=>a.localeCompare(b)))}).catch(e=>{if(live){setModelIds([]);setModelsError(e?.message||"eroare necunoscută")}});return()=>{live=false}},[modelsTry]);
   async function setModelMode(user,model,mode){
     if(!user||user.role==="owner")return;
     const k=`${user.id}:model:${model}`;
@@ -974,6 +974,7 @@ function AdminPanel({onClose}) {
     try{
       const d=await api(`/api/admin/users/${user.id}/models`,{method:"PATCH",body:JSON.stringify({model,mode})});
       if(mounted.current)setUsers(rows=>rows.map(x=>x.id===user.id?{...x,permissions:d.permissions||x.permissions}:x));
+      toast(`${model}: ${{allow:"activat",deny:"blocat",default:"implicit"}[mode]} pentru ${user.email}.`,"ok");
     }catch(e){toast("Model: "+e.message)}
     finally{if(mounted.current)setPending(p=>{const n={...p};delete n[k];return n})}
   }
@@ -1047,17 +1048,18 @@ function AdminPanel({onClose}) {
             </div>
             {selected.role!=="owner"&&<>
               <div className="adminPermissionHead"><div><h4>Modele AI pentru acest cont</h4><p>«Implicit» urmează permisiunile de mai sus; «Activat» deschide modelul chiar dacă permisiunile îl țin închis; «Blocat» îl închide. Abonamentele personale ale Owner-ului rămân doar ale lui.</p></div></div>
+              {selected.permissions?.chat!==true&&<div className="adminModelHint" role="note">«Activat» nu are efect cât timp «Chat AI» este oprit pentru acest cont: pornește întâi permisiunea Chat de mai sus.</div>}
               <input className="adminModelSearch" type="search" placeholder="Caută un model…" value={modelQuery} onChange={e=>setModelQuery(e.target.value)} aria-label="Caută un model"/>
               <div className="adminModels">
                 {modelIds===null&&<div className="stoicaPluginEmpty">Se încarcă modelele…</div>}
                 {modelIds!==null&&!modelIds.length&&<div className="stoicaPluginEmpty">{modelsError?`Nu am putut încărca lista de modele: ${modelsError}`:"Lista de modele este goală."} <button type="button" className="secondary" onClick={()=>{setModelIds(null);setModelsError("");setModelsTry(n=>n+1)}}>Reîncearcă</button></div>}
                 {[...new Set([...(modelIds||[]),...Object.keys(selected.permissions?.model_overrides||{})])].sort((a,b)=>a.localeCompare(b)).filter(m=>m.toLowerCase().includes(modelQuery.trim().toLowerCase())).slice(0,200).map(m=>{
                   const ov=Object.entries(selected.permissions?.model_overrides||{}).find(([k])=>k.toLowerCase()===m.toLowerCase())?.[1];
-                  const mode=ov==="allow"||ov==="deny"?ov:"default",busyKey=!!pending[`${selected.id}:model:${m}`];
+                  const mode=ov==="allow"||ov==="deny"?ov:"default",busyKey=!!pending[`${selected.id}:model:${m}`],personal=personalIds.has(m.toLowerCase());
                   return <div key={m} className={cx("adminModelRow",mode)}>
-                    <span title={m}>{m}</span>
+                    <span title={personal?`${m}: abonamentul tău personal rămâne doar al tău (condițiile furnizorului nu permit împărțirea contului). Dă-i persoanei modelul prin API (openai/…, anthropic/…).`:m}>{m}{personal&&<small className="adminModelNote"> · doar Owner</small>}</span>
                     <div className="adminModelModes" role="group" aria-label={`Acces la ${m}`}>
-                      {[["default","Implicit"],["allow","Activat"],["deny","Blocat"]].map(([v,label])=><button key={v} type="button" className={cx(mode===v&&"on")} aria-pressed={mode===v} disabled={busyKey} onClick={()=>mode!==v&&setModelMode(selected,m,v)}>{label}</button>)}
+                      {[["default","Implicit"],["allow","Activat"],["deny","Blocat"]].map(([v,label])=><button key={v} type="button" className={cx(mode===v&&"on")} aria-pressed={mode===v} disabled={busyKey||(personal&&v==="allow"&&mode!=="allow")} title={personal&&v==="allow"?"Abonamentele personale ale Owner-ului nu se pot da altor conturi.":undefined} onClick={()=>mode!==v&&setModelMode(selected,m,v)}>{label}</button>)}
                     </div>
                   </div>;
                 })}
