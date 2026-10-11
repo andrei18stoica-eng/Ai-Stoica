@@ -486,21 +486,54 @@ app.patch("/api/admin/users/:id/permissions", auth, ownerOnly, async (req, res, 
     const target = await adminTarget(req.params.id);
     if (isOwnerRow(target)) return res.status(400).json({ error: "Permisiunile Owner sunt complete și nu se restricționează aici." });
 
-    const current = await pool.query("SELECT permissions FROM user_permissions WHERE user_id=$1", [target.id]);
-    const nextPermissions = { ...DEFAULT_USER_PERMISSIONS, ...(current.rows[0]?.permissions || {}) };
-    for (const [k, v] of Object.entries(input)) {
-      if (!Object.hasOwn(DEFAULT_USER_PERMISSIONS, k)) continue;
-      const value = toBool(v);
-      if (typeof value !== "boolean") return res.status(400).json({ error: `Permisiunea „${k}” trebuie să fie true sau false.` });
-      nextPermissions[k] = value;
-    }
-    await pool.query(
-      `INSERT INTO user_permissions(user_id,permissions,updated_at)
-       VALUES($1,$2::jsonb,NOW())
-       ON CONFLICT(user_id) DO UPDATE SET permissions=EXCLUDED.permissions, updated_at=NOW()`,
-      [target.id, JSON.stringify(nextPermissions)]
-    );
+    const client = await pool.connect();
+    let nextPermissions;
+    try {
+      await client.query("BEGIN");
+      await client.query("INSERT INTO user_permissions(user_id,permissions) VALUES($1,$2::jsonb) ON CONFLICT(user_id) DO NOTHING", [target.id, JSON.stringify(DEFAULT_USER_PERMISSIONS)]);
+      const current = await client.query("SELECT permissions FROM user_permissions WHERE user_id=$1 FOR UPDATE", [target.id]);
+      nextPermissions = { ...DEFAULT_USER_PERMISSIONS, ...(current.rows[0]?.permissions || {}) };
+      for (const [k, v] of Object.entries(input)) {
+        if (!Object.hasOwn(DEFAULT_USER_PERMISSIONS, k)) continue;
+        const value = toBool(v);
+        if (typeof value !== "boolean") { await client.query("ROLLBACK"); return res.status(400).json({ error: `Permisiunea „${k}” trebuie să fie true sau false.` }); }
+        nextPermissions[k] = value;
+      }
+      await client.query("UPDATE user_permissions SET permissions=$2::jsonb, updated_at=NOW() WHERE user_id=$1", [target.id, JSON.stringify(nextPermissions)]);
+      await client.query("COMMIT");
+    } catch (e) { try { await client.query("ROLLBACK"); } catch {} throw e; } finally { client.release(); }
     await audit(req.user.id, "admin.permissions", target.id, { permissions: nextPermissions });
+    res.json({ permissions: nextPermissions });
+  } catch (e) { next(e); }
+});
+
+// Per-model choice for one account: { model: "<id>", mode: "allow" | "deny" | "default" }. Kept in the same permissions
+// document as model_overrides, so /auth/me and /api/ai/access carry it to the gateway.
+app.patch("/api/admin/users/:id/models", auth, ownerOnly, async (req, res, next) => {
+  try {
+    const model = String(req.body?.model || "").trim();
+    const mode = String(req.body?.mode || "").trim();
+    if (!model || model.length > 200) return res.status(400).json({ error: "Modelul lipsește sau este prea lung." });
+    if (!["allow", "deny", "default"].includes(mode)) return res.status(400).json({ error: "Modul trebuie să fie allow, deny sau default." });
+    const target = await adminTarget(req.params.id);
+    if (isOwnerRow(target)) return res.status(400).json({ error: "Owner-ul are acces la toate modelele." });
+    // One transaction with the row locked: two quick clicks on different models must not overwrite each other.
+    const client = await pool.connect();
+    let nextPermissions;
+    try {
+      await client.query("BEGIN");
+      await client.query("INSERT INTO user_permissions(user_id,permissions) VALUES($1,$2::jsonb) ON CONFLICT(user_id) DO NOTHING", [target.id, JSON.stringify(DEFAULT_USER_PERMISSIONS)]);
+      const current = await client.query("SELECT permissions FROM user_permissions WHERE user_id=$1 FOR UPDATE", [target.id]);
+      nextPermissions = { ...DEFAULT_USER_PERMISSIONS, ...(current.rows[0]?.permissions || {}) };
+      const overrides = { ...(nextPermissions.model_overrides && typeof nextPermissions.model_overrides === "object" ? nextPermissions.model_overrides : {}) };
+      for (const k of Object.keys(overrides)) if (k.toLowerCase() === model.toLowerCase()) delete overrides[k];
+      if (mode !== "default") overrides[model] = mode;
+      if (Object.keys(overrides).length > 2000) { await client.query("ROLLBACK"); return res.status(413).json({ error: "Prea multe modele setate pentru acest cont." }); }
+      nextPermissions.model_overrides = overrides;
+      await client.query("UPDATE user_permissions SET permissions=$2::jsonb, updated_at=NOW() WHERE user_id=$1", [target.id, JSON.stringify(nextPermissions)]);
+      await client.query("COMMIT");
+    } catch (e) { try { await client.query("ROLLBACK"); } catch {} throw e; } finally { client.release(); }
+    await audit(req.user.id, "admin.model_override", target.id, { model, mode });
     res.json({ permissions: nextPermissions });
   } catch (e) { next(e); }
 });

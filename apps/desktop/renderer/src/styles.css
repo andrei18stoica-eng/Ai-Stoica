@@ -1074,3 +1074,14 @@ h1,h2,h3{text-wrap:balance}
 /* A fieldset is as wide as its longest option by default (min-inline-size: min-content): keep it inside the phone screen. */
 .providerUse{min-width:0;max-width:100%}
 .providerUse select{width:100%;min-width:0;text-overflow:ellipsis}
+
+.adminModelSearch{width:100%;box-sizing:border-box;margin:0 0 8px;padding:8px 10px;border:1px solid #223044;background:#0d1621;border-radius:9px;color:#d5dfeb;font-size:12px}
+.adminModels{display:grid;gap:5px;max-height:320px;overflow:auto}
+.adminModelRow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;border:1px solid #223044;background:#0d1621;border-radius:9px;padding:6px 8px}
+.adminModelRow>span{font-size:11px;color:#d5dfeb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.adminModelRow.allow{border-color:#2f8f5b}.adminModelRow.deny{border-color:#b04a4a}
+.adminModelModes{display:inline-flex;border:1px solid #223044;border-radius:8px;overflow:hidden}
+.adminModelModes button{border:0;background:transparent;color:#8da0b6;font-size:10px;padding:5px 9px;cursor:pointer;min-height:28px}
+.adminModelModes button.on{background:#2b8cff;color:#fff}
+.adminModelRow.allow .adminModelModes button.on{background:#2f8f5b}.adminModelRow.deny .adminModelModes button.on{background:#b04a4a}
+@media (max-width:640px){.adminModelRow{grid-template-columns:1fr}}

@@ -3,7 +3,7 @@
     "name": "AI Stoica",
     "slug": "ai-stoica",
     "scheme": "aistoica",
-    "version": "0.7.16",
+    "version": "0.7.17",
     "orientation": "portrait",
     "icon": "./icon.png",
     "userInterfaceStyle": "dark",
