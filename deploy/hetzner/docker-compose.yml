@@ -42,6 +42,17 @@ services:
       REGISTRATIONS_PER_HOUR: ${REGISTRATIONS_PER_HOUR:-10}
       # Email domains refused at sign-up and sign-in (spam bots); uberip.com is always blocked.
       BLOCKED_EMAIL_DOMAINS: ${BLOCKED_EMAIL_DOMAINS:-}
+      # Sign-up code by email (on when SMTP_HOST is set). Hetzner blocks outgoing 25/465 on new projects: use 587.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      MAIL_FROM: ${MAIL_FROM:-}
+      EMAIL_VERIFICATION: ${EMAIL_VERIFICATION:-on}
+      # Phone notifications (Web Push): optional; without them the server generates its own keys once.
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
     ports:
