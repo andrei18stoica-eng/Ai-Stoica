@@ -1088,3 +1088,6 @@ h1,h2,h3{text-wrap:balance}
 .adminModelNote{color:#d8a14a;font-size:10px}
 .adminModelHint{font-size:11px;color:#d8a14a;border:1px solid #5a4422;background:#1d160b;border-radius:8px;padding:6px 8px;margin-bottom:6px}
 .adminModelModes button:disabled{opacity:.4;cursor:not-allowed}
+
+.accessRequestText{font-size:15px;line-height:1.55;margin:4px 0 6px}.accessRequestModal .modalActions button{display:flex;align-items:center;gap:6px}
+.codeInput{font-size:22px!important;letter-spacing:.45em;text-align:center}.codeActions{display:flex;justify-content:space-between;gap:10px;margin-top:12px}.linkBtn{border:0;background:transparent;color:#5aa9ff;cursor:pointer;padding:6px 2px;font-size:13px}.linkBtn:disabled{color:#56657a;cursor:default}

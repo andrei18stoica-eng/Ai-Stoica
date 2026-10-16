@@ -103,6 +103,15 @@ function loadOrCreateSecret(dataDir) {
 }
 
 function normalizeEmail(email) { return String(email || "").trim().toLowerCase(); }
+// Email domains used by spam bots for fake sign-ups: uberip.com always, plus AI_STOICA_BLOCKED_EMAIL_DOMAINS (comma-separated).
+function blockedEmailDomains() {
+  return [...new Set(["uberip.com", ...String(process.env.AI_STOICA_BLOCKED_EMAIL_DOMAINS || "").split(",")]
+    .map((d) => d.trim().toLowerCase().replace(/^@+/, "")).filter(Boolean))];
+}
+function emailDomainBlocked(email) {
+  const domain = normalizeEmail(email).split("@").pop();
+  return !!domain && blockedEmailDomains().some((d) => domain === d || domain.endsWith("." + d));
+}
 function textFromContent(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -1126,13 +1135,15 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   }
   async function proxyCloudAuth(req, res, pathname, kind) {
     try {
-      const remote = await cloudFetch(pathname, { method: "POST", body: req.body || {}, timeout: 12000 });
+      const remote = await cloudFetch(pathname, { method: "POST", body: req.body || {}, timeout: kind === "register" ? 25000 : 12000 });
       const text = await remote.text(); let data = {}; try { data = JSON.parse(text || "{}"); } catch {}
       if (!remote.ok) {
         if (kind === "login" && remote.status === 401) countAttempt(req, kind);
         if (remote.status >= 500) return res.status(503).json({ error: cloudDownMessage(remote.status) });
-        return res.status(remote.status).json({ error: typeof data?.error === "string" && data.error ? data.error : `AI Stoica Cloud a refuzat cererea (HTTP ${remote.status}).` });
+        return res.status(remote.status).json({ error: typeof data?.error === "string" && data.error ? data.error : `AI Stoica Cloud a refuzat cererea (HTTP ${remote.status}).`, ...(data?.status === "verify_email" ? { status: "verify_email", email: data.email } : {}) });
       }
+      // A new account answers without a session: first the email code, then the Owner's approval.
+      if (!data?.token && ["verify_email", "pending"].includes(data?.status)) return res.status(remote.status).json(data);
       if (!data?.token || !data?.user) return res.status(502).json({ error: "Răspuns invalid de la AI Stoica Cloud." });
       if (kind === "login") { clearAttempts(req, kind); await linkLocalAccount(data.user, req.body?.password); }
       return res.json(cloudAuthAnswer(data, data.token));
@@ -1142,6 +1153,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.post("/auth/register", async (req, res) => {
     if (rateLimited(req, res, "register")) return;
     countAttempt(req, "register");
+    if (emailDomainBlocked(req.body?.email)) return res.status(400).json({ error: "Adresa de email nu este acceptată." });
     if (cloudBase()) return proxyCloudAuth(req, res, "/auth/register", "register");
     const email = normalizeEmail(req.body?.email), password = typeof req.body?.password === "string" ? req.body.password : "", name = String(req.body?.name || "").trim().slice(0, 80);
     if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "Adresa de email nu este validă." });
@@ -1167,8 +1179,24 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     } finally { registerLocks.delete(email); }
   });
 
+  // Sign-up code from the email (AI Stoica Cloud only): confirm it, or ask for a new one.
+  for (const [route, limit] of [["/auth/verify-email", 20], ["/auth/resend-code", 10]]) {
+    app.post(route, async (req, res) => {
+      if (!cloudBase()) return res.status(404).json({ error: "Codul pe email există doar cu AI Stoica Cloud." });
+      if (rateLimited(req, res, route, limit)) return;
+      countAttempt(req, route);
+      try {
+        const remote = await cloudFetch(route, { method: "POST", body: { email: req.body?.email, code: req.body?.code }, timeout: 20000 });
+        const text = await remote.text(); let data = {}; try { data = JSON.parse(text || "{}"); } catch {}
+        if (remote.status >= 500 && remote.status !== 502) return res.status(503).json({ error: cloudDownMessage(remote.status) });
+        return res.status(remote.status).json(data);
+      } catch { return res.status(503).json({ error: cloudDownMessage(0) }); }
+    });
+  }
+
   app.post("/auth/login", async (req, res) => {
     if (rateLimited(req, res, "login")) return;
+    if (emailDomainBlocked(req.body?.email)) { countAttempt(req, "login"); return res.status(403).json({ error: "Contul nu este activ.", status: "blocked" }); }
     if (cloudBase()) return proxyCloudAuth(req, res, "/auth/login", "login");
     const email = normalizeEmail(req.body?.email), password = typeof req.body?.password === "string" ? req.body.password : "";
     const db = store.read(), user = db.users.find((u) => normalizeEmail(u.email) === email && u.passwordHash) || db.users.find((u) => normalizeEmail(u.email) === email);
@@ -1210,6 +1238,15 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   // Owner Control Center is always backed by PostgreSQL on the Hetzner API.
   app.use("/api/admin", auth, cloudOwnerOnly, proxyCloud);
+  // Permite / Refuză from the Owner's phone notification for a new account: the one-time link is the proof, so no login
+  // is needed (the phone's service worker has no session). Unknown links count as failed attempts.
+  app.use("/auth/access-requests", async (req, res) => {
+    if (!cloudBase()) return res.status(404).json({ error: "Cererile de acces există doar cu AI Stoica Cloud." });
+    if (rateLimited(req, res, "access-request", 30)) return;
+    const end = res.end.bind(res);
+    res.end = (...args) => { if (res.statusCode >= 400) countAttempt(req, "access-request"); return end(...args); };
+    return proxyCloud(req, res);
+  });
 
   app.get("/api/models", auth, async (req, res) => {
     const cfg = getOmniConfig();

@@ -40,6 +40,12 @@ function fail(status, message, headers) { return new HttpError(status, message, 
 function uuid() { return crypto.randomUUID(); }
 function now() { return Date.now(); }
 function normalizeEmail(v) { return String(v || "").trim().toLowerCase(); }
+// Email domains used by spam bots for fake sign-ups: uberip.com always, plus BLOCKED_EMAIL_DOMAINS (comma-separated).
+function emailDomainBlocked(env, email) {
+  const domain = normalizeEmail(email).split("@").pop();
+  const blocked = ["uberip.com", ...String(env?.BLOCKED_EMAIL_DOMAINS || "").split(",")].map(d => d.trim().toLowerCase().replace(/^@+/, "")).filter(Boolean);
+  return !!domain && blocked.some(d => domain === d || domain.endsWith("." + d));
+}
 function hex(bytes) { return [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, "0")).join(""); }
 function randomHex(bytes = 32) { const a = new Uint8Array(bytes); crypto.getRandomValues(a); return hex(a); }
 async function sha256(v) { return hex(await crypto.subtle.digest("SHA-256", enc.encode(String(v)))); }
@@ -685,6 +691,7 @@ async function handleAuthRegister({ request, env }) {
   const b = await bodyJson(request);
   const email = normalizeEmail(b.email), password = String(b.password || ""), name = String(b.name || "").trim();
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: "Adresa de email nu este validă." }, 400);
+  if (emailDomainBlocked(env, email) && !isOwnerEmail(env, email)) return json({ error: "Adresa de email nu este acceptată." }, 400);
   const pwError = passwordError(password);
   if (pwError) return json({ error: pwError }, 400);
   if (name.length > 100) return json({ error: "Numele poate avea cel mult 100 de caractere." }, 400);
@@ -718,6 +725,7 @@ async function handleAuthLogin({ request, env }) {
   const b = await bodyJson(request), email = normalizeEmail(b.email), password = String(b.password || "");
   const wait = await authRetryAfter(env, request);
   if (wait) return tooMany(wait);
+  if (emailDomainBlocked(env, email) && !isOwnerEmail(env, email)) { await recordAuthAttempt(env, request); return json({ error: "Contul nu este activ.", status: "blocked" }, 403); }
   const u = email ? await env.DB.prepare("SELECT * FROM users WHERE email=?").bind(email).first() : null;
   if (!(await verifyPassword(password, u))) {
     await recordAuthAttempt(env, request);

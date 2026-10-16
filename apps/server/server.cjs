@@ -12,6 +12,14 @@ const { PAID_PROVIDERS, evaluateModelAccess, providerAccess } = require("./ai-po
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || "0.0.0.0";
 const OWNER_EMAIL = String(process.env.OWNER_EMAIL || "").trim().toLowerCase();
+// Email domains used by spam bots for fake sign-ups (uberip.com always), plus BLOCKED_EMAIL_DOMAINS (comma-separated).
+// A blocked domain cannot register or sign in, and existing accounts on it are set to "blocked" at start-up.
+const BLOCKED_EMAIL_DOMAINS = [...new Set(["uberip.com", ...String(process.env.BLOCKED_EMAIL_DOMAINS || "").split(",")]
+  .map(d => d.trim().toLowerCase().replace(/^@+/, "")).filter(Boolean))];
+function emailDomainBlocked(email) {
+  const domain = String(email || "").toLowerCase().split("@").pop();
+  return !!domain && BLOCKED_EMAIL_DOMAINS.some(d => domain === d || domain.endsWith("." + d));
+}
 const SESSION_TTL_DAYS = Math.max(1, Number(process.env.SESSION_TTL_DAYS || 30));
 const DATABASE_URL = process.env.DATABASE_URL;
 // Optional but recommended: when set, the Owner account is created by the server itself at startup
@@ -21,6 +29,15 @@ const MIN_PASSWORD = 8;
 
 const MSG = {
   email: "Adresa de email nu este validă.",
+  emailBlocked: "Adresa de email nu este acceptată.",
+  verifySent: "Ți-am trimis un cod de 6 cifre pe email. Introdu-l ca să confirmi că adresa este a ta.",
+  verifyNeeded: "Confirmă mai întâi emailul cu codul primit. Dacă nu-l găsești, uită-te și în Spam sau cere unul nou.",
+  codeWrong: "Codul nu este corect.",
+  codeExpired: "Codul a expirat. Cere unul nou.",
+  codeTooMany: "Prea multe coduri greșite. Cere un cod nou.",
+  codeWait: `Poți cere un cod nou o dată pe minut.`,
+  mailFailed: "Nu am putut trimite emailul cu codul. Verifică adresa și încearcă din nou.",
+  verifiedPending: "Email confirmat. Accesul așteaptă aprobarea Owner-ului.",
   password: `Parola trebuie să aibă cel puțin ${MIN_PASSWORD} caractere.`,
   passwordLong: "Parola poate avea cel mult 256 de caractere.",
   name: "Numele poate avea cel mult 100 de caractere.",
@@ -48,6 +65,12 @@ const pool = new Pool({
   query_timeout: 35000
 });
 pool.on("error", e => console.error("[AI Stoica] PostgreSQL:", e.message));
+const push = require("./push.cjs").createPush({ pool, ownerEmail: OWNER_EMAIL });
+const mailer = require("./mailer.cjs").createMailer();
+// Sign-up code by email: on as soon as SMTP is configured (EMAIL_VERIFICATION=off turns it off).
+const EMAIL_VERIFICATION = mailer.configured && String(process.env.EMAIL_VERIFICATION || "").toLowerCase() !== "off";
+const CODE_MINUTES = 15, CODE_MAX_ATTEMPTS = 5, CODE_RESEND_SECONDS = 60;
+if (!EMAIL_VERIFICATION) console.warn("[AI Stoica] Email verification is off: set SMTP_HOST, SMTP_USER, SMTP_PASS (and MAIL_FROM) to send sign-up codes.");
 
 const DEFAULT_USER_PERMISSIONS = {
   chat: true,
@@ -165,6 +188,18 @@ async function migrate() {
     "UPDATE users SET role='owner', status='active', approved_at=COALESCE(approved_at,NOW()) WHERE lower(email)=lower($1)",
     [OWNER_EMAIL]
   );
+  // Accounts made by spam bots on a blocked email domain (BLOCKED_EMAIL_DOMAINS) lose access; the Owner can still change them.
+  const blockedNow = await pool.query(
+    `UPDATE users SET status='blocked', updated_at=NOW()
+     WHERE role<>'owner' AND status<>'blocked' AND lower(email)<>lower($2)
+       AND EXISTS (SELECT 1 FROM unnest($1::text[]) d WHERE split_part(lower(email),'@',2)=d OR split_part(lower(email),'@',2) LIKE '%.' || d)
+     RETURNING id`,
+    [BLOCKED_EMAIL_DOMAINS, OWNER_EMAIL]
+  );
+  if (blockedNow.rowCount) {
+    await pool.query("DELETE FROM sessions WHERE user_id = ANY($1::text[])", [blockedNow.rows.map(r => r.id)]);
+    console.log(`[AI Stoica] ${blockedNow.rowCount} account(s) on blocked email domains set to "blocked".`);
+  }
   // An Owner role left from a previous OWNER_EMAIL grants nothing anymore.
   await pool.query("UPDATE users SET role='user', updated_at=NOW() WHERE role='owner' AND lower(email)<>lower($1)", [OWNER_EMAIL]);
 
@@ -322,12 +357,23 @@ app.post("/auth/register", registerLimiter, authLimiter, async (req, res, next) 
     const password = String(req.body?.password || "");
     const name = String(req.body?.name || "").trim() || email.split("@")[0];
     if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: MSG.email });
+    if (emailDomainBlocked(email) && email !== OWNER_EMAIL) return res.status(400).json({ error: MSG.emailBlocked });
     if (password.length < MIN_PASSWORD) return res.status(400).json({ error: MSG.password });
     if (password.length > 256) return res.status(400).json({ error: MSG.passwordLong });
     if (name.length > 100) return res.status(400).json({ error: MSG.name });
 
-    const existing = await pool.query("SELECT id FROM users WHERE email=$1", [email]);
-    if (existing.rowCount) return res.status(409).json({ error: MSG.exists });
+    const existing = await pool.query("SELECT * FROM users WHERE email=$1", [email]);
+    if (existing.rowCount) {
+      // Someone who closed the app before typing the code can sign up again: a new code goes to the same address.
+      const prev = existing.rows[0];
+      if (EMAIL_VERIFICATION && !prev.email_verified_at && prev.status === "pending" && !isOwnerRow(prev)) {
+        const sent = await sendSignupCode(prev, { onlyIfIdle: true });
+        if (sent === "wait") return res.status(429).json({ error: MSG.codeWait });
+        if (sent === "failed") return res.status(502).json({ error: MSG.mailFailed });
+        return res.status(202).json({ ok: true, status: "verify_email", email, message: MSG.verifySent });
+      }
+      return res.status(409).json({ error: MSG.exists });
+    }
 
     if (email === OWNER_EMAIL && OWNER_INITIAL_PASSWORD) {
       return res.status(403).json({ error: "Contul Owner este creat de server. Autentifică-te cu parola configurată." });
@@ -337,14 +383,15 @@ app.post("/auth/register", registerLimiter, authLimiter, async (req, res, next) 
     const passwordHash = await bcrypt.hash(password, 12);
     const role = isOwner ? "owner" : "user";
     const status = isOwner ? "active" : "pending";
+    const verified = isOwner || !EMAIL_VERIFICATION;
 
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       await client.query(
-        `INSERT INTO users(id,email,name,password_hash,role,status,approved_at)
-         VALUES($1,$2,$3,$4,$5,$6,$7)`,
-        [userId, email, name, passwordHash, role, status, isOwner ? new Date() : null]
+        `INSERT INTO users(id,email,name,password_hash,role,status,approved_at,email_verified_at)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [userId, email, name, passwordHash, role, status, isOwner ? new Date() : null, verified ? new Date() : null]
       );
       await client.query(
         "INSERT INTO user_permissions(user_id,permissions) VALUES($1,$2::jsonb)",
@@ -359,13 +406,20 @@ app.post("/auth/register", registerLimiter, authLimiter, async (req, res, next) 
       client.release();
     }
 
-    await audit(userId, "user.register", userId, { status, role, ip: clientIp(req) });
+    await audit(userId, "user.register", userId, { status, role, ip: clientIp(req), emailVerified: verified });
 
-    if (!isOwner) {
-      const ownerId = await ownerUserId();
-      if (ownerId) {
-        await notify(ownerId, "access_request", "Cerere nouă de acces", `${name} (${email}) a creat un cont și așteaptă aprobarea.`);
+    if (!isOwner && !verified) {
+      // Accounts nobody confirmed within a day (fake or mistyped addresses) are removed.
+      await pool.query("DELETE FROM users WHERE email_verified_at IS NULL AND status='pending' AND role<>'owner' AND created_at < NOW() - INTERVAL '1 day'");
+      const sent = await sendSignupCode({ id: userId, email, name });
+      if (sent !== "sent") {
+        await pool.query("DELETE FROM users WHERE id=$1", [userId]);
+        return res.status(502).json({ error: MSG.mailFailed });
       }
+      return res.status(202).json({ ok: true, status: "verify_email", email, message: MSG.verifySent });
+    }
+    if (!isOwner) {
+      await requestOwnerApproval(userId, name, email);
       return res.status(202).json({
         ok: true,
         status: "pending",
@@ -379,14 +433,167 @@ app.post("/auth/register", registerLimiter, authLimiter, async (req, res, next) 
   } catch (e) { next(e); }
 });
 
+// The Owner hears about a new account (bell + phone with Permite / Refuză) only once its email is confirmed.
+async function requestOwnerApproval(userId, name, email) {
+  const ownerId = await ownerUserId();
+  if (!ownerId) return;
+  await notify(ownerId, "access_request", "Cerere nouă de acces", `${name} (${email}) a creat un cont și așteaptă aprobarea.`);
+  // Phone notification with Permite / Refuză: a one-time link, valid until the Owner answers.
+  const accessToken = randomToken();
+  await pool.query(
+    "INSERT INTO access_requests(user_id,token_hash) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET token_hash=EXCLUDED.token_hash, created_at=NOW()",
+    [userId, sha256(accessToken)]
+  );
+  push.sendToUser(ownerId, accessRequestPush(name, email, accessToken, userId)).catch(e => console.warn("[AI Stoica] Push:", e.message));
+}
+
+// A 6-digit code, kept only as a hash, valid CODE_MINUTES. Returns "sent", "wait" (asked again within a minute) or "failed".
+async function sendSignupCode(user, { onlyIfIdle = false } = {}) {
+  if (onlyIfIdle) {
+    const last = (await pool.query("SELECT sent_at FROM email_codes WHERE user_id=$1", [user.id])).rows[0];
+    if (last && Date.now() - new Date(last.sent_at).getTime() < CODE_RESEND_SECONDS * 1000) return "wait";
+  }
+  const code = String(crypto.randomInt(0, 1000000)).padStart(6, "0");
+  await pool.query(
+    `INSERT INTO email_codes(user_id,code_hash,expires_at,attempts,sent_at) VALUES($1,$2,$3,0,NOW())
+     ON CONFLICT(user_id) DO UPDATE SET code_hash=EXCLUDED.code_hash, expires_at=EXCLUDED.expires_at, attempts=0, sent_at=NOW()`,
+    [user.id, sha256(user.id + ":" + code), new Date(Date.now() + CODE_MINUTES * 60000)]
+  );
+  try { await mailer.sendSignupCode(user.email, user.name || user.email.split("@")[0], code, CODE_MINUTES); return "sent"; }
+  catch (e) { console.warn("[AI Stoica] Sign-up email failed:", e.message); await pool.query("DELETE FROM email_codes WHERE user_id=$1", [user.id]); return "failed"; }
+}
+
+async function unverifiedUser(emailInput) {
+  const email = normalizeEmail(emailInput);
+  if (!email) return null;
+  const u = (await pool.query("SELECT * FROM users WHERE email=$1", [email])).rows[0];
+  return u && !u.email_verified_at && u.status === "pending" && !isOwnerRow(u) ? u : null;
+}
+
+app.post("/auth/verify-email", authLimiter, async (req, res, next) => {
+  try {
+    const code = String(req.body?.code || "").replace(/\s+/g, "");
+    const u = await unverifiedUser(req.body?.email);
+    if (!u) return res.status(400).json({ error: MSG.codeExpired });
+    const row = (await pool.query("SELECT * FROM email_codes WHERE user_id=$1", [u.id])).rows[0];
+    if (!row || new Date(row.expires_at).getTime() < Date.now()) return res.status(400).json({ error: MSG.codeExpired });
+    if (Number(row.attempts) >= CODE_MAX_ATTEMPTS) return res.status(429).json({ error: MSG.codeTooMany });
+    const expected = Buffer.from(String(row.code_hash)), given = Buffer.from(sha256(u.id + ":" + code));
+    if (!/^\d{6}$/.test(code) || expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) {
+      await pool.query("UPDATE email_codes SET attempts=attempts+1 WHERE user_id=$1", [u.id]);
+      return res.status(400).json({ error: Number(row.attempts) + 1 >= CODE_MAX_ATTEMPTS ? MSG.codeTooMany : MSG.codeWrong });
+    }
+    await pool.query("UPDATE users SET email_verified_at=NOW(), updated_at=NOW() WHERE id=$1", [u.id]);
+    await pool.query("DELETE FROM email_codes WHERE user_id=$1", [u.id]);
+    await audit(u.id, "user.email_verified", u.id, { ip: clientIp(req) });
+    await requestOwnerApproval(u.id, u.name, u.email);
+    res.status(202).json({ ok: true, status: "pending", message: MSG.verifiedPending });
+  } catch (e) { next(e); }
+});
+
+app.post("/auth/resend-code", authLimiter, async (req, res, next) => {
+  try {
+    const u = EMAIL_VERIFICATION ? await unverifiedUser(req.body?.email) : null;
+    // The same answer for unknown addresses, so nobody can find out which emails have accounts.
+    if (!u) return res.json({ ok: true, message: MSG.verifySent });
+    const sent = await sendSignupCode(u, { onlyIfIdle: true });
+    if (sent === "wait") return res.status(429).json({ error: MSG.codeWait });
+    if (sent === "failed") return res.status(502).json({ error: MSG.mailFailed });
+    res.json({ ok: true, message: MSG.verifySent });
+  } catch (e) { next(e); }
+});
+
+function accessRequestPush(name, email, token, userId) {
+  return {
+    kind: "access_request",
+    title: "Cerere nouă de acces",
+    body: `${name} (${email}) vrea să se conecteze la AI Stoica. Permiți?`,
+    tag: "access-" + userId,
+    token,
+    url: "/?access=" + encodeURIComponent(token)
+  };
+}
+async function accessRequestFor(token) {
+  const t = String(token || "");
+  if (!/^[a-f0-9]{64}$/.test(t)) return null;
+  const q = await pool.query(
+    `SELECT u.id,u.name,u.email,u.status,u.role,u.created_at FROM access_requests a JOIN users u ON u.id=a.user_id WHERE a.token_hash=$1`,
+    [sha256(t)]
+  );
+  return q.rows[0] || null;
+}
+const ACCESS_GONE = "Cererea nu mai există: a primit deja un răspuns sau contul a fost șters.";
+
+// Allow / refuse a new account straight from the phone notification (or the page it opens). The link itself is the
+// proof: it was sent only to the Owner's phones and works once.
+app.get("/auth/access-requests/:token", authLimiter, async (req, res, next) => {
+  try {
+    const u = await accessRequestFor(req.params.token);
+    if (!u || u.status !== "pending" || isOwnerRow(u)) return res.status(404).json({ error: ACCESS_GONE });
+    res.json({ request: { name: u.name, email: u.email, createdAt: u.created_at } });
+  } catch (e) { next(e); }
+});
+app.post("/auth/access-requests/:token", authLimiter, async (req, res, next) => {
+  try {
+    const decision = String(req.body?.decision || "");
+    if (!["allow", "deny"].includes(decision)) return res.status(400).json({ error: "Alege «allow» sau «deny»." });
+    const u = await accessRequestFor(req.params.token);
+    if (!u || u.status !== "pending" || isOwnerRow(u)) return res.status(404).json({ error: ACCESS_GONE });
+    const ownerId = await ownerUserId();
+    const status = decision === "allow" ? "active" : "rejected";
+    await pool.query(
+      `UPDATE users SET status=$1,
+         approved_at=CASE WHEN $1='active' THEN COALESCE(approved_at,NOW()) ELSE approved_at END,
+         approved_by=CASE WHEN $1='active' THEN $2 ELSE approved_by END,
+         updated_at=NOW()
+       WHERE id=$3 AND status='pending'`,
+      [status, ownerId, u.id]
+    );
+    await pool.query("DELETE FROM access_requests WHERE user_id=$1", [u.id]);
+    await audit(ownerId, "admin.user_status", u.id, { status, via: "push" });
+    await notify(u.id, "account_status", status === "active" ? "Cont aprobat" : "Cerere respinsă",
+      `Statusul contului tău AI Stoica: ${status === "active" ? "Cont aprobat" : "Cerere respinsă"}.`);
+    res.json({ ok: true, status, name: u.name, email: u.email });
+  } catch (e) { next(e); }
+});
+
+// The Owner's phones: the installed app asks for permission and sends its subscription here.
+app.get("/api/admin/push", auth, ownerOnly, async (req, res, next) => {
+  try { res.json({ publicKey: (await push.vapidKeys()).publicKey, devices: await push.count(req.user.id) }); }
+  catch (e) { next(e); }
+});
+app.post("/api/admin/push/subscribe", auth, ownerOnly, async (req, res, next) => {
+  try {
+    if (!(await push.subscribe(req.user.id, req.body?.subscription, req.headers["user-agent"] || ""))) return res.status(400).json({ error: "Abonamentul de notificări nu este valid." });
+    res.json({ ok: true, devices: await push.count(req.user.id) });
+  } catch (e) { next(e); }
+});
+app.post("/api/admin/push/unsubscribe", auth, ownerOnly, async (req, res, next) => {
+  try { await push.unsubscribe(req.user.id, req.body?.endpoint); res.json({ ok: true, devices: await push.count(req.user.id) }); }
+  catch (e) { next(e); }
+});
+app.post("/api/admin/push/test", auth, ownerOnly, async (req, res, next) => {
+  try {
+    const delivered = await push.sendToUser(req.user.id, { kind: "test", title: "AI Stoica", body: "Notificările merg. Aici vei primi cererile de acces pentru conturi noi.", tag: "test", url: "/" });
+    res.json({ delivered });
+  } catch (e) { next(e); }
+});
+
 app.post("/auth/login", authLimiter, async (req, res, next) => {
   try {
     const email = normalizeEmail(req.body?.email);
     const password = String(req.body?.password || "");
+    if (emailDomainBlocked(email) && email !== OWNER_EMAIL) return res.status(403).json(inactiveBody("blocked"));
     const q = await pool.query("SELECT * FROM users WHERE email=$1", [email]);
     const user = q.rows[0];
     const ok = await bcrypt.compare(password, user?.password_hash || DUMMY_HASH);
     if (!user || !ok) return res.status(401).json({ error: MSG.credentials });
+    if (EMAIL_VERIFICATION && user.status === "pending" && !user.email_verified_at && !isOwnerRow(user)) {
+      // A new code is sent when the last one has expired, so the person can finish the sign-up from here.
+      const last = (await pool.query("SELECT expires_at FROM email_codes WHERE user_id=$1", [user.id])).rows[0];
+      if (!last || new Date(last.expires_at).getTime() < Date.now()) await sendSignupCode(user);
+      return res.status(403).json({ error: MSG.verifyNeeded, status: "verify_email", email: user.email });
+    }
     if (user.status !== "active") return res.status(403).json(inactiveBody(user.status));
     if (email === OWNER_EMAIL && user.role !== "owner") {
       await pool.query("UPDATE users SET role='owner', approved_at=COALESCE(approved_at,NOW()) WHERE id=$1", [user.id]);
@@ -465,6 +672,7 @@ app.patch("/api/admin/users/:id/status", auth, ownerOnly, async (req, res, next)
       [status, req.user.id, target.id]
     );
     if (status !== "active") await pool.query("DELETE FROM sessions WHERE user_id=$1", [target.id]);
+    if (status !== "pending") await pool.query("DELETE FROM access_requests WHERE user_id=$1", [target.id]);
     await audit(req.user.id, "admin.user_status", target.id, { status });
     const statusLabels = {
       active: "Cont aprobat",

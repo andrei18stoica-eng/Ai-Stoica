@@ -40,6 +40,19 @@ services:
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-120}
       AUTH_ME_PER_MINUTE: ${AUTH_ME_PER_MINUTE:-600}
       REGISTRATIONS_PER_HOUR: ${REGISTRATIONS_PER_HOUR:-10}
+      # Email domains refused at sign-up and sign-in (spam bots); uberip.com is always blocked.
+      BLOCKED_EMAIL_DOMAINS: ${BLOCKED_EMAIL_DOMAINS:-}
+      # Sign-up code by email (on when SMTP_HOST is set). Hetzner blocks outgoing 25/465 on new projects: use 587.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      MAIL_FROM: ${MAIL_FROM:-}
+      EMAIL_VERIFICATION: ${EMAIL_VERIFICATION:-on}
+      # Phone notifications (Web Push): optional; without them the server generates its own keys once.
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
     ports:
@@ -117,6 +130,7 @@ services:
       # The Owner can change them on the site too (Setări). "-" (not ":-") keeps an empty value.
       AI_STOICA_BLOCKED_PROVIDERS: ${AI_STOICA_BLOCKED_PROVIDERS-cerebras}
       AI_STOICA_SHARED_COMBOS: ${AI_STOICA_SHARED_COMBOS-}
+      AI_STOICA_BLOCKED_EMAIL_DOMAINS: ${BLOCKED_EMAIL_DOMAINS:-}
       AI_STOICA_IMAGE_PROVIDERS: ${AI_STOICA_IMAGE_PROVIDERS-gemini}
       AI_STOICA_VIDEO_PROVIDERS: ${AI_STOICA_VIDEO_PROVIDERS-gemini}
       AI_STOICA_FREE_IMAGES: ${AI_STOICA_FREE_IMAGES:-3}

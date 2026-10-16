@@ -7,7 +7,7 @@ import {
   CalendarClock, Plug, Library, Brain, Upload, Trash2, Play, Pin, PinOff,
   FileText, Image as ImageIcon, HardDrive, ToggleLeft, ToggleRight,
   Compass, Map as MapIcon, Globe2, Archive, ArchiveRestore, ExternalLink, SlidersHorizontal, Volume2,
-  PanelTopOpen, ShieldCheck, UserCheck, Download, Lock, Pencil, Palette, Clapperboard, Eye, Maximize2, LoaderCircle, SquareTerminal
+  PanelTopOpen, ShieldCheck, UserCheck, Download, Bell, Lock, Pencil, Palette, Clapperboard, Eye, Maximize2, LoaderCircle, SquareTerminal
 } from "lucide-react";
 import "./styles.css";
 import {
@@ -15,11 +15,12 @@ import {
   FIRST_RUN_KEY, SIDEBAR_COLLAPSED_KEY, ACCOUNT_KEYS, storage, cleanGatewayUrl, GATEWAY, setGatewayUrl, toast, isAuthLost, apiError, authHeaders, api,
   deniedMessage, AccessContext, useAccess, uploadFileToLibrary, formatBytes, plural, cx, uid, writeClipboardText, openLink, downloadGeneratedFile,
   downloadLibraryFile, fmtTime, mediaKind, kindLabel, fetchLibraryBlob, modalStack, useModal, useDismiss, ToolShell, Modal, Markdown, useAuthedBlobUrl,
-  isHttpUrl, setAuthLostHandler, IS_WEB
+  isHttpUrl, setAuthLostHandler, IS_WEB, errorFromBody
 } from "./core.jsx";
 import { InstallApp } from "./install.jsx";
 import { FileViewer, canView } from "./viewer.jsx";
 import { ServerUpdate } from "./serverUpdate.jsx";
+import { AccessRequestDialog, PhoneNotifications } from "./accessRequest.jsx";
 import { ScheduledPage } from "./pages/Scheduled.jsx";
 import { CodePage } from "./pages/Code.jsx";
 import { requestedMediaGeneration } from "./mediaIntent.mjs";
@@ -248,7 +249,15 @@ function uniqueModels(values) {
   return [...new Set((values||[]).map(x=>String(x||"").trim()).filter(Boolean))];
 }
 
+// Sign-in calls answer with more than an error: "verify_email" asks for the code sent by email.
+async function authPost(path,body){
+  const r=await fetch(`${GATEWAY}${path}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const text=await r.text();let data={};try{data=JSON.parse(text||"{}")}catch{}
+  return {ok:r.ok,status:r.status,data,error:r.ok?"":errorFromBody(text,r.status)};
+}
 function AuthScreen({ onAuth, notice:initialNotice="" }) {
+  const [code,setCode]=useState(""),[resendIn,setResendIn]=useState(0);
+  useEffect(()=>{if(resendIn<=0)return;const t=setTimeout(()=>setResendIn(n=>n-1),1000);return()=>clearTimeout(t)},[resendIn]);
   const [mode,setMode]=useState("login"),[name,setName]=useState(""),[email,setEmail]=useState(""),[password,setPassword]=useState(""),[error,setError]=useState(""),[notice,setNotice]=useState(initialNotice),[busy,setBusy]=useState(false),[cloud,setCloud]=useState(null),[networkIssue,setNetworkIssue]=useState(false);
   useEffect(()=>{setNotice(initialNotice)},[initialNotice]);
   useEffect(()=>{
@@ -259,7 +268,17 @@ function AuthScreen({ onAuth, notice:initialNotice="" }) {
   async function submit(e) {
     e.preventDefault(); if(busy)return; setBusy(true); setError(""); setNotice(""); setNetworkIssue(false);
     try {
-      const data = await api(mode==="login"?"/auth/login":"/auth/register",{method:"POST",body:JSON.stringify(mode==="login"?{email,password}:{name,email,password})});
+      if(mode==="verify"){
+        const v=await authPost("/auth/verify-email",{email,code:code.trim()});
+        if(!v.ok)throw new Error(v.error);
+        setNotice(v.data.message||"Email confirmat. Accesul așteaptă aprobarea Owner-ului.");setMode("login");setCode("");setPassword("");return;
+      }
+      const r = await authPost(mode==="login"?"/auth/login":"/auth/register",mode==="login"?{email,password}:{name,email,password});
+      if(r.data?.status==="verify_email"){
+        setMode("verify");setCode("");setNotice(r.ok?(r.data.message||"Ți-am trimis un cod pe email."):"Confirmă mai întâi emailul cu codul primit. Dacă nu-l găsești, uită-te și în Spam sau cere unul nou.");if(r.ok)setResendIn(60);return;
+      }
+      if(!r.ok)throw new Error(r.error);
+      const data=r.data;
       if(data?.status==="pending"&&!data?.token){
         setNotice(data.message||"Contul a fost creat și așteaptă aprobarea Owner-ului.");
         setMode("login"); setPassword(""); return;
@@ -268,6 +287,11 @@ function AuthScreen({ onAuth, notice:initialNotice="" }) {
       storage.set(TOKEN_KEY,data.token); storage.set(USER_KEY,JSON.stringify(data.user)); storage.set(PERMISSIONS_KEY,JSON.stringify(data.permissions||{}));
       onAuth(data.user,data.permissions||{});
     } catch(e2){ setError(e2.message); if(/failed to fetch|networkerror|load failed/i.test(e2.message))setNetworkIssue(true); } finally { setBusy(false); }
+  }
+  async function resendCode(){
+    if(busy||resendIn>0)return;setBusy(true);setError("");
+    try{const r=await authPost("/auth/resend-code",{email});if(!r.ok)throw new Error(r.error);setNotice(r.data.message||"Ți-am trimis un cod nou.");setResendIn(60)}
+    catch(e){setError(e.message)}finally{setBusy(false)}
   }
   function resetGateway(){setGatewayUrl(DEFAULT_GATEWAY);Promise.resolve(window.AIStoica?.setConfig?.({gatewayUrl:DEFAULT_GATEWAY})).catch(()=>{});setNetworkIssue(false);setError("");setNotice("Am revenit la serviciul local implicit. Încearcă din nou autentificarea.");}
   return <div className="authShell"><div className="authGlow"/>
@@ -278,8 +302,17 @@ function AuthScreen({ onAuth, notice:initialNotice="" }) {
     </div>
     <form className="authCard" onSubmit={submit}>
       <div className="authTabs" role="tablist"><button type="button" role="tab" aria-selected={mode==="login"} className={mode==="login"?"active":""} onClick={()=>{setMode("login");setError("");}}>Autentificare</button><button type="button" role="tab" aria-selected={mode==="register"} className={mode==="register"?"active":""} onClick={()=>{setMode("register");setError("");setNotice("");}}>Creează cont</button></div>
+      {mode==="verify"?<>
+      <h2>Confirmă emailul</h2>
+      <p className="muted">Am trimis un cod de 6 cifre la <b>{email}</b>. Dacă nu-l vezi, uită-te și în Spam. Codul expiră în 15 minute.</p>
+      <label>Cod din email<input value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="123456" inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} required autoFocus className="codeInput"/></label>
+      {notice&&<div className="authNotice" role="status"><UserCheck size={17}/><span>{notice}</span></div>}
+      {error&&<div className="authError" role="alert">{error}</div>}
+      <button className="primaryWide" disabled={busy||code.length!==6}>{busy?"Se procesează…":"Confirmă emailul"}</button>
+      <div className="codeActions"><button type="button" className="linkBtn" disabled={busy||resendIn>0} onClick={resendCode}>{resendIn>0?`Retrimite codul (${resendIn}s)`:"Retrimite codul"}</button><button type="button" className="linkBtn" onClick={()=>{setMode("login");setError("");setNotice("")}}>Înapoi</button></div>
+      </>:<>
       <h2>{mode==="login"?"Bine ai revenit":"Creează contul AI Stoica"}</h2>
-      <p className="muted">{mode==="register"?(cloud?"Conturile noi trebuie aprobate de Owner înainte de prima utilizare.":IS_WEB?"Contul se creează pe serverul AI Stoica.":"Contul se creează pe acest calculator și îl poți folosi imediat."):"Folosește emailul contului tău AI Stoica."}</p>
+      <p className="muted">{mode==="register"?(cloud?"Primești un cod pe email ca să confirmi adresa, apoi contul e aprobat de Owner.":IS_WEB?"Contul se creează pe serverul AI Stoica.":"Contul se creează pe acest calculator și îl poți folosi imediat."):"Folosește emailul contului tău AI Stoica."}</p>
       {mode==="register"&&<label>Nume<input value={name} onChange={e=>setName(e.target.value)} placeholder="Numele tău" autoComplete="name"/></label>}
       <label>Email<input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="nume@email.ro" required autoComplete="email"/></label>
       <label>Parolă<input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder={mode==="register"?"Minimum 10 caractere":"Parola contului"} required minLength={mode==="register"?10:undefined} autoComplete={mode==="register"?"new-password":"current-password"}/></label>
@@ -288,6 +321,7 @@ function AuthScreen({ onAuth, notice:initialNotice="" }) {
       {networkIssue&&GATEWAY!==DEFAULT_GATEWAY&&<button type="button" className="secondary wideBtn" onClick={resetGateway}>Folosește serviciul local implicit</button>}
       <button className="primaryWide" disabled={busy}>{busy?"Se procesează…":mode==="login"?"Intră în AI Stoica":(cloud?"Trimite cererea de acces":"Creează contul")}</button>
       <div className="localNote">{cloud?"Owner-ul controlează aprobarea conturilor și permisiunile serviciilor AI.":IS_WEB?"Conturile și conversațiile sunt păstrate pe serverul AI Stoica.":"Conturile și conversațiile sunt păstrate pe acest calculator."}</div>
+      </>}
       <InstallApp/>
     </form>
   </div>;
@@ -1310,7 +1344,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
   const keyProps={cfg,keys,setKeys};
   // The site's server allows paid pictures when nothing was chosen (no imageCostPolicy in .env); Windows saves "free_only".
   const imageCost=cfg?.imageCostPolicy||(webServer?"allow_paid":"free_only");
-  const tabs=[["general",SlidersHorizontal,"General",true],["ai",Bot,"AI & OmniRoute",machineSettingsAllowed],["chatapis",Plug,"API-uri AI",machineSettingsAllowed],["images",ImageIcon,"Poze",machineSettingsAllowed],["video",Play,"Video",machineSettingsAllowed],["voice",Volume2,"Voce și microfon",true],["account",User,"Cont și date",true]];
+  const tabs=[["general",SlidersHorizontal,"General",true],["ai",Bot,"AI & OmniRoute",machineSettingsAllowed],["chatapis",Plug,"API-uri AI",machineSettingsAllowed],["images",ImageIcon,"Poze",machineSettingsAllowed],["video",Play,"Video",machineSettingsAllowed],["voice",Volume2,"Voce și microfon",true],["notify",Bell,"Notificări pe telefon",webServer],["account",User,"Cont și date",true]];
   return <div className="modalBackdrop" {...backdropProps}><div className="settingsModal" ref={ref} role="dialog" aria-modal="true" aria-label="Setări AI Stoica" tabIndex={-1}><div className="modalHead"><div><h2>Setări AI Stoica</h2><p>Aplicația, vocea, serviciile AI și actualizările.</p></div><button className="iconOnly" onClick={onClose} aria-label="Închide" title="Închide"><X size={20}/></button></div>
     {!cfg?<div className="settingsLoading">{error||"Se încarcă setările…"}{error&&onPreferences&&<div className="settingsPrefs"><h3>Memorie și conversații</h3><PreferenceSwitches preferences={preferences} onChange={onPreferences} busyKey={prefBusy}/></div>}{error&&<ServerUpdate/>}</div>:<>
     <div className="settingsBody"><div className="settingsNav" role="tablist" aria-orientation="vertical">
@@ -1484,6 +1518,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <button type="button" className="secondary testMicBtn" onClick={testMic}><Mic size={16}/> Testează microfonul</button>{micStatus&&<div className="micStatus" role="status">{micStatus}</div>}
         <p className="settingsHelp">Apasă microfonul o dată pentru a începe înregistrarea și încă o dată pentru a o opri. AI Stoica salvează vocalul în Bibliotecă și îl transcrie automat.</p>
       </>}
+      {tab==="notify"&&webServer&&<PhoneNotifications/>}
       {tab==="account"&&<><h3>Cont și date</h3>
         <div className="accountSettingsCard"><div className="accountAvatar big">{(user?.name||user?.email||"S")[0].toUpperCase()}</div><div><b>{user?.name||"Cont AI Stoica"}</b><span>{user?.email}{user?.role==="owner"?" · Owner":""}</span></div></div>
         <p className="settingsHelp">Conversațiile, memoria, biblioteca, designurile, proiectele, pluginurile și sarcinile programate sunt păstrate {IS_WEB?"pe serverul AI Stoica":"pe acest calculator"}.</p>
@@ -2092,4 +2127,4 @@ function App() {
     {showFirstRun&&<FirstRunGuide onOpenSettings={()=>{finishFirstRun();setSettings(true)}} onDone={ok=>{finishFirstRun();if(ok)refreshModels()}}/>}
   </div></AccessContext.Provider>;
 }
-createRoot(document.getElementById("root")).render(<ErrorBoundary><App/></ErrorBoundary>);
+createRoot(document.getElementById("root")).render(<ErrorBoundary><App/><AccessRequestDialog/></ErrorBoundary>);
