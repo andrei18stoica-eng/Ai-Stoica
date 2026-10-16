@@ -1760,6 +1760,25 @@ function App() {
     const off=window.AIStoica?.onUpdateReady?.(()=>setUpdateReady(true));
     return()=>{if(typeof off==="function")off()};
   },[]);
+  // 0.7.18: the results of the automations (and the other notices of the account) arrive while the app is open; each
+  // is shown once and marked as read. Without AI Stoica Cloud the list is empty.
+  useEffect(()=>{
+    if(!user?.id||!cloudConfigured)return;
+    let stopped=false;
+    async function checkNotices(){
+      if(document.hidden)return;
+      try{
+        const d=await api("/api/notifications");if(stopped)return;
+        for(const n of (d?.data||[]).filter(x=>!x.read_at&&x.type==="automation").slice(0,3).reverse()){
+          toast(`${n.title}: ${String(n.body||"").slice(0,180)}`,"info");
+          api(`/api/notifications/${encodeURIComponent(n.id)}/read`,{method:"PATCH",body:"{}"}).catch(()=>{});
+        }
+      }catch{}
+    }
+    checkNotices();
+    const id=setInterval(checkNotices,60000);
+    return()=>{stopped=true;clearInterval(id)};
+  },[user?.id,cloudConfigured]);
   useEffect(()=>{
     let stopped=false;
     async function poll(){

@@ -248,6 +248,17 @@ function freePort() {
   r = await call("POST", "/api/admin/push/unsubscribe", { token: owner, body: { endpoint: phone.endpoint } });
   assert.equal(r.data.devices, 0);
 
+  // 0.7.18: an automation's result reaches its account as a notification (sent by the gateway with the account's session).
+  const noticesBefore = db.log.filter(x => /INSERT INTO notifications/.test(x.q)).length;
+  r = await call("POST", "/api/notifications/self", { token: owner, body: { type: "automation", title: "Știrile zilei", body: "Trei știri noi." } });
+  assert.equal(r.status, 200, "an account can notify itself about an automation");
+  const notice = db.log.filter(x => /INSERT INTO notifications/.test(x.q)).at(-1);
+  assert.ok(db.log.filter(x => /INSERT INTO notifications/.test(x.q)).length === noticesBefore + 1 && notice.params[2] === "automation" && notice.params[3] === "Știrile zilei");
+  r = await call("POST", "/api/notifications/self", { token: owner, body: { type: "account_status", title: "Cont aprobat" } });
+  assert.equal(r.status, 400, "only automation notices may be sent this way");
+  r = await call("POST", "/api/notifications/self", { body: { type: "automation", title: "x" } });
+  assert.equal(r.status, 401, "a session is needed");
+
   r = await call("POST", "/auth/logout", { token: owner });
   assert.equal(r.status, 200);
   r = await call("GET", "/auth/me", { token: owner });

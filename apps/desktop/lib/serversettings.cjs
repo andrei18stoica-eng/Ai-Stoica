@@ -9,7 +9,7 @@ const { PROVIDER_KEY_PAGES, comboNames } = require("./providers.cjs");
 const MASK = "••••••••";
 // Same list as SECRET_KEYS in main.cjs (test-0716-web-settings.cjs keeps them equal).
 const SECRET_KEYS = ["apiKey","openAiApiKey","openRouterApiKey","cerebrasApiKey","groqApiKey","geminiApiKey","mistralApiKey","nvidiaApiKey","cohereApiKey","pollinationsApiKey","cloudflareApiToken","hfToken","togetherApiKey","stabilityApiKey","replicateApiToken","falApiKey","githubToken","xaiApiKey"];
-const BOOLEAN_KEYS = ["directChatEnabled","chatFallbackOnFailure","webSearchEnabled","projectContextEnabled","githubAutoContext","pollinationsFreeEnabled"];
+const BOOLEAN_KEYS = ["directChatEnabled","chatFallbackOnFailure","webSearchEnabled","projectContextEnabled","githubAutoContext","pollinationsFreeEnabled","mediaStrict"];
 const CHOICES = {
   directChatCostPolicy: ["free_only","allow_paid"], imageCostPolicy: ["free_only","allow_paid"], videoCostPolicy: ["free_only","allow_paid"],
   imageProviderMode: ["auto","fast","quality","free"], videoMode: ["fast","quality","free","auto"], stabilityImageEngine: ["core","ultra","sd3"],

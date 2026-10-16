@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.7.17",
+  "version": "0.7.18",
   "private": true,
-  "description": "AI Stoica 0.7.17 - free tier for pictures, video and files, per-model access in the Control Center, a microphone that writes and sends",
+  "description": "AI Stoica 0.7.18 - pictures, video and the microphone fall back to the providers that work; automation results arrive as notifications; Serasmart AI logo",
   "main": "main.cjs",
   "repository": {
     "type": "git",
