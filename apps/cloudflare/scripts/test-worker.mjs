@@ -125,6 +125,21 @@ await test("owner registration needs OWNER_SETUP_CODE", async () => {
   assert.equal(r.status, 409);
 });
 
+await test("spam-bot email domains cannot register or sign in", async () => {
+  const blockedEnv = makeEnv(db, { BLOCKED_EMAIL_DOMAINS: " @Spam.example , " });
+  for (const email of ["5wx3th65ofawn0@uberip.com", "X@UberIP.com", "bot@mail.uberip.com", "bot@spam.example"]) {
+    ip++;
+    let r = await call(blockedEnv, "POST", "/auth/register", { body: { email, password: "parola123", name: "Bot" } });
+    assert.deepEqual([r.status, r.data.error], [400, "Adresa de email nu este acceptată."], email);
+    r = await call(blockedEnv, "POST", "/auth/login", { body: { email, password: "parola123" } });
+    assert.deepEqual([r.status, r.data.status], [403, "blocked"], email);
+  }
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM users WHERE email LIKE '%uberip%' OR email LIKE '%spam.example'").get().n, 0);
+  ip++;
+  const r = await call(blockedEnv, "POST", "/auth/register", { body: { email: "om@notuberip.com", password: "parola123" } });
+  assert.equal(r.status, 202, "a domain that only ends with the same letters is not blocked");
+});
+
 await test("new users wait for approval and cannot log in until approved", async () => {
   ip++;
   let r = await call(env, "POST", "/auth/register", { body: { email: "ana@example.com", password: "parola123", name: "Ana" } });

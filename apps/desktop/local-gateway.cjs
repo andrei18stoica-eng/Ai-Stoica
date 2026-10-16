@@ -103,6 +103,15 @@ function loadOrCreateSecret(dataDir) {
 }
 
 function normalizeEmail(email) { return String(email || "").trim().toLowerCase(); }
+// Email domains used by spam bots for fake sign-ups: uberip.com always, plus AI_STOICA_BLOCKED_EMAIL_DOMAINS (comma-separated).
+function blockedEmailDomains() {
+  return [...new Set(["uberip.com", ...String(process.env.AI_STOICA_BLOCKED_EMAIL_DOMAINS || "").split(",")]
+    .map((d) => d.trim().toLowerCase().replace(/^@+/, "")).filter(Boolean))];
+}
+function emailDomainBlocked(email) {
+  const domain = normalizeEmail(email).split("@").pop();
+  return !!domain && blockedEmailDomains().some((d) => domain === d || domain.endsWith("." + d));
+}
 function textFromContent(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -1142,6 +1151,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.post("/auth/register", async (req, res) => {
     if (rateLimited(req, res, "register")) return;
     countAttempt(req, "register");
+    if (emailDomainBlocked(req.body?.email)) return res.status(400).json({ error: "Adresa de email nu este acceptată." });
     if (cloudBase()) return proxyCloudAuth(req, res, "/auth/register", "register");
     const email = normalizeEmail(req.body?.email), password = typeof req.body?.password === "string" ? req.body.password : "", name = String(req.body?.name || "").trim().slice(0, 80);
     if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "Adresa de email nu este validă." });
@@ -1169,6 +1179,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   app.post("/auth/login", async (req, res) => {
     if (rateLimited(req, res, "login")) return;
+    if (emailDomainBlocked(req.body?.email)) { countAttempt(req, "login"); return res.status(403).json({ error: "Contul nu este activ.", status: "blocked" }); }
     if (cloudBase()) return proxyCloudAuth(req, res, "/auth/login", "login");
     const email = normalizeEmail(req.body?.email), password = typeof req.body?.password === "string" ? req.body.password : "";
     const db = store.read(), user = db.users.find((u) => normalizeEmail(u.email) === email && u.passwordHash) || db.users.find((u) => normalizeEmail(u.email) === email);

@@ -12,6 +12,14 @@ const { PAID_PROVIDERS, evaluateModelAccess, providerAccess } = require("./ai-po
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || "0.0.0.0";
 const OWNER_EMAIL = String(process.env.OWNER_EMAIL || "").trim().toLowerCase();
+// Email domains used by spam bots for fake sign-ups (uberip.com always), plus BLOCKED_EMAIL_DOMAINS (comma-separated).
+// A blocked domain cannot register or sign in, and existing accounts on it are set to "blocked" at start-up.
+const BLOCKED_EMAIL_DOMAINS = [...new Set(["uberip.com", ...String(process.env.BLOCKED_EMAIL_DOMAINS || "").split(",")]
+  .map(d => d.trim().toLowerCase().replace(/^@+/, "")).filter(Boolean))];
+function emailDomainBlocked(email) {
+  const domain = String(email || "").toLowerCase().split("@").pop();
+  return !!domain && BLOCKED_EMAIL_DOMAINS.some(d => domain === d || domain.endsWith("." + d));
+}
 const SESSION_TTL_DAYS = Math.max(1, Number(process.env.SESSION_TTL_DAYS || 30));
 const DATABASE_URL = process.env.DATABASE_URL;
 // Optional but recommended: when set, the Owner account is created by the server itself at startup
@@ -21,6 +29,7 @@ const MIN_PASSWORD = 8;
 
 const MSG = {
   email: "Adresa de email nu este validă.",
+  emailBlocked: "Adresa de email nu este acceptată.",
   password: `Parola trebuie să aibă cel puțin ${MIN_PASSWORD} caractere.`,
   passwordLong: "Parola poate avea cel mult 256 de caractere.",
   name: "Numele poate avea cel mult 100 de caractere.",
@@ -165,6 +174,18 @@ async function migrate() {
     "UPDATE users SET role='owner', status='active', approved_at=COALESCE(approved_at,NOW()) WHERE lower(email)=lower($1)",
     [OWNER_EMAIL]
   );
+  // Accounts made by spam bots on a blocked email domain (BLOCKED_EMAIL_DOMAINS) lose access; the Owner can still change them.
+  const blockedNow = await pool.query(
+    `UPDATE users SET status='blocked', updated_at=NOW()
+     WHERE role<>'owner' AND status<>'blocked' AND lower(email)<>lower($2)
+       AND EXISTS (SELECT 1 FROM unnest($1::text[]) d WHERE split_part(lower(email),'@',2)=d OR split_part(lower(email),'@',2) LIKE '%.' || d)
+     RETURNING id`,
+    [BLOCKED_EMAIL_DOMAINS, OWNER_EMAIL]
+  );
+  if (blockedNow.rowCount) {
+    await pool.query("DELETE FROM sessions WHERE user_id = ANY($1::text[])", [blockedNow.rows.map(r => r.id)]);
+    console.log(`[AI Stoica] ${blockedNow.rowCount} account(s) on blocked email domains set to "blocked".`);
+  }
   // An Owner role left from a previous OWNER_EMAIL grants nothing anymore.
   await pool.query("UPDATE users SET role='user', updated_at=NOW() WHERE role='owner' AND lower(email)<>lower($1)", [OWNER_EMAIL]);
 
@@ -322,6 +343,7 @@ app.post("/auth/register", registerLimiter, authLimiter, async (req, res, next) 
     const password = String(req.body?.password || "");
     const name = String(req.body?.name || "").trim() || email.split("@")[0];
     if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: MSG.email });
+    if (emailDomainBlocked(email) && email !== OWNER_EMAIL) return res.status(400).json({ error: MSG.emailBlocked });
     if (password.length < MIN_PASSWORD) return res.status(400).json({ error: MSG.password });
     if (password.length > 256) return res.status(400).json({ error: MSG.passwordLong });
     if (name.length > 100) return res.status(400).json({ error: MSG.name });
@@ -383,6 +405,7 @@ app.post("/auth/login", authLimiter, async (req, res, next) => {
   try {
     const email = normalizeEmail(req.body?.email);
     const password = String(req.body?.password || "");
+    if (emailDomainBlocked(email) && email !== OWNER_EMAIL) return res.status(403).json(inactiveBody("blocked"));
     const q = await pool.query("SELECT * FROM users WHERE email=$1", [email]);
     const user = q.rows[0];
     const ok = await bcrypt.compare(password, user?.password_hash || DUMMY_HASH);

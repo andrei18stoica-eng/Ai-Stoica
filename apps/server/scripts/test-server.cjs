@@ -50,7 +50,7 @@ function freePort() {
 
 (async () => {
   const port = await freePort();
-  Object.assign(process.env, { PORT: String(port), HOST: "127.0.0.1", DATABASE_URL: "postgres://test", OWNER_EMAIL: "Owner@Example.com", OWNER_INITIAL_PASSWORD: "" });
+  Object.assign(process.env, { PORT: String(port), HOST: "127.0.0.1", DATABASE_URL: "postgres://test", OWNER_EMAIL: "Owner@Example.com", OWNER_INITIAL_PASSWORD: "", BLOCKED_EMAIL_DOMAINS: " @Spam.example , " });
   const warn = console.warn; console.warn = () => {};
   require(path.join(__dirname, "..", "server.cjs"));
   const base = `http://127.0.0.1:${port}`;
@@ -75,6 +75,18 @@ function freePort() {
   assert.equal(r.data.error, "Adresa de email nu este validă.");
   r = await call("POST", "/auth/register", { body: { email: "a@b.ro", password: "scurt" } });
   assert.equal(r.data.error, "Parola trebuie să aibă cel puțin 8 caractere.");
+
+  // Spam-bot domains: uberip.com always, BLOCKED_EMAIL_DOMAINS too, subdomains included; nothing reaches the database.
+  assert.ok(db.log.some(x => /SET status='blocked'/.test(x.q) && x.params[0].includes("uberip.com") && x.params[0].includes("spam.example")), "existing accounts on blocked domains are blocked at start-up");
+  for (const email of ["5wx3th65ofawn0@uberip.com", "X@UberIP.com", "bot@mail.uberip.com", "bot@spam.example"]) {
+    r = await call("POST", "/auth/register", { body: { email, password: "parola123" } });
+    assert.deepEqual([r.status, r.data.error], [400, "Adresa de email nu este acceptată."], email);
+    r = await call("POST", "/auth/login", { body: { email, password: "parola123" } });
+    assert.deepEqual([r.status, r.data.status], [403, "blocked"], email);
+  }
+  assert.ok(!db.users.some(u => /uberip|spam\.example/.test(u.email)), "blocked sign-ups are not stored");
+  r = await call("POST", "/auth/register", { body: { email: "om@notuberip.com", password: "parola123" } });
+  assert.equal(r.status, 202, "a domain that only ends with the same letters is not blocked");
 
   r = await call("POST", "/auth/register", { body: { email: "ana@example.com", password: "parola123" } });
   assert.equal(r.status, 202);
