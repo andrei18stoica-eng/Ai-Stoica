@@ -17,6 +17,8 @@ const { safeRequest, isBlockedAddress } = require("./lib/netguard.cjs");
 const { DIRECT_MODEL_DEFAULTS: MODEL_DEFAULTS } = require("./lib/providers.cjs");
 const { nextRun, validateAutomation, toBool } = require("./lib/schedule.cjs");
 const { QUESTIONS_RULE, sanitizeQuestions } = require("./lib/questions.cjs");
+const { BUILTIN_PLUGINS, runBuiltinPlugin, builtinKeywordMatch, publicBuiltinList } = require("./lib/builtinplugins.cjs");
+const { SKILL_TEMPLATES, MAX_SKILLS, validateSkill, skillsForMessage, skillSystemText, publicSkill } = require("./lib/skills.cjs");
 const { DESIGN_KINDS, MAX_VERSIONS: MAX_DESIGN_VERSIONS, designMessages, reviseMessages, extractHtml, htmlTitle, previewToken, verifyPreviewToken } = require("./lib/design.cjs");
 function normalizeModelKey(value){return String(value||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g," ").trim();}
 function isSmartAlias(value){
@@ -3024,6 +3026,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   function pluginNetwork(){const allow=getOmniConfig()?.allowPrivatePlugins;return (allow??loopbackHost)===true?{isBlocked:()=>false}:{};}
   async function callPlugin(stored,message){
     const plugin=pluginWithSecrets(stored);
+    // Built-in (0.7.18): public services that need no key; fetched through the same network guard as the others.
+    if(plugin.mode==="builtin")return runBuiltinPlugin(plugin.builtin,message,{request:url=>safeRequest(url,{method:"GET",headers:{"Accept":"application/json, text/xml, */*","User-Agent":"AI-Stoica/1.0 (+https://aistoica.ro)"},timeout:10000,maxBytes:2*1024*1024,truncate:true})});
     if(plugin.mode==="direct_app")return JSON.stringify({mode:"direct_app",name:plugin.name,appUrl:plugin.appUrl||plugin.url,message:"Plugin configurat pentru deschidere directă. Nu este necesar OAuth pentru lansarea aplicației."});
     if(plugin.oauthConnected&&plugin.accessToken)return callOAuthPlugin(plugin,message);
     const method=PLUGIN_METHODS.includes(String(plugin.method||"POST").toUpperCase())?String(plugin.method||"POST").toUpperCase():"POST";
@@ -3039,7 +3043,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   async function pluginContext(db,userId,latestText){
     const mine=db.plugins.filter(p=>p.userId===userId&&p.enabled!==false&&p.url);
     const explicit=mine.filter(p=>p.auto||triggerMatches(latestText,p.trigger||`@${String(p.name||"").toLowerCase().replace(/\s+/g,"-")}`));
-    const named=mine.filter(p=>!explicit.includes(p)&&nameMentioned(latestText,p.name)).slice(0,3);
+    const named=mine.filter(p=>!explicit.includes(p)&&(nameMentioned(latestText,p.name)||(p.mode==="builtin"&&builtinKeywordMatch(p.builtin,latestText)))).slice(0,3);
     const enabled=[...explicit,...named].slice(0,8);
     return Promise.all(enabled.map(async p=>{
       try{return `Plugin ${p.name}: ${String(await callPlugin(p,latestText)).slice(0,12000)}`}
@@ -3143,6 +3147,21 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
 
   app.get("/api/plugins", auth, (req,res) => {const db=store.read();res.json({data:db.plugins.filter(x=>x.userId===req.user.id).map(publicPlugin)});});
+  // Built-in plugins (0.7.18): the list with what this account already added, and adding one with a click.
+  app.get("/api/plugins/builtin", auth, (req,res) => {
+    const mine=new Set(store.read().plugins.filter(x=>x.userId===req.user.id&&x.mode==="builtin").map(x=>x.builtin));
+    res.json({data:publicBuiltinList(mine)});
+  });
+  app.post("/api/plugins/builtin", auth, requirePermission("plugins"), (req,res) => {
+    const key=String(req.body?.key||""),def=BUILTIN_PLUGINS[key];
+    if(!def)return res.status(400).json({error:"Pluginul inclus nu există."});
+    const db=store.read();
+    const existing=db.plugins.find(x=>x.userId===req.user.id&&x.mode==="builtin"&&x.builtin===key);
+    if(existing)return res.json({data:publicPlugin(existing)});
+    const item={id:crypto.randomUUID(),userId:req.user.id,name:def.name,description:def.description,url:def.url,method:"GET",mode:"builtin",builtin:key,
+      trigger:def.trigger,auto:false,enabled:true,apiKey:"",createdAt:Date.now()};
+    db.plugins.push(item);store.write(db);res.json({data:publicPlugin(item)});
+  });
 
   app.post("/api/plugins/direct", auth, requirePermission("plugins"), (req,res) => {
     const name=textInput(req.body?.name,80),appUrl=textInput(req.body?.appUrl,2000);
@@ -3170,7 +3189,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
   app.patch("/api/plugins/:id", auth, requirePermission("plugins"), (req,res) => {
     const db=store.read(),item=db.plugins.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Pluginul nu a fost găsit."});
-    const parsed=pluginFields(req.body||{},item);if(parsed.error)return res.status(400).json({error:parsed.error});
+    const body={...(req.body||{})};if(item.mode==="builtin"){delete body.url;delete body.method;delete body.apiKey;}
+    const parsed=pluginFields(body,item);if(parsed.error)return res.status(400).json({error:parsed.error});
     Object.assign(item,parsed.value);item.updatedAt=Date.now();store.write(db);res.json({data:publicPlugin(item)});
   });
   app.post("/api/plugins/:id/test", auth, requirePermission("plugins"), async (req,res) => {
@@ -3180,6 +3200,40 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     catch(e){res.status(e.status||502).json({error:e.code==="EBLOCKED"?e.message:roError(e)});}
   });
   app.delete("/api/plugins/:id", auth, (req,res) => {const db=store.read(),before=db.plugins.length;db.plugins=db.plugins.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));if(db.plugins.length===before)return res.status(404).json({error:"Pluginul nu a fost găsit."});store.write(db);res.json({ok:true});});
+
+  // Skills (0.7.18): instructions saved once and called with /name in the chat, or kept always on. Per account.
+  app.get("/api/skills", auth, (req,res) => {
+    const mine=store.read().skills.filter(x=>x.userId===req.user.id).sort((a,b)=>a.name.localeCompare(b.name,"ro"));
+    const slugs=new Set(mine.map(x=>x.slug));
+    res.json({data:mine.map(publicSkill),templates:SKILL_TEMPLATES.map(t=>({...t,added:slugs.has(t.slug)}))});
+  });
+  function saveNewSkill(req,res,fields){
+    const db=store.read(),mine=db.skills.filter(x=>x.userId===req.user.id);
+    if(mine.length>=MAX_SKILLS)return res.status(400).json({error:`Poți avea cel mult ${MAX_SKILLS} skill-uri.`});
+    if(mine.some(x=>x.slug===fields.slug))return res.status(409).json({error:`Ai deja un skill /${fields.slug}. Alege alt nume.`});
+    const item={id:crypto.randomUUID(),userId:req.user.id,enabled:true,auto:false,...fields,createdAt:Date.now()};
+    db.skills.push(item);store.write(db);res.json({data:publicSkill(item)});
+  }
+  app.post("/api/skills", auth, requirePermission("chat"), (req,res) => {
+    const v=validateSkill(req.body||{},null);if(v.error)return res.status(400).json({error:v.error});
+    saveNewSkill(req,res,v.value);
+  });
+  app.post("/api/skills/template", auth, requirePermission("chat"), (req,res) => {
+    const t=SKILL_TEMPLATES.find(x=>x.slug===String(req.body?.slug||""));if(!t)return res.status(404).json({error:"Șablonul nu există."});
+    const v=validateSkill({name:t.name,slug:t.slug,description:t.description,instructions:t.instructions},null);
+    saveNewSkill(req,res,v.value);
+  });
+  app.patch("/api/skills/:id", auth, requirePermission("chat"), (req,res) => {
+    const db=store.read(),item=db.skills.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Skill-ul nu a fost găsit."});
+    const v=validateSkill(req.body||{},item);if(v.error)return res.status(400).json({error:v.error});
+    if(v.value.slug&&v.value.slug!==item.slug&&db.skills.some(x=>x.userId===req.user.id&&x.id!==item.id&&x.slug===v.value.slug))return res.status(409).json({error:`Ai deja un skill /${v.value.slug}.`});
+    Object.assign(item,v.value,{updatedAt:Date.now()});store.write(db);res.json({data:publicSkill(item)});
+  });
+  app.delete("/api/skills/:id", auth, (req,res) => {
+    const db=store.read(),before=db.skills.length;db.skills=db.skills.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));
+    if(db.skills.length===before)return res.status(404).json({error:"Skill-ul nu a fost găsit."});
+    store.write(db);res.json({ok:true});
+  });
 
   // The list stays light: the run history is served separately by GET /api/automations/:id/runs.
   function publicAutomation(item){
@@ -3500,6 +3554,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     system.push("Capabilități AI Stoica: aplicația are memorie persistentă, poate primi context din alte conversații ale aceluiași Proiect, poate căuta internetul în timp real, poate căuta fragmente relevante într-un repository GitHub configurat, iar Owner-ul poate rula cod JavaScript sau Python doar prin butonul explicit de rulare și poate lucra cu serverul SSH configurat. Nu afirma că aceste capabilități nu există atunci când contextul lor este prezent. Nu pretinde că un cod a fost executat dacă nu ai primit explicit un rezultat de rulare. Pentru proiecte mari, lucrează modular și folosește contextul relevant recuperat, fără a cere utilizatorului să copieze manual întreaga bază de cod.");
     system.push("Fiabilitate: pentru informații actuale despre biblioteci, API-uri, modele, versiuni, prețuri sau servicii folosește prioritar contextul WEB LIVE dacă este disponibil și include la final o secțiune scurtă «Surse» cu linkurile folosite. Pentru cod, separă clar ce ai analizat de ce a fost efectiv rulat/testat. Pentru medical, juridic și financiar poți analiza și cita surse, dar păstrează recomandarea de validare umană atunci când decizia are consecințe importante.");
     const assistant=db.assistants.find(a=>a.id===assistantId&&a.userId===userId);if(assistant?.systemPrompt)system.push(assistant.systemPrompt);
+    const skillText=skillSystemText(skillsForMessage((db.skills||[]).filter(x=>x.userId===userId),typedText(latest?.content)||latestText));if(skillText)system.push(skillText);
     const user=db.users.find(u=>u.id===userId);
     if(user?.memoryEnabled!==false){
       const mem=await embeddingIndex.search(cfg,db,userId,query,8);if(mem.length)system.push("Memorie relevantă despre utilizator și conversațiile anterioare:\n"+mem.map((m,i)=>`${i+1}. ${m.text}`).join("\n"));

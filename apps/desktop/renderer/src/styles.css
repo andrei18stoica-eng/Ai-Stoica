@@ -1091,3 +1091,16 @@ h1,h2,h3{text-wrap:balance}
 
 .accessRequestText{font-size:15px;line-height:1.55;margin:4px 0 6px}.accessRequestModal .modalActions button{display:flex;align-items:center;gap:6px}
 .codeInput{font-size:22px!important;letter-spacing:.45em;text-align:center}.codeActions{display:flex;justify-content:space-between;gap:10px;margin-top:12px}.linkBtn{border:0;background:transparent;color:#5aa9ff;cursor:pointer;padding:6px 2px;font-size:13px}.linkBtn:disabled{color:#56657a;cursor:default}
+/* 0.7.18: Skill-uri */
+.skillsHead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px}.skillsHead h3{margin:0;font-size:15px}
+.skillList{display:grid;gap:8px;margin-bottom:18px}
+.skillCard{display:flex;align-items:center;gap:12px;border:1px solid #1f2d40;background:#0c131c;border-radius:12px;padding:10px 12px;min-width:0}.skillCard.off{opacity:.55}
+.skillCardText{flex:1;min-width:0}.skillCardText b{display:block;font-size:14px}.skillCardText b span{color:#8fa0b5;font-weight:500;margin-left:6px}
+.skillCardText small{display:block;color:#7d8a9d;font-size:12px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.skillCardActions{display:flex;align-items:center;gap:8px;flex:none}.skillAuto{display:flex;align-items:center;gap:6px;color:#8d9bb0;font-size:11px}
+.skillForm{display:grid;gap:4px;max-width:720px}.skillForm label{display:grid;gap:6px;color:#8d9bb0;font-size:12px;margin:8px 0}
+.skillForm input,.skillForm textarea{border:1px solid #26354a;background:#080d14;color:white;border-radius:10px;padding:10px 12px;outline:0;font-size:14px}
+.skillForm textarea{resize:vertical;min-height:150px;line-height:1.5}.skillSlug{display:flex;align-items:center;border:1px solid #26354a;background:#080d14;border-radius:10px;padding-left:12px}
+.skillSlug span{color:#55a8ff;font-weight:700}.skillSlug input{border:0;background:transparent;flex:1}.skillForm .formActions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+.builtinSection h3{color:#72d9a2}
+@media(max-width:560px){.skillCard{flex-wrap:wrap}.skillCardActions{width:100%;justify-content:flex-end}.skillAuto span{display:none}}

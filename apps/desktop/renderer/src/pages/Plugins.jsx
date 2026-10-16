@@ -300,7 +300,7 @@ export function PluginsPage({onClose}){
   const {can}=useAccess();
   const [items,setItems]=useState([]),[loading,setLoading]=useState(true),[tab,setTab]=useState(null),[result,setResult]=useState(null);
   const [query,setQuery]=useState(""),[selected,setSelected]=useState(null),[testing,setTesting]=useState(null),[cardNotes,setCardNotes]=useState({});
-  const [formInit,setFormInit]=useState(BLANK_PLUGIN),[editing,setEditing]=useState(null);
+  const [formInit,setFormInit]=useState(BLANK_PLUGIN),[editing,setEditing]=useState(null),[builtins,setBuiltins]=useState([]),[adding,setAdding]=useState("");
   const mounted=useRef(true);
   useEffect(()=>()=>{mounted.current=false},[]);
   async function load(){
@@ -309,6 +309,14 @@ export function PluginsPage({onClose}){
     finally{if(mounted.current)setLoading(false)}
   }
   useEffect(()=>{load()},[]);
+  // Built-in plugins (0.7.18): they work as soon as they are added, with no account, key or OAuth.
+  async function loadBuiltins(){try{const d=await api("/api/plugins/builtin");if(mounted.current)setBuiltins(d.data||[])}catch{}}
+  useEffect(()=>{loadBuiltins()},[]);
+  async function addBuiltin(b){
+    if(adding)return;setAdding(b.key);
+    try{await api("/api/plugins/builtin",{method:"POST",body:JSON.stringify({key:b.key})});await Promise.all([load(),loadBuiltins()]);setResult({kind:"ok",text:`${b.name} e gata. Scrie în chat, de exemplu: ${b.trigger} sau întreabă direct.`});setTab("installed")}
+    catch(e){toast(e.message)}finally{if(mounted.current)setAdding("")}
+  }
   async function patch(x,p){try{await api(`/api/plugins/${x.id}`,{method:"PATCH",body:JSON.stringify(p)});await load()}catch(e){toast(e.message)}}
   async function test(x){
     if(testing)return;
@@ -361,17 +369,25 @@ export function PluginsPage({onClose}){
         {items.map(x=><div key={x.id} className={cx("plugCard",!x.enabled&&"off")}>
           <div className="plugCardTop"><PluginLogo entry={PLUGIN_CATALOG.find(c=>c.name.toLowerCase()===String(x.name||"").toLowerCase())||{name:x.name}}/><div className="plugCardText"><b title={x.name}>{x.name}</b><small>{x.description||hostOf(x.appUrl||x.url)}</small></div><Switch checked={x.enabled} label={`${x.enabled?"Dezactivează":"Activează"} ${x.name}`} onChange={()=>patch(x,{enabled:!x.enabled})}/></div>
           <p className="pluginTrigger">{pluginTriggerHint(x.name,x.trigger)}</p>
-          <small className="pluginMeta">{x.mode==="direct_app"?"Deschidere directă a aplicației":x.oauthConnected?"Conectat prin OAuth":`API · ${x.method||"POST"}${x.hasKey?" · cu cheie":""}`}{x.auto?" · automat":""}</small>
+          <small className="pluginMeta">{x.mode==="builtin"?"Inclus în AI Stoica · fără cont":x.mode==="direct_app"?"Deschidere directă a aplicației":x.oauthConnected?"Conectat prin OAuth":`API · ${x.method||"POST"}${x.hasKey?" · cu cheie":""}`}{x.auto?" · automat":""}</small>
           {cardNotes[x.id]&&<ResultNote result={cardNotes[x.id]}/>}
           <div className="plugCardActions">
             <button className="smallBtn" onClick={()=>test(x)} disabled={testing===x.id}>{x.mode==="direct_app"?<><ExternalLink size={13}/> Deschide</>:<><Play size={13}/> {testing===x.id?"Se testează…":"Testează"}</>}</button>
-            <button className="smallBtn" onClick={()=>edit(x)}><Pencil size={13}/> Editează</button>
+            {x.mode!=="builtin"&&<button className="smallBtn" onClick={()=>edit(x)}><Pencil size={13}/> Editează</button>}
             <button className="smallBtn dangerSmall" onClick={()=>remove(x)} aria-label={`Șterge ${x.name}`}><Trash2 size={13}/> Șterge</button>
           </div>
         </div>)}
       </div>)}
       {tab==="directory"&&<div className="pluginDirectory">
         <div className="pageSearch"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Caută în Director (nume, categorie)" aria-label="Caută pluginuri"/></div>
+        {builtins.length>0&&!normalized&&<section className="catalogSection builtinSection"><h3>Funcționează imediat</h3><div className="catalogGrid">
+          {builtins.map(b=><div className="catalogCard" key={b.key}>
+            <span className="pluginLogo"><span>{b.trigger.slice(1,2).toUpperCase()}</span></span>
+            <div className="catalogText"><b>{b.name}</b><small>{b.description} · fără cont</small></div>
+            {b.installed?<button className="smallBtn installed" onClick={()=>setTab("installed")} aria-label={`${b.name} este instalat`}><Check size={13}/> Instalat</button>
+              :<button className="smallBtn addBtn" onClick={()=>addBuiltin(b)} disabled={adding===b.key} aria-label={`Adaugă ${b.name}`}><Plus size={13}/> {adding===b.key?"Se adaugă…":"Adaugă"}</button>}
+          </div>)}
+        </div></section>}
         {groups.map(({group,items:groupItems})=><section className="catalogSection" key={group}>
           <h3>{group}</h3>
           <div className="catalogGrid">
