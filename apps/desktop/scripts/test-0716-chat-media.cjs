@@ -44,7 +44,9 @@ async function main() {
   const cfg = {
     baseUrl: `http://127.0.0.1:${omniPort}/v1`, apiKey: "sk-omni", model: "", webSearchEnabled: false, githubAutoContext: false, ownerEmail: "owner@example.com",
     geminiApiKey: "AIza-test", openAiApiKey: "sk-openai-test", xaiApiKey: "xai-test", pollinationsFreeEnabled: true,
-    imageCostPolicy: "allow_paid", videoCostPolicy: "allow_paid"
+    imageCostPolicy: "allow_paid", videoCostPolicy: "allow_paid",
+    // 0.7.18: «Făcute de» falls back to the other providers by default; these checks keep the strict rule (only them).
+    mediaStrict: true
   };
   const calls = { gemini: 0, openai: 0, xai: 0, xaiVideo: 0, sora: 0, other: [] };
   const realFetch = globalThis.fetch;

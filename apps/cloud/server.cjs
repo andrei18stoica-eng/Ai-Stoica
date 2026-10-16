@@ -57,6 +57,8 @@ function envConfig() {
     // Who makes pictures and videos (Setări → Poze / Video → «Făcute de»). Not set: Gemini only; empty: every provider.
     imageProviders: process.env.AI_STOICA_IMAGE_PROVIDERS === undefined ? undefined : env("AI_STOICA_IMAGE_PROVIDERS"),
     videoProviders: process.env.AI_STOICA_VIDEO_PROVIDERS === undefined ? undefined : env("AI_STOICA_VIDEO_PROVIDERS"),
+    // «Făcute de» is tried first; when those makers fail the other working providers are tried. true: only them.
+    mediaStrict: env("AI_STOICA_MEDIA_STRICT").toLowerCase() === "true",
     // Free tier per account and day (the Owner is unlimited): pictures, videos, files. Not set: 3 / 1 / 10.
     freeImagesPerDay: env("AI_STOICA_FREE_IMAGES"),
     freeVideosPerDay: env("AI_STOICA_FREE_VIDEOS"),

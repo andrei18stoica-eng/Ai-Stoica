@@ -17,6 +17,8 @@ const { safeRequest, isBlockedAddress } = require("./lib/netguard.cjs");
 const { DIRECT_MODEL_DEFAULTS: MODEL_DEFAULTS } = require("./lib/providers.cjs");
 const { nextRun, validateAutomation, toBool } = require("./lib/schedule.cjs");
 const { QUESTIONS_RULE, sanitizeQuestions } = require("./lib/questions.cjs");
+const { BUILTIN_PLUGINS, runBuiltinPlugin, builtinKeywordMatch, publicBuiltinList } = require("./lib/builtinplugins.cjs");
+const { SKILL_TEMPLATES, MAX_SKILLS, validateSkill, skillsForMessage, skillSystemText, publicSkill } = require("./lib/skills.cjs");
 const { DESIGN_KINDS, MAX_VERSIONS: MAX_DESIGN_VERSIONS, designMessages, reviseMessages, extractHtml, htmlTitle, previewToken, verifyPreviewToken } = require("./lib/design.cjs");
 function normalizeModelKey(value){return String(value||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g," ").trim();}
 function isSmartAlias(value){
@@ -92,6 +94,10 @@ function mediaFamily(id,provider=""){
 }
 function mediaProviderAllowed(cfg,kind,family){const allowed=mediaProviders(cfg,kind);return !allowed.size||allowed.has(family);}
 function mediaProvidersLabel(cfg,kind){return [...mediaProviders(cfg,kind)].map(x=>MEDIA_FAMILY_LABELS[x]||x).join(", ");}
+// «Făcute de» is the order of preference, not a wall: when the chosen makers make nothing (a provider down, a key
+// missing, a login expired), the other providers that work are tried after them. AI_STOICA_MEDIA_STRICT=true (or
+// mediaStrict in Setări) keeps the old rule: only the chosen makers, or an error.
+function mediaFallbackAllowed(cfg,kind){return cfg?.mediaStrict!==true&&String(cfg?.mediaStrict||"").toLowerCase()!=="true"&&mediaProviders(cfg,kind).size>0;}
 
 function loadOrCreateSecret(dataDir) {
   const file = path.join(dataDir, "auth-secret.txt");
@@ -1238,6 +1244,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   // Owner Control Center is always backed by PostgreSQL on the Hetzner API.
   app.use("/api/admin", auth, cloudOwnerOnly, proxyCloud);
+  // The account's notifications (automation results, account notices) live in AI Stoica Cloud; without it there are none.
+  app.use("/api/notifications", auth, (req,res)=>cloudBase()?proxyCloud(req,res):res.json({data:[],unread:0}));
   // Permite / Refuză from the Owner's phone notification for a new account: the one-time link is the proof, so no login
   // is needed (the phone's service worker has no session). Unknown links count as failed attempts.
   app.use("/auth/access-requests", async (req, res) => {
@@ -2204,6 +2212,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const m=String(message||"").toLowerCase();
     if(/http 402|\b402\b|payment required|insufficient[_ ]?(credit|quota|balance|fund)|out of credits?|no (remaining )?credits?|credit balance|not enough credits?|exceeded your current quota|quota (exceeded|exhausted)|billing|spend(ing)? limit|monthly (limit|quota)|usage limit/.test(m))return 60*60*1000;
     if(kind!=="chat"&&/http 429|\b429\b|rate.?limit|too many requests|resource.?exhausted/.test(m))return 2*60*1000;
+    // A connection whose login expired or whose client is out of date (OmniRoute: 401, 426 «Upgrade Required») stays
+    // broken until the Owner reconnects it: 15 minutes at the back. A provider that is down (5xx) or a model it no longer
+    // has (404): 5 minutes, so the next request goes to a provider that answers.
+    if(/http 401\b|http 426\b|upgrade required|authentication expired|login expired|unauthori[sz]ed|invalid api key|api key not valid/.test(m))return 15*60*1000;
+    if(/http 50[0234]\b|bad gateway|service unavailable|gateway time-?out|overloaded|\bunavailable\b/.test(m))return 5*60*1000;
+    if(kind!=="chat"&&/http 404\b|model not found|not found for api version|is not found/.test(m))return 5*60*1000;
     return 0;
   }
   function noteProviderResult(kind,id,error){
@@ -2825,9 +2839,27 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         explicitModel?"":String(cfg.imageModel||"").trim(),explicitModel?"":mediaPref(req,cfg,"image"),
         ...models.filter(m=>subscriptionMedia("image",m)),...direct.filter(a=>!late.includes(a)),...models,...late
       ]);
-      for(const step of byCooldown("image",steps,x=>x.key)){
-        if(step.omni?await runOmni([step.omni]):await runDirect([step.direct]))return;
+      const fallbackImage=!explicitModel&&mediaFallbackAllowed(cfg,"image");
+      // When every preferred maker failed a moment ago (it waits at the back), the fallback goes first.
+      const preferredDown=fallbackImage&&steps.length>0&&steps.every(x=>coolingDown("image",x.key));
+      const runPreferredImage=async()=>{for(const step of byCooldown("image",steps,x=>x.key))if(step.omni?await runOmni([step.omni]):await runDirect([step.direct]))return true;return false;};
+      if(!preferredDown&&await runPreferredImage())return;
+      // The preferred makers made nothing: every other provider that works, best first (subscription, direct APIs,
+      // OmniRoute's other image models), each tried once.
+      if(fallbackImage){
+        const all={...cfg,imageProviders:""},triedKeys=new Set(steps.map(x=>x.key));
+        const direct2=directApisAllowed(req)?await directImageAttempts(all,prompt,size):[];
+        let found2=[];
+        try{found2=await discoverPermittedMediaModels(req,all,"image","")}
+        catch(e){errors.push("OmniRoute: "+(e.status?e.message:roError(e)))}
+        if(!personalAllowed(req.user,req.cloudUser))found2=found2.filter(m=>!isPersonalModel(m));
+        const models2=found2.slice(0,6);
+        const steps2=mediaSteps(found2,direct2,[...models2.filter(m=>subscriptionMedia("image",m)),...direct2,...models2]).filter(x=>!triedKeys.has(x.key));
+        for(const step of byCooldown("image",steps2,x=>x.key)){
+          if(step.omni?await runOmni([step.omni]):await runDirect([step.direct]))return;
+        }
       }
+      if(preferredDown&&await runPreferredImage())return;
 
       const configuredProviders=[
         cfg.cloudflareAccountId&&cfg.cloudflareApiToken&&"Cloudflare",cfg.pollinationsApiKey&&"Pollinations",cfg.hfToken&&"Hugging Face",cfg.togetherApiKey&&"Together AI",
@@ -2875,18 +2907,19 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         explicitModel?"":String(cfg.videoModel||"").trim(),explicitModel?"":mediaPref(req,cfg,"video"),
         ...models.filter(m=>subscriptionMedia("video",m)),...attempts,...models
       ]);
-      const tried=steps.length;
+      let tried=steps.length;
       const videoUrl=String(cfg.baseUrl).replace(/\/+$/,"")+"/videos/generations";
       const videoHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:"Bearer "+cfg.apiKey}:{})};
-      for(const step of byCooldown("video",steps,x=>x.key)){
-        if(signal.aborted)return;
+      // One attempt: true when the video is saved (or the user cancelled).
+      const runVideoStep=async(step)=>{
+        if(signal.aborted)return true;
         if(step.direct){
           const attempt=step.direct;
           try{
             const resolved=await attempt.run();
-            if(resolved?.bytes?.length){noteProviderResult("video",attempt.id,"");rememberMedia(req,cfg,"video",attempt.id);if(await done(resolved,{model:resolved.model||attempt.label,provider:resolved.provider||attempt.id}))return;}
-          }catch(e){if(signal.aborted)return;const msg=roError(e);noteProviderResult("video",attempt.id,msg);errors.push(attempt.label+": "+msg)}
-          continue;
+            if(resolved?.bytes?.length){noteProviderResult("video",attempt.id,"");rememberMedia(req,cfg,"video",attempt.id);if(await done(resolved,{model:resolved.model||attempt.label,provider:resolved.provider||attempt.id}))return true;}
+          }catch(e){if(signal.aborted)return true;const msg=roError(e);noteProviderResult("video",attempt.id,msg);errors.push(attempt.label+": "+msg)}
+          return false;
         }
         const model=step.omni;
         try{
@@ -2896,16 +2929,36 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
             upstream=await fetch(videoUrl,{method:"POST",headers:videoHeaders,body:JSON.stringify({model,prompt}),signal:mediaSignal(360000)});
           }
           const ctype=upstream.headers.get("content-type")||"";
-          if(!upstream.ok){const msg="HTTP "+upstream.status+" "+(await upstream.text()).slice(0,350);noteProviderResult("video","omniroute:"+model,msg);errors.push(model+": "+msg);continue}
+          if(!upstream.ok){const msg="HTTP "+upstream.status+" "+(await upstream.text()).slice(0,350);noteProviderResult("video","omniroute:"+model,msg);errors.push(model+": "+msg);return false}
           let resolved;
           if(ctype.startsWith("video/")){const bytes=await readCapped(upstream,"video");resolved={bytes,mime:inferMediaMime(bytes,ctype,"video")};}
           else{const body=JSON.parse((await readCapped(upstream,"image")).toString("utf8"));const candidate=await pollVideoResult(cfg,body);resolved=await resolveGeneratedMedia(candidate,"video");}
-          if(!resolved.bytes.length){errors.push(model+": video gol");continue}
+          if(!resolved.bytes.length){errors.push(model+": video gol");return false}
           noteProviderResult("video","omniroute:"+model,"");
           rememberMedia(req,cfg,"video",model);
-          if(await done(resolved,{model,provider:"omniroute"}))return;
-        }catch(e){if(signal.aborted)return;errors.push(model+": "+roError(e))}
+          if(await done(resolved,{model,provider:"omniroute"}))return true;
+        }catch(e){if(signal.aborted)return true;const msg=roError(e);noteProviderResult("video","omniroute:"+model,msg);errors.push(model+": "+msg)}
+        return false;
+      };
+      const fallbackVideo=!explicitModel&&mediaFallbackAllowed(cfg,"video");
+      const preferredVideoDown=fallbackVideo&&steps.length>0&&steps.every(x=>coolingDown("video",x.key));
+      const runPreferredVideo=async()=>{for(const step of byCooldown("video",steps,x=>x.key))if(await runVideoStep(step))return true;return false;};
+      if(!preferredVideoDown&&await runPreferredVideo())return;
+      // The preferred makers made nothing: the other providers that work (free web video first), each tried once.
+      if(fallbackVideo){
+        const all={...cfg,videoProviders:""},triedKeys=new Set(steps.map(x=>x.key));
+        const attempts2=directApisAllowed(req)?await directVideoAttempts(all,prompt,duration,aspectRatio):[];
+        let found2=[];
+        try{found2=await discoverPermittedMediaModels(req,all,"video","")}
+        catch(e){errors.push("OmniRoute: "+(e.status?e.message:roError(e)))}
+        if(strictFree)found2=found2.filter(m=>subscriptionMedia("video",m));
+        if(!personalAllowed(req.user,req.cloudUser))found2=found2.filter(m=>!isPersonalModel(m));
+        const models2=found2.slice(0,4);
+        const steps2=mediaSteps(found2,attempts2,[...models2.filter(m=>subscriptionMedia("video",m)),...attempts2,...models2]).filter(x=>!triedKeys.has(x.key));
+        tried+=steps2.length;
+        for(const step of byCooldown("video",steps2,x=>x.key))if(await runVideoStep(step))return;
       }
+      if(preferredVideoDown&&await runPreferredVideo())return;
 
       if(!tried&&freeTier)throw policyFailure("Videoclipul gratuit nu este disponibil acum: serverul nu are un serviciu video gratuit conectat. Owner-ul îl pornește conectând «veoaifree-web» în OmniRoute sau cheia Pollinations în Setări.",503);
       if(!tried&&directApisAllowed(req))throw policyFailure(mediaProviders(cfg,"video").size?("Nu am cu ce face videoclipul."+mediaOnlyHint(cfg,"video",strictFree,madeBy)+" "+errors.slice(0,10).join(" | ")).trim():VIDEO_NEEDS_PROVIDER,400);
@@ -2973,6 +3026,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   function pluginNetwork(){const allow=getOmniConfig()?.allowPrivatePlugins;return (allow??loopbackHost)===true?{isBlocked:()=>false}:{};}
   async function callPlugin(stored,message){
     const plugin=pluginWithSecrets(stored);
+    // Built-in (0.7.18): public services that need no key; fetched through the same network guard as the others.
+    if(plugin.mode==="builtin")return runBuiltinPlugin(plugin.builtin,message,{request:url=>safeRequest(url,{method:"GET",headers:{"Accept":"application/json, text/xml, */*","User-Agent":"AI-Stoica/1.0 (+https://aistoica.ro)"},timeout:10000,maxBytes:2*1024*1024,truncate:true})});
     if(plugin.mode==="direct_app")return JSON.stringify({mode:"direct_app",name:plugin.name,appUrl:plugin.appUrl||plugin.url,message:"Plugin configurat pentru deschidere directă. Nu este necesar OAuth pentru lansarea aplicației."});
     if(plugin.oauthConnected&&plugin.accessToken)return callOAuthPlugin(plugin,message);
     const method=PLUGIN_METHODS.includes(String(plugin.method||"POST").toUpperCase())?String(plugin.method||"POST").toUpperCase():"POST";
@@ -2988,7 +3043,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   async function pluginContext(db,userId,latestText){
     const mine=db.plugins.filter(p=>p.userId===userId&&p.enabled!==false&&p.url);
     const explicit=mine.filter(p=>p.auto||triggerMatches(latestText,p.trigger||`@${String(p.name||"").toLowerCase().replace(/\s+/g,"-")}`));
-    const named=mine.filter(p=>!explicit.includes(p)&&nameMentioned(latestText,p.name)).slice(0,3);
+    const named=mine.filter(p=>!explicit.includes(p)&&(nameMentioned(latestText,p.name)||(p.mode==="builtin"&&builtinKeywordMatch(p.builtin,latestText)))).slice(0,3);
     const enabled=[...explicit,...named].slice(0,8);
     return Promise.all(enabled.map(async p=>{
       try{return `Plugin ${p.name}: ${String(await callPlugin(p,latestText)).slice(0,12000)}`}
@@ -3092,6 +3147,21 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
 
   app.get("/api/plugins", auth, (req,res) => {const db=store.read();res.json({data:db.plugins.filter(x=>x.userId===req.user.id).map(publicPlugin)});});
+  // Built-in plugins (0.7.18): the list with what this account already added, and adding one with a click.
+  app.get("/api/plugins/builtin", auth, (req,res) => {
+    const mine=new Set(store.read().plugins.filter(x=>x.userId===req.user.id&&x.mode==="builtin").map(x=>x.builtin));
+    res.json({data:publicBuiltinList(mine)});
+  });
+  app.post("/api/plugins/builtin", auth, requirePermission("plugins"), (req,res) => {
+    const key=String(req.body?.key||""),def=BUILTIN_PLUGINS[key];
+    if(!def)return res.status(400).json({error:"Pluginul inclus nu există."});
+    const db=store.read();
+    const existing=db.plugins.find(x=>x.userId===req.user.id&&x.mode==="builtin"&&x.builtin===key);
+    if(existing)return res.json({data:publicPlugin(existing)});
+    const item={id:crypto.randomUUID(),userId:req.user.id,name:def.name,description:def.description,url:def.url,method:"GET",mode:"builtin",builtin:key,
+      trigger:def.trigger,auto:false,enabled:true,apiKey:"",createdAt:Date.now()};
+    db.plugins.push(item);store.write(db);res.json({data:publicPlugin(item)});
+  });
 
   app.post("/api/plugins/direct", auth, requirePermission("plugins"), (req,res) => {
     const name=textInput(req.body?.name,80),appUrl=textInput(req.body?.appUrl,2000);
@@ -3119,7 +3189,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
   app.patch("/api/plugins/:id", auth, requirePermission("plugins"), (req,res) => {
     const db=store.read(),item=db.plugins.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Pluginul nu a fost găsit."});
-    const parsed=pluginFields(req.body||{},item);if(parsed.error)return res.status(400).json({error:parsed.error});
+    const body={...(req.body||{})};if(item.mode==="builtin"){delete body.url;delete body.method;delete body.apiKey;}
+    const parsed=pluginFields(body,item);if(parsed.error)return res.status(400).json({error:parsed.error});
     Object.assign(item,parsed.value);item.updatedAt=Date.now();store.write(db);res.json({data:publicPlugin(item)});
   });
   app.post("/api/plugins/:id/test", auth, requirePermission("plugins"), async (req,res) => {
@@ -3129,6 +3200,40 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     catch(e){res.status(e.status||502).json({error:e.code==="EBLOCKED"?e.message:roError(e)});}
   });
   app.delete("/api/plugins/:id", auth, (req,res) => {const db=store.read(),before=db.plugins.length;db.plugins=db.plugins.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));if(db.plugins.length===before)return res.status(404).json({error:"Pluginul nu a fost găsit."});store.write(db);res.json({ok:true});});
+
+  // Skills (0.7.18): instructions saved once and called with /name in the chat, or kept always on. Per account.
+  app.get("/api/skills", auth, (req,res) => {
+    const mine=store.read().skills.filter(x=>x.userId===req.user.id).sort((a,b)=>a.name.localeCompare(b.name,"ro"));
+    const slugs=new Set(mine.map(x=>x.slug));
+    res.json({data:mine.map(publicSkill),templates:SKILL_TEMPLATES.map(t=>({...t,added:slugs.has(t.slug)}))});
+  });
+  function saveNewSkill(req,res,fields){
+    const db=store.read(),mine=db.skills.filter(x=>x.userId===req.user.id);
+    if(mine.length>=MAX_SKILLS)return res.status(400).json({error:`Poți avea cel mult ${MAX_SKILLS} skill-uri.`});
+    if(mine.some(x=>x.slug===fields.slug))return res.status(409).json({error:`Ai deja un skill /${fields.slug}. Alege alt nume.`});
+    const item={id:crypto.randomUUID(),userId:req.user.id,enabled:true,auto:false,...fields,createdAt:Date.now()};
+    db.skills.push(item);store.write(db);res.json({data:publicSkill(item)});
+  }
+  app.post("/api/skills", auth, requirePermission("chat"), (req,res) => {
+    const v=validateSkill(req.body||{},null);if(v.error)return res.status(400).json({error:v.error});
+    saveNewSkill(req,res,v.value);
+  });
+  app.post("/api/skills/template", auth, requirePermission("chat"), (req,res) => {
+    const t=SKILL_TEMPLATES.find(x=>x.slug===String(req.body?.slug||""));if(!t)return res.status(404).json({error:"Șablonul nu există."});
+    const v=validateSkill({name:t.name,slug:t.slug,description:t.description,instructions:t.instructions},null);
+    saveNewSkill(req,res,v.value);
+  });
+  app.patch("/api/skills/:id", auth, requirePermission("chat"), (req,res) => {
+    const db=store.read(),item=db.skills.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Skill-ul nu a fost găsit."});
+    const v=validateSkill(req.body||{},item);if(v.error)return res.status(400).json({error:v.error});
+    if(v.value.slug&&v.value.slug!==item.slug&&db.skills.some(x=>x.userId===req.user.id&&x.id!==item.id&&x.slug===v.value.slug))return res.status(409).json({error:`Ai deja un skill /${v.value.slug}.`});
+    Object.assign(item,v.value,{updatedAt:Date.now()});store.write(db);res.json({data:publicSkill(item)});
+  });
+  app.delete("/api/skills/:id", auth, (req,res) => {
+    const db=store.read(),before=db.skills.length;db.skills=db.skills.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));
+    if(db.skills.length===before)return res.status(404).json({error:"Skill-ul nu a fost găsit."});
+    store.write(db);res.json({ok:true});
+  });
 
   // The list stays light: the run history is served separately by GET /api/automations/:id/runs.
   function publicAutomation(item){
@@ -3215,6 +3320,35 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(m.includes("flac"))return "flac";
     return "webm";
   }
+  // Gemini understands audio: the recording goes inline (up to ~20 MB) and the model writes what was said.
+  async function geminiTranscribe(key,bytes,mime,language,signal){
+    if(bytes.length>19*1024*1024)throw new Error("înregistrarea e prea mare pentru Gemini");
+    const lang=String(language||"ro").slice(0,5);
+    const r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",{
+      method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},
+      body:JSON.stringify({contents:[{parts:[
+        {inlineData:{mimeType:String(mime||"audio/webm").split(";")[0],data:Buffer.from(bytes).toString("base64")}},
+        {text:`Transcrie exact ce se spune în această înregistrare (limba: ${lang}). Răspunde doar cu textul transcris, fără ghilimele și fără alte comentarii. Dacă nu se aude nimic, răspunde cu un text gol.`}
+      ]}],generationConfig:{temperature:0}}),
+      signal:withAbort(60000,signal)
+    });
+    const text=await r.text();
+    if(!r.ok)throw new Error(`HTTP ${r.status}: ${text.slice(0,200)}`);
+    let data={};try{data=JSON.parse(text)}catch{}
+    return (data?.candidates?.[0]?.content?.parts||[]).map(p=>p.text||"").join("").trim();
+  }
+  // Cloudflare Workers AI Whisper (free daily allowance with the account the server already uses for pictures).
+  async function cloudflareTranscribe(account,token,bytes,language,signal){
+    const r=await fetch(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(account)}/ai/run/@cf/openai/whisper-large-v3-turbo`,{
+      method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},
+      body:JSON.stringify({audio:Buffer.from(bytes).toString("base64"),language:String(language||"ro").slice(0,2)}),
+      signal:withAbort(60000,signal)
+    });
+    const text=await r.text();
+    if(!r.ok)throw new Error(`HTTP ${r.status}: ${text.slice(0,200)}`);
+    let data={};try{data=JSON.parse(text)}catch{}
+    return String(data?.result?.text||data?.text||"").trim();
+  }
   async function transcribeMedia(req,{bytes,mime,name,language,model,signal}) {
     const cfg=getOmniConfig();
     if(!bytes?.length)throw policyFailure("Fișierul audio/video este gol.",400);
@@ -3240,9 +3374,27 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }
     const errors=[];
     const ext=mediaExtension(mime,name);
+    // 0.7.18: OmniRoute had no speech model and Groq had no key, so the microphone failed. The keys the server already
+    // has for other things now transcribe too: Gemini (audio understood by the model), Cloudflare Workers AI (Whisper)
+    // and, for the Owner, OpenAI Whisper. Same account rules as Groq.
+    const extraDirect=[];
+    if(freeDirectAllowed(req)){
+      const geminiKey=String(cfg.geminiApiKey||"").trim();
+      if(geminiKey)extraDirect.push({label:"Gemini direct",run:()=>geminiTranscribe(geminiKey,bytes,mime,language||cfg.speechLanguage,signal)});
+      const cfAccount=String(cfg.cloudflareAccountId||"").trim(),cfToken=String(cfg.cloudflareApiToken||"").trim();
+      if(cfAccount&&cfToken)extraDirect.push({label:"Cloudflare Whisper",run:()=>cloudflareTranscribe(cfAccount,cfToken,bytes,language||cfg.speechLanguage,signal)});
+    }
+    const openAiKey=String(cfg.openAiApiKey||"").trim();
     const attempts=[...(String(cfg.baseUrl||"").trim()?permittedCandidates.map(model=>({model,base:String(cfg.baseUrl),key:cfg.apiKey,label:model})):[]),
-      ...(groqAllowed?[{model:"whisper-large-v3-turbo",base:"https://api.groq.com/openai/v1",key:groqKey,label:"Groq direct"}]:[])];
-    for(const {model:candidate,base,key,label} of attempts){
+      ...(groqAllowed?[{model:"whisper-large-v3-turbo",base:"https://api.groq.com/openai/v1",key:groqKey,label:"Groq direct"}]:[]),
+      ...(openAiKey&&directApisAllowed(req)?[{model:"whisper-1",base:"https://api.openai.com/v1",key:openAiKey,label:"OpenAI direct"}]:[])];
+    for(const attempt of byCooldown("speech",[...attempts,...extraDirect],x=>x.label)){
+      if(attempt.run){
+        try{const text=String(await attempt.run()||"").trim();if(text){noteProviderResult("speech",attempt.label,"");return {text,model:attempt.label};}errors.push(`${attempt.label}: răspuns fără text`);}
+        catch(e){if(signal?.aborted)throw e;const msg=roError(e);noteProviderResult("speech",attempt.label,msg);errors.push(`${attempt.label}: ${msg}`)}
+        continue;
+      }
+      const {model:candidate,base,key,label}=attempt;
       try{
         const form=new FormData();
         form.append("file",new Blob([bytes],{type:mime||"application/octet-stream"}),String(name||`media.${ext}`));
@@ -3256,14 +3408,17 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           signal:withAbort(60000,signal)
         });
         const body=await r.text();
-        if(!r.ok){errors.push(`${label}: HTTP ${r.status}`);continue;}
+        if(!r.ok){const msg=`HTTP ${r.status}`;noteProviderResult("speech",label,msg);errors.push(`${label}: ${msg}`);continue;}
         let data;try{data=JSON.parse(body)}catch{data={text:body}}
         const text=String(data?.text||data?.transcript||"").trim();
-        if(text)return {text,model:label};
+        if(text){noteProviderResult("speech",label,"");return {text,model:label};}
         errors.push(`${label}: răspuns fără text`);
       }catch(e){if(signal?.aborted)throw e;errors.push(`${label}: ${roError(e)}`)}
     }
-    throw policyFailure(`Nu am putut transcrie fișierul (OmniRoute${groqAllowed?" și Groq":""}). ${errors.join(" | ")||"Niciun serviciu de transcriere configurat."}`,502);
+    const none=!attempts.length&&!extraDirect.length;
+    throw policyFailure(none
+      ?"Transcrierea vocală nu e configurată pe server: adaugă o cheie Groq (gratuită, console.groq.com/keys) sau Gemini în Setări → API-uri AI."
+      :`Nu am putut transcrie înregistrarea. ${errors.join(" | ")}`,none?503:502);
   }
 
   // The microphone of the chat: a short recording (base64 in JSON) comes back as text, without saving anything in the
@@ -3399,6 +3554,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     system.push("Capabilități AI Stoica: aplicația are memorie persistentă, poate primi context din alte conversații ale aceluiași Proiect, poate căuta internetul în timp real, poate căuta fragmente relevante într-un repository GitHub configurat, iar Owner-ul poate rula cod JavaScript sau Python doar prin butonul explicit de rulare și poate lucra cu serverul SSH configurat. Nu afirma că aceste capabilități nu există atunci când contextul lor este prezent. Nu pretinde că un cod a fost executat dacă nu ai primit explicit un rezultat de rulare. Pentru proiecte mari, lucrează modular și folosește contextul relevant recuperat, fără a cere utilizatorului să copieze manual întreaga bază de cod.");
     system.push("Fiabilitate: pentru informații actuale despre biblioteci, API-uri, modele, versiuni, prețuri sau servicii folosește prioritar contextul WEB LIVE dacă este disponibil și include la final o secțiune scurtă «Surse» cu linkurile folosite. Pentru cod, separă clar ce ai analizat de ce a fost efectiv rulat/testat. Pentru medical, juridic și financiar poți analiza și cita surse, dar păstrează recomandarea de validare umană atunci când decizia are consecințe importante.");
     const assistant=db.assistants.find(a=>a.id===assistantId&&a.userId===userId);if(assistant?.systemPrompt)system.push(assistant.systemPrompt);
+    const skillText=skillSystemText(skillsForMessage((db.skills||[]).filter(x=>x.userId===userId),typedText(latest?.content)||latestText));if(skillText)system.push(skillText);
     const user=db.users.find(u=>u.id===userId);
     if(user?.memoryEnabled!==false){
       const mem=await embeddingIndex.search(cfg,db,userId,query,8);if(mem.length)system.push("Memorie relevantă despre utilizator și conversațiile anterioare:\n"+mem.map((m,i)=>`${i+1}. ${m.text}`).join("\n"));
@@ -3945,6 +4101,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       store.write(fresh);
       if(stillActive&&!noNotification&&target.notify!==false&&typeof onAutomationResult==="function"){
         try{onAutomationResult({title:target.title,body:answer.slice(0,500),automationId:item.id,userId:item.userId})}catch{}
+      }
+      // 0.7.18: on the site (and on Windows signed in to AI Stoica Cloud) the result reaches the account as a notification
+      // and on its phones; before, the web version ran the automation and told no one.
+      if(stillActive&&!noNotification&&target.notify!==false&&ctx.cloudToken&&cloudBase()){
+        cloudFetch("/api/notifications/self",{method:"POST",headers:{Authorization:`Bearer ${ctx.cloudToken}`},body:{type:"automation",title:String(target.title||"Automatizare").slice(0,120),body:answer.slice(0,1000)},timeout:8000})
+          .then(r=>r.text()).catch(e=>console.warn("[AI Stoica] Notificarea automatizării nu a ajuns:",e?.message||e));
       }
     }finally{runningAutomations.delete(item.id)}
   }

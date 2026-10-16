@@ -771,6 +771,22 @@ app.get("/api/notifications", auth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// An account's own notice (0.7.18): the result of one of its automations, sent by the gateway with the account's own
+// session. It lands in the account's notifications and on its phones (Web Push, when the account turned it on).
+const selfNoticeLimiter = rateLimit({ ...limiterDefaults, windowMs: 60 * 60_000, limit: Number(process.env.SELF_NOTICES_PER_HOUR || 60) });
+const SELF_NOTICE_TYPES = new Set(["automation"]);
+app.post("/api/notifications/self", auth, selfNoticeLimiter, async (req, res, next) => {
+  try {
+    const type = String(req.body?.type || "");
+    const title = String(req.body?.title || "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 120);
+    const body = String(req.body?.body || "").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, " ").trim().slice(0, 1000);
+    if (!SELF_NOTICE_TYPES.has(type) || !title) return res.status(400).json({ error: "Notificare invalidă." });
+    await notify(req.user.id, type, title, body);
+    const delivered = await push.sendToUser(req.user.id, { kind: type, title, body: body.slice(0, 240), tag: "automation", url: "/?view=scheduled" }).catch(() => 0);
+    res.json({ ok: true, delivered });
+  } catch (e) { next(e); }
+});
+
 app.patch("/api/notifications/:id/read", auth, async (req, res, next) => {
   try {
     const q = await pool.query(

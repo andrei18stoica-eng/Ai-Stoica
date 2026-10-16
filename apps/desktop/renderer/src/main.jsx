@@ -27,6 +27,7 @@ import { requestedMediaGeneration } from "./mediaIntent.mjs";
 import { normalizeIntent, FILE_FORMATS, FORMAT_CANDIDATES, requestedDocumentFormat } from "./documentIntent.mjs";
 import { PluginsPage } from "./pages/Plugins.jsx";
 import { MemoryPage, PreferenceSwitches } from "./pages/Memory.jsx";
+import { SkillsPage } from "./pages/Skills.jsx";
 import { LibraryPage } from "./pages/Library.jsx";
 import { DesignPage } from "./pages/Design.jsx";
 import { splitQuestions, QuestionCard, QuestionsPending } from "./questions.jsx";
@@ -329,7 +330,7 @@ function AuthScreen({ onAuth, notice:initialNotice="" }) {
 
 function BrandMark({small=false}) { return <div className={cx("brandMark",small&&"small")}><img src="./stoica-enterprises-ai-mark.webp" alt="AI Stoica"/></div>; }
 
-const TOOL_ITEMS=[["explore",Compass,"Explorează",null],["code",SquareTerminal,"Code AI Stoica","code"],["automations",CalendarClock,"Scheduled","automations"],["plugins",Plug,"Pluginuri","plugins"],["library",Library,"Bibliotecă",null],["design",Palette,"Design","document_generation"],["memory",Brain,"Memorie",null]];
+const TOOL_ITEMS=[["explore",Compass,"Explorează",null],["code",SquareTerminal,"Code AI Stoica","code"],["automations",CalendarClock,"Scheduled","automations"],["plugins",Plug,"Pluginuri","plugins"],["library",Library,"Bibliotecă",null],["design",Palette,"Design","document_generation"],["skills",Sparkles,"Skill-uri",null],["memory",Brain,"Memorie",null]];
 function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,conversations,currentId,busyIds,onSelect,onDeleteConversation,onUnarchive,onNew,selectedProject,setSelectedProject,activeAssistantId,onUseAssistant,onNewProject,onNewAssistant,onEditProject,onEditAssistant,onTool,onSettings,onLogout}) {
   const {can,isOwner}=useAccess();
   const [showArchived,setShowArchived]=useState(false);
@@ -1760,6 +1761,25 @@ function App() {
     const off=window.AIStoica?.onUpdateReady?.(()=>setUpdateReady(true));
     return()=>{if(typeof off==="function")off()};
   },[]);
+  // 0.7.18: the results of the automations (and the other notices of the account) arrive while the app is open; each
+  // is shown once and marked as read. Without AI Stoica Cloud the list is empty.
+  useEffect(()=>{
+    if(!user?.id||!cloudConfigured)return;
+    let stopped=false;
+    async function checkNotices(){
+      if(document.hidden)return;
+      try{
+        const d=await api("/api/notifications");if(stopped)return;
+        for(const n of (d?.data||[]).filter(x=>!x.read_at&&x.type==="automation").slice(0,3).reverse()){
+          toast(`${n.title}: ${String(n.body||"").slice(0,180)}`,"info");
+          api(`/api/notifications/${encodeURIComponent(n.id)}/read`,{method:"PATCH",body:"{}"}).catch(()=>{});
+        }
+      }catch{}
+    }
+    checkNotices();
+    const id=setInterval(checkNotices,60000);
+    return()=>{stopped=true;clearInterval(id)};
+  },[user?.id,cloudConfigured]);
   useEffect(()=>{
     let stopped=false;
     async function poll(){
@@ -2117,6 +2137,7 @@ function App() {
     {toolPanel?.name==="explore"&&<ExplorePanel onClose={closeTool} assistants={assistants} onUseAssistant={startWithAssistant} onImageMode={startImageMode} onOpenLibrary={filter=>openTool("library",filter)}/>}
     {toolPanel?.name==="library"&&<LibraryPage onClose={closeTool} onAttach={attachFromLibrary} toAttachment={libraryItemToAttachment} initialFilter={toolPanel.filter||"all"} onOpenDesign={id=>openTool("design",id)}/>}
     {toolPanel?.name==="design"&&can("document_generation")&&<DesignPage onClose={closeTool} model={model} models={models} initialId={toolPanel.filter||null}/>}
+    {toolPanel?.name==="skills"&&<SkillsPage onClose={closeTool}/>}
     {toolPanel?.name==="memory"&&<MemoryPage onClose={closeTool} preferences={user?.preferences} onPreferences={updatePreferences} prefBusy={prefBusy}/>}
     {toolPanel?.name==="admin"&&isOwner&&<AdminPanel onClose={closeTool}/>}
     {toolPanel?.name==="plugins"&&can("plugins")&&<PluginsPage onClose={closeTool}/>}
