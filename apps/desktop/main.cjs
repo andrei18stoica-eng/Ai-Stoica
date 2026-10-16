@@ -1,3 +1,4 @@
+const { BRAND_NAME } = require("./lib/brand.cjs");
 const { app, BrowserWindow, ipcMain, safeStorage, Tray, Menu, nativeImage, session, shell, clipboard, Notification } = require("electron");
 const path = require("path");
 const fs = require("fs");
@@ -284,7 +285,7 @@ async function systemStatus() {
 function createWindow(show = true) {
   mainWindow = new BrowserWindow({
     width: 1440, height: 920, minWidth: 980, minHeight: 680,
-    backgroundColor: "#05070b", title: "AI Stoica — Stoica Enterprises AI", autoHideMenuBar: true,
+    backgroundColor: "#05070b", title: BRAND_NAME, autoHideMenuBar: true,
     show: false,
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
@@ -312,7 +313,7 @@ function createWindow(show = true) {
     const safe = String(desc || "eroare necunoscută").replace(/[<>&]/g, "");
     mainWindow.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(
       `<!doctype html><html><body style="margin:0;background:#05070b;color:#e9eef7;font-family:Segoe UI,sans-serif;display:grid;place-items:center;height:100vh">
-      <div style="max-width:680px;padding:32px"><h1>AI Stoica nu a putut încărca interfața</h1>
+      <div style="max-width:680px;padding:32px"><h1>${BRAND_NAME} nu a putut încărca interfața</h1>
       <p>Eroare: ${code} — ${safe}</p><p>Închide complet aplicația din system tray și pornește-o din nou.</p></div></body></html>`
     )).catch(() => {});
     reveal();
@@ -379,9 +380,9 @@ function createTray() {
   let icon = nativeImage.createFromPath(path.join(__dirname, "build", "icon.ico"));
   if (icon.isEmpty()) icon = nativeImage.createEmpty();
   tray = new Tray(icon);
-  tray.setToolTip("AI Stoica — rulează în fundal");
+  tray.setToolTip(`${BRAND_NAME} — rulează în fundal`);
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: "Deschide AI Stoica", click: showMain },
+    { label: `Deschide ${BRAND_NAME}`, click: showMain },
     { label: "Repornește OmniRoute", click: async () => { await ensureOmniRouteOnce({ forceRestart: true }); } },
     { type: "separator" },
     { label: "Închide complet", click: () => { isQuitting = true; app.quit(); } }
@@ -464,7 +465,7 @@ app.whenReady().then(async () => {
         decryptSecret: (value) => safeStorage.decryptString(Buffer.from(String(value), "base64")),
         onAutomationResult: ({title,body}) => {
           try{
-            if(Notification.isSupported())new Notification({title:`AI Stoica · ${title||"Automatizare"}`,body:String(body||"").slice(0,500)}).show();
+            if(Notification.isSupported())new Notification({title:`${BRAND_NAME} · ${title||"Automatizare"}`,body:String(body||"").slice(0,500)}).show();
           }catch{}
         }
       });

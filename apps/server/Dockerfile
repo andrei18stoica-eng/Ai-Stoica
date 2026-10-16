@@ -8,6 +8,7 @@ COPY apps/server/server.cjs ./server.cjs
 COPY apps/server/ai-policy.cjs ./ai-policy.cjs
 COPY apps/server/push.cjs ./push.cjs
 COPY apps/server/mailer.cjs ./mailer.cjs
+COPY apps/server/brand.cjs ./brand.cjs
 COPY apps/server/migrations ./migrations
 
 ENV NODE_ENV=production

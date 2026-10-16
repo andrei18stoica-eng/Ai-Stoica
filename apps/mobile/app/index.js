@@ -16,7 +16,7 @@ const EXPORT_FORMATS=[["pdf","PDF"],["docx","DOCX"],["pptx","PPTX"]];
 const STATUS_LABELS={pending:"În așteptare",active:"Activ",rejected:"Respins",suspended:"Suspendat",blocked:"Blocat"};
 
 function gatewayProblem(){
-  if(!GATEWAY)return "Adresa serverului AI Stoica lipsește din build (EXPO_PUBLIC_GATEWAY_URL).";
+  if(!GATEWAY)return "Adresa serverului Serasmart AI lipsește din build (EXPO_PUBLIC_GATEWAY_URL).";
   if(/SUBDOMENIUL-TAU|example\.com/i.test(GATEWAY))return "Adresa serverului din eas.json este încă cea de exemplu. Înlocuiește EXPO_PUBLIC_GATEWAY_URL și refă build-ul.";
   return "";
 }
@@ -93,7 +93,7 @@ function Auth({onAuth,initialNotice}){
     <KeyboardAvoidingView style={s.flex} behavior="padding">
       <ScrollView contentContainerStyle={s.authWrap} keyboardShouldPersistTaps="handled">
         <View style={s.logoBox}><Text style={s.logoAI}>AI</Text><Text style={s.logoStoica}>STOICA</Text></View>
-        <Text style={s.title} accessibilityRole="header">AI Stoica</Text><Text style={s.sub}>STOICA ENTERPRISES AI</Text>
+        <Text style={s.title} accessibilityRole="header">Serasmart AI</Text><Text style={s.sub}>ASISTENTUL TĂU AI</Text>
         <View style={s.card}>
           <View style={s.tabs}>
             <TouchableOpacity accessibilityRole="tab" accessibilityState={{selected:mode==="login"}} onPress={()=>{setMode("login");setError("")}} style={[s.tab,mode==="login"&&s.tabOn]}><Text style={s.tabText}>Autentificare</Text></TouchableOpacity>
@@ -170,7 +170,7 @@ export default function Home(){
       const list=d.data||[];
       setConvs(prev=>list.map(c=>{const old=prev.find(x=>x.id===c.id);return old?.messages&&old.updatedAt===c.updatedAt?{...c,messages:old.messages}:c}));
       if(!currentId&&list.length){setCurrentId(list[0].id);if(!Array.isArray(list[0].messages))loadConversation(list[0].id)}
-    }catch(e){if(!offline)showError("AI Stoica",e)}
+    }catch(e){if(!offline)showError("Serasmart AI",e)}
   }
   async function refreshList(){setRefreshing(true);try{await reload()}finally{setRefreshing(false)}}
   async function loadConversation(id,{quiet=false}={}){
@@ -273,7 +273,7 @@ export default function Home(){
         if(sessionLost(r.status,msg)&&onSessionLost)return onSessionLost(msg);
         throw new Error(msg);
       }
-      if(await Sharing.isAvailableAsync())await Sharing.shareAsync(r.uri,{mimeType:file.mimeType||undefined,dialogTitle:file.name||"AI Stoica"});
+      if(await Sharing.isAvailableAsync())await Sharing.shareAsync(r.uri,{mimeType:file.mimeType||undefined,dialogTitle:file.name||"Serasmart AI"});
       else Alert.alert("Fișier salvat",r.uri);
     }catch(e){showError("Fișier",e)}
   }
@@ -294,7 +294,7 @@ export default function Home(){
       const ans=String(d?.choices?.[0]?.message?.content||"Nu am primit răspuns.");
       let generated=[];
       if(format){
-        try{const exported=await api("/api/export",token,{method:"POST",body:{format,title:c.title||"AI Stoica - document",content:ans},timeout:CHAT_TIMEOUT});if(exported?.data)generated=[exported.data]}
+        try{const exported=await api("/api/export",token,{method:"POST",body:{format,title:c.title||"Serasmart AI - document",content:ans},timeout:CHAT_TIMEOUT});if(exported?.data)generated=[exported.data]}
         catch(e){showError("Document",{...e,message:"Răspunsul a fost generat, dar fișierul nu a putut fi creat: "+e.message})}
       }
       answered=[...messages,{id:`a${Date.now()}`,role:"assistant",content:ans,attachments:generated,createdAt:Date.now(),provider:d.provider,model:d.model}];
@@ -302,17 +302,17 @@ export default function Home(){
       await saveMessages(c,answered);
     }catch(e){
       if(e.sessionLost)return;
-      if(answered){Alert.alert("AI Stoica","Răspunsul este afișat, dar nu a putut fi salvat pe server: "+e.message);return}
+      if(answered){Alert.alert("Serasmart AI","Răspunsul este afișat, dar nu a putut fi salvat pe server: "+e.message);return}
       if(c)setConvs(v=>v.map(x=>x.id===c.id?{...x,messages:before}:x));
       setPendingFiles(files);setText(v=>v||p);setExportFormat(format);
-      showError("AI Stoica",e);
+      showError("Serasmart AI",e);
     }finally{setBusy(false)}
   }
 
   async function exportMessage(m,format){
     if(exporting)return;
     setExporting(`${m.id}:${format}`);
-    try{const d=await api("/api/export",token,{method:"POST",body:{format,title:current?.title||"AI Stoica - răspuns",content:contentText(m)},timeout:CHAT_TIMEOUT});await downloadAndShare(d.data)}
+    try{const d=await api("/api/export",token,{method:"POST",body:{format,title:current?.title||"Serasmart AI - răspuns",content:contentText(m)},timeout:CHAT_TIMEOUT});await downloadAndShare(d.data)}
     catch(e){showError("Export",e)}finally{setExporting("")}
   }
 
@@ -325,7 +325,7 @@ export default function Home(){
       const d=await api("/api/generate/image",token,{method:"POST",body:{prompt},timeout:CHAT_TIMEOUT});
       const c=await ensureConversation("Imagine: "+prompt);
       const userMsg={id:`u${Date.now()}`,role:"user",content:"Generează imagine: "+prompt,createdAt:Date.now()};
-      const aiMsg={id:`img${Date.now()}`,role:"assistant",content:"Imagine generată de AI Stoica.",attachments:[d.data],createdAt:Date.now(),model:d.model};
+      const aiMsg={id:`img${Date.now()}`,role:"assistant",content:"Imagine generată de Serasmart AI.",attachments:[d.data],createdAt:Date.now(),model:d.model};
       setText("");
       await saveMessages(c,[...(c.messages||[]),userMsg,aiMsg]);
     }catch(e){showError("Imagine",e)}finally{setBusy(false)}
@@ -350,7 +350,7 @@ export default function Home(){
       {text:"Aplică",style:"destructive",onPress:async()=>{
         setApplyingId(m.id);
         try{
-          const d=await api("/api/github/apply",token,{method:"POST",body:{path:g.path,content:m.content,sha:g.sha,branch:g.branch,message:`AI Stoica: rezolvare ${g.path}`}});
+          const d=await api("/api/github/apply",token,{method:"POST",body:{path:g.path,content:m.content,sha:g.sha,branch:g.branch,message:`Serasmart AI: rezolvare ${g.path}`}});
           const commit=d.data?.commit||"";
           const c=current;
           if(c?.messages)await saveMessages(c,c.messages.map(x=>x.id===m.id?{...x,githubApplied:{commit,at:Date.now()}}:x)).catch(()=>{});
@@ -372,7 +372,7 @@ export default function Home(){
     <KeyboardAvoidingView style={s.flex} behavior="padding">
       <View style={s.header}>
         <TouchableOpacity onPress={()=>setMenu(true)} accessibilityRole="button" accessibilityLabel="Deschide meniul de conversații" hitSlop={12}><Text style={s.menu}>☰</Text></TouchableOpacity>
-        <View style={s.headerTitles}><Text style={s.headerTitle} accessibilityRole="header">AI Stoica</Text><Text style={s.headerSub} numberOfLines={1}>{DEFAULT_MODEL}</Text></View>
+        <View style={s.headerTitles}><Text style={s.headerTitle} accessibilityRole="header">Serasmart AI</Text><Text style={s.headerSub} numberOfLines={1}>{DEFAULT_MODEL}</Text></View>
         {isOwner&&allowed("github_access")&&<TouchableOpacity style={s.ghTop} onPress={()=>setGithubOpen(true)} accessibilityRole="button" accessibilityLabel="GitHub Solve"><Text style={s.ghTopText}>GitHub</Text></TouchableOpacity>}
         <TouchableOpacity style={s.newBtn} onPress={()=>{setCurrentId(null);setPendingFiles([]);setExportFormat(null)}} accessibilityRole="button" accessibilityLabel="Conversație nouă"><Text style={s.newBtnText}>Nou</Text></TouchableOpacity>
       </View>
@@ -382,7 +382,7 @@ export default function Home(){
         {convLoading&&!messages.length?<ActivityIndicator style={s.convSpinner} color="#278cff" accessibilityLabel="Se încarcă conversația"/>:
         !messages.length?<View style={s.empty}><View style={s.logoBoxSmall}><Text style={s.logoAISmall}>AI</Text></View><Text style={s.big}>Trimite-mi orice fișier</Text><Text style={s.emptyText}>Poze, PDF, DOCX, CSV, cod. Îl citesc, îl analizez și îl rezolv.</Text></View>:
         messages.map((m,i)=><View key={m.id||i} style={m.role==="user"?s.userMsg:s.aiMsg}>
-          {m.role==="assistant"&&<Text style={s.aiName}>AI Stoica</Text>}
+          {m.role==="assistant"&&<Text style={s.aiName}>Serasmart AI</Text>}
           {m.role==="assistant"?<MessageText text={contentText(m)}/>:<Text selectable style={s.msgText}>{contentText(m)}</Text>}
           {!!m.attachments?.length&&<View style={s.fileWrap}>{m.attachments.filter(x=>x&&(x.id||x.libraryId)).map(fileRef).map((a,j)=><View key={a.id||j}>
             {/^image\//.test(a.mimeType||"")&&!gatewayProblem()&&<Image source={{uri:`${GATEWAY}/api/files/${encodeURIComponent(a.id)}`,headers:{Authorization:`Bearer ${token}`}}} style={s.preview} resizeMode="contain" accessibilityLabel={a.name||"Imagine"}/>}
@@ -395,7 +395,7 @@ export default function Home(){
             {!!m.githubApplied&&<Text style={s.appliedText}>Aplicat în GitHub{m.githubApplied.commit?` · ${m.githubApplied.commit.slice(0,7)}`:""}</Text>}
           </View>}
         </View>)}
-        {busy&&<View style={s.busyRow} accessibilityLiveRegion="polite"><ActivityIndicator color="#278cff"/><Text style={s.busyText}>AI Stoica lucrează…</Text></View>}
+        {busy&&<View style={s.busyRow} accessibilityLiveRegion="polite"><ActivityIndicator color="#278cff"/><Text style={s.busyText}>Serasmart AI lucrează…</Text></View>}
       </ScrollView>
 
       {!!pendingFiles.length&&<ScrollView horizontal style={s.pending} contentContainerStyle={s.pendingInner} keyboardShouldPersistTaps="handled">
@@ -432,7 +432,7 @@ export default function Home(){
     <Modal visible={adminOpen} transparent animationType="slide" onRequestClose={()=>setAdminOpen(false)}>
       <View style={s.modalScrim}><View style={s.ghModal}>
         <Text style={s.ghTitle} accessibilityRole="header">Conturi</Text>
-        <Text style={s.ghHelp}>Conturile noi așteaptă aprobarea ta înainte să poată folosi AI Stoica.</Text>
+        <Text style={s.ghHelp}>Conturile noi așteaptă aprobarea ta înainte să poată folosi Serasmart AI.</Text>
         {accountsLoading&&<ActivityIndicator color="#278cff" accessibilityLabel="Se încarcă conturile"/>}
         <ScrollView style={s.accountList}>{accounts.filter(a=>a.id!==user?.id).map(a=><View key={a.id} style={s.accountRow}>
           <Text style={s.accountRowName}>{a.name} · {a.email}</Text>
@@ -451,7 +451,7 @@ export default function Home(){
     <Modal visible={githubOpen} transparent animationType="slide" onRequestClose={()=>{if(!ghBusy)setGithubOpen(false)}}>
       <KeyboardAvoidingView style={s.flex} behavior="padding"><View style={s.modalScrim}><View style={s.ghModal}>
         <Text style={s.ghTitle} accessibilityRole="header">GitHub Solve</Text>
-        <Text style={s.ghHelp}>AI Stoica citește fișierul, propune versiunea corectată, iar tu alegi separat dacă o aplici.</Text>
+        <Text style={s.ghHelp}>Serasmart AI citește fișierul, propune versiunea corectată, iar tu alegi separat dacă o aplici.</Text>
         <TextInput style={s.input} autoCapitalize="none" autoCorrect={false} placeholder="ex: apps/mobile/app/index.js" placeholderTextColor="#7d8ba0" value={ghPath} onChangeText={setGhPath} accessibilityLabel="Calea fișierului din repository"/>
         <TextInput style={[s.input,s.ghInstructions]} multiline placeholder="Ce trebuie rezolvat?" placeholderTextColor="#7d8ba0" value={ghInstruction} onChangeText={setGhInstruction} accessibilityLabel="Ce trebuie rezolvat"/>
         <View style={s.ghButtons}>

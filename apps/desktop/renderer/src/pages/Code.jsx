@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { SquareTerminal, GitBranch, Sparkles, ShieldCheck } from "lucide-react";
 import { api, toast, ToolShell } from "../core.jsx";
+import { BRAND_NAME } from "../brand.js";
 
 // "Code AI Stoica": start a programming conversation with Codex or Claude Code. The Owner uses the subscriptions
 // connected in OmniRoute; an account the Owner gave access to (Control Center → "Code AI Stoica") uses the paid APIs.
@@ -27,11 +28,11 @@ export function CodePage({ onClose, onStart }) {
     finally { setBusy(""); }
   }
   const models = info?.models || [];
-  return <ToolShell title="Code AI Stoica" subtitle="Programare cu Codex și Claude Code: alegi modelul și pornești o conversație de cod." onClose={onClose} className="pageModal codePage">
+  return <ToolShell title={`Code ${BRAND_NAME}`} subtitle="Programare cu Codex și Claude Code: alegi modelul și pornești o conversație de cod." onClose={onClose} className="pageModal codePage">
     <div className="pageBody">
       {error && <div className="inlineError" role="alert">{error}</div>}
       {!info && !error && <div className="emptyState"><SquareTerminal size={30}/>Se încarcă modelele de cod…</div>}
-      {info && !info.allowed && <div className="emptyState"><ShieldCheck size={30}/>Code AI Stoica este disponibil pentru Owner și pentru conturile cărora Owner-ul le-a dat acces.</div>}
+      {info && !info.allowed && <div className="emptyState"><ShieldCheck size={30}/>Code {BRAND_NAME} este disponibil pentru Owner și pentru conturile cărora Owner-ul le-a dat acces.</div>}
       {info?.allowed && <>
         {GROUPS.map(([key, title, note]) => {
           const list = models.filter((m) => m.group === key);
@@ -47,9 +48,9 @@ export function CodePage({ onClose, onStart }) {
         {!models.length && <div className="emptyState"><Sparkles size={30}/>Nu există încă niciun model de cod disponibil.{info.subscriptions ? " Conectează Codex sau Claude Code în OmniRoute." : " Cere Owner-ului acces la modelele OpenAI sau Claude."}</div>}
         <section className="codeGroup">
           <div className="codeGroupHead"><b><GitBranch size={14}/> GitHub</b><small>{info.repo ? `${info.repo} · ${info.branch}` : "Niciun repository conectat"}</small></div>
-          <p className="settingsHelp">{info.repo ? "La întrebările de cod, AI Stoica caută singur fișierele relevante din acest repository." : "Pune repository-ul în Setări → AI & OmniRoute → GitHub, ca AI Stoica să citească singur codul la întrebările de programare."}</p>
+          <p className="settingsHelp">{info.repo ? `La întrebările de cod, ${BRAND_NAME} caută singur fișierele relevante din acest repository.` : `Pune repository-ul în Setări → AI & OmniRoute → GitHub, ca ${BRAND_NAME} să citească singur codul la întrebările de programare.`}</p>
         </section>
-        {info.owner && <p className="settingsHelp codeAccessNote">Acces pentru alte conturi: Control Center → contul → „Code AI Stoica”. Ele folosesc API-urile OpenAI / Claude, plătite pe consum, nu abonamentele tale: condițiile ChatGPT și Claude nu permit împărțirea contului.</p>}
+        {info.owner && <p className="settingsHelp codeAccessNote">Acces pentru alte conturi: Control Center → contul → „Code {BRAND_NAME}”. Ele folosesc API-urile OpenAI / Claude, plătite pe consum, nu abonamentele tale: condițiile ChatGPT și Claude nu permit împărțirea contului.</p>}
       </>}
     </div>
   </ToolShell>;

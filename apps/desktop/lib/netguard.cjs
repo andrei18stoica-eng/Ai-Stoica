@@ -3,6 +3,7 @@
 // before connecting and the checked address is the one actually used, so a name cannot switch
 // to a local address between the check and the connection. Redirects are followed manually
 // (max 5) and every hop is checked again.
+const { BRAND_NAME } = require("./brand.cjs");
 const dns = require("dns");
 const net = require("net");
 const http = require("http");
@@ -43,7 +44,7 @@ function isBlockedAddress(ip) {
 }
 
 function blockedError(host) {
-  const e = new Error(`Adresa ${host} este blocată: AI Stoica nu accesează rețele locale sau private.`);
+  const e = new Error(`Adresa ${host} este blocată: ${BRAND_NAME} nu accesează rețele locale sau private.`);
   e.code = "EBLOCKED"; e.status = 403;
   return e;
 }

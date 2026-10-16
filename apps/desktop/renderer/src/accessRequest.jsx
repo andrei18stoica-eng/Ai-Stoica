@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Bell, BellOff, Check, Send, X } from "lucide-react";
 import { GATEWAY, IS_WEB, Modal, api } from "./core.jsx";
+import { BRAND_NAME, BRAND_DOMAIN } from "./brand.js";
 
 // Owner's phone notifications (Web Push) for new accounts, and the page the notification opens.
 // The notification carries a one-time link (?access=<token>); Permite / Refuză work with it alone, even without login,
@@ -39,14 +40,14 @@ export function AccessRequestDialog() {
     setBusy(true); setError("");
     try {
       const d = await accessCall(token, { method: "POST", body: JSON.stringify({ decision }) });
-      setResult(decision === "allow" ? `${d.name} (${d.email}) poate intra acum în AI Stoica.` : `${d.name} (${d.email}) nu va putea intra în AI Stoica.`);
+      setResult(decision === "allow" ? `${d.name} (${d.email}) poate intra acum în ${BRAND_NAME}.` : `${d.name} (${d.email}) nu va putea intra în ${BRAND_NAME}.`);
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
   }
   if (!open) return null;
   return <Modal title="Cerere nouă de acces" className="modal smallModal accessRequestModal" onClose={close}>
     {result ? <p className="accessRequestText">{result}</p>
-      : request ? <p className="accessRequestText"><b>{request.name}</b> ({request.email}) vrea să se conecteze la AI Stoica. Permiți?</p>
+      : request ? <p className="accessRequestText"><b>{request.name}</b> ({request.email}) vrea să se conecteze la {BRAND_NAME}. Permiți?</p>
       : !error && <p className="muted">Se încarcă cererea…</p>}
     {error && <div className="authError" role="alert">{error}</div>}
     <div className="modalActions">
@@ -74,7 +75,7 @@ export function PhoneNotifications() {
   async function enable() {
     setBusy(true); setStatus("");
     try {
-      if (Notification.permission !== "granted" && (await Notification.requestPermission()) !== "granted") throw new Error("Notificările nu au fost permise. Le poți porni din setările telefonului, la AI Stoica.");
+      if (Notification.permission !== "granted" && (await Notification.requestPermission()) !== "granted") throw new Error(`Notificările nu au fost permise. Le poți porni din setările telefonului, la ${BRAND_NAME}.`);
       const reg = await navigator.serviceWorker.register("./sw.js").then(() => navigator.serviceWorker.ready);
       const key = state.publicKey || (await api("/api/admin/push")).publicKey;
       let sub = await reg.pushManager.getSubscription();
@@ -104,18 +105,18 @@ export function PhoneNotifications() {
   const iosNeedsInstall = isIos() && !isStandalone();
   return <>
     <h3>Notificări pe telefon</h3>
-    <p className="settingsHelp">Când cineva își face cont, primești pe telefon „Maria (maria@gmail.com) vrea să se conecteze la AI Stoica. Permiți?”. Pe Android răspunzi direct din notificare, cu <b>Permite</b> sau <b>Refuză</b>; pe iPhone o atingi și alegi în aplicație. Cererea așteaptă până răspunzi.</p>
+    <p className="settingsHelp">Când cineva își face cont, primești pe telefon „Maria (maria@gmail.com) vrea să se conecteze la {BRAND_NAME}. Permiți?”. Pe Android răspunzi direct din notificare, cu <b>Permite</b> sau <b>Refuză</b>; pe iPhone o atingi și alegi în aplicație. Cererea așteaptă până răspunzi.</p>
     {!pushSupported() || iosNeedsInstall
       ? <div className="settingsPrefs"><p className="settingsHelp">{iosNeedsInstall
-          ? "Pe iPhone, notificările merg doar din aplicația instalată: deschide aistoica.ro în Safari → Distribuie → Adaugă pe ecranul principal, apoi deschide AI Stoica de pe ecran și revino aici."
-          : "Acest browser nu poate primi notificări. Folosește aplicația AI Stoica instalată pe telefon (Chrome pe Android sau Safari pe iPhone)."}</p></div>
+          ? `Pe iPhone, notificările merg doar din aplicația instalată: deschide ${BRAND_DOMAIN} în Safari → Distribuie → Adaugă pe ecranul principal, apoi deschide ${BRAND_NAME} de pe ecran și revino aici.`
+          : `Acest browser nu poate primi notificări. Folosește aplicația ${BRAND_NAME} instalată pe telefon (Chrome pe Android sau Safari pe iPhone).`}</p></div>
       : <div className="settingsButtons">
           {state.subscribed
             ? <button type="button" className="secondary" disabled={busy} onClick={disable}><BellOff size={15}/> Oprește pe acest dispozitiv</button>
             : <button type="button" className="primary" disabled={busy || state.loading} onClick={enable}><Bell size={15}/> Activează pe acest dispozitiv</button>}
           <button type="button" className="secondary" disabled={busy || !state.devices} onClick={test}><Send size={15}/> Trimite o notificare de test</button>
         </div>}
-    {state.permission === "denied" && <p className="settingsHelp">Notificările sunt blocate pentru AI Stoica. Pornește-le din setările telefonului (Notificări → AI Stoica) și apasă din nou.</p>}
+    {state.permission === "denied" && <p className="settingsHelp">Notificările sunt blocate pentru {BRAND_NAME}. Pornește-le din setările telefonului (Notificări → {BRAND_NAME}) și apasă din nou.</p>}
     {!state.loading && <p className="settingsHelp">Dispozitive care primesc cererile: {state.devices}.</p>}
     {status && <div className="micStatus" role="status">{status}</div>}
   </>;

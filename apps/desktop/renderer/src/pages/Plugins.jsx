@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Plus, Search, Check, Play, Pencil, Trash2, ExternalLink, Plug, Puzzle, Lock, X } from "lucide-react";
 import { api, toast, cx, isHttpUrl, openLink, useAccess, deniedMessage, useModal, ToolShell, Switch, GATEWAY, OAUTH_REDIRECT_PATH } from "../core.jsx";
+import { BRAND_NAME } from "../brand.js";
 
 const PLUGIN_APP_LINKS={
   "Gmail":"https://mail.google.com/","Google Drive":"https://drive.google.com/","GitHub":"https://github.com/login","Outlook Email":"https://outlook.office.com/mail/",
@@ -66,7 +67,7 @@ const PLUGIN_CATALOG=[
   ["Divertisment","Destiny AI Astrology","Hărți natale și horoscop","@destiny","D"],
   ["Divertisment","Smart Chess","Joacă șah și învață strategie","@chess","♞"],
   ["Divertisment","Spotify","Muzică și podcasturi","@spotify","●","spotify"],
-  ["Divertisment","Chessy","Joacă șah cu AI Stoica","@chessy","♘"],
+  ["Divertisment","Chessy",`Joacă șah cu ${BRAND_NAME}`,"@chessy","♘"],
   ["Divertisment","SoundBreak","Muzică AI alături de artiști","@soundbreak","◉"],
   ["Divertisment","PocketMind: Texas Hold'em","Poker Texas Hold'em cu AI","@pocketmind","♠"],
   ["Educație","Consensus","Explorează cercetarea științifică","@consensus","C"],
@@ -178,7 +179,7 @@ function PluginForm({initial,editing,onSaved,onCancel}){
     try{
       const saved=await persist();
       onSaved(saved,null,false);
-      try{const d=await api(`/api/plugins/${saved.id}/test`,{method:"POST",body:JSON.stringify({message:"Test conexiune AI Stoica"})});if(mounted.current)setNote({kind:"ok",text:`Test reușit: ${String(d.result||"conexiune reușită").slice(0,600)}`})}
+      try{const d=await api(`/api/plugins/${saved.id}/test`,{method:"POST",body:JSON.stringify({message:`Test conexiune ${BRAND_NAME}`})});if(mounted.current)setNote({kind:"ok",text:`Test reușit: ${String(d.result||"conexiune reușită").slice(0,600)}`})}
       catch(err){if(mounted.current)setNote({kind:"error",text:`Pluginul a fost salvat, dar testul a eșuat: ${err.message}`})}
     }catch(err){if(mounted.current)setNote({kind:"error",text:err.message})}
     finally{if(mounted.current)setBusy("")}
@@ -237,7 +238,7 @@ function CatalogSetup({selected,onClose,onDone,reload}){
       if(d.redirectUri)setRedirectUri(d.redirectUri);
       const opened=await window.AIStoica?.openExternal?.(d.authorizeUrl);
       if(opened&&!opened.ok)throw new Error(opened.error||"Nu am putut deschide pagina OAuth.");
-      setSetupResult({kind:"info",text:"Autorizarea s-a deschis în browser. Finalizează-o acolo; AI Stoica salvează conexiunea automat."});
+      setSetupResult({kind:"info",text:`Autorizarea s-a deschis în browser. Finalizează-o acolo; ${BRAND_NAME} salvează conexiunea automat.`});
       const name=String(selected.name).toLowerCase(),started=Date.now();
       clearInterval(oauthTimer.current);
       oauthTimer.current=setInterval(async()=>{
@@ -275,10 +276,10 @@ function CatalogSetup({selected,onClose,onDone,reload}){
       <button className="iconOnly" onClick={onClose} aria-label="Închide" title="Închide"><X size={18}/></button>
     </div>
     <ResultNote result={setupResult}/>
-    <div className="claudeSetupNotice"><Plug size={16}/><span>Poți folosi pluginul fără OAuth pentru deschiderea directă a aplicației. OAuth/API este necesar doar când vrei ca AI Stoica să citească sau să modifice date private din acel serviciu.</span></div>
+    <div className="claudeSetupNotice"><Plug size={16}/><span>Poți folosi pluginul fără OAuth pentru deschiderea directă a aplicației. OAuth/API este necesar doar când vrei ca {BRAND_NAME} să citească sau să modifice date private din acel serviciu.</span></div>
     {selected.appUrl&&<div className="pluginDirectConnect">
       <button className="primary" onClick={openProviderApp} disabled={!!saving}><ExternalLink size={16}/> {saving==="direct"?"Se deschide…":`Conectează fără OAuth și deschide ${selected.name}`}</button>
-      <small>AI Stoica salvează pluginul ca legătură directă și deschide aplicația oficială. Te autentifici normal în browser.</small>
+      <small>{BRAND_NAME} salvează pluginul ca legătură directă și deschide aplicația oficială. Te autentifici normal în browser.</small>
     </div>}
     <form className="claudeSetupForm" onSubmit={addApi}>
       <label>Nume<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label>
@@ -327,7 +328,7 @@ export function PluginsPage({onClose}){
       return;
     }
     setTesting(x.id);
-    try{const d=await api(`/api/plugins/${x.id}/test`,{method:"POST",body:JSON.stringify({message:"Test conexiune AI Stoica"})});if(mounted.current)setCardNotes(n=>({...n,[x.id]:{kind:"ok",text:`Funcționează: ${String(d.result||"conexiune reușită").slice(0,300)}`}}))}
+    try{const d=await api(`/api/plugins/${x.id}/test`,{method:"POST",body:JSON.stringify({message:`Test conexiune ${BRAND_NAME}`})});if(mounted.current)setCardNotes(n=>({...n,[x.id]:{kind:"ok",text:`Funcționează: ${String(d.result||"conexiune reușită").slice(0,300)}`}}))}
     catch(e){if(mounted.current)setCardNotes(n=>({...n,[x.id]:{kind:"error",text:`Eroare — ${e.message}`}}))}
     finally{if(mounted.current)setTesting(null)}
   }
@@ -356,20 +357,20 @@ export function PluginsPage({onClose}){
   const groups=PLUGIN_GROUPS.map(group=>({group,items:filtered.filter(x=>x.group===group)})).filter(x=>x.items.length);
   const skills=SKILLS.filter(x=>!normalized||x.name.toLowerCase().includes(normalized)||x.description.toLowerCase().includes(normalized));
   const tabs=[["installed",`Instalate${items.length?` (${items.length})`:""}`],["directory","Director"],["create",editing?"Editează plugin":"Creează plugin"]];
-  return <ToolShell title="Pluginuri" subtitle="Scrie numele unui plugin în chat (de ex. «Calendar») sau @nume și AI Stoica îl folosește pentru răspuns." onClose={onClose} className="pageModal pluginsPage">
+  return <ToolShell title="Pluginuri" subtitle={`Scrie numele unui plugin în chat (de ex. «Calendar») sau @nume și ${BRAND_NAME} îl folosește pentru răspuns.`} onClose={onClose} className="pageModal pluginsPage">
     <div className="pageTabs" role="tablist" aria-label="Secțiuni pluginuri">
       {tabs.map(([k,label])=><button key={k} role="tab" aria-selected={tab===k} className={cx("pageTab",tab===k&&"active")} onClick={()=>{setTab(k);if(k==="create"&&editing&&tab!=="create"){setEditing(null);setFormInit(BLANK_PLUGIN)}}}>{label}</button>)}
     </div>
     <div className="pageBody" role="tabpanel">
       <ResultNote result={result}/>
       {tab==="installed"&&(loading?<div className="emptyState small">Se încarcă pluginurile…</div>:!items.length?<div className="taskEmpty">
-        <span className="taskIcon big"><Puzzle size={26}/></span><h3>Nu ai pluginuri instalate</h3><p>Alege unul din Director sau creează-l pe al tău dintr-un API. După instalare, scrie-i numele în chat și AI Stoica îl folosește.</p>
+        <span className="taskIcon big"><Puzzle size={26}/></span><h3>Nu ai pluginuri instalate</h3><p>Alege unul din Director sau creează-l pe al tău dintr-un API. După instalare, scrie-i numele în chat și {BRAND_NAME} îl folosește.</p>
         <div className="taskExamples"><button className="primary" onClick={()=>setTab("directory")}>Deschide Directorul</button><button className="secondary" onClick={()=>setTab("create")}><Plus size={14}/> Creează plugin</button></div>
       </div>:<div className="plugCards">
         {items.map(x=><div key={x.id} className={cx("plugCard",!x.enabled&&"off")}>
           <div className="plugCardTop"><PluginLogo entry={PLUGIN_CATALOG.find(c=>c.name.toLowerCase()===String(x.name||"").toLowerCase())||{name:x.name}}/><div className="plugCardText"><b title={x.name}>{x.name}</b><small>{x.description||hostOf(x.appUrl||x.url)}</small></div><Switch checked={x.enabled} label={`${x.enabled?"Dezactivează":"Activează"} ${x.name}`} onChange={()=>patch(x,{enabled:!x.enabled})}/></div>
           <p className="pluginTrigger">{pluginTriggerHint(x.name,x.trigger)}</p>
-          <small className="pluginMeta">{x.mode==="builtin"?"Inclus în AI Stoica · fără cont":x.mode==="direct_app"?"Deschidere directă a aplicației":x.oauthConnected?"Conectat prin OAuth":`API · ${x.method||"POST"}${x.hasKey?" · cu cheie":""}`}{x.auto?" · automat":""}</small>
+          <small className="pluginMeta">{x.mode==="builtin"?`Inclus în ${BRAND_NAME} · fără cont`:x.mode==="direct_app"?"Deschidere directă a aplicației":x.oauthConnected?"Conectat prin OAuth":`API · ${x.method||"POST"}${x.hasKey?" · cu cheie":""}`}{x.auto?" · automat":""}</small>
           {cardNotes[x.id]&&<ResultNote result={cardNotes[x.id]}/>}
           <div className="plugCardActions">
             <button className="smallBtn" onClick={()=>test(x)} disabled={testing===x.id}>{x.mode==="direct_app"?<><ExternalLink size={13}/> Deschide</>:<><Play size={13}/> {testing===x.id?"Se testează…":"Testează"}</>}</button>
@@ -400,7 +401,7 @@ export function PluginsPage({onClose}){
           </div>
         </section>)}
         {!groups.length&&<div className="emptyState small">Nu am găsit pluginul căutat. Îl poți crea din tabul „Creează plugin”.</div>}
-        {skills.length>0&&<section className="catalogSection"><h3>Incluse în AI Stoica</h3><div className="catalogGrid">
+        {skills.length>0&&<section className="catalogSection"><h3>Incluse în {BRAND_NAME}</h3><div className="catalogGrid">
           {skills.map(x=>{const ok=can(x.perm);return <div className={cx("catalogCard",!ok&&"locked")} key={x.name} title={ok?"Disponibilă pentru contul tău":deniedMessage(x.perm)}>
             <span className="pluginLogo"><span>{x.mark}</span></span>
             <div className="catalogText"><b>{x.name}</b><small>{ok?x.description:"Dezactivată de Owner pentru contul tău."}</small></div>

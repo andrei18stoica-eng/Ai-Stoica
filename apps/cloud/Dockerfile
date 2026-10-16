@@ -6,6 +6,8 @@ COPY apps/desktop/package.json apps/desktop/package-lock.json ./
 RUN npm ci --legacy-peer-deps --ignore-scripts --no-audit --no-fund
 COPY apps/desktop/vite.config.mjs ./vite.config.mjs
 COPY apps/desktop/renderer ./renderer
+# The product name and domain (renderer/src/brand.js reads them from here).
+COPY apps/desktop/lib/brand.json ./lib/brand.json
 RUN npx vite build --config vite.config.mjs
 
 # Stage 2: the AI Stoica service, which also serves the web interface and the installable phone app (PWA) at "/".

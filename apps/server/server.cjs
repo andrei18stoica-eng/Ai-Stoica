@@ -1,3 +1,4 @@
+const { BRAND_NAME } = require("./brand.cjs");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -64,13 +65,13 @@ const pool = new Pool({
   statement_timeout: 30000,
   query_timeout: 35000
 });
-pool.on("error", e => console.error("[AI Stoica] PostgreSQL:", e.message));
+pool.on("error", e => console.error(`[${BRAND_NAME}] PostgreSQL:`, e.message));
 const push = require("./push.cjs").createPush({ pool, ownerEmail: OWNER_EMAIL });
 const mailer = require("./mailer.cjs").createMailer();
 // Sign-up code by email: on as soon as SMTP is configured (EMAIL_VERIFICATION=off turns it off).
 const EMAIL_VERIFICATION = mailer.configured && String(process.env.EMAIL_VERIFICATION || "").toLowerCase() !== "off";
 const CODE_MINUTES = 15, CODE_MAX_ATTEMPTS = 5, CODE_RESEND_SECONDS = 60;
-if (!EMAIL_VERIFICATION) console.warn("[AI Stoica] Email verification is off: set SMTP_HOST, SMTP_USER, SMTP_PASS (and MAIL_FROM) to send sign-up codes.");
+if (!EMAIL_VERIFICATION) console.warn(`[${BRAND_NAME}] Email verification is off: set SMTP_HOST, SMTP_USER, SMTP_PASS (and MAIL_FROM) to send sign-up codes.`);
 
 const DEFAULT_USER_PERMISSIONS = {
   chat: true,
@@ -135,7 +136,7 @@ const DUMMY_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString("hex"), 12);
 
 async function ensureOwnerAccount() {
   if (!OWNER_INITIAL_PASSWORD) {
-    console.warn("[AI Stoica] OWNER_INITIAL_PASSWORD is not set: until the Owner registers, anyone who knows OWNER_EMAIL could register it.");
+    console.warn(`[${BRAND_NAME}] OWNER_INITIAL_PASSWORD is not set: until the Owner registers, anyone who knows OWNER_EMAIL could register it.`);
     return;
   }
   const existing = await pool.query("SELECT id FROM users WHERE lower(email)=lower($1)", [OWNER_EMAIL]);
@@ -150,7 +151,7 @@ async function ensureOwnerAccount() {
     [userId, JSON.stringify(OWNER_PERMISSIONS)]
   );
   await audit(userId, "owner.bootstrap", userId, {});
-  console.log("[AI Stoica] Owner account created from OWNER_INITIAL_PASSWORD. You can remove the variable now.");
+  console.log(`[${BRAND_NAME}] Owner account created from OWNER_INITIAL_PASSWORD. You can remove the variable now.`);
 }
 
 // Every .sql file in migrations/ runs once, in name order, under an advisory lock (safe with several replicas).
@@ -169,7 +170,7 @@ async function runMigrations() {
         await client.query(fs.readFileSync(path.join(dir, file), "utf8"));
         await client.query("INSERT INTO schema_migrations(version) VALUES($1)", [file]);
         await client.query("COMMIT");
-        console.log("[AI Stoica] Migration applied:", file);
+        console.log(`[${BRAND_NAME}] Migration applied:`, file);
       } catch (e) {
         await client.query("ROLLBACK");
         throw e;
@@ -198,7 +199,7 @@ async function migrate() {
   );
   if (blockedNow.rowCount) {
     await pool.query("DELETE FROM sessions WHERE user_id = ANY($1::text[])", [blockedNow.rows.map(r => r.id)]);
-    console.log(`[AI Stoica] ${blockedNow.rowCount} account(s) on blocked email domains set to "blocked".`);
+    console.log(`[${BRAND_NAME}] ${blockedNow.rowCount} account(s) on blocked email domains set to "blocked".`);
   }
   // An Owner role left from a previous OWNER_EMAIL grants nothing anymore.
   await pool.query("UPDATE users SET role='user', updated_at=NOW() WHERE role='owner' AND lower(email)<>lower($1)", [OWNER_EMAIL]);
@@ -347,7 +348,7 @@ const registerLimiter = rateLimit({ ...limiterDefaults, windowMs: 60 * 60_000, l
 app.get("/health", async (_req, res, next) => {
   try {
     const r = await pool.query("SELECT NOW() AS now");
-    res.json({ ok: true, service: "AI Stoica Server", database: "ok", time: r.rows[0].now });
+    res.json({ ok: true, service: `${BRAND_NAME} Server`, database: "ok", time: r.rows[0].now });
   } catch (e) { next(e); }
 });
 
@@ -444,7 +445,7 @@ async function requestOwnerApproval(userId, name, email) {
     "INSERT INTO access_requests(user_id,token_hash) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET token_hash=EXCLUDED.token_hash, created_at=NOW()",
     [userId, sha256(accessToken)]
   );
-  push.sendToUser(ownerId, accessRequestPush(name, email, accessToken, userId)).catch(e => console.warn("[AI Stoica] Push:", e.message));
+  push.sendToUser(ownerId, accessRequestPush(name, email, accessToken, userId)).catch(e => console.warn(`[${BRAND_NAME}] Push:`, e.message));
 }
 
 // A 6-digit code, kept only as a hash, valid CODE_MINUTES. Returns "sent", "wait" (asked again within a minute) or "failed".
@@ -460,7 +461,7 @@ async function sendSignupCode(user, { onlyIfIdle = false } = {}) {
     [user.id, sha256(user.id + ":" + code), new Date(Date.now() + CODE_MINUTES * 60000)]
   );
   try { await mailer.sendSignupCode(user.email, user.name || user.email.split("@")[0], code, CODE_MINUTES); return "sent"; }
-  catch (e) { console.warn("[AI Stoica] Sign-up email failed:", e.message); await pool.query("DELETE FROM email_codes WHERE user_id=$1", [user.id]); return "failed"; }
+  catch (e) { console.warn(`[${BRAND_NAME}] Sign-up email failed:`, e.message); await pool.query("DELETE FROM email_codes WHERE user_id=$1", [user.id]); return "failed"; }
 }
 
 async function unverifiedUser(emailInput) {
@@ -507,7 +508,7 @@ function accessRequestPush(name, email, token, userId) {
   return {
     kind: "access_request",
     title: "Cerere nouă de acces",
-    body: `${name} (${email}) vrea să se conecteze la AI Stoica. Permiți?`,
+    body: `${name} (${email}) vrea să se conecteze la ${BRAND_NAME}. Permiți?`,
     tag: "access-" + userId,
     token,
     url: "/?access=" + encodeURIComponent(token)
@@ -552,7 +553,7 @@ app.post("/auth/access-requests/:token", authLimiter, async (req, res, next) => 
     await pool.query("DELETE FROM access_requests WHERE user_id=$1", [u.id]);
     await audit(ownerId, "admin.user_status", u.id, { status, via: "push" });
     await notify(u.id, "account_status", status === "active" ? "Cont aprobat" : "Cerere respinsă",
-      `Statusul contului tău AI Stoica: ${status === "active" ? "Cont aprobat" : "Cerere respinsă"}.`);
+      `Statusul contului tău ${BRAND_NAME}: ${status === "active" ? "Cont aprobat" : "Cerere respinsă"}.`);
     res.json({ ok: true, status, name: u.name, email: u.email });
   } catch (e) { next(e); }
 });
@@ -574,7 +575,7 @@ app.post("/api/admin/push/unsubscribe", auth, ownerOnly, async (req, res, next) 
 });
 app.post("/api/admin/push/test", auth, ownerOnly, async (req, res, next) => {
   try {
-    const delivered = await push.sendToUser(req.user.id, { kind: "test", title: "AI Stoica", body: "Notificările merg. Aici vei primi cererile de acces pentru conturi noi.", tag: "test", url: "/" });
+    const delivered = await push.sendToUser(req.user.id, { kind: "test", title: `${BRAND_NAME}`, body: "Notificările merg. Aici vei primi cererile de acces pentru conturi noi.", tag: "test", url: "/" });
     res.json({ delivered });
   } catch (e) { next(e); }
 });
@@ -604,7 +605,7 @@ app.post("/auth/login", authLimiter, async (req, res, next) => {
     const ip = clientIp(req);
     await audit(user.id, "user.login", user.id, { ip });
 
-    await notifyThrottled(user.id, "login", "Autentificare AI Stoica", `Te-ai autentificat la AI Stoica de la adresa ${ip || "necunoscută"}.`);
+    await notifyThrottled(user.id, "login", `Autentificare ${BRAND_NAME}`, `Te-ai autentificat la ${BRAND_NAME} de la adresa ${ip || "necunoscută"}.`);
     if (!isOwnerRow(user)) {
       const ownerId = await ownerUserId();
       if (ownerId) await notifyThrottled(ownerId, "user_login", "Utilizator conectat", `${user.name} (${user.email}) s-a autentificat. IP: ${ip || "necunoscut"}.`, `(${user.email})`);
@@ -681,7 +682,7 @@ app.patch("/api/admin/users/:id/status", auth, ownerOnly, async (req, res, next)
       suspended: "Cont suspendat",
       blocked: "Cont blocat"
     };
-    await notify(target.id, "account_status", statusLabels[status], `Statusul contului tău AI Stoica: ${statusLabels[status]}.`);
+    await notify(target.id, "account_status", statusLabels[status], `Statusul contului tău ${BRAND_NAME}: ${statusLabels[status]}.`);
     const updated = await pool.query("SELECT * FROM users WHERE id=$1", [target.id]);
     res.json({ user: publicUser(updated.rows[0]) });
   } catch (e) { next(e); }
@@ -887,7 +888,7 @@ app.use((_req, res) => res.status(404).json({ error: "Endpoint inexistent." }));
 app.use((err, _req, res, _next) => {
   const status = Number.isInteger(err?.status) && err.status >= 400 && err.status < 600 ? err.status : 500;
   if (status >= 500) console.error(err);
-  let message = "Eroare internă AI Stoica.";
+  let message = `Eroare internă ${BRAND_NAME}.`;
   if (err?.type === "entity.parse.failed") message = "Corpul cererii nu este JSON valid.";
   else if (err?.type === "entity.too.large") message = "Cererea depășește limita de 4 MB.";
   else if (status < 500 && err?.expose && err.message) message = err.message;
@@ -908,7 +909,7 @@ async function cleanup() {
 
 let server = null;
 async function shutdown(signal) {
-  console.log(`[AI Stoica] ${signal}: closing the server...`);
+  console.log(`[${BRAND_NAME}] ${signal}: closing the server...`);
   const force = setTimeout(() => process.exit(1), 10000);
   force.unref();
   try {
@@ -922,9 +923,9 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 (async () => {
   await migrate();
   await cleanup();
-  setInterval(() => { cleanup().catch(e => console.error("[AI Stoica] cleanup:", e.message)); }, 60 * 60 * 1000).unref();
-  server = app.listen(PORT, HOST, () => console.log(`AI Stoica Server listening on ${HOST}:${PORT}`));
+  setInterval(() => { cleanup().catch(e => console.error(`[${BRAND_NAME}] cleanup:`, e.message)); }, 60 * 60 * 1000).unref();
+  server = app.listen(PORT, HOST, () => console.log(`${BRAND_NAME} Server listening on ${HOST}:${PORT}`));
 })().catch(err => {
-  console.error("AI Stoica Server failed to start:", err);
+  console.error(`${BRAND_NAME} Server failed to start:`, err);
   process.exit(1);
 });

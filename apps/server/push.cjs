@@ -1,6 +1,7 @@
 // Phone notifications for the Owner (Web Push, through the installed AI Stoica app on aistoica.ro).
 // The VAPID keys come from VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY, or are generated once and kept in system_settings,
 // so nothing has to be added to .env. Expired phone subscriptions (404/410) are removed when a send fails.
+const { BRAND_NAME, BRAND_DOMAIN } = require("./brand.cjs");
 const webpush = require("web-push");
 
 const MAX_SUBSCRIPTIONS_PER_USER = 10;
@@ -69,7 +70,7 @@ function createPush({ pool, ownerEmail, log = console }) {
     const subs = (await pool.query("SELECT endpoint,p256dh,auth FROM push_subscriptions WHERE user_id=$1", [userId])).rows;
     if (!subs.length) return 0;
     const k = await vapidKeys();
-    const subject = "mailto:" + (ownerEmail || "owner@aistoica.ro");
+    const subject = "mailto:" + (ownerEmail || `owner@${BRAND_DOMAIN}`);
     let delivered = 0;
     await Promise.all(subs.map(async (s) => {
       try {
@@ -82,7 +83,7 @@ function createPush({ pool, ownerEmail, log = console }) {
         await pool.query("UPDATE push_subscriptions SET last_success_at=NOW() WHERE endpoint=$1", [s.endpoint]).catch(() => {});
       } catch (e) {
         if (e?.statusCode === 404 || e?.statusCode === 410) await pool.query("DELETE FROM push_subscriptions WHERE endpoint=$1", [s.endpoint]).catch(() => {});
-        else log.warn?.("[AI Stoica] Push failed:", e?.statusCode || e?.code || e?.message);
+        else log.warn?.(`[${BRAND_NAME}] Push failed:`, e?.statusCode || e?.code || e?.message);
       }
     }));
     return delivered;

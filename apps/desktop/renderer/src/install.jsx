@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Download, X } from "lucide-react";
 import { IS_WEB, storage } from "./core.jsx";
+import { BRAND_NAME, BRAND_DOMAIN } from "./brand.js";
 
 // Installable app (PWA) for the web version: free, no App Store / Google Play.
 // Chrome / Edge / Android fire "beforeinstallprompt" once, often before React mounts, so it is caught here at load.
@@ -35,7 +36,7 @@ async function promptInstall(refresh) {
 
 function InstallSteps() {
   if (isIos()) return <ol className="installSteps">
-    {!isIosSafari() && <li>Deschide <b>aistoica.ro</b> în <b>Safari</b> (pe iPhone doar Safari poate instala aplicația).</li>}
+    {!isIosSafari() && <li>Deschide <b>{BRAND_DOMAIN}</b> în <b>Safari</b> (pe iPhone doar Safari poate instala aplicația).</li>}
     <li>Apasă <b>Distribuie</b> (pătratul cu săgeata în sus) sau <b>•••</b> → <b>Distribuie</b>.</li>
     <li>Derulează și alege <b>Adaugă pe ecranul principal</b>, apoi <b>Adaugă</b>.</li>
   </ol>;
@@ -59,11 +60,11 @@ export function InstallApp({ banner = false }) {
   if (!IS_WEB || isStandalone() || hidden) return null;
   async function install() { if (!(await promptInstall(refresh))) setOpen(v => !v); }
   function dismiss() { storage.set(DISMISS_KEY, String(Date.now())); setHidden(true); }
-  return <div className={banner ? "installCard banner" : "installCard"} role="region" aria-label="Instalează aplicația AI Stoica">
+  return <div className={banner ? "installCard banner" : "installCard"} role="region" aria-label={`Instalează aplicația ${BRAND_NAME}`}>
     <img src="./icons/icon-192.png" alt="" width="44" height="44"/>
     <div className="installText">
-      <b>AI Stoica</b>
-      <span>Convertește AI Stoica în aplicație pe telefon, gratuit</span>
+      <b>{BRAND_NAME}</b>
+      <span>Convertește {BRAND_NAME} în aplicație pe telefon, gratuit</span>
       {open && <InstallSteps/>}
     </div>
     <button type="button" className="installBtn" onClick={install}><Download size={15}/> {deferredPrompt ? "Instalează" : open ? "Ascunde pașii" : "Cum instalez"}</button>

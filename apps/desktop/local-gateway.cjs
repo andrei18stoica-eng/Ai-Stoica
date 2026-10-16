@@ -1,3 +1,4 @@
+const { BRAND_NAME, BRAND_SHORT, BRAND_DOMAIN } = require("./lib/brand.cjs");
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -130,7 +131,7 @@ const DEEP_RESEARCH_WORDS=wordsRegex(["deep research","cercetare aprofundată","
 const GITHUB_WORDS=wordsRegex(["github","repository","repo","cod","code","bug","eroare","build","component","funcție","functie","endpoint","react","node","python","server","api","fișier","fisier"]);
 const SERVER_WORDS=wordsRegex(["server","ssh","hetzner","deploy","deployment","producție","productie","nginx","ubuntu"]);
 const PERMISSION_KEYS=["image_generation","video_generation","document_generation","file_upload","web_search","deep_research","automations","plugins","github_access"];
-const PERMISSION_LABELS={image_generation:"Generare imagini",video_generation:"Generare video",document_generation:"Fișiere descărcabile",file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",automations:"Automatizări",plugins:"Pluginuri",code:"Code AI Stoica",github_access:"GitHub"};
+const PERMISSION_LABELS={image_generation:"Generare imagini",video_generation:"Generare video",document_generation:"Fișiere descărcabile",file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",automations:"Automatizări",plugins:"Pluginuri",code:`Code ${BRAND_NAME}`,github_access:"GitHub"};
 function deniedMessage(key){return `Funcția „${PERMISSION_LABELS[key]||key}” este dezactivată de Owner pentru contul tău.`;}
 function pluginHeaders(plugin) {
   const out = { "Content-Type": "application/json" };
@@ -167,11 +168,26 @@ function roError(e){
   return msg||"Eroare necunoscută.";
 }
 
-function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = "AI Stoica Gateway", getOmniConfig: readOmniConfig, onAutomationResult, encryptSecret, decryptSecret, streamIdleMs, streamTotalMs, webDir, updateDir, serverSettings }) {
+function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceName = `${BRAND_NAME} Gateway`, getOmniConfig: readOmniConfig, onAutomationResult, encryptSecret, decryptSecret, streamIdleMs, streamTotalMs, webDir, updateDir, serverSettings }) {
   // The configuration is read many times per request; one read is reused for 2 seconds.
   let configMemo = null, configMemoAt = 0;
   const getOmniConfig = () => { const now = Date.now(); if (!configMemo || now - configMemoAt > 2000) { configMemo = (typeof readOmniConfig === "function" ? readOmniConfig() : null) || {}; configMemoAt = now; } return configMemo; };
   const store = createStore(dataDir);
+  // 0.7.19: the default assistants saved under the old name take the product's name (brand.json).
+  (() => {
+    try {
+      const db = store.read(); let changed = false;
+      for (const a of db.assistants || []) {
+        if (a.builtIn && a.name !== BRAND_NAME && /^(AI Stoica|Serasmart AI)$/.test(String(a.name || ""))) {
+          a.name = BRAND_NAME;
+          if (/^Ești (AI Stoica|Serasmart AI), asistentul principal/.test(String(a.systemPrompt || ""))) a.systemPrompt = `Ești ${BRAND_NAME}, asistentul AI principal al aplicației. Răspunde clar, riguros și util, în limba utilizatorului.`;
+          changed = true;
+        }
+        if (a.codeAssistant && /^(AI Stoica|Serasmart) Code$/.test(String(a.name || "")) && a.name !== `${BRAND_SHORT} Code`) { a.name = `${BRAND_SHORT} Code`; changed = true; }
+      }
+      if (changed) store.write(db);
+    } catch {}
+  })();
   const embeddingIndex = createEmbeddingIndex(dataDir);
   const secret = loadOrCreateSecret(dataDir);
   const filesDir = path.join(dataDir, "library-files");
@@ -233,7 +249,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(loopbackOnly&&hostName&&!["127.0.0.1","localhost","::1"].includes(hostName))return res.status(403).json({error:"Cerere blocată: adresă necunoscută."});
     if(!originAllowed(req.headers.origin)&&!sameOrigin(req)&&!(req.method==="GET"&&/^\/api\/designs\/[^/]+\/preview$/.test(req.path))){
       logError(`Blocked request from origin ${String(req.headers.origin).slice(0,200)} to ${req.method} ${req.path}`);
-      return res.status(403).json({error:"Cerere blocată: provine din afara aplicației AI Stoica."});
+      return res.status(403).json({error:`Cerere blocată: provine din afara aplicației ${BRAND_NAME}.`});
     }
     next();
   });
@@ -389,7 +405,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     let out="";
     for(const row of rows){
       const conv=row.conv;
-      const msgs=(Array.isArray(conv.messages)?conv.messages:[]).slice(-4).map(m=>(m?.role==="assistant"?"AI Stoica":"Utilizator")+": "+textFromContent(m?.content).slice(0,1800)).join("\n");
+      const msgs=(Array.isArray(conv.messages)?conv.messages:[]).slice(-4).map(m=>(m?.role==="assistant"?`${BRAND_NAME}`:"Utilizator")+": "+textFromContent(m?.content).slice(0,1800)).join("\n");
       const block="Conversație proiect: "+(conv.title||"fără titlu")+"\n"+msgs+"\n\n";
       if(out.length+block.length>18000)break;
       out+=block;
@@ -437,7 +453,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         let answer="";
         for(let k=hit.i+1;k<msgs.length&&msgs[k]?.role!=="user";k++)if(msgs[k]?.role==="assistant"){answer=chatMessageText(msgs[k]);break;}
         const t=Number(msgs[hit.i]?.createdAt||c.updatedAt||c.createdAt),at=t>0&&t<8.64e15?t:now;
-        const line=`[«${title}» · ${roShortDate.format(at)}] Utilizator: ${clipText(hit.text,600)}${answer?` / AI Stoica: ${clipText(answer,600)}`:""}`;
+        const line=`[«${title}» · ${roShortDate.format(at)}] Utilizator: ${clipText(hit.text,600)}${answer?` / ${BRAND_NAME}: ${clipText(answer,600)}`:""}`;
         if(size+1+line.length>3500)continue;
         lines.push(line);size+=1+line.length;
       }
@@ -501,7 +517,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const ref=String(args.branch||cfg.githubBranch||"main").trim()||"main";
     const encodedPath=String(args.filePath||"").split("/").map(encodeURIComponent).join("/");
     const url="https://api.github.com/repos/"+repo+"/contents/"+encodedPath;
-    const body={message:String(args.message||("AI Stoica: update "+args.filePath)).slice(0,500),content:Buffer.from(String(args.content||""),"utf8").toString("base64"),branch:ref};
+    const body={message:String(args.message||(`${BRAND_NAME}: update `+args.filePath)).slice(0,500),content:Buffer.from(String(args.content||""),"utf8").toString("base64"),branch:ref};
     if(args.sha)body.sha=args.sha;
     const r=await fetch(url,{method:"PUT",headers,body:JSON.stringify(body),signal:AbortSignal.timeout(20000)});
     const text=await r.text();let data={};try{data=JSON.parse(text)}catch{}
@@ -526,7 +542,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(file.content.length>GITHUB_SOLVE_MAX_CHARS)throw policyFailure("Fișierul are peste 120.000 de caractere. GitHub Solve lucrează doar cu fișiere complete mai mici, ca să nu taie conținutul la aplicare.",413);
     await requireModelAccess(req,model);
     const messages=[
-      {role:"system",content:"Ești motorul GitHub Solve din AI Stoica. Primești un singur fișier și o instrucțiune. Returnează EXCLUSIV conținutul complet al fișierului corectat, fără markdown fences, fără explicații și fără omisiuni."},
+      {role:"system",content:`Ești motorul GitHub Solve din ${BRAND_NAME}. Primești un singur fișier și o instrucțiune. Returnează EXCLUSIV conținutul complet al fișierului corectat, fără markdown fences, fără explicații și fără omisiuni.`},
       {role:"user",content:"Fișier: "+file.path+"\nInstrucțiune: "+String(instruction||"Analizează și corectează problema.").slice(0,4000)+"\n\nCONȚINUT ACTUAL:\n"+file.content}
     ];
     const r=await fetchChatCandidate(cfg,model,messages,false);
@@ -590,7 +606,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         for(const pair of commands){try{return {...await spawnCapture(pair[0],pair[1],{cwd:runDir,timeout:20000}),language:"python"}}catch(e){if(e.code!=="ENOENT")throw e}}
         throw policyFailure("Python nu este instalat pe acest calculator.",503);
       }
-      throw policyFailure("AI Stoica poate rula direct JavaScript/Node și Python.",400);
+      throw policyFailure(`${BRAND_NAME} poate rula direct JavaScript/Node și Python.`,400);
     }finally{try{fs.rmSync(runDir,{recursive:true,force:true})}catch{}}
   }
   async function sshRun(cfg,command,timeout=30000){
@@ -632,7 +648,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   // The whole answer (headers and body) must arrive within the timeout; the body is buffered here.
   async function cloudFetch(pathname, init = {}) {
     const base = cloudBase();
-    if (!base) throw new Error("AI Stoica Cloud nu este configurat.");
+    if (!base) throw new Error(`${BRAND_SHORT} Cloud nu este configurat.`);
     const signal = AbortSignal.timeout(Number(init.timeout || 9000));
     const r = await fetch(base + pathname, {
       method: init.method || "GET",
@@ -649,11 +665,11 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     error.status = status;
     return error;
   }
-  function cloudDownMessage(status){return `AI Stoica Cloud nu răspunde momentan${status?` (HTTP ${status})`:""}. Încearcă din nou peste câteva secunde.`;}
+  function cloudDownMessage(status){return `${BRAND_SHORT} Cloud nu răspunde momentan${status?` (HTTP ${status})`:""}. Încearcă din nou peste câteva secunde.`;}
   async function cloudModelPolicy(token, models) {
     const unique=[...new Set((models||[]).map(x=>String(x||"").trim()).filter(Boolean))];
     if (!cloudBase()) return { policyEnforced:false, data:unique.map(model=>({model,allowed:true})) };
-    if (!token) throw policyFailure("Nu pot verifica permisiunile AI. Reautentifică-te prin AI Stoica Cloud.",503);
+    if (!token) throw policyFailure(`Nu pot verifica permisiunile AI. Reautentifică-te prin ${BRAND_SHORT} Cloud.`,503);
     const chunks=[];for(let i=0;i<unique.length;i+=150)chunks.push(unique.slice(i,i+150));
     const all=[];let paidAiEnabled=null;
     for(const chunk of chunks){
@@ -661,12 +677,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       try {
         remote=await cloudFetch("/api/ai/access",{method:"POST",headers:{Authorization:`Bearer ${token}`},body:{models:chunk},timeout:9000});
       } catch(e) {
-        throw policyFailure(`AI Stoica Cloud nu poate verifica permisiunile AI: ${roError(e)}`,503);
+        throw policyFailure(`${BRAND_SHORT} Cloud nu poate verifica permisiunile AI: ${roError(e)}`,503);
       }
       const text=await remote.text();let data={};try{data=JSON.parse(text||"{}")}catch{}
       if(remote.status>=500)throw policyFailure(cloudDownMessage(remote.status),503);
       if(!remote.ok)throw policyFailure(typeof data?.error==="string"&&data.error?data.error:"Verificarea permisiunilor AI a eșuat.",remote.status||503);
-      if(!Array.isArray(data?.data))throw policyFailure("Răspuns invalid de la politica AI Stoica Cloud.",502);
+      if(!Array.isArray(data?.data))throw policyFailure(`Răspuns invalid de la politica ${BRAND_SHORT} Cloud.`,502);
       all.push(...data.data);
       if(typeof data.paidAiEnabled==="boolean")paidAiEnabled=data.paidAiEnabled;
     }
@@ -853,8 +869,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(await isDirectModel(cfg,freeDirectAllowed(context),requested))return {task:"direct",automatic,direct:true,reasons:["model API direct ales"],selectedModel:requested,candidates:[]};
     return {task:"manual",automatic,reasons:[automatic?"model implicit configurat":"model ales manual"],selectedModel:requested,candidates:[{id:requested,provider:inferProvider(requested),score:0}]};
   }
-  const BUILTIN_PROMPT="Ești AI Stoica, asistentul principal Stoica Enterprises AI. Răspunde clar, riguros și util, în limba utilizatorului.";
-  function builtInAssistant(userId){return {id:crypto.randomUUID(),userId,name:"AI Stoica",icon:"S",systemPrompt:BUILTIN_PROMPT,createdAt:Date.now(),builtIn:true};}
+  const BUILTIN_PROMPT=`Ești ${BRAND_NAME}, asistentul AI principal al aplicației. Răspunde clar, riguros și util, în limba utilizatorului.`;
+  function builtInAssistant(userId){return {id:crypto.randomUUID(),userId,name:`${BRAND_NAME}`,icon:"S",systemPrompt:BUILTIN_PROMPT,createdAt:Date.now(),builtIn:true};}
   // Cloud accounts are linked only by their Cloud id. The database is written only when something changed;
   // the current session token is kept on the user's automations so scheduled runs keep working after a new login.
   function ensureShadowUser(remoteUser, token) {
@@ -1009,7 +1025,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           return next();
         }
         if (remote.status === 401 || remote.status === 403) {
-          return res.status(remote.status).json({ error: typeof data?.error === "string" && data.error ? data.error : "Sesiunea AI Stoica Cloud nu mai este validă." });
+          return res.status(remote.status).json({ error: typeof data?.error === "string" && data.error ? data.error : `Sesiunea ${BRAND_SHORT} Cloud nu mai este validă.` });
         }
         // 5xx from a proxy (server down), 404 (wrong address) or 429: the account is not logged out.
         cloudUnreachable = true;
@@ -1020,14 +1036,14 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
     const session = localSession(token);
     // A Cloud account must not be logged out just because the internet or the server is down for a moment.
-    if (!session && cloudUnreachable) return res.status(503).json({ error: "Serverul AI Stoica Cloud nu răspunde momentan. Verifică internetul și încearcă din nou peste câteva secunde." });
+    if (!session && cloudUnreachable) return res.status(503).json({ error: `Serverul ${BRAND_SHORT} Cloud nu răspunde momentan. Verifică internetul și încearcă din nou peste câteva secunde.` });
     if (!session) return res.status(401).json({ error: "Autentificare necesară." });
     req.user = session.user; req.localToken = token; req.localSession = session.payload;
     next();
   }
   function cloudOwnerOnly(req,res,next) {
-    if (!cloudBase()) return res.status(503).json({ error:"AI Stoica Cloud nu este configurat în Setări." });
-    if (!req.cloudToken) return res.status(401).json({ error:"Reautentifică-te prin AI Stoica Cloud pentru Control Center." });
+    if (!cloudBase()) return res.status(503).json({ error:`${BRAND_SHORT} Cloud nu este configurat în Setări.` });
+    if (!req.cloudToken) return res.status(401).json({ error:`Reautentifică-te prin ${BRAND_SHORT} Cloud pentru Control Center.` });
     if (!ownerRequest(req)) return res.status(403).json({ error:"Acces rezervat Owner." });
     next();
   }
@@ -1038,7 +1054,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const remote = await cloudFetch(req.originalUrl, { method:req.method, headers, body:hasBody ? (req.body || {}) : undefined, timeout:12000 });
       const contentType = remote.headers.get("content-type") || "";
       const body = await remote.text();
-      if (!/json/i.test(contentType)) return res.status(remote.status >= 500 ? 503 : remote.status).json(remote.ok ? { data: body } : { error: remote.status >= 500 ? cloudDownMessage(remote.status) : `AI Stoica Cloud a răspuns cu HTTP ${remote.status}.` });
+      if (!/json/i.test(contentType)) return res.status(remote.status >= 500 ? 503 : remote.status).json(remote.ok ? { data: body } : { error: remote.status >= 500 ? cloudDownMessage(remote.status) : `${BRAND_SHORT} Cloud a răspuns cu HTTP ${remote.status}.` });
       res.status(remote.status).type(contentType).send(body);
     } catch (e) {
       res.status(503).json({ error: cloudDownMessage(0) });
@@ -1048,7 +1064,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   // Setări on the web site, for the Owner (apps/cloud/server.cjs passes serverSettings; the Windows app keeps its own
   // config through Electron and has no such route). Keys come back masked; a saved change applies to the next request.
   function requireSettingsOwner(req){
-    if(!serverSettings)throw policyFailure("Setările serverului există doar pe site (aistoica.ro); în Windows sunt în aplicație.",404);
+    if(!serverSettings)throw policyFailure(`Setările serverului există doar pe site (${BRAND_DOMAIN}); în Windows sunt în aplicație.`,404);
     if(!ownerRequest(req))throw policyFailure("Doar Owner-ul poate schimba setările serverului.",403);
   }
   app.get("/api/server/settings", auth, (req,res) => {
@@ -1072,7 +1088,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   const readUpdateJson=(name)=>{try{return JSON.parse(fs.readFileSync(path.join(updateDir,name),"utf8"))}catch{return null}};
   function requireUpdateOwner(req){
     if(!ownerRequest(req))throw policyFailure("Doar Owner-ul poate actualiza site-ul.",403);
-    if(!updateDir)throw policyFailure("Actualizarea din aplicație există doar pe serverul aistoica.ro.",404);
+    if(!updateDir)throw policyFailure(`Actualizarea din aplicație există doar pe serverul ${BRAND_DOMAIN}.`,404);
   }
   const UPDATE_SETUP="Serviciul de actualizare nu e instalat pe server. Rulează o dată pe server: sudo bash /opt/ai-stoica/deploy/hetzner/update.sh";
   app.get("/api/server/update", auth, (req,res) => {
@@ -1146,11 +1162,11 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       if (!remote.ok) {
         if (kind === "login" && remote.status === 401) countAttempt(req, kind);
         if (remote.status >= 500) return res.status(503).json({ error: cloudDownMessage(remote.status) });
-        return res.status(remote.status).json({ error: typeof data?.error === "string" && data.error ? data.error : `AI Stoica Cloud a refuzat cererea (HTTP ${remote.status}).`, ...(data?.status === "verify_email" ? { status: "verify_email", email: data.email } : {}) });
+        return res.status(remote.status).json({ error: typeof data?.error === "string" && data.error ? data.error : `${BRAND_SHORT} Cloud a refuzat cererea (HTTP ${remote.status}).`, ...(data?.status === "verify_email" ? { status: "verify_email", email: data.email } : {}) });
       }
       // A new account answers without a session: first the email code, then the Owner's approval.
       if (!data?.token && ["verify_email", "pending"].includes(data?.status)) return res.status(remote.status).json(data);
-      if (!data?.token || !data?.user) return res.status(502).json({ error: "Răspuns invalid de la AI Stoica Cloud." });
+      if (!data?.token || !data?.user) return res.status(502).json({ error: `Răspuns invalid de la ${BRAND_SHORT} Cloud.` });
       if (kind === "login") { clearAttempts(req, kind); await linkLocalAccount(data.user, req.body?.password); }
       return res.json(cloudAuthAnswer(data, data.token));
     } catch (e) { return res.status(503).json({ error: cloudDownMessage(0) }); }
@@ -1188,7 +1204,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   // Sign-up code from the email (AI Stoica Cloud only): confirm it, or ask for a new one.
   for (const [route, limit] of [["/auth/verify-email", 20], ["/auth/resend-code", 10]]) {
     app.post(route, async (req, res) => {
-      if (!cloudBase()) return res.status(404).json({ error: "Codul pe email există doar cu AI Stoica Cloud." });
+      if (!cloudBase()) return res.status(404).json({ error: `Codul pe email există doar cu ${BRAND_SHORT} Cloud.` });
       if (rateLimited(req, res, route, limit)) return;
       countAttempt(req, route);
       try {
@@ -1207,7 +1223,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const email = normalizeEmail(req.body?.email), password = typeof req.body?.password === "string" ? req.body.password : "";
     const db = store.read(), user = db.users.find((u) => normalizeEmail(u.email) === email && u.passwordHash) || db.users.find((u) => normalizeEmail(u.email) === email);
     if (!user) { countAttempt(req, "login"); return res.status(401).json({ error: "Email sau parolă incorectă." }); }
-    if (!user.passwordHash) { countAttempt(req, "login"); return res.status(401).json({ error: "Acest cont a fost creat prin AI Stoica Cloud și nu are parolă locală. Configurează din nou adresa AI Stoica Cloud în Setări sau creează un cont local cu alt email." }); }
+    if (!user.passwordHash) { countAttempt(req, "login"); return res.status(401).json({ error: `Acest cont a fost creat prin ${BRAND_SHORT} Cloud și nu are parolă locală. Configurează din nou adresa ${BRAND_SHORT} Cloud în Setări sau creează un cont local cu alt email.` }); }
     let ok = false;
     try { ok = await bcrypt.compare(password, user.passwordHash); } catch {}
     if (!ok) { countAttempt(req, "login"); return res.status(401).json({ error: "Email sau parolă incorectă." }); }
@@ -1249,7 +1265,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   // Permite / Refuză from the Owner's phone notification for a new account: the one-time link is the proof, so no login
   // is needed (the phone's service worker has no session). Unknown links count as failed attempts.
   app.use("/auth/access-requests", async (req, res) => {
-    if (!cloudBase()) return res.status(404).json({ error: "Cererile de acces există doar cu AI Stoica Cloud." });
+    if (!cloudBase()) return res.status(404).json({ error: `Cererile de acces există doar cu ${BRAND_SHORT} Cloud.` });
     if (rateLimited(req, res, "access-request", 30)) return;
     const end = res.end.bind(res);
     res.end = (...args) => { if (res.statusCode >= 400) countAttempt(req, "access-request"); return end(...args); };
@@ -1313,7 +1329,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   // Claude Code = cc/…). An account the Owner gave "code" to (Control Center) gets the paid APIs only (OpenAI / Claude
   // through OmniRoute, or the OpenAI key): the subscriptions' terms forbid sharing them.
   const CODE_SUBSCRIPTION=/^(cx|codex|cc|claude-code)\//i,CODE_API=/^(openai|anthropic)\//i;
-  const CODE_PROMPT="Ești AI Stoica Code, asistentul de programare Stoica Enterprises AI. Scrii cod corect, complet și ușor de testat, în blocuri de cod cu limbajul indicat. Explici pe scurt ce schimbi și de ce. Când îți lipsesc fișiere, versiuni sau erori, le ceri. Răspunzi în limba utilizatorului.";
+  const CODE_PROMPT=`Ești ${BRAND_SHORT} Code, asistentul de programare ${BRAND_NAME}. Scrii cod corect, complet și ușor de testat, în blocuri de cod cu limbajul indicat. Explici pe scurt ce schimbi și de ce. Când îți lipsesc fișiere, versiuni sau erori, le ceri. Răspunzi în limba utilizatorului.`;
   function codeAllowed(req){return permissionsFor(req).code===true;}
   async function codeModels(req){
     const cfg=getOmniConfig(),personal=personalAllowed(req.user,req.cloudUser),rows=[];
@@ -1343,12 +1359,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   // Starts a Code conversation: the "AI Stoica Code" assistant (made once per account) and the chosen code model.
   app.post("/api/code/session", auth, async (req,res) => {
     try{
-      if(!codeAllowed(req))return res.status(403).json({error:"Code AI Stoica este disponibil doar pentru Owner și pentru conturile cărora Owner-ul le-a dat acces."});
+      if(!codeAllowed(req))return res.status(403).json({error:`Code ${BRAND_NAME} este disponibil doar pentru Owner și pentru conturile cărora Owner-ul le-a dat acces.`});
       const models=await codeModels(req),model=String(req.body?.model||"").trim()||models[0]?.id||"";
       if(!model||!models.some(m=>m.id===model))return res.status(400).json({error:"Alege unul dintre modelele de cod din listă."});
       const db=store.read();
       let assistant=db.assistants.find(a=>a.userId===req.user.id&&a.codeAssistant);
-      if(!assistant){assistant={id:crypto.randomUUID(),userId:req.user.id,name:"AI Stoica Code",icon:"</>",systemPrompt:CODE_PROMPT,createdAt:Date.now(),codeAssistant:true};db.assistants.push(assistant);}
+      if(!assistant){assistant={id:crypto.randomUUID(),userId:req.user.id,name:`${BRAND_SHORT} Code`,icon:"</>",systemPrompt:CODE_PROMPT,createdAt:Date.now(),codeAssistant:true};db.assistants.push(assistant);}
       const now=Date.now(),label=model.split("/").slice(1).join("/")||model;
       const conversation={id:crypto.randomUUID(),userId:req.user.id,title:"Code · "+label.slice(0,80),projectId:null,assistantId:assistant.id,model,messages:[],createdAt:now,updatedAt:now};
       db.conversations.push(conversation);store.write(db);
@@ -1401,7 +1417,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       if(!fs.existsSync(backupPath))return res.status(404).json({error:"Backup GitHub inexistent."});
       const backup=JSON.parse(await fs.promises.readFile(backupPath,"utf8"));
       const current=await githubReadFile(getOmniConfig(),backup.path,backup.branch);
-      const result=await githubWriteFile(getOmniConfig(),{filePath:backup.path,content:backup.content,sha:current.sha,branch:backup.branch,message:"AI Stoica: rollback "+backup.path});
+      const result=await githubWriteFile(getOmniConfig(),{filePath:backup.path,content:backup.content,sha:current.sha,branch:backup.branch,message:`${BRAND_NAME}: rollback `+backup.path});
       res.json({data:{commit:result?.commit?.sha||"",path:backup.path,branch:backup.branch}});
     }catch(e){sendError(res,e)}
   });
@@ -1448,7 +1464,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
   app.delete("/api/assistants/:id", auth, (req,res) => {
     const db=store.read(),item=db.assistants.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Asistentul nu a fost găsit."});
-    if(item.builtIn)return res.status(400).json({error:"Asistentul implicit AI Stoica nu poate fi șters."});
+    if(item.builtIn)return res.status(400).json({error:`Asistentul implicit ${BRAND_NAME} nu poate fi șters.`});
     db.assistants=db.assistants.filter(x=>x!==item);
     for(const c of db.conversations)if(c.userId===req.user.id&&c.assistantId===item.id)c.assistantId=null;
     store.write(db);res.json({ok:true});
@@ -1755,14 +1771,14 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     try {
       reserveQuota(req,res,"document");
       const format=String(req.body?.format||"docx").toLowerCase().replace(/^\./,"");
-      const title=String(req.body?.title||"AI Stoica").trim().slice(0,120)||"AI Stoica";
+      const title=String(req.body?.title||`${BRAND_NAME}`).trim().slice(0,120)||`${BRAND_NAME}`;
       const content=typeof req.body?.content==="string"?req.body.content:"";
-      if(!EXPORT_FORMATS.has(format))return res.status(400).json({error:"Format neacceptat de sistemul de fișiere AI Stoica."});
+      if(!EXPORT_FORMATS.has(format))return res.status(400).json({error:`Format neacceptat de sistemul de fișiere ${BRAND_NAME}.`});
       if(!content.trim())return res.status(400).json({error:"Nu există conținut de exportat."});
       if(content.length>250000)return res.status(413).json({error:"Fișierul depășește limita de 250.000 de caractere pentru un singur export."});
       const generated=await createExportBytes(format,title,content);
       const requestedName=typeof req.body?.fileName==="string"?req.body.fileName.trim():"";
-      const baseName=safeGeneratedName(requestedName||title).replace(new RegExp(`\\.(${[...EXPORT_FORMATS].join("|")})$`,"i"),"")||"AI Stoica";
+      const baseName=safeGeneratedName(requestedName||title).replace(new RegExp(`\\.(${[...EXPORT_FORMATS].join("|")})$`,"i"),"")||`${BRAND_NAME}`;
       const name=baseName+"."+format;
       const id=crypto.randomUUID(),target=path.join(filesDir,id+"."+format);
       await fs.promises.writeFile(target,generated.bytes);
@@ -2020,7 +2036,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const key=directOpenRouterKey(cfg);if(!key)return null;
     const model=String(cfg.openRouterImageModel||"google/gemini-3.1-flash-image").trim();
     const r=await fetch("https://openrouter.ai/api/v1/images",{
-      method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${key}`,"X-Title":"AI Stoica"},
+      method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${key}`,"X-Title":`${BRAND_NAME}`},
       body:JSON.stringify({model,prompt}),
       signal:mediaSignal(180000)
     });
@@ -2260,7 +2276,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const key=directOpenRouterKey(cfg);if(!key)return null;
     const defaultModel=cfg.videoMode==="quality"?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast";
     const model=String(cfg.openRouterVideoModel||defaultModel).trim();
-    const headers={"Content-Type":"application/json",Authorization:`Bearer ${key}`,"X-Title":"AI Stoica"};
+    const headers={"Content-Type":"application/json",Authorization:`Bearer ${key}`,"X-Title":`${BRAND_NAME}`};
     const submit=await fetch("https://openrouter.ai/api/v1/videos",{
       method:"POST",headers,
       body:JSON.stringify({model,prompt,duration:Math.max(1,Math.min(15,Number(duration||4))),resolution:"720p",aspect_ratio:String(aspectRatio||"16:9"),generate_audio:false}),
@@ -2556,8 +2572,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   async function saveGeneratedMedia(req,{bytes,mime,kind,prompt,model,provider}){
     const id=crypto.randomUUID(),ext=mediaExtFromMime(mime,kind);
-    const base=safeGeneratedName((kind==="image"?"Imagine AI Stoica":"Video AI Stoica")+" - "+String(prompt||"").slice(0,55)).replace(/\.[^.]+$/,"");
-    const name=(base||`AI Stoica ${kind}`)+"."+ext,target=path.join(filesDir,id+"."+ext);
+    const base=safeGeneratedName((kind==="image"?`Imagine ${BRAND_NAME}`:`Video ${BRAND_NAME}`)+" - "+String(prompt||"").slice(0,55)).replace(/\.[^.]+$/,"");
+    const name=(base||`${BRAND_NAME} ${kind}`)+"."+ext,target=path.join(filesDir,id+"."+ext);
     await fs.promises.writeFile(target,bytes);
     const db=store.read(),item={id,userId:req.user.id,name,mime,size:bytes.length,kind,filePath:target,storage:"disk",source:kind==="image"?"ai-image":"ai-video",prompt:String(prompt||"").slice(0,2000),model:String(model||""),provider:String(provider||""),createdAt:Date.now()};
     db.library.push(item);store.write(db);
@@ -2968,7 +2984,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const hint=mediaProviders(cfg,"video").size?mediaOnlyHint(cfg,"video",strictFree,madeBy):!configuredProviders.length
         ?" Nu există nicio cheie video configurată în Setări > Video."
         :strictFree
-          ?" Protecția «Doar gratuit» este activă: AI Stoica pornește doar modelele web gratuite din OmniRoute (VEO 3.1, Seedance) și joburile al căror cost $0 îl poate confirma din catalogul providerului."
+          ?` Protecția «Doar gratuit» este activă: ${BRAND_NAME} pornește doar modelele web gratuite din OmniRoute (VEO 3.1, Seedance) și joburile al căror cost $0 îl poate confirma din catalogul providerului.`
           :"";
       throw policyFailure(("Generarea videoclipului nu a produs un fișier MP4 real."+hint+" "+errors.slice(0,10).join(" | ")).trim(),502);
     }catch(e){if(!signal.aborted)sendError(res,e)}
@@ -3027,13 +3043,13 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   async function callPlugin(stored,message){
     const plugin=pluginWithSecrets(stored);
     // Built-in (0.7.18): public services that need no key; fetched through the same network guard as the others.
-    if(plugin.mode==="builtin")return runBuiltinPlugin(plugin.builtin,message,{request:url=>safeRequest(url,{method:"GET",headers:{"Accept":"application/json, text/xml, */*","User-Agent":"AI-Stoica/1.0 (+https://aistoica.ro)"},timeout:10000,maxBytes:2*1024*1024,truncate:true})});
+    if(plugin.mode==="builtin")return runBuiltinPlugin(plugin.builtin,message,{request:url=>safeRequest(url,{method:"GET",headers:{"Accept":"application/json, text/xml, */*","User-Agent":`AI-Stoica/1.0 (+https://${BRAND_DOMAIN})`},timeout:10000,maxBytes:2*1024*1024,truncate:true})});
     if(plugin.mode==="direct_app")return JSON.stringify({mode:"direct_app",name:plugin.name,appUrl:plugin.appUrl||plugin.url,message:"Plugin configurat pentru deschidere directă. Nu este necesar OAuth pentru lansarea aplicației."});
     if(plugin.oauthConnected&&plugin.accessToken)return callOAuthPlugin(plugin,message);
     const method=PLUGIN_METHODS.includes(String(plugin.method||"POST").toUpperCase())?String(plugin.method||"POST").toUpperCase():"POST";
     let url=plugin.url,body=null;
     if(method==="GET"){const u=new URL(url);u.searchParams.set("q",String(message||"").slice(0,1500));url=u.toString();}
-    else body=JSON.stringify({message:String(message||"").slice(0,20000),source:"AI Stoica",plugin:plugin.name});
+    else body=JSON.stringify({message:String(message||"").slice(0,20000),source:`${BRAND_NAME}`,plugin:plugin.name});
     const r=await safeRequest(url,{method,headers:pluginHeaders(plugin),body,timeout:12000,maxBytes:2*1024*1024,truncate:true,...pluginNetwork()});
     const text=await r.text();
     if(!r.ok)throw new Error(`HTTP ${r.status}: ${text.slice(0,300)}`);
@@ -3117,8 +3133,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.get("/api/plugins/oauth/callback", async (req,res) => {
     const state=String(req.query?.state||""),code=String(req.query?.code||""),oauthError=String(req.query?.error||"");
     const pending=oauthPending.get(state);oauthPending.delete(state);
-    const finish=(ok,message)=>res.status(ok?200:400).type("html").send(`<!doctype html><html><head><meta charset="utf-8"><title>AI Stoica OAuth</title></head><body style="font-family:Segoe UI,Arial;background:#0b1018;color:#eef4ff;padding:40px"><h2>${ok?"AI Stoica — conectat":"AI Stoica — conexiune eșuată"}</h2><p>${String(message).replace(/[<>&"']/g,x=>({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;","'":"&#39;"}[x]))}</p><p>Poți închide această fereastră și reveni în AI Stoica.</p></body></html>`);
-    if(!pending||Date.now()-pending.createdAt>10*60*1000)return finish(false,"Sesiunea OAuth a expirat. Reîncearcă din AI Stoica.");
+    const finish=(ok,message)=>res.status(ok?200:400).type("html").send(`<!doctype html><html><head><meta charset="utf-8"><title>${BRAND_NAME} OAuth</title></head><body style="font-family:Segoe UI,Arial;background:#0b1018;color:#eef4ff;padding:40px"><h2>${ok?`${BRAND_NAME} — conectat`:`${BRAND_NAME} — conexiune eșuată`}</h2><p>${String(message).replace(/[<>&"']/g,x=>({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;","'":"&#39;"}[x]))}</p><p>Poți închide această fereastră și reveni în ${BRAND_NAME}.</p></body></html>`);
+    if(!pending||Date.now()-pending.createdAt>10*60*1000)return finish(false,`Sesiunea OAuth a expirat. Reîncearcă din ${BRAND_NAME}.`);
     if(oauthError)return finish(false,`Providerul a refuzat autorizarea: ${oauthError.slice(0,200)}`);
     if(!code)return finish(false,"Providerul nu a returnat codul de autorizare.");
     try{
@@ -3142,7 +3158,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         accessToken:sealSecret(accessToken),refreshToken:sealSecret(String(token.refresh_token||"")),tokenExpiresAt:token.expires_in?Date.now()+Number(token.expires_in)*1000:null,createdAt:Date.now()
       };
       db.plugins.push(item);store.write(db);
-      return finish(true,`${pending.name} a fost autorizat și legat de AI Stoica.`);
+      return finish(true,`${pending.name} a fost autorizat și legat de ${BRAND_NAME}.`);
     }catch(e){return finish(false,`Nu am putut finaliza OAuth: ${e.code==="EBLOCKED"?e.message:roError(e)}`)}
   });
 
@@ -3196,7 +3212,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.post("/api/plugins/:id/test", auth, requirePermission("plugins"), async (req,res) => {
     const db=store.read(),item=db.plugins.find(x=>x.id===req.params.id&&x.userId===req.user.id);if(!item)return res.status(404).json({error:"Pluginul nu a fost găsit."});
     if(item.mode==="direct_app")return res.json({ok:true,direct:true,appUrl:item.appUrl||item.url,result:"Conexiune directă pregătită. Aplicația se deschide fără OAuth."});
-    try{const result=await callPlugin(item,String(req.body?.message||"Test AI Stoica").slice(0,2000));res.json({ok:true,result:String(result).slice(0,5000)});}
+    try{const result=await callPlugin(item,String(req.body?.message||`Test ${BRAND_NAME}`).slice(0,2000));res.json({ok:true,result:String(result).slice(0,5000)});}
     catch(e){res.status(e.status||502).json({error:e.code==="EBLOCKED"?e.message:roError(e)});}
   });
   app.delete("/api/plugins/:id", auth, (req,res) => {const db=store.read(),before=db.plugins.length;db.plugins=db.plugins.filter(x=>!(x.id===req.params.id&&x.userId===req.user.id));if(db.plugins.length===before)return res.status(404).json({error:"Pluginul nu a fost găsit."});store.write(db);res.json({ok:true});});
@@ -3550,8 +3566,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const latestText=textFromContent(latest?.content),query=typedText(latest?.content)||latestText.slice(0,4000);
     const cfg=getOmniConfig(),system=[];
     system.push("Când utilizatorul cere un fișier descărcabil (PDF, DOCX/Word, PPTX/PowerPoint, XLSX/Excel, CSV, JSON, Markdown, TXT, HTML, XML, RTF, ZIP, notebook sau fișier de cod), redactează direct conținutul final care trebuie introdus în acel fișier. Pentru XLSX/CSV folosește preferabil un tabel Markdown cu antete; pentru JSON produce JSON valid; pentru HTML/XML/SVG și cod produce conținut valid, fără explicații în afara lui. Nu afișa pseudo-comenzi de tool: aplicația creează fișierul real și îl atașează separat.");
-    system.push("Formule matematice: scrie-le în LaTeX, $…$ în text și $$…$$ pe un rând separat (de exemplu $$x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}$$), inclusiv în conținutul unui fișier Word. AI Stoica le afișează ca formule în chat și le transformă în ecuații Microsoft Word (Inserare → Ecuație), editabile. Nu folosi $ pentru sume de bani lângă cifre (scrie «10 USD» sau «10 lei»).");
-    system.push("Capabilități AI Stoica: aplicația are memorie persistentă, poate primi context din alte conversații ale aceluiași Proiect, poate căuta internetul în timp real, poate căuta fragmente relevante într-un repository GitHub configurat, iar Owner-ul poate rula cod JavaScript sau Python doar prin butonul explicit de rulare și poate lucra cu serverul SSH configurat. Nu afirma că aceste capabilități nu există atunci când contextul lor este prezent. Nu pretinde că un cod a fost executat dacă nu ai primit explicit un rezultat de rulare. Pentru proiecte mari, lucrează modular și folosește contextul relevant recuperat, fără a cere utilizatorului să copieze manual întreaga bază de cod.");
+    system.push(`Formule matematice: scrie-le în LaTeX, $…$ în text și $$…$$ pe un rând separat (de exemplu $$x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}$$), inclusiv în conținutul unui fișier Word. ${BRAND_NAME} le afișează ca formule în chat și le transformă în ecuații Microsoft Word (Inserare → Ecuație), editabile. Nu folosi $ pentru sume de bani lângă cifre (scrie «10 USD» sau «10 lei»).`);
+    system.push(`Capabilități ${BRAND_NAME}: aplicația are memorie persistentă, poate primi context din alte conversații ale aceluiași Proiect, poate căuta internetul în timp real, poate căuta fragmente relevante într-un repository GitHub configurat, iar Owner-ul poate rula cod JavaScript sau Python doar prin butonul explicit de rulare și poate lucra cu serverul SSH configurat. Nu afirma că aceste capabilități nu există atunci când contextul lor este prezent. Nu pretinde că un cod a fost executat dacă nu ai primit explicit un rezultat de rulare. Pentru proiecte mari, lucrează modular și folosește contextul relevant recuperat, fără a cere utilizatorului să copieze manual întreaga bază de cod.`);
     system.push("Fiabilitate: pentru informații actuale despre biblioteci, API-uri, modele, versiuni, prețuri sau servicii folosește prioritar contextul WEB LIVE dacă este disponibil și include la final o secțiune scurtă «Surse» cu linkurile folosite. Pentru cod, separă clar ce ai analizat de ce a fost efectiv rulat/testat. Pentru medical, juridic și financiar poți analiza și cita surse, dar păstrează recomandarea de validare umană atunci când decizia are consecințe importante.");
     const assistant=db.assistants.find(a=>a.id===assistantId&&a.userId===userId);if(assistant?.systemPrompt)system.push(assistant.systemPrompt);
     const skillText=skillSystemText(skillsForMessage((db.skills||[]).filter(x=>x.userId===userId),typedText(latest?.content)||latestText));if(skillText)system.push(skillText);
@@ -3561,7 +3577,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }
     if(user&&user.searchPastChats!==false){const past=pastChatsContext(db,userId,query,options.conversationId||null);if(past)system.push(past);}
     if(options.pluginsAllowed!==false){const pctx=await pluginContext(db,userId,query);if(pctx.length)system.push("Rezultate furnizate de pluginuri conectate:\n"+pctx.join("\n\n"));}
-    const lctx=libraryContext(db,userId,query);if(lctx)system.push("BIBLIOTECA AI STOICA — fragmente relevante din fișierele încărcate:\n"+lctx);
+    const lctx=libraryContext(db,userId,query);if(lctx)system.push(`BIBLIOTECA ${BRAND_NAME.toUpperCase()} — fragmente relevante din fișierele încărcate:\n`+lctx);
     if(cfg.projectContextEnabled!==false&&options.projectId){
       const project=db.projects.find(p=>p.id===options.projectId&&p.userId===userId);
       if(project?.instructions)system.push("INSTRUCȚIUNI PROPRII ALE PROIECTULUI:\n"+project.instructions);
@@ -3601,7 +3617,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const key=directOpenRouterKey(cfg);if(!key)throw new Error("Lipsește cheia OpenRouter.");
     if(openRouterFreeCache.key===key&&Date.now()-openRouterFreeCache.at<10*60*1000&&openRouterFreeCache.model)return openRouterFreeCache.model;
     const r=await fetch("https://openrouter.ai/api/v1/models",{
-      headers:{Authorization:"Bearer "+key,"X-Title":"AI Stoica"},
+      headers:{Authorization:"Bearer "+key,"X-Title":`${BRAND_NAME}`},
       signal:AbortSignal.timeout(12000)
     });
     if(!r.ok)throw new Error("OpenRouter models HTTP "+r.status+": "+(await r.text()).slice(0,400));
@@ -3652,7 +3668,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       mistral:()=>push("mistral","https://api.mistral.ai/v1",String(cfg.mistralApiKey||"").trim(),csvValues(cfg.mistralModel,MODEL_DEFAULTS.mistralModel),{label:"Mistral"}),
       nvidia:()=>push("nvidia","https://integrate.api.nvidia.com/v1",String(cfg.nvidiaApiKey||"").trim(),csvValues(cfg.nvidiaModel,MODEL_DEFAULTS.nvidiaModel),{label:"NVIDIA"}),
       github:()=>push("github","https://models.github.ai/inference",String(cfg.githubToken||"").trim(),csvValues(cfg.githubModelsModel,MODEL_DEFAULTS.githubModelsModel),{label:"GitHub Models",headers:{Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"}}),
-      openrouter:()=>push("openrouter","https://openrouter.ai/api/v1",directOpenRouterKey(cfg),openRouterModel?[openRouterModel]:[],{label:"OpenRouter",headers:{"X-Title":"AI Stoica"}}),
+      openrouter:()=>push("openrouter","https://openrouter.ai/api/v1",directOpenRouterKey(cfg),openRouterModel?[openRouterModel]:[],{label:"OpenRouter",headers:{"X-Title":`${BRAND_NAME}`}}),
       cloudflare:()=>push("cloudflare",cfg.cloudflareAccountId?"https://api.cloudflare.com/client/v4/accounts/"+encodeURIComponent(String(cfg.cloudflareAccountId).trim())+"/ai/v1":"",String(cfg.cloudflareApiToken||"").trim(),csvValues(cfg.cloudflareChatModel,MODEL_DEFAULTS.cloudflareChatModel),{label:"Cloudflare Workers AI"}),
       cohere:()=>push("cohere","https://api.cohere.ai/compatibility/v1",String(cfg.cohereApiKey||"").trim(),csvValues(cfg.cohereModel,MODEL_DEFAULTS.cohereModel),{label:"Cohere"}),
       huggingface:()=>push("huggingface","https://router.huggingface.co/v1",String(cfg.hfToken||"").trim(),csvValues(cfg.huggingFaceChatModel,MODEL_DEFAULTS.huggingFaceChatModel),{label:"Hugging Face"}),
@@ -3706,11 +3722,11 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   const directOnly=(cfg,route)=>route?.direct===true&&!fallbackOn(cfg,route)?route.selectedModel:"";
   const directReason=(route)=>route?.direct?(route.reasons||[]):["rezervă automată: modelul ales nu a răspuns, a răspuns un API direct"];
   function chosenModelFailure(req,cfg,route,errors){
-    if(route?.automatic)return policyFailure("Niciun model selectat de AI Stoica nu a putut răspunde. "+errors.slice(0,14).join(" | "),502);
+    if(route?.automatic)return policyFailure(`Niciun model selectat de ${BRAND_NAME} nu a putut răspunde. `+errors.slice(0,14).join(" | "),502);
     // «Rezervă automată» is in the Windows Settings for the Owner; on the server it is AI_STOICA_CHAT_FALLBACK.
     const hint=!directApisAllowed(req)||cfg.directChatEnabled===false?" Alege alt model din listă."
       :webDir?" Alege alt model din listă (Owner-ul poate porni rezerva automată pe server: AI_STOICA_CHAT_FALLBACK=true).":" Alege alt model din listă sau pornește «Rezervă automată» în Setări → API-uri AI.";
-    return policyFailure(`Modelul ales «${route?.selectedModel||"?"}» nu a răspuns, iar AI Stoica nu trece singur la alt model.${hint} Motiv: `+errors.slice(0,6).join(" | "),502);
+    return policyFailure(`Modelul ales «${route?.selectedModel||"?"}» nu a răspuns, iar ${BRAND_NAME} nu trece singur la alt model.${hint} Motiv: `+errors.slice(0,6).join(" | "),502);
   }
   // After 401/403/429 the remaining models of the same provider are skipped (same key, same limit).
   async function directChatFallback(cfg,messages,requestedModel,stream,timer=chatTimer(stream,null),only="",req=null){
@@ -4011,7 +4027,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     res.removeHeader("X-Frame-Options");
     res.removeHeader("Origin-Agent-Cluster");
     res.set({"Content-Type":"text/html; charset=utf-8","X-Content-Type-Options":"nosniff","Cache-Control":"no-store"});
-    const page=(status,text)=>res.status(status).set("Content-Security-Policy","sandbox").send(`<!doctype html><html lang="ro"><head><meta charset="utf-8"><title>AI Stoica</title></head><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#0b1018;color:#eef4ff;font-family:Segoe UI,Arial,sans-serif"><p>${text}</p></body></html>`);
+    const page=(status,text)=>res.status(status).set("Content-Security-Policy","sandbox").send(`<!doctype html><html lang="ro"><head><meta charset="utf-8"><title>${BRAND_NAME}</title></head><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#0b1018;color:#eef4ff;font-family:Segoe UI,Arial,sans-serif"><p>${text}</p></body></html>`);
     const d=isUuid(req.params.id)?store.read().designs.find(x=>x.id===req.params.id):null,v=Number(req.query.v);
     if(!d||!Number.isInteger(v)||!verifyPreviewToken(secret,req.query.t,d.userId,d.id,v))return page(401,"Linkul de previzualizare a expirat.");
     let html;try{html=await fs.promises.readFile(designFile(d.id,v),"utf8")}catch{return page(404,"Această versiune a designului nu mai există.")}
@@ -4043,11 +4059,11 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   async function automationContext(user,cloudToken,req){
     if(req)return req;
     if(!cloudBase())return {user};
-    if(!cloudToken)throw policyFailure("Sesiunea AI Stoica Cloud a expirat. Autentifică-te din nou pentru ca automatizarea să ruleze.",401);
+    if(!cloudToken)throw policyFailure(`Sesiunea ${BRAND_SHORT} Cloud a expirat. Autentifică-te din nou pentru ca automatizarea să ruleze.`,401);
     let remote;
     try{remote=await cloudFetch("/auth/me",{headers:{Authorization:`Bearer ${cloudToken}`},timeout:7000})}catch{throw policyFailure(cloudDownMessage(0),503)}
     let data={};try{data=JSON.parse(await remote.text()||"{}")}catch{}
-    if(remote.status===401||remote.status===403)throw policyFailure(typeof data?.error==="string"&&data.error?data.error:"Sesiunea AI Stoica Cloud a expirat. Autentifică-te din nou pentru ca automatizarea să ruleze.",401);
+    if(remote.status===401||remote.status===403)throw policyFailure(typeof data?.error==="string"&&data.error?data.error:`Sesiunea ${BRAND_SHORT} Cloud a expirat. Autentifică-te din nou pentru ca automatizarea să ruleze.`,401);
     if(!remote.ok||!data?.user)throw policyFailure(cloudDownMessage(remote.status),503);
     return {user,cloudUser:data.user,cloudToken,permissions:data.permissions||{}};
   }
@@ -4106,7 +4122,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       // and on its phones; before, the web version ran the automation and told no one.
       if(stillActive&&!noNotification&&target.notify!==false&&ctx.cloudToken&&cloudBase()){
         cloudFetch("/api/notifications/self",{method:"POST",headers:{Authorization:`Bearer ${ctx.cloudToken}`},body:{type:"automation",title:String(target.title||"Automatizare").slice(0,120),body:answer.slice(0,1000)},timeout:8000})
-          .then(r=>r.text()).catch(e=>console.warn("[AI Stoica] Notificarea automatizării nu a ajuns:",e?.message||e));
+          .then(r=>r.text()).catch(e=>console.warn(`[${BRAND_NAME}] Notificarea automatizării nu a ajuns:`,e?.message||e));
       }
     }finally{runningAutomations.delete(item.id)}
   }
@@ -4158,7 +4174,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   }
 
   // C9: every answer is JSON, also for unknown addresses and malformed requests (no HTML, no stack traces).
-  app.use((req,res)=>res.status(404).json({error:"Această adresă nu există în serviciul AI Stoica."}));
+  app.use((req,res)=>res.status(404).json({error:`Această adresă nu există în serviciul ${BRAND_NAME}.`}));
   app.use((err,req,res,next)=>{
     if(res.headersSent)return next(err);
     if(err?.type==="entity.parse.failed")return res.status(400).json({error:"Cererea conține JSON invalid."});
@@ -4167,7 +4183,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const status=Number(err?.status||err?.statusCode);
     if(status>=400&&status<500)return res.status(status).json({error:"Cererea nu este validă."});
     logError(`${req.method} ${req.path}: ${err?.stack||err}`);
-    res.status(500).json({error:"Eroare internă AI Stoica. Încearcă din nou."});
+    res.status(500).json({error:`Eroare internă ${BRAND_NAME}. Încearcă din nou.`});
   });
 
   const server=app.listen(port,host);

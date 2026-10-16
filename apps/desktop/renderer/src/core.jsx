@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import { prepareMath, mathFromCode, mathFromPre } from "./math.jsx";
 import remarkGfm from "remark-gfm";
 import { X, Check, Copy } from "lucide-react";
+import { BRAND_NAME } from "./brand.js";
 
 // Web version / installed phone app (PWA): the page is served by the AI Stoica server itself, so that server is the gateway.
 // The Windows app (preload bridge, file://) and the Vite dev server (port 5173) keep the local service.
@@ -49,9 +50,9 @@ export function isAuthLost(status,message){
   return status===401||(status===403&&/Contul nu este activ|așteaptă aprobarea|asteapta aprobarea/i.test(String(message||"")));
 }
 export function httpMessage(status){
-  if(status===413)return "Fișierul sau mesajul este prea mare pentru serviciul AI Stoica (HTTP 413).";
-  if(status===404)return "Serviciul AI Stoica nu a găsit resursa cerută (HTTP 404).";
-  if(status>=500)return `Serviciul AI Stoica a întâmpinat o eroare (HTTP ${status}).`;
+  if(status===413)return `Fișierul sau mesajul este prea mare pentru serviciul ${BRAND_NAME} (HTTP 413).`;
+  if(status===404)return `Serviciul ${BRAND_NAME} nu a găsit resursa cerută (HTTP 404).`;
+  if(status>=500)return `Serviciul ${BRAND_NAME} a întâmpinat o eroare (HTTP ${status}).`;
   return `Cererea nu a reușit (HTTP ${status}).`;
 }
 export function errorFromBody(text,status){
@@ -73,7 +74,7 @@ export async function api(path, options = {}) {
   const text = await r.text();
   if (!r.ok) throw apiError(r.status,text,path);
   if (!text) return {};
-  try { return JSON.parse(text); } catch { throw new Error(`Răspuns invalid de la serviciul AI Stoica (HTTP ${r.status}).`); }
+  try { return JSON.parse(text); } catch { throw new Error(`Răspuns invalid de la serviciul ${BRAND_NAME} (HTTP ${r.status}).`); }
 }
 export async function authedFetch(path,init={}){
   const r=await fetch(`${GATEWAY}${path}`,{...init,headers:authHeaders(init.headers||{})});
@@ -81,7 +82,7 @@ export async function authedFetch(path,init={}){
   return r;
 }
 
-export const PERMISSION_LABELS = {image_generation:"Generare imagini",video_generation:"Generare video",document_generation:"Fișiere descărcabile",file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",automations:"Scheduled",plugins:"Pluginuri",github_access:"GitHub",code:"Code AI Stoica"};
+export const PERMISSION_LABELS = {image_generation:"Generare imagini",video_generation:"Generare video",document_generation:"Fișiere descărcabile",file_upload:"Încărcare fișiere",web_search:"Căutare web",deep_research:"Deep Research",automations:"Scheduled",plugins:"Pluginuri",github_access:"GitHub",code:`Code ${BRAND_NAME}`};
 export function deniedMessage(key){return `Funcția „${PERMISSION_LABELS[key]||key}” este dezactivată de Owner pentru contul tău.`;}
 export const AccessContext = React.createContext({can:()=>true,deny:()=>{},isOwner:false});
 export function useAccess(){return useContext(AccessContext);}
@@ -136,7 +137,7 @@ export async function writeClipboardText(value) {
 }
 export function openLink(href){
   const url=String(href||"").trim();
-  if(!/^(https?:|mailto:)/i.test(url)){toast("Acest link nu poate fi deschis din AI Stoica.");return;}
+  if(!/^(https?:|mailto:)/i.test(url)){toast(`Acest link nu poate fi deschis din ${BRAND_NAME}.`);return;}
   if(!window.AIStoica?.openExternal){window.open(url,"_blank","noopener,noreferrer");return;}
   Promise.resolve(window.AIStoica.openExternal(url)).then(r=>{if(r&&r.ok===false)toast(r.error||"Nu am putut deschide linkul în browser.")}).catch(e=>toast("Nu am putut deschide linkul: "+e.message));
 }

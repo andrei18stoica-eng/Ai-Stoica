@@ -51,7 +51,7 @@ async function main() {
 
     // A Code session: the "AI Stoica Code" assistant (made once) and the chosen model.
     r = await call(8881, "/api/code/session", owner, "POST", { model: "cc/claude-sonnet-4.6" }); j = await r.json();
-    expect(r.status === 200 && j.data.model === "cc/claude-sonnet-4.6" && j.assistant?.codeAssistant && /AI Stoica Code/.test(j.assistant.systemPrompt) && j.data.assistantId === j.assistant.id, "Code session: " + JSON.stringify(j).slice(0, 300));
+    expect(r.status === 200 && j.data.model === "cc/claude-sonnet-4.6" && j.assistant?.codeAssistant && /Serasmart Code/.test(j.assistant.systemPrompt) && j.data.assistantId === j.assistant.id, "Code session: " + JSON.stringify(j).slice(0, 300));
     const firstAssistant = j.assistant.id;
     r = await call(8881, "/api/code/session", owner, "POST", { model: "cx/gpt-5.6-codex" }); j = await r.json();
     expect(j.assistant.id === firstAssistant, "the Code assistant is made once per account");

@@ -12,7 +12,7 @@ const AUTH_WINDOW_MS = 15 * 60000;
 // D1 rows are limited to 2 MB; conversations stay below that with room for the other columns.
 const CONVERSATION_MAX_BYTES = 1800000;
 const RECENT_ATTACHMENT_MESSAGES = 12;
-const NOT_IN_CLOUDFLARE = "Funcția nu este disponibilă în AI Stoica Cloud (Cloudflare). Folosește aplicația desktop sau serverul Hetzner.";
+const NOT_IN_CLOUDFLARE = "Funcția nu este disponibilă în Serasmart Cloud (Cloudflare). Folosește aplicația desktop sau serverul Hetzner.";
 const MSG_PENDING = "Contul așteaptă aprobarea Owner-ului.";
 const MSG_INACTIVE = "Contul nu este activ.";
 const MSG_TOO_MANY = "Prea multe încercări. Așteaptă 15 minute și încearcă din nou.";
@@ -419,7 +419,7 @@ async function makePdf(title, content) {
       }
     }
   };
-  addText(title || "AI Stoica", titleFont, 18);
+  addText(title || "Serasmart AI", titleFont, 18);
   y -= 10;
   addText(content, font, 10.5);
   return new Uint8Array(await pdf.save());
@@ -427,7 +427,7 @@ async function makePdf(title, content) {
 
 async function makeDocx(title, content) {
   const children = [
-    new Paragraph({ children: [new TextRun({ text: String(title || "AI Stoica"), bold: true, size: 32 })] }),
+    new Paragraph({ children: [new TextRun({ text: String(title || "Serasmart AI"), bold: true, size: 32 })] }),
     new Paragraph({ text: "" }),
     ...String(content || "").split("\n").map(line => new Paragraph({ children: [new TextRun({ text: line, size: 22 })] }))
   ];
@@ -455,26 +455,26 @@ function splitForSlides(content, maxCharacters = 900) {
 async function makePptx(title, content) {
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";
-  pptx.author = "AI Stoica";
-  pptx.company = "Stoica Enterprises AI";
-  pptx.subject = String(title || "AI Stoica");
-  pptx.title = String(title || "AI Stoica");
+  pptx.author = "Serasmart AI";
+  pptx.company = "Serasmart AI";
+  pptx.subject = String(title || "Serasmart AI");
+  pptx.title = String(title || "Serasmart AI");
   pptx.lang = "ro-RO";
   const slide = pptx.addSlide();
   slide.background = { color: "F7F9FC" };
-  slide.addText(String(title || "AI Stoica"), { x: 0.8, y: 2.35, w: 11.7, h: 0.8, fontFace: "Aptos Display", fontSize: 28, bold: true, color: "172033", align: "center", margin: 0 });
-  slide.addText("Document generat cu AI Stoica", { x: 1.2, y: 3.25, w: 10.9, h: 0.45, fontFace: "Aptos", fontSize: 14, color: "52627A", align: "center", margin: 0 });
+  slide.addText(String(title || "Serasmart AI"), { x: 0.8, y: 2.35, w: 11.7, h: 0.8, fontFace: "Aptos Display", fontSize: 28, bold: true, color: "172033", align: "center", margin: 0 });
+  slide.addText("Document generat cu Serasmart AI", { x: 1.2, y: 3.25, w: 10.9, h: 0.45, fontFace: "Aptos", fontSize: 14, color: "52627A", align: "center", margin: 0 });
   splitForSlides(content).forEach((chunk, index) => {
     const s = pptx.addSlide();
     s.background = { color: "FFFFFF" };
-    s.addText(index === 0 ? String(title || "AI Stoica") : String(title || "AI Stoica") + " – continuare", { x: 0.65, y: 0.45, w: 12.0, h: 0.55, fontFace: "Aptos Display", fontSize: 23, bold: true, color: "172033", margin: 0 });
+    s.addText(index === 0 ? String(title || "Serasmart AI") : String(title || "Serasmart AI") + " – continuare", { x: 0.65, y: 0.45, w: 12.0, h: 0.55, fontFace: "Aptos Display", fontSize: 23, bold: true, color: "172033", margin: 0 });
     s.addText(chunk, { x: 0.75, y: 1.25, w: 11.8, h: 5.65, fontFace: "Aptos", fontSize: 18, color: "26354A", breakLine: false, valign: "top", margin: 0.08, fit: "shrink" });
   });
   return new Uint8Array(await pptx.write({ outputType: "arraybuffer" }));
 }
 
 async function githubApi(env, suffix, options = {}) {
-  if (!env.GITHUB_TOKEN) throw fail(503, "GitHub nu este configurat în AI Stoica Cloud (lipsește secretul GITHUB_TOKEN).");
+  if (!env.GITHUB_TOKEN) throw fail(503, "GitHub nu este configurat în Serasmart Cloud (lipsește secretul GITHUB_TOKEN).");
   const repo = env.GITHUB_REPO || "andrei18stoica-eng/Ai-Stoica";
   let r;
   try {
@@ -674,7 +674,7 @@ async function chatMessages(env, user, incoming, { projectId, assistantId } = {}
   const assistant = await itemData(env, user.id, "assistant", assistantId);
   const project = await itemData(env, user.id, "project", projectId);
   const system = [
-    "Ești AI Stoica, asistentul principal Stoica Enterprises AI.",
+    "Ești Serasmart AI, asistentul AI principal al aplicației.",
     "Răspunde în limba utilizatorului, riguros, clar și complet.",
     "Folosește capacitatea maximă de raționament disponibilă. Nu simplifica doar pentru a economisi resurse.",
     "Când utilizatorul cere PDF, DOCX sau PPTX, redactează conținutul normal. Nu afișa pseudo-comenzi precum <invoke generate_pdf>; aplicația creează fișierul real separat.",
@@ -852,7 +852,7 @@ function route(method, path, handler, opts = {}) {
 }
 const unavailable = () => json({ error: NOT_IN_CLOUDFLARE }, 501);
 
-route("GET", "/health", () => json({ ok: true, service: "AI Stoica Cloudflare", mode: "performance-max", omni: true, cloud: true }), { public: true });
+route("GET", "/health", () => json({ ok: true, service: "Serasmart Cloudflare", mode: "performance-max", omni: true, cloud: true }), { public: true });
 route("POST", "/auth/register", handleAuthRegister, { public: true });
 route("POST", "/auth/login", handleAuthLogin, { public: true });
 route("POST", "/auth/reset-password", handleResetPassword, { public: true });
@@ -991,7 +991,7 @@ route("POST", "/api/export", async ctx => {
   const { request, env, user } = ctx;
   const b = await bodyJson(request);
   const format = String(b.format || "docx").toLowerCase().replace(/^\./, "");
-  const title = String(b.title || "AI Stoica").trim().slice(0, 120) || "AI Stoica";
+  const title = String(b.title || "Serasmart AI").trim().slice(0, 120) || "Serasmart AI";
   const content = String(b.content || "");
   if (!EXPORT_FORMATS[format]) return json({ error: "Format neacceptat. Folosește PDF, DOCX, PPTX, MD sau TXT." }, 400);
   if (!content.trim()) return json({ error: "Nu există conținut de exportat." }, 400);
@@ -1001,7 +1001,7 @@ route("POST", "/api/export", async ctx => {
   else if (format === "docx") { bytes = await makeDocx(title, content); mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"; }
   else if (format === "pptx") { bytes = await makePptx(title, content); mime = "application/vnd.openxmlformats-officedocument.presentationml.presentation"; }
   else { bytes = enc.encode(content); mime = format === "md" ? "text/markdown; charset=utf-8" : "text/plain; charset=utf-8"; }
-  const base = safeFileName(title).replace(/\.(pdf|docx|pptx|md|txt)$/i, "") || "AI Stoica";
+  const base = safeFileName(title).replace(/\.(pdf|docx|pptx|md|txt)$/i, "") || "Serasmart AI";
   return json({ data: await storeFile(env, user.id, { name: base + "." + format, mimeType: mime, bytes, source: "ai-export" }) });
 });
 
@@ -1049,7 +1049,7 @@ route("POST", "/api/github/solve", async ctx => {
   const original = decodeBase64Utf8(data.content || "");
   if (original.length > 220000) return json({ error: "Fișierul este prea mare pentru rezolvarea automată într-un singur pas." }, 413);
   const messages = [
-    { role: "system", content: "Ești agentul de programare AI Stoica. Primești un fișier din repository și o cerință. Returnează EXCLUSIV conținutul complet al fișierului corectat, fără explicații și fără delimitatoare Markdown." },
+    { role: "system", content: "Ești agentul de programare Serasmart AI. Primești un fișier din repository și o cerință. Returnează EXCLUSIV conținutul complet al fișierului corectat, fără explicații și fără delimitatoare Markdown." },
     { role: "user", content: "Repository: " + (env.GITHUB_REPO || "andrei18stoica-eng/Ai-Stoica") + "\nFișier: " + path + "\nCerință: " + instruction + "\n\nCONȚINUT ACTUAL:\n" + original }
   ];
   const out = await routeAI(env, messages, await permissionsOf(ctx));
@@ -1069,7 +1069,7 @@ route("POST", "/api/github/apply", async ctx => {
   const data = await githubApi(env, "/contents/" + path.split("/").map(encodeURIComponent).join("/"), {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ message: String(b.message || ("AI Stoica: rezolvare " + path)).slice(0, 500), content: bytesToBase64(enc.encode(content)), sha, branch: branchName })
+    body: JSON.stringify({ message: String(b.message || ("Serasmart AI: rezolvare " + path)).slice(0, 500), content: bytesToBase64(enc.encode(content)), sha, branch: branchName })
   });
   return json({ ok: true, data: { path, branch: branchName, commit: data.commit?.sha || null } });
 });
@@ -1332,9 +1332,9 @@ export default {
     try { return await router(request, env); }
     catch (e) {
       if (e instanceof HttpError) return json({ error: e.message }, e.status, e.headers || {});
-      console.error("AI Stoica Worker:", e?.stack || e);
+      console.error("Serasmart AI Worker:", e?.stack || e);
       if (/no such (column|table)/i.test(String(e?.message))) return json({ error: "Baza de date D1 nu are ultimele migrații. Rulează „npm run db:init” în apps/cloudflare, apoi încearcă din nou." }, 503);
-      return json({ error: "Eroare internă AI Stoica. Încearcă din nou peste câteva momente." }, 500);
+      return json({ error: "Eroare internă Serasmart AI. Încearcă din nou peste câteva momente." }, 500);
     }
   },
   async scheduled(_event, env, ctx) {
