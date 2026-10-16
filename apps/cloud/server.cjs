@@ -60,6 +60,9 @@ function envConfig() {
     videoProviders: process.env.SERASMART_VIDEO_PROVIDERS === undefined ? undefined : env("SERASMART_VIDEO_PROVIDERS"),
     // «Făcute de» is tried first; when those makers fail the other working providers are tried. true: only them.
     mediaStrict: env("SERASMART_MEDIA_STRICT").toLowerCase() === "true",
+    // Plans and credits (0.7.22): off until the Owner turns them on. The Owner is never charged.
+    creditsEnabled: env("SERASMART_CREDITS").toLowerCase() === "true",
+    timeZone: env("SERASMART_TIME_ZONE") || "Europe/Bucharest",
     // Free tier per account and day (the Owner is unlimited): pictures, videos, files. Not set: 3 / 1 / 10.
     freeImagesPerDay: env("SERASMART_FREE_IMAGES"),
     freeVideosPerDay: env("SERASMART_FREE_VIDEOS"),

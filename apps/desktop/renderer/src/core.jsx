@@ -79,6 +79,8 @@ export function errorFromBody(text,status){
 export function apiError(status,text,path=""){
   const message=errorFromBody(text,status);
   const err=new Error(message);err.status=status;
+  // Credits (0.7.22): the server says why ("credits_exhausted", "free_limit", "plan_upgrade") and when credits renew.
+  try{const j=JSON.parse(text||"{}");if(typeof j?.code==="string"){err.code=j.code;err.credits=j.credits||{};}}catch{}
   if(isAuthLost(status,message)&&!/^\/auth\/(login|register|logout)/.test(path)&&storage.get(TOKEN_KEY)&&authLostHandler)authLostHandler(message);
   return err;
 }

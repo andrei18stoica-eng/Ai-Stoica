@@ -7,7 +7,7 @@ import {
   CalendarClock, Plug, Library, Brain, Upload, Trash2, Play, Pin, PinOff,
   FileText, Image as ImageIcon, HardDrive, ToggleLeft, ToggleRight,
   Compass, Map as MapIcon, Globe2, Archive, ArchiveRestore, ExternalLink, SlidersHorizontal, Volume2,
-  PanelTopOpen, ShieldCheck, UserCheck, Download, Bell, Lock, Pencil, Palette, Clapperboard, Eye, Maximize2, LoaderCircle, SquareTerminal
+  PanelTopOpen, ShieldCheck, UserCheck, Download, Bell, Lock, Pencil, Palette, Clapperboard, Eye, Maximize2, LoaderCircle, SquareTerminal, Gauge
 } from "lucide-react";
 import "./styles.css";
 import {
@@ -28,6 +28,7 @@ import { normalizeIntent, FILE_FORMATS, FORMAT_CANDIDATES, requestedDocumentForm
 import { PluginsPage } from "./pages/Plugins.jsx";
 import { MemoryPage, PreferenceSwitches } from "./pages/Memory.jsx";
 import { SkillsPage } from "./pages/Skills.jsx";
+import { UsagePage, CreditsDialog } from "./pages/Usage.jsx";
 import { LibraryPage } from "./pages/Library.jsx";
 import { DesignPage } from "./pages/Design.jsx";
 import { splitQuestions, QuestionCard, QuestionsPending } from "./questions.jsx";
@@ -331,7 +332,7 @@ function AuthScreen({ onAuth, notice:initialNotice="" }) {
 
 function BrandMark({small=false}) { return <div className={cx("brandMark",small&&"small")}><img src="./serasmart-ai-mark.webp" alt={`${BRAND_NAME}`}/></div>; }
 
-const TOOL_ITEMS=[["explore",Compass,"Explorează",null],["code",SquareTerminal,`Code ${BRAND_NAME}`,"code"],["automations",CalendarClock,"Scheduled","automations"],["plugins",Plug,"Pluginuri","plugins"],["library",Library,"Bibliotecă",null],["design",Palette,"Design","document_generation"],["skills",Sparkles,"Skill-uri",null],["memory",Brain,"Memorie",null]];
+const TOOL_ITEMS=[["explore",Compass,"Explorează",null],["code",SquareTerminal,`Code ${BRAND_NAME}`,"code"],["automations",CalendarClock,"Scheduled","automations"],["plugins",Plug,"Pluginuri","plugins"],["library",Library,"Bibliotecă",null],["design",Palette,"Design","document_generation"],["skills",Sparkles,"Skill-uri",null],["memory",Brain,"Memorie",null],["usage",Gauge,"Usage",null]];
 function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,conversations,currentId,busyIds,onSelect,onDeleteConversation,onUnarchive,onNew,selectedProject,setSelectedProject,activeAssistantId,onUseAssistant,onNewProject,onNewAssistant,onEditProject,onEditAssistant,onTool,onSettings,onLogout}) {
   const {can,isOwner}=useAccess();
   const [showArchived,setShowArchived]=useState(false);
@@ -1623,6 +1624,7 @@ function App() {
   const [generations,setGenerations]=useState({});
   const [search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[sidebarCollapsed,setSidebarCollapsed]=useState(()=>storage.get(SIDEBAR_COLLAPSED_KEY)==="1");
   const [omni,setOmni]=useState(false),[cloudConfigured,setCloudConfigured]=useState(null),[showJumpBottom,setShowJumpBottom]=useState(false);
+  const [creditsDialog,setCreditsDialog]=useState(null);
   const [settings,setSettings]=useState(false),[prefBusy,setPrefBusy]=useState(""),[entityModal,setEntityModal]=useState(null),[toolPanel,setToolPanel]=useState(null),[filesPanel,setFilesPanel]=useState(false),[githubModal,setGithubModal]=useState(false);
   const [updateReady,setUpdateReady]=useState(false),[updateDismissed,setUpdateDismissed]=useState(false);
   const [lastGithubBackup,setLastGithubBackup]=useState(()=>storage.json(GITHUB_BACKUP_KEY,null));
@@ -1663,6 +1665,22 @@ function App() {
   }
   function abortAll(reason){for(const c of controllersRef.current.values()){try{c.abort(reason)}catch{}}controllersRef.current.clear();setGenerations({})}
   function showConversation(conv){setConversations(v=>v.map(x=>x.id===conv.id?conv:x))}
+  // Credits (0.7.22): after an answer, the warning at 25 / 50 / 75 / 90 / 100% of the week (shown once); at 100%, or when
+  // a model is not in the plan, the "buy credits or wait" message.
+  const creditsOnRef=useRef(true);
+  async function checkCreditNotice(){
+    if(!creditsOnRef.current)return;
+    try{
+      const d=await api("/api/credits");
+      if(!d.enabled||d.unlimited){creditsOnRef.current=false;return}
+      if(d.notice?.message)toast(d.notice.message,d.notice.level>=90?"error":"info");
+    }catch{}
+  }
+  function creditProblem(e){
+    if(!e?.code||!["credits_exhausted","free_limit","plan_required","plan_upgrade"].includes(e.code))return false;
+    setCreditsDialog({code:e.code,message:e.message,credits:e.credits||{}});
+    return true;
+  }
   const upsertMessage=(list,msg)=>{const a=Array.isArray(list)?list:[];const i=a.findIndex(m=>m?.id===msg.id);return i>=0?a.map((m,k)=>k===i?{...m,...msg}:m):[...a,msg]};
   // An answer, picture or video that kept going on the server while the app was closed, minimised or in the background:
   // shown while it grows, then replaced by the conversation the server saved.
@@ -1968,6 +1986,7 @@ function App() {
       showConversation(working);
       const saved=await saveConversation(working);
       api("/api/memory/capture",{method:"POST",body:JSON.stringify({conversationId:saved.id,userText:messageText(lastUser),assistantText:answer})}).catch(()=>{});
+      checkCreditNotice();
     }catch(e){
       clearTimeout(flushTimer);
       const reason=controller.signal.reason;
@@ -1977,6 +1996,7 @@ function App() {
       if(controller.signal.reason!=="user-stop"){
         try{const j=(await api(`/api/chat/jobs/${assistantMessage.id}`))?.data;if(j&&j.status!=="error"){resume=true;return}}catch{}
       }
+      if(!aborted)creditProblem(e);
       const finalMessage=aborted
         ?{...assistantMessage,routeInfo,content:answer,streaming:false,stopped:true}
         :{...assistantMessage,routeInfo,content:`Eroare: ${friendlyError(e.message)}`,streaming:false,error:true};
@@ -2001,10 +2021,12 @@ function App() {
         const d=await api(kind==="video"?"/api/generate/video":"/api/generate/image",{method:"POST",body:JSON.stringify({prompt,via:baseConv.model||model||"",requestId:base.id,conversationId:convId}),signal:controller.signal});
         const file={...d.data,type:d.data?.kind||kind,kind:d.data?.kind||kind};
         message={...base,content:"",attachments:[file],routeInfo:{task:kind==="video"?"video_generation":"image_generation",model:file.model||"",provider:inferModelProvider(file.model||"")}};
+        checkCreditNotice();
       }catch(e){
         const reason=controller.signal.reason;
         if(reason==="deleted"||reason==="logout"||reason==="replaced")return;
         if(reason!=="user-stop"){try{const j=(await api(`/api/chat/jobs/${base.id}`))?.data;if(j&&j.status!=="error"){resume=true;return}}catch{}}
+        if(!controller.signal.aborted)creditProblem(e);
         message=controller.signal.aborted
           ?{...base,content:"",stopped:true}
           :{...base,content:`Generarea ${kind==="video"?"videoclipului":"imaginii"} nu a reușit: ${friendlyError(e.message)}`,mediaGenerationError:true,...(kind==="video"&&/Setări\s*→\s*Video|nevoie de o cheie/i.test(e.message)?{needsVideoSetup:true}:{})};
@@ -2198,6 +2220,8 @@ function App() {
     {toolPanel?.name==="library"&&<LibraryPage onClose={closeTool} onAttach={attachFromLibrary} toAttachment={libraryItemToAttachment} initialFilter={toolPanel.filter||"all"} onOpenDesign={id=>openTool("design",id)}/>}
     {toolPanel?.name==="design"&&can("document_generation")&&<DesignPage onClose={closeTool} model={model} models={models} initialId={toolPanel.filter||null}/>}
     {toolPanel?.name==="skills"&&<SkillsPage onClose={closeTool}/>}
+    {toolPanel?.name==="usage"&&<UsagePage onClose={closeTool}/>}
+    {creditsDialog&&<CreditsDialog info={creditsDialog} onClose={()=>setCreditsDialog(null)} onBuy={()=>{setCreditsDialog(null);openTool("usage")}}/>}
     {toolPanel?.name==="memory"&&<MemoryPage onClose={closeTool} preferences={user?.preferences} onPreferences={updatePreferences} prefBusy={prefBusy}/>}
     {toolPanel?.name==="admin"&&isOwner&&<AdminPanel onClose={closeTool}/>}
     {toolPanel?.name==="plugins"&&can("plugins")&&<PluginsPage onClose={closeTool}/>}

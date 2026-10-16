@@ -1,8 +1,8 @@
 {
   "name": "serasmart-desktop",
-  "version": "0.7.21",
+  "version": "0.7.22",
   "private": true,
-  "description": "Serasmart AI 0.7.21 - the technical names become Serasmart too, with every existing piece of data carried over",
+  "description": "Serasmart AI 0.7.22 - plans and credits: weekly parts, warnings, extra credits, trial and free messages, the Usage page",
   "main": "main.cjs",
   "repository": {
     "type": "git",

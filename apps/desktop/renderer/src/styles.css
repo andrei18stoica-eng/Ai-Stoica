@@ -1104,3 +1104,31 @@ h1,h2,h3{text-wrap:balance}
 .skillSlug span{color:#55a8ff;font-weight:700}.skillSlug input{border:0;background:transparent;flex:1}.skillForm .formActions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
 .builtinSection h3{color:#72d9a2}
 @media(max-width:560px){.skillCard{flex-wrap:wrap}.skillCardActions{width:100%;justify-content:flex-end}.skillAuto span{display:none}}
+
+/* 0.7.22 — Usage: plan, this week's credits, packs, plans, Owner accounts */
+.usagePage .pageBody{display:grid;gap:18px}
+.usageOff{margin:0}
+.usageHero{border:1px solid #23344a;background:linear-gradient(180deg,#0f1722,#0b1119);border-radius:16px;padding:16px;display:grid;gap:12px}
+.usageHeroHead{display:flex;align-items:center;gap:12px}.usageHeroHead b{display:block;font-size:16px}.usageHeroHead small{color:#8fa0b5}
+.usageMeter{height:10px;border-radius:999px;background:#152132;overflow:hidden}.usageMeter span{display:block;height:100%;background:#3d8bff;border-radius:inherit;transition:width .4s cubic-bezier(.2,.8,.2,1)}
+.usageMeter.high span{background:#f0a23a}.usageMeter.full span{background:#ff5d73}
+.usageWeek{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:#b9c7d8;font-size:13px}
+.usageStats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.usageStats div{background:#0c131c;border:1px solid #1f2d40;border-radius:12px;padding:10px 12px;min-width:0}
+.usageStats small{display:block;color:#8fa0b5;font-size:12px}.usageStats b{font-size:18px;font-variant-numeric:tabular-nums}
+.usageSection h3{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:15px}
+.usagePack{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}.usagePack label{display:grid;gap:6px;font-size:13px;color:#b9c7d8}.usagePack input{width:150px}
+.usagePackPrice{display:grid;gap:2px;min-width:180px;flex:1}.usagePackPrice b{font-size:20px;font-variant-numeric:tabular-nums}.usagePackPrice small{color:#8fa0b5}
+.usagePlans{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.usagePlan{border:1px solid #1f2d40;background:#0c131c;border-radius:14px;padding:12px 14px;display:grid;gap:4px;align-content:start}.usagePlan.current{border-color:#3d8bff}
+.usagePlan b{display:flex;align-items:center;gap:6px}.usagePlanPrice{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}.usagePlanPrice small{font-size:12px;font-weight:500;color:#8fa0b5}
+.usagePlan>small{color:#8fa0b5}.usagePlan ul{margin:6px 0 0;padding-left:16px;color:#b9c7d8;font-size:13px;display:grid;gap:2px}
+.usageCosts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 18px}.usageCosts div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid #162233;padding:6px 0;font-size:13px}.usageCosts b{font-variant-numeric:tabular-nums}
+.usageTable{display:grid;border:1px solid #1f2d40;border-radius:12px;overflow:hidden}
+.usageRow{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,.7fr);gap:10px;padding:8px 12px;border-top:1px solid #162233;font-size:13px;align-items:center}
+.usageRow:first-child{border-top:0}.usageRow.head{background:#0f1722;color:#8fa0b5;font-size:12px}
+.usageRow span{min-width:0;overflow:hidden;text-overflow:ellipsis}.usageRow small{display:block;color:#7d8da2;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.usageRow .plus{color:#5fd39a}
+.usageTable.history .usageRow{grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,.6fr)}.usageTable.history .usageRow span:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.usageOwnerForm{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}.usageOwnerForm input{flex:1 1 200px;min-width:0}.usageOwnerForm input[type=number]{flex:0 0 110px}
+.creditsDialog .formActions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+@media(max-width:640px){.usageStats{grid-template-columns:1fr}.usageCosts{grid-template-columns:1fr}.usageRow{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) minmax(0,.8fr)}.usageRow.head span:nth-child(4),.usageRow span:nth-child(4){display:none}}

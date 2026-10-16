@@ -20,6 +20,7 @@ const { nextRun, validateAutomation, toBool } = require("./lib/schedule.cjs");
 const { QUESTIONS_RULE, sanitizeQuestions } = require("./lib/questions.cjs");
 const { BUILTIN_PLUGINS, runBuiltinPlugin, builtinKeywordMatch, publicBuiltinList } = require("./lib/builtinplugins.cjs");
 const { SKILL_TEMPLATES, MAX_SKILLS, validateSkill, skillsForMessage, skillSystemText, publicSkill } = require("./lib/skills.cjs");
+const creditsLib = require("./lib/credits.cjs");
 const { DESIGN_KINDS, MAX_VERSIONS: MAX_DESIGN_VERSIONS, designMessages, reviseMessages, extractHtml, htmlTitle, previewToken, verifyPreviewToken } = require("./lib/design.cjs");
 function normalizeModelKey(value){return String(value||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g," ").trim();}
 function isSmartAlias(value){
@@ -958,7 +959,9 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   function freeDirectAllowed(req){return directApisAllowed(req)||(!!cloudBase()&&!!req?.cloudUser&&hasPermission(req,"chat"));}
   async function directCandidatesFor(req,cfg,requested=""){
     if(!freeDirectAllowed(req))return [];
-    const list=await directChatCandidates(cfg,requested);
+    let list=await directChatCandidates(cfg,requested);
+    // A free message (no credits left): only the free providers, never Gemini's free tier (not allowed for the EU public).
+    if(req?.creditsFreeOnly)list=list.filter(c=>creditsLib.isFreeModel(`${c.provider}/${c.model}`));
     if(directApisAllowed(req)||!list.length)return list;
     const ids=list.map(c=>`${c.provider}/${c.model}`);
     const policy=await cloudModelPolicy(req.cloudToken,ids);
@@ -1322,7 +1325,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   function headerSafe(value){return String(value||"").replace(/[^\x20-\x7e]/g,"?").slice(0,200);}
   function sendError(res,e,fallback=502){
     if(res.headersSent)return;
-    res.status(Number.isInteger(e?.status)&&e.status>=400&&e.status<600?e.status:fallback).json({error:e?.status?e.message:roError(e)});
+    res.status(Number.isInteger(e?.status)&&e.status>=400&&e.status<600?e.status:fallback).json({error:e?.status?e.message:roError(e),...(e?.code&&e?.info?{code:e.code,credits:e.info}:{})});
   }
 
   // "Code Serasmart AI": a programming workspace. The Owner codes with the subscriptions connected in OmniRoute (Codex = cx/…,
@@ -1770,6 +1773,126 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     for(const kind of Object.keys(FREE_LIMIT_DEFAULTS))out[kind]=unlimited?{limit:null,used:0,left:null}:{limit:freeLimit(kind),used:quotaUsed(req.user.id,kind),left:Math.max(0,freeLimit(kind)-quotaUsed(req.user.id,kind))};
     res.json(out);
   });
+  // ---- Plans and credits (0.7.20, lib/credits.cjs) ----
+  // Off until the Owner turns them on (SERASMART_CREDITS=true on the server, or «creditsEnabled» in the site's settings).
+  // The Owner (and the single person of a PC with no Owner email) is never charged. Credits are set aside before the
+  // work starts and taken only when the answer, picture or video comes out; a failed request gives them back.
+  const credits=creditsLib.createCredits(dataDir,{timeZone:String(startCfg.timeZone||"Europe/Bucharest")});
+  function creditsOn(){const v=getOmniConfig()?.creditsEnabled;return v===true||String(v).toLowerCase()==="true";}
+  const meteredUser=(user,cloudUser=null)=>creditsOn()&&!!user&&!personalAllowed(user,cloudUser);
+  const metered=(req)=>meteredUser(req?.user,req?.cloudUser);
+  const planWith=(test)=>(Object.values(creditsLib.PLANS).find(test)||{name:"a higher"}).name;
+  function planUpgrade(message){return Object.assign(policyFailure(message,403),{code:"plan_upgrade",info:{}});}
+  // A feature the account's plan does not have ("Video is available from the Plus plan").
+  function requirePlanFeature(req,key,label){
+    if(!metered(req))return;
+    const f=credits.status(req.user.id).features;
+    if(!f[key])throw planUpgrade(`${label} ${label.endsWith("s")?"are":"is"} available from the ${planWith(p=>!!p[key])} plan.`);
+  }
+  // How many of something (automations, skills) the plan allows; null = no limit applies.
+  function planLimit(req,key){return metered(req)?credits.status(req.user.id).features[key]:null;}
+  const requestedModelOf=(req)=>(typeof req.body?.model==="string"?req.body.model.trim().slice(0,200):"")||String(getOmniConfig().model||"").trim();
+  // Before a chat answer: null (not charged), {hold} (credits set aside) or {free} (one of today's free messages,
+  // free models only). With no credits left, a model the person chose is refused (buy credits or wait), while the
+  // default model ("no model chosen") answers through a free model. Throws when the account can pay with neither.
+  function chatBill(user,cloudUser,model,{chosen=true}={}){
+    if(!meteredUser(user,cloudUser))return null;
+    const s=credits.status(user.id),tier=creditsLib.modelTier(model),freeModel=creditsLib.isFreeModel(model);
+    if(tier==="top"&&!freeModel&&!s.features.tiers.includes("top"))throw planUpgrade(`«${model}» is a top model, available from the ${planWith(p=>p.tiers.includes("top"))} plan. Choose another model or upgrade your plan.`);
+    const amount=creditsLib.cost("chat",{model});
+    if(s.available>=amount)return {hold:credits.reserve(user.id,amount,{kind:"chat",model}),userId:user.id};
+    if(freeModel||!chosen){credits.useFree(user.id);return {free:true,userId:user.id};}
+    credits.reserve(user.id,amount);
+    return null;
+  }
+  function chatSettle(bill,model,web){if(bill?.hold)return credits.settle(bill.hold,creditsLib.cost("chat",{model,web}),{kind:"chat",model});return null;}
+  function chatRelease(bill){if(bill?.hold)credits.release(bill.hold);else if(bill?.free)credits.refundFree(bill.userId);}
+  // On a free message only the free models answer (OmniRoute candidates and the direct APIs).
+  function freeOnly(route,req){
+    req.creditsFreeOnly=true;
+    route.candidates=(route.candidates||[]).filter(c=>creditsLib.isFreeModel(c.id));
+    // No free model in the route: the free direct APIs answer (Groq, Cerebras, Mistral…).
+    if(!route.candidates.length&&!route.direct)route.automatic=true;
+    return route;
+  }
+  // Pictures, video and voice: {hold} when the account pays with credits, null when it uses the daily free tier.
+  function mediaBill(req,kind,opts={}){
+    if(!metered(req))return null;
+    const amount=creditsLib.cost(kind,opts),s=credits.status(req.user.id);
+    if(s.available>=amount)return {hold:credits.reserve(req.user.id,amount,{kind,model:opts.model}),userId:req.user.id};
+    return null;
+  }
+  // Taken only when the picture / video / text really comes out. With a background job (the page may close) the job's
+  // end decides; without one, the response: a closed or failed request gives the credits back.
+  function mediaSettle(bill,res,kind,opts={},job=null){
+    if(!bill?.hold)return;
+    const settle=()=>credits.settle(bill.hold,creditsLib.cost(kind,opts),{kind,model:opts.model});
+    if(job){job.onEnd=(ok)=>{if(ok)settle();else credits.release(bill.hold);};return;}
+    let done=false;
+    res.once("finish",()=>{done=true;if(res.statusCode<400)settle();else credits.release(bill.hold);});
+    res.once("close",()=>{if(!done)credits.release(bill.hold);});
+  }
+  const accountByEmail=(email)=>store.read().users.find(u=>normalizeEmail(u.email)===normalizeEmail(email));
+  function creditView(req){
+    const s=credits.status(req.user.id);
+    return {enabled:creditsOn(),unlimited:!metered(req),...s,history:credits.history(req.user.id,60),catalog:creditsLib.catalog()};
+  }
+  app.get("/api/credits", auth, (req,res) => {
+    const out=creditView(req);
+    // A warning is shown once: reading it clears it.
+    if(out.notice&&req.query.peek!=="1")credits.takeNotice(req.user.id);
+    res.json(out);
+  });
+  app.get("/api/credits/price", auth, (req,res) => {
+    const n=Math.floor(Number(req.query.credits));
+    const price=creditsLib.priceForCredits(n);
+    if(price===null)return res.status(400).json({error:`The minimum is ${creditsLib.MIN_PACK} credits.`});
+    res.json({credits:n,price,currency:"RON"});
+  });
+  app.post("/api/credits/buy", auth, (req,res) => {
+    const n=Math.floor(Number(req.body?.credits));
+    const price=creditsLib.priceForCredits(n);
+    if(price===null)return res.status(400).json({error:`The minimum is ${creditsLib.MIN_PACK} credits.`});
+    // Card payments arrive with Stripe (phase 8); until then the Owner adds credits from the Usage page.
+    res.status(501).json({error:`Card payments are not open yet. ${n} credits will cost ${price.toFixed(2)} lei.`,credits:n,price});
+  });
+  // The Owner: every account's plan and credits; start a plan, add credits, group a team (until payments arrive).
+  function creditsOwner(req){if(!ownerRequest(req))throw policyFailure("Only the Owner manages plans and credits.",403);}
+  app.get("/api/credits/accounts", auth, (req,res) => {
+    try{
+      creditsOwner(req);
+      const users=store.read().users;
+      res.json({enabled:creditsOn(),data:users.map(u=>{const s=credits.status(u.id);return {id:u.id,email:u.email,name:u.name,role:u.role||"user",unlimited:!meteredUser(u),mode:s.mode,plan:s.plan,week:s.week,trial:s.trial,extras:s.extras,available:s.available,free:s.free};})});
+    }catch(e){sendError(res,e,500)}
+  });
+  app.post("/api/credits/accounts/plan", auth, (req,res) => {
+    try{
+      creditsOwner(req);
+      const user=accountByEmail(req.body?.email);if(!user)return res.status(404).json({error:"No account with this email has used the app yet."});
+      const plan=req.body?.plan==="none"?null:String(req.body?.plan||"");
+      res.json({data:credits.setPlan(user.id,plan,{billing:req.body?.billing})});
+    }catch(e){sendError(res,e,400)}
+  });
+  app.post("/api/credits/accounts/grant", auth, (req,res) => {
+    try{
+      creditsOwner(req);
+      const user=accountByEmail(req.body?.email);if(!user)return res.status(404).json({error:"No account with this email has used the app yet."});
+      res.json({data:credits.addExtra(user.id,req.body?.credits,{note:String(req.body?.note||"Added by the Owner")})});
+    }catch(e){sendError(res,e,400)}
+  });
+  app.post("/api/credits/accounts/team", auth, (req,res) => {
+    try{
+      creditsOwner(req);
+      const owner=accountByEmail(req.body?.email);if(!owner)return res.status(404).json({error:"No account with this email has used the app yet."});
+      const emails=Array.isArray(req.body?.members)?req.body.members:[];
+      const members=emails.map(e=>accountByEmail(e));
+      const missing=emails.filter((e,i)=>!members[i]);
+      if(missing.length)return res.status(404).json({error:`These accounts have not used the app yet: ${missing.join(", ")}.`});
+      const limits={};for(const [e,v] of Object.entries(req.body?.limits||{})){const u=accountByEmail(e);if(u)limits[u.id]=v;}
+      res.json({data:credits.setTeam(owner.id,members.map(u=>u.id),limits)});
+    }catch(e){sendError(res,e,400)}
+  });
+
   app.post("/api/export", auth, requirePermission("document_generation"), async (req,res) => {
     try {
       reserveQuota(req,res,"document");
@@ -2807,6 +2930,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   function endJob(job,status,extra={}){
     if(!job||job.status!=="running")return;
     Object.assign(job,{status,updatedAt:Date.now()},extra);job.controller=null;job.buf="";
+    try{job.onEnd?.(status==="done")}catch{}job.onEnd=null;
     const t=setTimeout(()=>{if(chatJobs.get(job.id)===job)chatJobs.delete(job.id)},JOB_KEEP_MS);t.unref?.();
   }
   // The answer is written into the conversation by the gateway itself, under the id the app gave it, so the app's own
@@ -2857,9 +2981,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     await mediaAbort.run(signal,async()=>{
     try{
       requireFeaturePermission(req,"image_generation");
-      reserveQuota(req,res,"image");
-      const freeTier=!quotaUnlimited(req);
       const {prompt,model:requestedModel,size,via}=mediaRequest(req,"image");
+      // 0.7.20: an account with credits pays for the picture (the good models); without credits, the daily free tier.
+      const hd=String(size).split("x").some(n=>Number(n)>1024);
+      const bill=mediaBill(req,"image",{hd,model:requestedModel||via});
+      if(bill)mediaSettle(bill,res,"image",{hd,model:requestedModel||via},job);else reserveQuota(req,res,"image");
+      const freeTier=!quotaUnlimited(req)&&!bill;
       // Free tier: whatever model the chat is on («via»), the picture comes from the free providers; a model asked for by
       // name through the API still goes through the account's permissions.
       const explicitModel=requestedModel;
@@ -2977,11 +3104,15 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     await mediaAbort.run(signal,async()=>{
     try{
       requireFeaturePermission(req,"video_generation");
-      reserveQuota(req,res,"video");
-      const freeTier=!quotaUnlimited(req);
       const {prompt,model:requestedModel,duration:askedDuration,aspectRatio,via}=mediaRequest(req,"video");
+      // 0.7.20: a plan with video (Plus and up) pays with credits, up to its length; otherwise the daily free tier.
+      const videoMax=metered(req)?credits.status(req.user.id).features.videoSeconds:0;
+      const billSeconds=videoMax>0?Math.min(askedDuration,videoMax):0;
+      const bill=billSeconds?mediaBill(req,"video",{seconds:billSeconds,model:requestedModel||via}):null;
+      if(bill)mediaSettle(bill,res,"video",{seconds:billSeconds,model:requestedModel||via},job);else reserveQuota(req,res,"video");
+      const freeTier=!quotaUnlimited(req)&&!bill;
       // Free tier: a short video from the free providers, whatever model the chat is on.
-      const explicitModel=requestedModel,duration=freeTier?Math.min(askedDuration,6):askedDuration;
+      const explicitModel=requestedModel,duration=freeTier?Math.min(askedDuration,6):bill?billSeconds:askedDuration;
       const made=mediaConfigFor(getOmniConfig(),"video",freeTier?"":via),errors=[];
       const cfg=freeTier?{...made.cfg,videoProviders:""}:made.cfg,madeBy=freeTier?"":made.madeBy;
       const strictFree=directApisAllowed(req)&&(cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free");
@@ -3195,6 +3326,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   timers[timers.length-1].unref?.();
   app.post("/api/plugins/oauth/start", auth, requirePermission("plugins"), (req,res) => {
     try{
+      requirePlanFeature(req,"plugins","Connected plugins");
       const name=textInput(req.body?.name,80),provider=textInput(req.body?.provider,40);
       const clientId=textInput(req.body?.clientId,500),clientSecret=textInput(req.body?.clientSecret,2000);
       const authUrl=textInput(req.body?.authUrl,2000),tokenUrl=textInput(req.body?.tokenUrl,2000),apiUrl=textInput(req.body?.apiUrl,2000);
@@ -3277,6 +3409,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.post("/api/plugins/direct", auth, requirePermission("plugins"), (req,res) => {
     const name=textInput(req.body?.name,80),appUrl=textInput(req.body?.appUrl,2000);
     if(!name||!appUrl)return res.status(400).json({error:"Numele și adresa aplicației sunt obligatorii."});
+    try{requirePlanFeature(req,"plugins","Connected plugins")}catch(e){return sendError(res,e,403)}
     try{
       const u=new URL(appUrl);
       if(!["https:","http:"].includes(u.protocol))throw new Error("protocol");
@@ -3294,6 +3427,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
 
   app.post("/api/plugins", auth, requirePermission("plugins"), (req,res) => {
+    try{requirePlanFeature(req,"plugins","Connected plugins")}catch(e){return sendError(res,e,403)}
     const parsed=pluginFields(req.body||{},null);if(parsed.error)return res.status(400).json({error:parsed.error});
     const db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,description:"",auto:false,enabled:true,apiKey:"",...parsed.value,createdAt:Date.now()};
     db.plugins.push(item);store.write(db);res.json({data:publicPlugin(item)});
@@ -3321,6 +3455,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   function saveNewSkill(req,res,fields){
     const db=store.read(),mine=db.skills.filter(x=>x.userId===req.user.id);
     if(mine.length>=MAX_SKILLS)return res.status(400).json({error:`Poți avea cel mult ${MAX_SKILLS} skill-uri.`});
+    const planMax=planLimit(req,"skills");
+    if(planMax!==null&&mine.length>=planMax)return res.status(403).json({error:`Your plan includes ${planMax} skill${planMax===1?"":"s"}. Upgrade your plan to add more.`,code:"plan_upgrade",credits:{}});
     if(mine.some(x=>x.slug===fields.slug))return res.status(409).json({error:`Ai deja un skill /${fields.slug}. Alege alt nume.`});
     const item={id:crypto.randomUUID(),userId:req.user.id,enabled:true,auto:false,...fields,createdAt:Date.now()};
     db.skills.push(item);store.write(db);res.json({data:publicSkill(item)});
@@ -3371,6 +3507,9 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.post("/api/automations", auth, requirePermission("automations"), async (req,res) => {
     try{
       const now=Date.now(),v=validateAutomation(req.body||{},null,now);if(v.error)return res.status(400).json({error:v.error});
+      const planMax=planLimit(req,"automations");
+      if(planMax!==null&&store.read().automations.filter(x=>x.userId===req.user.id).length>=planMax)
+        throw planUpgrade(planMax?`Your plan includes ${planMax} automation${planMax===1?"":"s"}. Upgrade your plan to add more.`:`Automations are available from the ${planWith(p=>p.automations>0)} plan.`);
       const model=await automationModel(req,typeof req.body?.model==="string"&&req.body.model.trim()?req.body.model:undefined);
       const item={id:crypto.randomUUID(),userId:req.user.id,...v.value,model,trigger:v.value.trigger||`@${v.value.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu,"-").replace(/^-|-$/g,"")}`,cloudToken:req.cloudToken?sealSecret(req.cloudToken):null,cloudTokenHash:req.cloudToken?tokenHash(req.cloudToken):null,lastRunAt:null,lastResult:"",lastStatus:"created",failures:0,createdAt:now};
       item.nextRunAt=item.enabled?nextRun(item,now):null;
@@ -3553,6 +3692,10 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       if(bytes.length<100)return res.status(400).json({error:"Înregistrarea este goală sau nu e un fișier audio."});
       const cleaned=cleanMime(req.body?.mime),mime=/^(audio|video)\//.test(cleaned)?cleaned:"audio/webm";
       if(!quotaUnlimited(req)&&!voiceAllowed(req.user.id))return res.status(429).json({error:"Prea multe înregistrări într-un timp scurt. Încearcă peste câteva minute."});
+      // 0.7.20: 3 credits a minute when the account has credits (the length the page sends, or ~4 KB a second).
+      const ms=Number(req.body?.durationMs),seconds=Number.isFinite(ms)&&ms>0?Math.min(600,ms/1000):Math.min(600,bytes.length/4000);
+      const bill=mediaBill(req,"transcribe",{seconds});
+      if(bill)mediaSettle(bill,res,"transcribe",{seconds});
       const result=await transcribeMedia(req,{bytes,mime,name:"Vocal."+mediaExtension(mime,""),language:req.body?.language,signal});
       res.json({text:String(result?.text||"").trim()});
     }catch(e){if(!signal.aborted)sendError(res,e)}
@@ -3684,7 +3827,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(options.clarify&&user?.askClarifyingQuestions!==false)system.push(QUESTIONS_RULE);
     if(cfg.webSearchEnabled!==false&&options.webAllowed!==false){
       try{const directUrls=urlsFromText(query);if(directUrls.length){const pages=(await Promise.all(directUrls.map(async url=>{const excerpt=await pageExcerpt(url,5000);return excerpt?"URL: "+url+"\nExtras: "+excerpt:""}))).filter(Boolean);if(pages.length)system.push("PAGINI WEB LIVE — conținut citit direct din linkurile utilizatorului:\n"+pages.join("\n\n"))}}catch{}
-      if(shouldUseLiveWeb(query)){try{const deep=options.deepAllowed!==false&&DEEP_RESEARCH_WORDS.test(query);const rows=await liveWebSearch(query,deep?8:5);if(rows.length)system.push("WEB LIVE — rezultate obținute acum. Folosește-le pentru informațiile actuale și indică sursele prin link; nu inventa surse:\n"+rows.map((x,i)=>(i+1)+". "+x.title+"\nURL: "+x.url+"\nExtras: "+String(x.excerpt||"").slice(0,2600)).join("\n\n"))}catch{}}
+      if(shouldUseLiveWeb(query)){try{const deep=options.deepAllowed!==false&&DEEP_RESEARCH_WORDS.test(query);const rows=await liveWebSearch(query,deep?8:5);if(rows.length&&options.usage)options.usage.web=true;if(rows.length)system.push("WEB LIVE — rezultate obținute acum. Folosește-le pentru informațiile actuale și indică sursele prin link; nu inventa surse:\n"+rows.map((x,i)=>(i+1)+". "+x.title+"\nURL: "+x.url+"\nExtras: "+String(x.excerpt||"").slice(0,2600)).join("\n\n"))}catch{}}
     }
     if(cfg.githubAutoContext!==false&&options.githubAllowed!==false){try{const gc=await githubCodeContext(cfg,query);if(gc)system.push("GITHUB LIVE — fragmente relevante din repository-ul configurat:\n"+gc)}catch{}}
     if(options.owner&&cfg.serverHost&&SERVER_WORDS.test(query)){
@@ -3696,15 +3839,16 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const cfg=getOmniConfig();
     const raw=await inlineUploadedAttachments(req.body?.messages,req.user.id);
     if(!sanitizeChatMessages(raw).some(m=>m.role==="user"))throw policyFailure("Mesajul este gol.",400);
-    const messages=await prepareMessages(raw,typeof req.body?.assistantId==="string"?req.body.assistantId:null,req.user.id,{
+    const usage={web:false},features=metered(req)?credits.status(req.user.id).features:null;
+    const messages=await prepareMessages(raw,typeof req.body?.assistantId==="string"?req.body.assistantId:null,req.user.id,{usage,
       projectId:typeof req.body?.projectId==="string"?req.body.projectId:null,
       conversationId:typeof req.body?.conversationId==="string"?req.body.conversationId.slice(0,100):null,clarify:true,
-      webAllowed:hasPermission(req,"web_search"),deepAllowed:hasPermission(req,"deep_research"),githubAllowed:hasPermission(req,"github_access"),pluginsAllowed:hasPermission(req,"plugins"),
+      webAllowed:hasPermission(req,"web_search"),deepAllowed:hasPermission(req,"deep_research")&&(!features||features.deepResearch),githubAllowed:hasPermission(req,"github_access"),pluginsAllowed:hasPermission(req,"plugins"),
       owner:ownerRequest(req),responseMode:String(req.body?.responseMode||"rapid")
     });
     const sent=typeof req.body?.model==="string"?req.body.model.trim().slice(0,200):"";
     const requestedModel=sent||String(cfg.model||"").trim();
-    return {cfg,requestedModel,messages,chosen:!!sent};
+    return {cfg,requestedModel,messages,chosen:!!sent,usage};
   }
 
 
@@ -3925,9 +4069,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   }
   app.post("/api/chat", auth, async (req,res) => {
     const clientSignal=clientAbortSignal(res);
+    let bill=null,paid=false;
     try{
-      const {cfg,requestedModel,messages,chosen}=await prepareChat(req);
+      bill=chatBill(req.user,req.cloudUser,requestedModelOf(req),{chosen:!!(typeof req.body?.model==="string"&&req.body.model.trim())});
+      const {cfg,requestedModel,messages,chosen,usage}=await prepareChat(req);
       const route=await resolveChatRoute(req,messages,requestedModel,{chosen});
+      if(bill?.free)freeOnly(route,req);
       const timer=chatTimer(false,clientSignal),errors=[];
       for(const candidate of route.candidates){
         if(clientSignal.aborted)return;
@@ -3935,6 +4082,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           const r=await fetchChatCandidate(cfg,candidate.id,messages,false,timer);
           const body=await r.text();
           if(!r.ok){errors.push(`${candidate.id}: ${r.status===401||r.status===403?await omniAuthError(cfg,r.status,body):"HTTP "+r.status+" "+upstreamErrorText(body)}`);continue;}
+          chatSettle(bill,candidate.id,usage.web);paid=true;
           res.setHeader("X-Serasmart-Route",route.task);
           res.setHeader("X-Serasmart-Model",headerSafe(candidate.id));
           return res.status(200).type(r.headers.get("content-type")||"application/json").send(withCleanQuestions(body));
@@ -3945,6 +4093,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         errors.push(...direct.errors);
         if(direct.response){
           const body=await direct.response.text();
+          chatSettle(bill,`${direct.candidate.provider}/${direct.candidate.model}`,usage.web);paid=true;
           res.setHeader("X-Serasmart-Route",route.direct?"direct":"direct-fallback");
           res.setHeader("X-Serasmart-Model",headerSafe(direct.candidate.model));
           res.setHeader("X-Serasmart-Provider",direct.candidate.provider);
@@ -3954,17 +4103,21 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       if(clientSignal.aborted)return;
       throw chosenModelFailure(req,cfg,route,errors);
     }catch(e){if(!clientSignal.aborted)sendError(res,e)}
+    finally{if(!paid)chatRelease(bill)}
   });
   app.post("/api/chat/stream", auth, async (req,res) => {
     // Stop cancels the request to the AI provider; a closed page does not (startJob): the answer is finished and saved.
+    let bill=null,paid=false;
+    try{bill=chatBill(req.user,req.cloudUser,requestedModelOf(req),{chosen:!!(typeof req.body?.model==="string"&&req.body.model.trim())})}catch(e){return sendError(res,e,402)}
     const {job,signal:stopSignal}=startJob(req,res,"chat");
     const clientGone={signal:stopSignal};
     let prepared;
-    try{prepared=await prepareChat(req)}catch(e){endJob(job,"error",{error:e?.message||"eroare"});return sendError(res,e,400)}
-    const {cfg,requestedModel,messages,chosen}=prepared;
+    try{prepared=await prepareChat(req)}catch(e){chatRelease(bill);endJob(job,"error",{error:e?.message||"eroare"});return sendError(res,e,400)}
+    const {cfg,requestedModel,messages,chosen,usage}=prepared;
     const timer=chatTimer(true,clientGone.signal);
     try{
       const route=await resolveChatRoute(req,messages,requestedModel,{chosen});
+      if(bill?.free)freeOnly(route,req);
       const errors=[];let upstream=null,usedModel="",directCandidate=null;
       for(const candidate of route.candidates){
         if(clientGone.signal.aborted)return;
@@ -3982,6 +4135,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       }
       if(clientGone.signal.aborted)return;
       if(!upstream)throw chosenModelFailure(req,cfg,route,errors);
+      // The provider answered: the credits are taken (also when the person stops the answer midway).
+      chatSettle(bill,directCandidate?`${directCandidate.provider}/${directCandidate.model}`:usedModel,usage.web);paid=true;
       timer.touch();
       const ctype=upstream.headers.get("content-type")||"";
       res.status(200);
@@ -4030,13 +4185,22 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         endJob(job,"error",{error:message});
       }
       if(clientGone.signal.aborted||res.destroyed)return;
-      if(!res.headersSent)res.status(timer.signal.aborted?504:(e.status||502)).json({error:message});else{res.write(`data: ${JSON.stringify({error:message})}\n\n`);res.end();}
-    }finally{timer.clear();if(job?.status==="running")endJob(job,job.cancelled?"cancelled":"error")}
+      if(!res.headersSent)res.status(timer.signal.aborted?504:(e.status||502)).json({error:message,...(e?.code&&e?.info?{code:e.code,credits:e.info}:{})});else{res.write(`data: ${JSON.stringify({error:message})}\n\n`);res.end();}
+    }finally{timer.clear();if(job?.status==="running")endJob(job,job.cancelled?"cancelled":"error");if(!paid)chatRelease(bill)}
   });
 
   // One non-streaming answer through the same route and fallback as chat (used by Design).
   async function completeText(req,messages,requestedModel,signal){
+    const bill=chatBill(req.user,req.cloudUser,requestedModel,{chosen:!!(typeof req.body?.model==="string"&&req.body.model.trim())});
+    try{
+      const out=await completeTextRouted(req,messages,requestedModel,signal,bill);
+      chatSettle(bill,out.model,false);
+      return out;
+    }catch(e){chatRelease(bill);throw e}
+  }
+  async function completeTextRouted(req,messages,requestedModel,signal,bill){
     const cfg=getOmniConfig(),route=await resolveChatRoute(req,messages,requestedModel);
+    if(bill?.free)freeOnly(route,req);
     const timer=chatTimer(false,signal),errors=[];
     const textOf=async(r)=>{let data;try{data=JSON.parse(await r.text())}catch{return ""}return String(data?.choices?.[0]?.message?.content||"");};
     for(const candidate of route.candidates){
@@ -4190,6 +4354,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   async function runAutomation(item, cloudToken, {manual=false,req=null}={}) {
     if(runningAutomations.has(item.id))throw policyFailure("Automatizarea rulează deja. Așteaptă să se termine.",409);
     runningAutomations.add(item.id);
+    let bill=null,paid=false;
     try{
       const cfg=getOmniConfig(),user=store.read().users.find(u=>u.id===item.userId);if(!user)throw new Error("Contul automatizării nu mai există.");
       const ctx=await automationContext(user,cloudToken,req);
@@ -4202,17 +4367,21 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const automaticModel=!String(item.model||"").trim()||selectedModel!==askedModel;
       await requireModelAccess(ctx,selectedModel);
       await requireChatModel(cfg,selectedModel);
+      bill=chatBill(user,ctx.cloudUser||null,selectedModel,{chosen:!automaticModel});
+      if(bill?.free)ctx.creditsFreeOnly=true;
       const isWatch=item.timingMode==="condition_watch";
       const taskPrompt=isWatch
         ? `${item.prompt}\n\nAceasta este o verificare condițională. Dacă nu există o schimbare relevantă sau condiția nu este îndeplinită, răspunde exact: SERASMART_NO_NOTIFICATION. Dacă este îndeplinită, răspunde numai cu informația utilă care trebuie notificată.`
         : item.prompt;
-      const messages=await prepareMessages([{role:"user",content:taskPrompt}],null,item.userId,{webAllowed:hasPermission(ctx,"web_search"),deepAllowed:hasPermission(ctx,"deep_research"),githubAllowed:hasPermission(ctx,"github_access"),pluginsAllowed:hasPermission(ctx,"plugins"),owner:false});
+      const usage={web:false};
+      const messages=await prepareMessages([{role:"user",content:taskPrompt}],null,item.userId,{usage,webAllowed:hasPermission(ctx,"web_search"),deepAllowed:hasPermission(ctx,"deep_research"),githubAllowed:hasPermission(ctx,"github_access"),pluginsAllowed:hasPermission(ctx,"plugins"),owner:false});
       // Same rule as chat: a direct-API model goes to its API; any other model to OmniRoute, and when it fails the direct
       // APIs answer only if no model was chosen or «Rezervă automată» is on.
       const errors=[];let data=null;
       const directAllowed=freeDirectAllowed(ctx)&&cfg.directChatEnabled!==false;
       const directModel=await isDirectModel(cfg,directAllowed,selectedModel),fallback=automaticModel||cfg.chatFallbackOnFailure===true;
-      if(!directModel)try{
+      // A free message runs on a free model only: OmniRoute is skipped unless the chosen model is free.
+      if(!directModel&&!(bill?.free&&!creditsLib.isFreeModel(selectedModel)))try{
         const r=await fetch(`${String(cfg.baseUrl).replace(/\/+$/,"")}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",...(cfg.apiKey?{Authorization:`Bearer ${cfg.apiKey}`}:{})},body:JSON.stringify({model:selectedModel,messages,stream:false,temperature:0.25}),signal:AbortSignal.timeout(NONSTREAM_MS)});
         if(r.ok)data=await r.json();
         else errors.push(`OmniRoute HTTP ${r.status}: ${(await r.text()).slice(0,300)}`);
@@ -4224,6 +4393,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         if(direct.response){usedModel=`${direct.candidate.provider}/${direct.candidate.model}`;try{data=JSON.parse(await direct.response.text())}catch{errors.push("API direct: răspuns invalid")}}
       }
       if(!data)throw new Error("Automatizarea nu a primit răspuns de la niciun AI. "+errors.slice(0,8).join(" | "));
+      chatSettle(bill,usedModel,usage.web);paid=true;
       const answer=String(data?.choices?.[0]?.message?.content||"").trim();
       const noNotification=isWatch&&/^SERASMART_NO_NOTIFICATION\b/i.test(answer);
       const fresh=store.read(),target=fresh.automations.find(x=>x.id===item.id);if(!target)return;
@@ -4244,7 +4414,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         cloudFetch("/api/notifications/self",{method:"POST",headers:{Authorization:`Bearer ${ctx.cloudToken}`},body:{type:"automation",title:String(target.title||"Automatizare").slice(0,120),body:answer.slice(0,1000)},timeout:8000})
           .then(r=>r.text()).catch(e=>console.warn(`[${BRAND_NAME}] Notificarea automatizării nu a ajuns:`,e?.message||e));
       }
-    }finally{runningAutomations.delete(item.id)}
+    }finally{runningAutomations.delete(item.id);if(!paid)chatRelease(bill)}
   }
 
   let automationBusy=false;
