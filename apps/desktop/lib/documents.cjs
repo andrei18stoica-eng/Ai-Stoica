@@ -1,4 +1,5 @@
 // Document export (PDF, Word, PowerPoint, Excel, CSV, JSON, HTML, XML, RTF, ZIP, notebook, SVG, code files).
+const { BRAND_NAME } = require("./brand.cjs");
 const fs = require("fs");
 const path = require("path");
 const { PDFDocument, StandardFonts, rgb, pushGraphicsState, popGraphicsState, concatTransformationMatrix } = require("pdf-lib");
@@ -17,8 +18,8 @@ function sanitizeText(value) {
     .replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, "\ufffd");
 }
 function safeGeneratedName(value) {
-  let name = sanitizeText(value || "AI Stoica").replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, " ").trim().slice(0, 120).replace(/[. ]+$/, "");
-  if (!name) name = "AI Stoica";
+  let name = sanitizeText(value || `${BRAND_NAME}`).replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, " ").trim().slice(0, 120).replace(/[. ]+$/, "");
+  if (!name) name = `${BRAND_NAME}`;
   if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(name.split(".")[0])) name = "_" + name;
   return name;
 }
@@ -286,7 +287,7 @@ async function createPdfBytes(title, content, opts = {}) {
     rows.forEach((r, ri) => drawRow(r, ri, false));
     y -= 10;
   };
-  write(title || "AI Stoica", { font: bold, size: 20, after: 14 });
+  write(title || `${BRAND_NAME}`, { font: bold, size: 20, after: 14 });
   for (const b of parseDocumentBlocks(content, { math: !!mathFonts })) {
     if (b.type === "blank") { y -= 6; continue; }
     if (b.type === "math") {
@@ -318,7 +319,7 @@ async function createDocxBytes(title, content) {
   const maths = [];
   const runs = (text, size, extra) => inlineRuns(text, size, extra, maths);
   const children = [
-    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: String(title || "AI Stoica"), bold: true, size: 36 })] }),
+    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: String(title || `${BRAND_NAME}`), bold: true, size: 36 })] }),
     new Paragraph({ text: "" })
   ];
   for (const b of parseDocumentBlocks(content, { math: true })) {
@@ -397,13 +398,13 @@ function slideChunks(content, maxChars = 750, maxLines = 12) {
 async function createPptxBytes(title, content) {
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";
-  pptx.author = "AI Stoica"; pptx.company = "Stoica Enterprises AI"; pptx.lang = "ro-RO";
+  pptx.author = `${BRAND_NAME}`; pptx.company = `${BRAND_NAME}`; pptx.lang = "ro-RO";
   let s = pptx.addSlide(); s.background = { color: "F7F9FC" };
-  s.addText(String(title || "AI Stoica"), { x: 0.8, y: 2.3, w: 11.7, h: 0.8, fontFace: "Aptos Display", fontSize: 28, bold: true, color: "172033", align: "center", margin: 0 });
-  s.addText("Document generat cu AI Stoica", { x: 1.2, y: 3.25, w: 10.9, h: 0.4, fontFace: "Aptos", fontSize: 14, color: "52627A", align: "center", margin: 0 });
+  s.addText(String(title || `${BRAND_NAME}`), { x: 0.8, y: 2.3, w: 11.7, h: 0.8, fontFace: "Aptos Display", fontSize: 28, bold: true, color: "172033", align: "center", margin: 0 });
+  s.addText(`Document generat cu ${BRAND_NAME}`, { x: 1.2, y: 3.25, w: 10.9, h: 0.4, fontFace: "Aptos", fontSize: 14, color: "52627A", align: "center", margin: 0 });
   for (const part of slideChunks(content)) {
     s = pptx.addSlide(); s.background = { color: "FFFFFF" };
-    s.addText(part.title || String(title || "AI Stoica"), { x: 0.65, y: 0.45, w: 12, h: 0.55, fontFace: "Aptos Display", fontSize: 23, bold: true, color: "172033", margin: 0, fit: "shrink" });
+    s.addText(part.title || String(title || `${BRAND_NAME}`), { x: 0.65, y: 0.45, w: 12, h: 0.55, fontFace: "Aptos Display", fontSize: 23, bold: true, color: "172033", margin: 0, fit: "shrink" });
     if (part.code) {
       s.addText(part.code.join("\n") || " ", { x: 0.8, y: 1.25, w: 11.7, h: 5.65, fontFace: "Consolas", fontSize: 12, color: "1F2937", fill: { color: "F2F4F7" }, valign: "top", margin: 0.12 });
     } else if (part.table) {
@@ -534,7 +535,7 @@ function createCsvBytes(content) {
 function createJsonBytes(title, content) {
   const raw = stripOuterFence(content);
   try { return Buffer.from(JSON.stringify(JSON.parse(raw), null, 2) + "\n", "utf8"); }
-  catch { return Buffer.from(JSON.stringify({ title: String(title || "AI Stoica"), content: String(content || "") }, null, 2) + "\n", "utf8"); }
+  catch { return Buffer.from(JSON.stringify({ title: String(title || `${BRAND_NAME}`), content: String(content || "") }, null, 2) + "\n", "utf8"); }
 }
 function htmlInline(text) {
   return inlineTokens(text).map((t) => {
@@ -560,12 +561,12 @@ function createHtmlBytes(title, content) {
     if (b.type === "blank") return "";
     return `<p>${htmlInline(b.text)}</p>`;
   }).join("\n");
-  return Buffer.from(`<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${xmlEscape(title || "AI Stoica")}</title><style>body{font-family:Segoe UI,Arial,sans-serif;max-width:860px;margin:32px auto;padding:0 16px;line-height:1.5}table{border-collapse:collapse}td,th{border:1px solid #ccd;padding:4px 8px}pre{background:#f2f4f7;padding:10px;overflow:auto}</style></head><body><main>${body}</main></body></html>`, "utf8");
+  return Buffer.from(`<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${xmlEscape(title || `${BRAND_NAME}`)}</title><style>body{font-family:Segoe UI,Arial,sans-serif;max-width:860px;margin:32px auto;padding:0 16px;line-height:1.5}table{border-collapse:collapse}td,th{border:1px solid #ccd;padding:4px 8px}pre{background:#f2f4f7;padding:10px;overflow:auto}</style></head><body><main>${body}</main></body></html>`, "utf8");
 }
 function createXmlBytes(title, content) {
   const raw = stripOuterFence(content);
   if (/^<\?xml\b|^<[A-Za-z_][\w:.-]*(?:\s|>)/.test(raw)) return Buffer.from(raw, "utf8");
-  return Buffer.from(`<?xml version="1.0" encoding="UTF-8"?><document><title>${xmlEscape(title || "AI Stoica")}</title><content>${xmlEscape(content)}</content></document>`, "utf8");
+  return Buffer.from(`<?xml version="1.0" encoding="UTF-8"?><document><title>${xmlEscape(title || `${BRAND_NAME}`)}</title><content>${xmlEscape(content)}</content></document>`, "utf8");
 }
 function rtfEscape(value) {
   let out = "";
@@ -583,7 +584,7 @@ function rtfEscape(value) {
   return out;
 }
 function createRtfBytes(title, content) {
-  return Buffer.from(`{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Segoe UI;}}\\fs24\\b ${rtfEscape(title || "AI Stoica")}\\b0\\par\\par ${rtfEscape(plainMarkdownText(content))}}`, "utf8");
+  return Buffer.from(`{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Segoe UI;}}\\fs24\\b ${rtfEscape(title || `${BRAND_NAME}`)}\\b0\\par\\par ${rtfEscape(plainMarkdownText(content))}}`, "utf8");
 }
 function languageExtension(lang) {
   const map = { javascript: "js", js: "js", typescript: "ts", ts: "ts", jsx: "jsx", tsx: "tsx", python: "py", py: "py", java: "java", c: "c", cpp: "cpp", "c++": "cpp", csharp: "cs", cs: "cs", go: "go", rust: "rs", rs: "rs", php: "php", ruby: "rb", rb: "rb", bash: "sh", shell: "sh", sh: "sh", powershell: "ps1", ps1: "ps1", sql: "sql", html: "html", css: "css", json: "json", xml: "xml", yaml: "yaml", yml: "yml", toml: "toml", markdown: "md", md: "md", text: "txt", txt: "txt", svg: "svg", latex: "tex", tex: "tex" };
@@ -624,7 +625,7 @@ function createSvgBytes(title, content) {
   const raw = stripOuterFence(content);
   if (/^<svg[\s>]/i.test(raw)) return Buffer.from(raw, "utf8");
   const text = plainMarkdownText(content).replace(/\s+/g, " ").slice(0, 500);
-  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630"><rect width="1200" height="630" fill="#ffffff"/><text x="60" y="90" font-family="Arial, sans-serif" font-size="42" font-weight="700">${xmlEscape(title || "AI Stoica")}</text><text x="60" y="155" font-family="Arial, sans-serif" font-size="24">${xmlEscape(text)}</text></svg>`, "utf8");
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630"><rect width="1200" height="630" fill="#ffffff"/><text x="60" y="90" font-family="Arial, sans-serif" font-size="42" font-weight="700">${xmlEscape(title || `${BRAND_NAME}`)}</text><text x="60" y="155" font-family="Arial, sans-serif" font-size="24">${xmlEscape(text)}</text></svg>`, "utf8");
 }
 const PLAIN_TEXT_MIME = {
   md: "text/markdown; charset=utf-8", txt: "text/plain; charset=utf-8", html: "text/html; charset=utf-8", xml: "application/xml; charset=utf-8", rtf: "application/rtf",

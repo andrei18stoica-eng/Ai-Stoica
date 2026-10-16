@@ -12,7 +12,7 @@ AI Stoica (Stoica Enterprises AI) este o platformă AI proprie, multi-model: cha
 
 GitHub (`andrei18stoica-eng/Ai-Stoica`, **public** din 2026-10, deci fără secrete în cod; actualizarea automată Windows citește Releases fără token) este atelierul: cod, versiuni, teste, build, Releases. Producția rulează pe serverul Hetzner. Aplicația nu depinde de GitHub la fiecare mesaj.
 
-Versiune curentă: **0.7.18** (diagnosticul din 2026-10-16, ramura `claude/diagnostic-0718`). Numele public devine **Serasmart AI** (logo refăcut: emblema S păstrată, textul „SERASMART AI”; `branding/serasmart-ai-logo.png`). 0.7.12 și 0.7.13 au fost făcute în cowork.
+Versiune curentă: **0.7.19** (numele Serasmart AI peste tot). Numele public e **Serasmart AI** (logo: emblema S păstrată, textul „SERASMART AI”; `branding/serasmart-ai-logo.png`). Numele și domeniul stau într-un singur loc: `apps/desktop/lib/brand.json` (citit de `lib/brand.cjs`, de interfață prin `renderer/src/brand.js` și copiat în imaginea web de `apps/cloud/Dockerfile`); `apps/server/brand.cjs` are aceleași valori implicite (`BRAND_NAME`, `PUBLIC_DOMAIN`). Textele folosesc `BRAND_NAME` / `BRAND_SHORT` / `BRAND_DOMAIN`; nu scrie „AI Stoica” într-un text vizibil (`test-0719-brand.cjs` citește sursele cu parserul). Rămân neschimbate numele tehnice: variabilele `AI_STOICA_*`, fișierele de date, antetele `X-AI-Stoica-*`, `productName` „AI Stoica” din `apps/desktop/package.json` (dosarul de date și actualizările Windows) și modelul „AI Stoica Performance Max” din aplicația mobilă. 0.7.12 și 0.7.13 au fost făcute în cowork.
 
 ## Structura
 
@@ -35,7 +35,7 @@ Folderul `gateway/` (0.4.1) a fost șters în 0.7.11 și nu trebuie să reapară
 1. workflow-urile YAML (chei duplicate);
 2. aceeași versiune peste tot;
 3. `gateway/` absent;
-4. desktop: `node --check`, `npm run build:ui`, toate `scripts/test-*.cjs` (37 de teste);
+4. desktop: `node --check`, `npm run build:ui`, toate `scripts/test-*.cjs` (38 de teste);
 5. server: `npm test`;
 6. Cloudflare: `npm test` și `npm run check`.
 

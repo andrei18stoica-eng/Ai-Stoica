@@ -35,15 +35,15 @@
     if (err && err.name === "AbortError") return "";
     var message = String((err && err.message) || err || "Eroare necunoscută.");
     if (/failed to fetch|networkerror|load failed/i.test(message)) {
-      message = "Nu pot contacta serviciul AI Stoica. Verifică dacă aplicația rulează și conexiunea la internet, apoi încearcă din nou.";
+      message = "Nu pot contacta serviciul Serasmart AI. Verifică dacă aplicația rulează și conexiunea la internet, apoi încearcă din nou.";
     }
-    return "AI Stoica: " + message;
+    return "Serasmart AI: " + message;
   }
   window.aiStoicaToast = toast;
   window.addEventListener("unhandledrejection", function (event) {
     var message = describe(event.reason);
     if (!message) return;
-    console.error("AI Stoica action failed", event.reason);
+    console.error("Serasmart AI action failed", event.reason);
     toast(message, "error");
   });
   window.addEventListener("error", function (event) {
@@ -52,7 +52,7 @@
     if (/ResizeObserver loop|^Script error\.?$/i.test(String(event.message || ""))) return;
     var message = describe(event.error || event.message);
     if (!message) return;
-    console.error("AI Stoica error", event.error || event.message);
+    console.error("Serasmart AI error", event.error || event.message);
     toast(message, "error");
   });
 })();

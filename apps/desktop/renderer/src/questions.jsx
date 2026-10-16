@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
 import { Check, LoaderCircle, MessageCircleQuestion, Send, Sparkles } from "lucide-react";
 import { cx } from "./core.jsx";
+import { BRAND_NAME } from "./brand.js";
 
 const FENCE="```intrebari";
 export const PICK_FOR_ME="Alege tu variantele potrivite și continuă.";
@@ -92,7 +93,7 @@ export function QuestionCard({questions,answeredWith=null,disabled=false,onSubmi
     return (parsed?.byQuestion?.[i]||[]).filter(x=>!labels.includes(x));
   };
   return <div className={cx("questionCard",readOnly&&"answered")} onKeyDown={e=>{if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();submit()}}}>
-    <div className="questionCardHead"><MessageCircleQuestion size={16}/><span>{readOnly?(parsed?.auto?"Ai lăsat AI Stoica să aleagă":"Răspunsurile tale"):"Câteva întrebări înainte să încep"}</span></div>
+    <div className="questionCardHead"><MessageCircleQuestion size={16}/><span>{readOnly?(parsed?.auto?`Ai lăsat ${BRAND_NAME} să aleagă`:"Răspunsurile tale"):"Câteva întrebări înainte să încep"}</span></div>
     {questions.map((q,i)=>{
       const other=otherChosen(i);
       return <div className="questionBlock" key={i}>

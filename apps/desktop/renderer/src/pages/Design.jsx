@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Plus, Sparkles, Download, ExternalLink, Trash2, Monitor, Tablet, Smartphone, LoaderCircle, WandSparkles, Palette } from "lucide-react";
 import { api, authedFetch, toast, cx, shortDate, relativeDay, openLink, saveBlobDownload, useAccess, ToolShell } from "../core.jsx";
 import { DESIGN_KINDS } from "./Library.jsx";
+import { BRAND_NAME } from "../brand.js";
 
 const KIND_CHIPS=[["site","Site"],["landing","Landing page"],["afis","Afiș"],["prezentare","Prezentare"],["card","Card de vizită"],["meniu","Meniu"],["cv","CV"],["email","Email"]];
 const EXAMPLES=[
@@ -114,7 +115,7 @@ export function DesignPage({onClose,model,models,initialId=null}){
   const current=versions.find(v=>v.n===version);
   const frameWidth=WIDTHS.find(w=>w[0]===width)?.[3]||"100%";
   const modelSelect=<label className="designModel"><span>Model</span><select value={genModel} onChange={e=>setGenModel(e.target.value)} aria-label="Model pentru design"><option value="">Implicit</option>{modelOptions.map(m=><option key={m} value={m}>{m}</option>)}</select></label>;
-  return <ToolShell title="Design" subtitle="Descrie un site, un afiș sau o prezentare; AI Stoica face o machetă HTML pe care o vezi, o modifici și o descarci." onClose={onClose} className="pageModal designPage" actions={<button className="secondary" onClick={newDesign} disabled={!!job}><Plus size={15}/> Design nou</button>}>
+  return <ToolShell title="Design" subtitle={`Descrie un site, un afiș sau o prezentare; ${BRAND_NAME} face o machetă HTML pe care o vezi, o modifici și o descarci.`} onClose={onClose} className="pageModal designPage" actions={<button className="secondary" onClick={newDesign} disabled={!!job}><Plus size={15}/> Design nou</button>}>
     <div className="designLayout">
       <aside className="designList" aria-label="Designurile tale">
         <div className="designListHead">Designurile tale</div>
@@ -148,7 +149,7 @@ export function DesignPage({onClose,model,models,initialId=null}){
         </div>:currentId?<div className="previewPlaceholder">Se încarcă designul…</div>:<form className="designStart" onSubmit={generate}>
           <span className="designHero"><Palette size={26}/></span>
           <h3>Ce construim azi?</h3>
-          <p>Descrie pagina, afișul sau prezentarea. AI Stoica scrie un singur fișier HTML pe care îl vezi imediat, îl modifici cu cuvinte și îl descarci.</p>
+          <p>Descrie pagina, afișul sau prezentarea. {BRAND_NAME} scrie un singur fișier HTML pe care îl vezi imediat, îl modifici cu cuvinte și îl descarci.</p>
           <div className="designPromptBox">
             <textarea ref={promptRef} value={prompt} onChange={e=>setPrompt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();generate()}}} placeholder="Descrie ce vrei să construim…" aria-label="Descrie ce vrei să construim"/>
             <div className="designPromptBar">{modelSelect}<button className="primary" disabled={!prompt.trim()}><Sparkles size={15}/> Generează</button></div>

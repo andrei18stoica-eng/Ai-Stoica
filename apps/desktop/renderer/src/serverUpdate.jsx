@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { RotateCcw, Download } from "lucide-react";
 import { api, toast } from "./core.jsx";
+import { BRAND_DOMAIN } from "./brand.js";
 
 // "Actualizează site-ul" — for the Owner on the aistoica.ro server (also from the Windows app connected to it). The
 // site only asks; the server's own update service (deploy/hetzner/install-updater.sh) runs update.sh, which rebuilds
@@ -46,7 +47,7 @@ export function ServerUpdate() {
   const installed = s?.version || a?.current?.version || "";
   const newer = a?.behind > 0 ? (a.latest?.version && a.latest.version !== installed ? `Versiunea ${a.latest.version} e disponibilă.` : "Există modificări noi pe GitHub.") : a ? "Site-ul are ultima versiune." : "";
   return <div className="settingsPrefs serverUpdate">
-    <h4>Actualizare site (aistoica.ro)</h4>
+    <h4>Actualizare site ({BRAND_DOMAIN})</h4>
     {!info.installed && <p className="settingsHelp">{info.setupHint}</p>}
     {info.installed && <>
       <p className="settingsHelp">

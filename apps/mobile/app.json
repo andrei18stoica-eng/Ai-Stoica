@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "AI Stoica",
+    "name": "Serasmart AI",
     "slug": "ai-stoica",
     "scheme": "aistoica",
-    "version": "0.7.18",
+    "version": "0.7.19",
     "orientation": "portrait",
     "icon": "./icon.png",
     "userInterfaceStyle": "dark",

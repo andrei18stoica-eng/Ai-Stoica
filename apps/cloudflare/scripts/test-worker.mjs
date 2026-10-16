@@ -327,7 +327,7 @@ await test("features that need the desktop app answer 501, lists stay empty", as
     const r = await call(env, m, p, { token: userToken, body: {} });
     if (p === "/api/memory/import-history") { assert.equal(r.status, 200); continue; }
     assert.equal(r.status, 501, p);
-    assert.match(r.data.error, /nu este disponibilă în AI Stoica Cloud/);
+    assert.match(r.data.error, /nu este disponibilă în Serasmart Cloud/);
   }
   assert.deepEqual((await call(env, "GET", "/api/plugins", { token: userToken })).data, { data: [] });
   assert.equal((await call(env, "GET", "/api/admin/audit", { token: userToken })).status, 403);

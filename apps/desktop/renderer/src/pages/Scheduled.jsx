@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { CalendarClock, Plus, Play, Pencil, Copy, Trash2, ArrowLeft, ChevronDown, RotateCcw, Clock, Bell, BellOff, Sparkles } from "lucide-react";
 import { api, toast, cx, plural, ToolShell, Modal, Switch, relativeDay, shortDate, clockTime, Markdown } from "../core.jsx";
+import { BRAND_NAME } from "../brand.js";
 
 export const DAY_NAMES=["duminică","luni","marți","miercuri","joi","vineri","sâmbătă"];
 const WEEK_ORDER=[1,2,3,4,5,6,0];
@@ -64,7 +65,7 @@ function payloadFrom(f){
 export function validateTask(f,{needsFuture=true}={}){
   if(!f.title.trim())return "Scrie un nume pentru sarcină.";
   if(f.title.trim().length>120)return "Numele poate avea maximum 120 de caractere.";
-  if(!f.prompt.trim())return "Scrie ce trebuie să facă AI Stoica.";
+  if(!f.prompt.trim())return `Scrie ce trebuie să facă ${BRAND_NAME}.`;
   if(f.prompt.trim().length>8000)return "Instrucțiunile pot avea maximum 8000 de caractere.";
   if(TIMED.includes(f.frequency)&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(f.time||""))return "Alege o oră validă (00:00–23:59).";
   if(f.frequency==="interval"&&!(Number.isInteger(Number(f.intervalHours))&&f.intervalHours>=1&&f.intervalHours<=168))return "Intervalul trebuie să fie între 1 și 168 de ore.";
@@ -95,10 +96,10 @@ function TaskForm({initial,editing,models,onClose,onSave}){
     catch(err){if(mounted.current){setError(err.message);setSaving(false)}}
   }
   function toggleDay(d){set({days:f.days.includes(d)?f.days.filter(x=>x!==d):[...f.days,d]})}
-  return <Modal title={editing?"Editează sarcina":"Sarcină nouă"} subtitle="AI Stoica rulează instrucțiunile singur, la ora aleasă, cât timp aplicația este pornită." className="modal taskFormModal" onClose={onClose}>
+  return <Modal title={editing?"Editează sarcina":"Sarcină nouă"} subtitle={`${BRAND_NAME} rulează instrucțiunile singur, la ora aleasă, cât timp aplicația este pornită.`} className="modal taskFormModal" onClose={onClose}>
     <form className="taskForm" onSubmit={submit} noValidate>
       <label>Nume<input value={f.title} maxLength={120} onChange={e=>set({title:e.target.value})} placeholder="Ex. Rezumat de știri" autoFocus/></label>
-      <label>Instrucțiuni<textarea value={f.prompt} maxLength={8000} onChange={e=>set({prompt:e.target.value})} placeholder="Ce trebuie să facă AI Stoica? Ex. Caută știrile importante de azi și fă-mi un rezumat cu linkuri."/></label>
+      <label>Instrucțiuni<textarea value={f.prompt} maxLength={8000} onChange={e=>set({prompt:e.target.value})} placeholder={`Ce trebuie să facă ${BRAND_NAME}? Ex. Caută știrile importante de azi și fă-mi un rezumat cu linkuri.`}/></label>
       <div className="taskFormGrid">
         <label>Frecvență<select value={f.frequency} onChange={e=>set({frequency:e.target.value})}>{FREQUENCIES.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select></label>
         {TIMED.includes(f.frequency)&&<label>Ora<input type="time" value={f.time} onChange={e=>set({time:e.target.value})}/></label>}
@@ -188,7 +189,7 @@ export function ScheduledPage({onClose,model,models}){
   }
   const newTask=(preset={})=>setForm({initial:{...blankForm(model||""),...preset},editing:null});
   const header=<button className="primary" onClick={()=>newTask()}><Plus size={16}/> Sarcină nouă</button>;
-  return <ToolShell title="Scheduled" subtitle="Sarcini pe care AI Stoica le rulează singur, la ora aleasă." onClose={onClose} className="pageModal scheduledPage" actions={header}>
+  return <ToolShell title="Scheduled" subtitle={`Sarcini pe care ${BRAND_NAME} le rulează singur, la ora aleasă.`} onClose={onClose} className="pageModal scheduledPage" actions={header}>
     <div className="pageBody">
       {loadError&&<div className="inlineError" role="alert">Nu am putut încărca sarcinile: {loadError} <button className="linkBtn" onClick={()=>{setLoading(true);load()}}>Reîncearcă</button></div>}
       {selected?<div className="taskDetail">
@@ -216,7 +217,7 @@ export function ScheduledPage({onClose,model,models}){
       </div>:loading?<div className="emptyState small">Se încarcă sarcinile…</div>:!items.length?<div className="taskEmpty">
         <span className="taskIcon big"><CalendarClock size={26}/></span>
         <h3>Nicio sarcină programată încă</h3>
-        <p>Scrie o dată ce vrei să facă AI Stoica și alege când. De exemplu: „În fiecare zi lucrătoare la 08:30, fă-mi un rezumat al știrilor din România.”</p>
+        <p>Scrie o dată ce vrei să facă {BRAND_NAME} și alege când. De exemplu: „În fiecare zi lucrătoare la 08:30, fă-mi un rezumat al știrilor din România.”</p>
         <div className="taskExamples">{EXAMPLES.map(({label,...preset})=><button key={label} className="secondary" onClick={()=>newTask(preset)}><Sparkles size={14}/> {label}</button>)}</div>
       </div>:<div className="taskList" role="list">
         {items.map(x=><div key={x.id} className={cx("taskRow",!x.enabled&&"off")} role="listitem">

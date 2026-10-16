@@ -50,7 +50,7 @@ async function main() {
       const sys = String(body.messages?.[0]?.role === "system" ? body.messages[0].content : "");
       const last = String([...body.messages].reverse().find((m) => m.role === "user")?.content || "");
       let content = "OK";
-      if (sys.includes("Ești designerul AI Stoica")) {
+      if (sys.includes("Ești designerul Serasmart AI")) {
         if (/fără html/i.test(last)) content = "Îmi pare rău, nu pot.";
         else if (body.messages.length > 2) content = "```html\n" + html("Cafenea Aroma", "Versiune nouă: " + last.split("\n")[1]) + "\n```";
         else content = "Iată designul:\n```html\n" + html("Cafenea Aroma", "Prima versiune") + "\n```";
@@ -122,7 +122,7 @@ async function main() {
     r = await chat(A, question, { conversationId: current.id });
     let sys = lastSystem();
     expect(r.s === 200 && sys.includes("DIN CONVERSAȚIILE ANTERIOARE ALE UTILIZATORULUI — folosește doar dacă are legătură cu întrebarea; poți spune din ce conversație vine:"), "past chats block missing:\n" + sys.slice(0, 3000));
-    expect(sys.includes("[«Rețetă pizza» · ") && sys.includes("Utilizator: Cum fac aluat de pizza napoletană acasă? / AI Stoica: Folosește făină tip 00"), "past chats snippet format: " + sys);
+    expect(sys.includes("[«Rețetă pizza» · ") && sys.includes("Utilizator: Cum fac aluat de pizza napoletană acasă? / Serasmart AI: Folosește făină tip 00"), "past chats snippet format: " + sys);
     expect(!sys.includes("SECRET_B_ANSWER") && !sys.includes("ingredient secret"), "another user's chat leaked into the context");
     expect(!sys.includes("«Curent»") && !sys.includes("«Altceva»"), "current or unrelated conversation must not be included");
     const block = sys.slice(sys.indexOf("DIN CONVERSAȚIILE"));
@@ -189,7 +189,7 @@ async function main() {
     expect(r.s === 502 && /nu a returnat o pagină HTML/.test(r.j.error), "no HTML -> 502 with a Romanian message: " + r.text);
     r = await call("/api/designs", { method: "POST", headers: A, body: { prompt: "Site pentru o cafenea din Cluj", kind: "site" } });
     expect(r.s === 200 && r.j.data.latest === 1 && r.j.data.versions.length === 1 && r.j.data.title === "Cafenea Aroma" && !("html" in r.j.data), "design create: " + r.text);
-    expect(lastSystem().includes("Ești designerul AI Stoica") && !lastSystem().includes("ÎNTREBĂRI DE CLARIFICARE") && !lastSystem().includes("DIN CONVERSAȚIILE ANTERIOARE"), "design must use only its own system prompt");
+    expect(lastSystem().includes("Ești designerul Serasmart AI") && !lastSystem().includes("ÎNTREBĂRI DE CLARIFICARE") && !lastSystem().includes("DIN CONVERSAȚIILE ANTERIOARE"), "design must use only its own system prompt");
     const design = r.j.data;
     r = await call("/api/designs", { headers: A });
     expect(r.j.data.length === 1 && r.j.data[0].versionCount === 1 && !("versions" in r.j.data[0]) && !("html" in r.j.data[0]), "design list shape: " + r.text);

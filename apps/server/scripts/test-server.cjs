@@ -125,8 +125,8 @@ function freePort() {
   assert.deepEqual([r.status, r.data.status], [202, "verify_email"]);
   const anaMail = mails.at(-1);
   assert.equal(anaMail.to, "ana@example.com");
-  assert.match(anaMail.subject, /^Codul tău AI Stoica: \d{6}$/);
-  assert.equal(anaMail.from, "AI Stoica <ai@example.com>");
+  assert.match(anaMail.subject, /^Codul tău Serasmart AI: \d{6}$/);
+  assert.equal(anaMail.from, "Serasmart AI <ai@example.com>");
   assert.equal(anaMail.opts.port, 587);
   const anaId = db.users.find(u => u.email === "ana@example.com").id;
   assert.ok(!db.codes.get(anaId).code_hash.includes(codeFor("ana@example.com")), "only a hash of the code is stored");
@@ -219,7 +219,7 @@ function freePort() {
   assert.equal(r.status, 202);
   const sent = await waitPush(before + 1);
   assert.ok(sent, "the Owner's phone gets a notification for a new account");
-  assert.equal(sent.payload.body, "Maria (maria@gmail.com) vrea să se conecteze la AI Stoica. Permiți?");
+  assert.equal(sent.payload.body, "Maria (maria@gmail.com) vrea să se conecteze la Serasmart AI. Permiți?");
   assert.equal(sent.payload.kind, "access_request");
   assert.match(sent.payload.url, /^\/\?access=[a-f0-9]{64}$/);
   assert.equal(sent.options.vapidDetails.subject, "mailto:owner@example.com");
