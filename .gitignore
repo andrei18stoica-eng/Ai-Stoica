@@ -12,3 +12,7 @@ gateway/data/
 !.env.example
 *.log
 .DS_Store
+# Skipper — machine-local artifacts (hook scratch + derived index), never commit
+.claude/.skipper-*
+.skipper/*
+!.skipper/receipts/
