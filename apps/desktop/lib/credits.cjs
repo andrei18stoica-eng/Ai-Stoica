@@ -5,7 +5,7 @@
 // rounded down to 10. A plan lasts 30 days (a yearly plan: 12 periods of 30 days, paid as 10). Each period's credits
 // come in four 25% tranches on days 1, 8, 15 and 22; what is not used rolls into the next week and is lost when the
 // period ends. The person sees the week's tranche as 100%, with warnings at 25, 50, 75 and 90%. At 100% the paid
-// models stop: buy extra credits (used at once, valid 12 months) or wait for the next tranche; 15 messages a day stay
+// models stop: buy extra credits (used at once, valid 12 months) or wait for the next tranche; 5 messages a day stay
 // on the free models. A new account gets a 2-day trial with 50 credits; after it, an account without a plan keeps 5
 // messages a day on the free models. Credits are taken only when the answer, picture or video really comes out.
 //
@@ -38,7 +38,7 @@ const VIDEO_CLIP_MAX = 15;
 // No plan: free models only, a few messages a day; the trial tries Start for two days.
 const FREE_FEATURES = { name: "Free", tiers: ["fast"], imageHd: false, videoSeconds: 0, plugins: 0, deepResearch: false, compare: 0, automations: 0, skills: 3, priority: false };
 const TRIAL = { days: 2, credits: 50 };
-const FREE_DAILY = { noPlan: 5, planExhausted: 15 };
+const FREE_DAILY = { noPlan: 5, planExhausted: 5 };
 const WARN_AT = [25, 50, 75, 90];
 
 // Starting costs per action, in credits (recalculated in phase 9 from the real costs).

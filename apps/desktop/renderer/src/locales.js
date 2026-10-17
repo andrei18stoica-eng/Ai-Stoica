@@ -638,7 +638,6 @@ export const LOCALES = {
   "Free messages today": "Mesaje gratuite azi",
   "Plans and extra credits": "Abonamente și credite extra",
   "Without a plan: {n} messages a day on the free models, after a {days}-day trial with {credits} credits. Card payments open soon; until then plans are given by the Owner.": "Fără plan: {n} mesaje pe zi pe modelele gratuite, după o probă de {days} zile cu {credits} credite. Plata cu cardul se deschide în curând; până atunci planurile le dă Owner-ul.",
-  "A plan's credits come in four equal parts, one every 7 days counted from the day your plan started (for example, a plan started on a Wednesday gets its credits every Wednesday). What you don't use moves to the next week. At 100% the paid models stop until the next part, or you buy extra credits; {n} messages a day stay on the free models.": "Creditele unui plan vin în patru părți egale, câte una la fiecare 7 zile, numărate din ziua în care a pornit planul (de exemplu, un plan pornit miercuri primește credite în fiecare miercuri). Ce nu folosești trece în săptămâna următoare. La 100% modelele plătite se opresc până la partea următoare sau până cumperi credite extra; {n} mesaje pe zi rămân pe modelele gratuite.",
   "What things cost": "Cât costă",
   "Message, fast model": "Mesaj, model rapid",
   "Message, advanced model": "Mesaj, model avansat",
@@ -657,7 +656,8 @@ export const LOCALES = {
   "See plans": "Vezi planurile",
   "This period's credit parts": "Părțile de credite din această perioadă",
   "Part {n}": "Partea {n}",
-  "Your plan, this week's credits and extra credits.": "Planul tău, creditele săptămânii și creditele extra."
+  "Your plan, this week's credits and extra credits.": "Planul tău, creditele săptămânii și creditele extra.",
+  "A plan's credits come in four equal parts, one every 7 days counted from the day your plan started (for example, a plan started on a Wednesday gets its credits every Wednesday). What you don't use moves to the next week. At 100% the paid models stop until the next part, or you buy extra credits; meanwhile you keep {n} messages a day on the free models.": "Creditele unui plan vin în patru părți egale, câte una la fiecare 7 zile, numărate din ziua în care a pornit planul (de exemplu, un plan pornit miercuri primește credite în fiecare miercuri). Ce nu folosești trece în săptămâna următoare. La 100% modelele plătite se opresc până la partea următoare sau până cumperi credite extra; între timp ai {n} mesaje pe zi pe modelele gratuite."
  },
  "es": {
   "AI model: {model}": "Modelo de IA: {model}",
