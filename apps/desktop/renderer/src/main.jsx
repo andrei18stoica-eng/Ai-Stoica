@@ -1655,9 +1655,48 @@ function App() {
     map.delete(id);
     setGenerations(g=>{if(!g[id])return g;const n={...g};delete n[id];return n});
   }
-  function stopGeneration(){const c=controllersRef.current.get(currentId);if(c&&!c.signal.aborted)c.abort("user-stop")}
+  // Stop tells the server first (the answer otherwise keeps going in the background and is saved), then stops here.
+  function stopGeneration(){
+    const c=controllersRef.current.get(currentId);if(!c||c.signal.aborted)return;
+    if(c.requestId)api("/api/chat/cancel",{method:"POST",body:JSON.stringify({id:c.requestId})}).catch(()=>{});
+    c.abort("user-stop");
+  }
   function abortAll(reason){for(const c of controllersRef.current.values()){try{c.abort(reason)}catch{}}controllersRef.current.clear();setGenerations({})}
   function showConversation(conv){setConversations(v=>v.map(x=>x.id===conv.id?conv:x))}
+  const upsertMessage=(list,msg)=>{const a=Array.isArray(list)?list:[];const i=a.findIndex(m=>m?.id===msg.id);return i>=0?a.map((m,k)=>k===i?{...m,...msg}:m):[...a,msg]};
+  // An answer, picture or video that kept going on the server while the app was closed, minimised or in the background:
+  // shown while it grows, then replaced by the conversation the server saved.
+  async function followJob(convId,jobId){
+    if(!convId||!jobId||controllersRef.current.get(convId))return;
+    const controller=startGeneration(convId);controller.requestId=jobId;
+    setGen(convId,{stage:"Răspunsul continuă pe server…"});
+    let lastText="";
+    try{
+      while(!controller.signal.aborted){
+        let j=null;
+        try{j=(await api(`/api/chat/jobs/${jobId}`,{signal:controller.signal}))?.data||null}
+        catch(e){if(controller.signal.aborted)break;if(e.status!==404)throw e}
+        if(!j)break;
+        if(j.kind==="chat"&&j.text){
+          lastText=j.text;
+          setGen(convId,{stage:"Scrie răspunsul…"});
+          setConversations(v=>v.map(c=>c.id!==convId?c:{...c,messages:upsertMessage(c.messages,{id:jobId,role:"assistant",content:j.text,routeInfo:j.routeInfo||undefined,streaming:j.status==="running",createdAt:j.startedAt})}));
+        }
+        if(j.status!=="running")break;
+        await new Promise(r=>setTimeout(r,1500));
+      }
+      const cs=await api("/api/conversations");
+      const fresh=(cs.data||[]).find(c=>c.id===convId);
+      if(!fresh)return;
+      if(controller.signal.reason==="user-stop"){
+        const conv={...fresh,messages:upsertMessage(fresh.messages,{id:jobId,role:"assistant",content:lastText,streaming:false,stopped:true,createdAt:Date.now()})};
+        showConversation(conv);await saveConversation(conv);
+      }else showConversation(fresh);
+    }catch{}finally{finishGeneration(convId,controller)}
+  }
+  async function resumeServerJobs(){
+    try{const d=await api("/api/chat/jobs");for(const j of d.data||[])if(j.status==="running")followJob(j.conversationId,j.id);}catch{}
+  }
 
   async function refreshModels({silent=false}={}){
     if(!silent)setRefreshingModels(true);
@@ -1718,6 +1757,8 @@ function App() {
       setSelectedProject(v=>v&&projectList.some(p=>p.id===v)?v:null);
       setSelectedAssistant(v=>v&&assistantList.some(a=>a.id===v)?v:(assistantList.find(a=>a.builtIn)?.id||assistantList[0]?.id||null));
       setCurrentId(v=>v&&convs.some(c=>c.id===v)?v:(initial?(convs.find(c=>!c.archived)?.id||null):null));
+      // Answers still being written on the server (the app was closed or in the background) appear and keep growing.
+      resumeServerJobs();
     }catch(e){if(!isAuthLost(e.status,e.message))setLoadError(e.message)}
     finally{setBoot(false)}
     refreshModels({silent:true});
@@ -1762,6 +1803,14 @@ function App() {
     const off=window.AIStoica?.onUpdateReady?.(()=>setUpdateReady(true));
     return()=>{if(typeof off==="function")off()};
   },[]);
+  // Back from the background (phone unlocked, window restored): pick up the answers the server kept writing.
+  useEffect(()=>{
+    if(!user?.id)return;
+    const onVisible=()=>{if(!document.hidden)resumeServerJobs()};
+    document.addEventListener("visibilitychange",onVisible);
+    window.addEventListener("focus",onVisible);
+    return()=>{document.removeEventListener("visibilitychange",onVisible);window.removeEventListener("focus",onVisible)};
+  },[user?.id]);
   // 0.7.18: the results of the automations (and the other notices of the account) arrive while the app is open; each
   // is shown once and marked as read. Without AI Stoica Cloud the list is empty.
   useEffect(()=>{
@@ -1850,8 +1899,9 @@ function App() {
     // was never a chat model) the one chosen in the picker answers instead of an error.
     const effectiveModel=modelPolicyEnforced||models.length?(models.includes(desiredModel)?desiredModel:(models.includes(model)?model:(models[0]||""))):desiredModel;
     const controller=startGeneration(convId);
-    let answer="",routeInfo=null,started=false,streamError="",flushTimer=null;
+    let answer="",routeInfo=null,started=false,streamError="",flushTimer=null,resume=false;
     const assistantMessage={id:uid(),role:"assistant",content:"",createdAt:Date.now(),streaming:true};
+    controller.requestId=assistantMessage.id;
     let working={...baseConv,model:effectiveModel||baseConv.model||model,messages:[...messages,assistantMessage],updatedAt:Date.now()};
     const flush=()=>{flushTimer=null;showConversation(working)};
     const scheduleFlush=()=>{if(!flushTimer)flushTimer=setTimeout(flush,40)};
@@ -1862,7 +1912,7 @@ function App() {
       const payload=toProviderMessages(messages,extra);
       if(!payload.some(m=>m.role==="user"))throw new Error("Mesajul este gol.");
       setGen(convId,{stage:"Verifică memoria, fișierele și contextul relevant…"});
-      const r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:authHeaders({"Content-Type":"application/json"}),body:JSON.stringify({model:effectiveModel,conversationId:baseConv.id||null,assistantId:baseConv.assistantId||null,projectId:baseConv.projectId||null,responseMode,messages:payload}),signal:controller.signal});
+      const r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:authHeaders({"Content-Type":"application/json"}),body:JSON.stringify({model:effectiveModel,requestId:assistantMessage.id,conversationId:baseConv.id||null,assistantId:baseConv.assistantId||null,projectId:baseConv.projectId||null,responseMode,messages:payload}),signal:controller.signal});
       if(!r.ok){const text=await r.text().catch(()=>"");throw apiError(r.status,text,"/api/chat/stream")}
       setGen(convId,{stage:"Așteaptă răspunsul AI-ului ales…"});
       const handleLine=line=>{
@@ -1923,6 +1973,10 @@ function App() {
       const reason=controller.signal.reason;
       if(reason==="deleted"||reason==="logout"||reason==="replaced")return;
       const aborted=controller.signal.aborted||e?.name==="AbortError";
+      // The connection broke (phone locked, app in the background, network change) but the server kept working.
+      if(controller.signal.reason!=="user-stop"){
+        try{const j=(await api(`/api/chat/jobs/${assistantMessage.id}`))?.data;if(j&&j.status!=="error"){resume=true;return}}catch{}
+      }
       const finalMessage=aborted
         ?{...assistantMessage,routeInfo,content:answer,streaming:false,stopped:true}
         :{...assistantMessage,routeInfo,content:`Eroare: ${friendlyError(e.message)}`,streaming:false,error:true};
@@ -1930,6 +1984,7 @@ function App() {
       showConversation(working);
       if(storage.get(TOKEN_KEY)){try{await saveConversation(working)}catch(saveError){if(!isAuthLost(saveError.status,saveError.message))toast("Conversația nu a putut fi salvată: "+saveError.message)}}
     }finally{finishGeneration(convId,controller)}
+    if(resume)followJob(convId,assistantMessage.id);
   }
   // A picture or video (asked for in the chat or with the Poză / Video button) is made by the company of the chosen
   // model (Gemini, ChatGPT, Grok); with a combination or a model that cannot make pictures, by Setări → Poze / Video.
@@ -1938,15 +1993,18 @@ function App() {
     const controller=startGeneration(convId);
     setGen(convId,{stage:kind==="video"?"Generează videoclipul… poate dura câteva minute":"Creează imaginea și pregătește fișierul…"});
     const base={id:uid(),role:"assistant",createdAt:Date.now(),streaming:false,mediaKind:kind,mediaPrompt:prompt};
+    controller.requestId=base.id;
+    let resume=false;
     try{
       let message;
       try{
-        const d=await api(kind==="video"?"/api/generate/video":"/api/generate/image",{method:"POST",body:JSON.stringify({prompt,via:baseConv.model||model||""}),signal:controller.signal});
+        const d=await api(kind==="video"?"/api/generate/video":"/api/generate/image",{method:"POST",body:JSON.stringify({prompt,via:baseConv.model||model||"",requestId:base.id,conversationId:convId}),signal:controller.signal});
         const file={...d.data,type:d.data?.kind||kind,kind:d.data?.kind||kind};
         message={...base,content:"",attachments:[file],routeInfo:{task:kind==="video"?"video_generation":"image_generation",model:file.model||"",provider:inferModelProvider(file.model||"")}};
       }catch(e){
         const reason=controller.signal.reason;
         if(reason==="deleted"||reason==="logout"||reason==="replaced")return;
+        if(reason!=="user-stop"){try{const j=(await api(`/api/chat/jobs/${base.id}`))?.data;if(j&&j.status!=="error"){resume=true;return}}catch{}}
         message=controller.signal.aborted
           ?{...base,content:"",stopped:true}
           :{...base,content:`Generarea ${kind==="video"?"videoclipului":"imaginii"} nu a reușit: ${friendlyError(e.message)}`,mediaGenerationError:true,...(kind==="video"&&/Setări\s*→\s*Video|nevoie de o cheie/i.test(e.message)?{needsVideoSetup:true}:{})};
@@ -1959,6 +2017,7 @@ function App() {
         if(!message.mediaGenerationError&&!message.stopped)api("/api/memory/capture",{method:"POST",body:JSON.stringify({conversationId:saved.id,userText:prompt,assistantText:`${kind==="video"?"Videoclip":"Imagine"} generată: ${message.attachments?.[0]?.name||""}`})}).catch(()=>{});
       }catch(err){if(!isAuthLost(err.status,err.message))toast("Conversația nu a putut fi salvată: "+err.message)}
     }finally{finishGeneration(convId,controller)}
+    if(resume)followJob(convId,base.id);
   }
   async function send(answerText){
     const answer=typeof answerText==="string";

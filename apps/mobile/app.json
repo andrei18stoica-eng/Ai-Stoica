@@ -3,7 +3,7 @@
     "name": "Serasmart AI",
     "slug": "ai-stoica",
     "scheme": "aistoica",
-    "version": "0.7.19",
+    "version": "0.7.20",
     "orientation": "portrait",
     "icon": "./icon.png",
     "userInterfaceStyle": "dark",

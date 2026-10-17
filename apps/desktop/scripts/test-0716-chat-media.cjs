@@ -115,7 +115,7 @@ async function main() {
 
     // The interface sends the chosen model with every picture / video request.
     const src = fs.readFileSync(path.join(__dirname, "../renderer/src/main.jsx"), "utf8");
-    expect(/body:JSON\.stringify\(\{prompt,via:baseConv\.model\|\|model\|\|""\}\)/.test(src) && src.includes('from "./mediaIntent.mjs"'), "main.jsx must send the chat model and use mediaIntent.mjs");
+    expect(/body:JSON\.stringify\(\{prompt,via:baseConv\.model\|\|model\|\|""[,}]/.test(src) && src.includes('from "./mediaIntent.mjs"'), "main.jsx must send the chat model and use mediaIntent.mjs");
   } finally {
     globalThis.fetch = realFetch;
     await gw.close(); omni.close();

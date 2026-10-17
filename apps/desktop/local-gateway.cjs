@@ -2785,12 +2785,72 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   // The work stops (and nothing is saved) when the user cancels and the request closes.
   function clientAbortSignal(res){const c=new AbortController();res.on("close",()=>{if(!res.writableFinished)c.abort()});return c.signal;}
 
+  // Answers that keep going in the background (0.7.20). A chat answer, picture or video sent with a requestId and a
+  // conversationId does not stop when the page closes, the phone locks or the window is minimised: the gateway reads
+  // the AI to the end and saves the answer in the conversation, where the app finds it when it opens again. Only the
+  // Stop button (POST /api/chat/cancel) stops it. Without a requestId (older apps) a closed page still cancels.
+  const chatJobs=new Map(),JOB_KEEP_MS=15*60*1000;
+  function startJob(req,res,kind){
+    const id=typeof req.body?.requestId==="string"&&/^[\w-]{6,80}$/.test(req.body.requestId)?req.body.requestId:"";
+    const conversationId=typeof req.body?.conversationId==="string"?req.body.conversationId.slice(0,100):"";
+    const controller=new AbortController();
+    const owned=conversationId&&store.read().conversations.some(c=>c.id===conversationId&&c.userId===req.user.id);
+    if(!id||!owned||chatJobs.has(id)){res.on("close",()=>{if(!res.writableFinished)controller.abort()});return {job:null,signal:controller.signal};}
+    const job={id,kind,userId:req.user.id,conversationId,status:"running",text:"",routeInfo:null,attachment:null,error:"",startedAt:Date.now(),updatedAt:Date.now(),controller,clientGone:false,cancelled:false,buf:"",dec:new TextDecoder()};
+    chatJobs.set(id,job);
+    res.on("close",()=>{if(!res.writableFinished)job.clientGone=true;});
+    return {job,signal:controller.signal};
+  }
+  function endJob(job,status,extra={}){
+    if(!job||job.status!=="running")return;
+    Object.assign(job,{status,updatedAt:Date.now()},extra);job.controller=null;job.buf="";
+    const t=setTimeout(()=>{if(chatJobs.get(job.id)===job)chatJobs.delete(job.id)},JOB_KEEP_MS);t.unref?.();
+  }
+  // The answer is written into the conversation by the gateway itself, under the id the app gave it, so the app's own
+  // save (when it is still open) replaces it with the same message.
+  function saveJobMessage(job,message){
+    const db=store.read(),conv=db.conversations.find(c=>c.id===job.conversationId&&c.userId===job.userId);if(!conv)return false;
+    if(!Array.isArray(conv.messages))conv.messages=[];
+    const i=conv.messages.findIndex(m=>m?.id===job.id),prev=i>=0?conv.messages[i]:{};
+    const full={...prev,id:job.id,role:"assistant",createdAt:prev.createdAt||job.startedAt,streaming:false,...message};
+    if(i>=0)conv.messages[i]=full;else conv.messages.push(full);
+    conv.updatedAt=Date.now();store.write(db);return true;
+  }
+  // Reads the text out of the stream the AI sends (the same "data:" lines the app reads).
+  function collectJobText(job,chunk){
+    job.buf+=job.dec.decode(chunk,{stream:true});
+    const events=job.buf.split(/\r?\n\r?\n/);job.buf=events.pop()||"";
+    for(const ev of events)for(const line of ev.split(/\r?\n/)){
+      if(!line.startsWith("data:"))continue;
+      const raw=line.slice(5).trim();if(!raw||raw==="[DONE]")continue;
+      let j;try{j=JSON.parse(raw)}catch{continue}
+      if(j?.error){job.error=String(j.error?.message||j.error).slice(0,2000);continue}
+      const delta=j?.choices?.[0]?.delta?.content||j?.choices?.[0]?.message?.content||"";
+      if(delta){job.text+=delta;job.updatedAt=Date.now();}
+    }
+  }
+  const jobView=(j)=>({id:j.id,kind:j.kind,conversationId:j.conversationId,status:j.status,text:j.text,routeInfo:j.routeInfo,attachment:j.attachment,error:j.error,startedAt:j.startedAt,updatedAt:j.updatedAt});
+  app.get("/api/chat/jobs", auth, (req,res) => {res.json({data:[...chatJobs.values()].filter(j=>j.userId===req.user.id).map(jobView)});});
+  app.get("/api/chat/jobs/:id", auth, (req,res) => {
+    const j=chatJobs.get(req.params.id);
+    if(!j||j.userId!==req.user.id)return res.status(404).json({error:"Răspunsul nu mai este în lucru."});
+    res.json({data:jobView(j)});
+  });
+  app.post("/api/chat/cancel", auth, (req,res) => {
+    const j=chatJobs.get(String(req.body?.id||""));
+    if(!j||j.userId!==req.user.id)return res.json({ok:true,found:false});
+    j.cancelled=true;try{j.controller?.abort("user-stop")}catch{}
+    res.json({ok:true,found:true});
+  });
+
   // Direct APIs that make pictures for the free tier: free by themselves (Cloudflare, Pollinations) or with the free tier of
   // the key the Owner put on the server (Gemini, Hugging Face).
   const FREE_TIER_IMAGE=new Set(["cloudflare","pollinations","pollinations-free","gemini","huggingface"]);
   const FREE_TIER_VIDEO=new Set(["pollinations"]);
   app.post("/api/generate/image", auth, async (req,res) => {
-    const signal=clientAbortSignal(res);
+    // Keeps going when the page closes (startJob); Stop cancels it.
+    const {job,signal}=startJob(req,res,"image");
+    try{
     await mediaAbort.run(signal,async()=>{
     try{
       requireFeaturePermission(req,"image_generation");
@@ -2803,7 +2863,13 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const made=mediaConfigFor(getOmniConfig(),"image",freeTier?"":via),errors=[];
       const cfg=freeTier?{...made.cfg,imageProviders:""}:made.cfg,madeBy=freeTier?"":made.madeBy;
       const strictFree=(cfg.imageCostPolicy==="free_only"||cfg.imageProviderMode==="free");
-      const done=async(resolved,meta)=>{if(signal.aborted)return true;res.json({data:await saveGeneratedMedia(req,{...resolved,kind:"image",prompt,...meta})});return true;};
+      const done=async(resolved,meta)=>{
+        if(signal.aborted)return true;
+        const data=await saveGeneratedMedia(req,{...resolved,kind:"image",prompt,...meta});
+        if(job){saveJobMessage(job,{content:"",mediaKind:"image",mediaPrompt:prompt,attachments:[{...data,type:data.kind||"image",kind:data.kind||"image"}],routeInfo:{task:"image_generation",model:data.model||"",provider:data.provider||""}});endJob(job,"done",{attachment:data});}
+        if(!res.destroyed&&!res.writableEnded)res.json({data});
+        return true;
+      };
 
       const runDirect=async(attempts)=>{
         for(const attempt of byCooldown("image",attempts)){
@@ -2887,13 +2953,24 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           ?" Protecția «Doar gratuit» este activă; providerii cu cost sau cost necunoscut nu sunt apelați. Pentru ei trebuie să alegi explicit «Permite provideri cu plată»."
           :"";
       throw policyFailure(("Generarea imaginii nu a produs un fișier real."+providerHint+" "+errors.slice(0,10).join(" | ")).trim(),502);
-    }catch(e){if(!signal.aborted)sendError(res,e)}
+    }catch(e){
+      // The page was closed while it worked: the failure goes into the conversation, like the answer would have.
+      if(job&&!job.cancelled&&job.status==="running"){
+        const msg=e?.status?e.message:roError(e);
+        if(job.clientGone)saveJobMessage(job,{content:`Generarea imaginii nu a reușit: ${msg}`,mediaKind:"image",mediaGenerationError:true});
+        endJob(job,"error",{error:msg});
+      }
+      if(!signal.aborted)sendError(res,e);
+    }
     });
+    }finally{if(job?.status==="running")endJob(job,job.cancelled?"cancelled":"error")}
   });
 
   const VIDEO_NEEDS_PROVIDER="Pentru video e nevoie de o cheie la Pollinations, fal.ai, Replicate sau Gemini (Veo) și de permisiunea pentru costuri din Setări → Video. Nu există în prezent un API video gratuit.";
   app.post("/api/generate/video", auth, async (req,res) => {
-    const signal=clientAbortSignal(res);
+    // Keeps going when the page closes (startJob); Stop cancels it.
+    const {job,signal}=startJob(req,res,"video");
+    try{
     await mediaAbort.run(signal,async()=>{
     try{
       requireFeaturePermission(req,"video_generation");
@@ -2905,7 +2982,13 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const made=mediaConfigFor(getOmniConfig(),"video",freeTier?"":via),errors=[];
       const cfg=freeTier?{...made.cfg,videoProviders:""}:made.cfg,madeBy=freeTier?"":made.madeBy;
       const strictFree=directApisAllowed(req)&&(cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free");
-      const done=async(resolved,meta)=>{if(signal.aborted)return true;res.json({data:await saveGeneratedMedia(req,{...resolved,kind:"video",prompt,...meta})});return true;};
+      const done=async(resolved,meta)=>{
+        if(signal.aborted)return true;
+        const data=await saveGeneratedMedia(req,{...resolved,kind:"video",prompt,...meta});
+        if(job){saveJobMessage(job,{content:"",mediaKind:"video",mediaPrompt:prompt,attachments:[{...data,type:data.kind||"video",kind:data.kind||"video"}],routeInfo:{task:"video_generation",model:data.model||"",provider:data.provider||""}});endJob(job,"done",{attachment:data});}
+        if(!res.destroyed&&!res.writableEnded)res.json({data});
+        return true;
+      };
 
       if(explicitModel)await requirePersonalAccess(req,explicitModel);
       const attempts=freeTier?(await directVideoAttempts(cfg,prompt,duration,aspectRatio)).filter(a=>FREE_TIER_VIDEO.has(a.id)):directApisAllowed(req)&&!explicitModel?await directVideoAttempts(cfg,prompt,duration,aspectRatio):[];
@@ -2987,8 +3070,17 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           ?` Protecția «Doar gratuit» este activă: ${BRAND_NAME} pornește doar modelele web gratuite din OmniRoute (VEO 3.1, Seedance) și joburile al căror cost $0 îl poate confirma din catalogul providerului.`
           :"";
       throw policyFailure(("Generarea videoclipului nu a produs un fișier MP4 real."+hint+" "+errors.slice(0,10).join(" | ")).trim(),502);
-    }catch(e){if(!signal.aborted)sendError(res,e)}
+    }catch(e){
+      // The page was closed while it worked: the failure goes into the conversation, like the answer would have.
+      if(job&&!job.cancelled&&job.status==="running"){
+        const msg=e?.status?e.message:roError(e);
+        if(job.clientGone)saveJobMessage(job,{content:`Generarea videoclipului nu a reușit: ${msg}`,mediaKind:"video",mediaGenerationError:true});
+        endJob(job,"error",{error:msg});
+      }
+      if(!signal.aborted)sendError(res,e);
+    }
     });
+    }finally{if(job?.status==="running")endJob(job,job.cancelled?"cancelled":"error")}
   });
 
   function publicPlugin(item){
@@ -3860,11 +3952,11 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }catch(e){if(!clientSignal.aborted)sendError(res,e)}
   });
   app.post("/api/chat/stream", auth, async (req,res) => {
-    // When the user presses Stop (or closes the window) the request to the AI provider is cancelled too.
-    const clientGone=new AbortController();
-    res.on("close",()=>{if(!res.writableFinished)clientGone.abort()});
+    // Stop cancels the request to the AI provider; a closed page does not (startJob): the answer is finished and saved.
+    const {job,signal:stopSignal}=startJob(req,res,"chat");
+    const clientGone={signal:stopSignal};
     let prepared;
-    try{prepared=await prepareChat(req)}catch(e){return sendError(res,e,400)}
+    try{prepared=await prepareChat(req)}catch(e){endJob(job,"error",{error:e?.message||"eroare"});return sendError(res,e,400)}
     const {cfg,requestedModel,messages,chosen}=prepared;
     const timer=chatTimer(true,clientGone.signal);
     try{
@@ -3897,21 +3989,45 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       res.setHeader("X-AI-Stoica-Model",headerSafe(usedModel));
       if(directCandidate)res.setHeader("X-AI-Stoica-Provider",directCandidate.provider);
       const usedCandidate=directCandidate||route.candidates.find(x=>x.id===usedModel)||{};
-      res.write(`data: ${JSON.stringify({ai_stoica_route:{task:routeTask,model:usedModel,provider:usedCandidate.provider||inferProvider(usedModel),reasons:directCandidate?directReason(route):(route.reasons||[])}})}\n\n`);
-      if(!ctype.includes("text/event-stream")){const data=await upstream.json(),text=sanitizeQuestions(data?.choices?.[0]?.message?.content||"");res.write(`data: ${JSON.stringify({choices:[{delta:{content:text}}]})}\n\n`);res.write("data: [DONE]\n\n");return res.end();}
+      const routeInfo={task:routeTask,model:usedModel,provider:usedCandidate.provider||inferProvider(usedModel),reasons:directCandidate?directReason(route):(route.reasons||[])};
+      if(job)job.routeInfo=routeInfo;
+      const open=()=>!res.destroyed&&!res.writableEnded;
+      if(open())res.write(`data: ${JSON.stringify({ai_stoica_route:routeInfo})}\n\n`);
+      if(!ctype.includes("text/event-stream")){
+        const data=await upstream.json(),text=sanitizeQuestions(data?.choices?.[0]?.message?.content||"");
+        if(job){job.text=text;saveJobMessage(job,{content:text||"Nu am primit răspuns.",routeInfo});endJob(job,"done");}
+        if(open()){res.write(`data: ${JSON.stringify({choices:[{delta:{content:text}}]})}\n\n`);res.write("data: [DONE]\n\n");res.end();}
+        return;
+      }
       const reader=upstream.body.getReader();
       while(true){
         if(clientGone.signal.aborted){try{await reader.cancel()}catch{}break}
         const {value,done}=await reader.read();if(done)break;
         timer.touch();
-        if(!res.write(Buffer.from(value)))await new Promise(resolve=>{const go=()=>{res.off("drain",go);res.off("close",go);resolve()};res.on("drain",go);res.on("close",go);});
+        if(job)collectJobText(job,value);
+        // The page is gone: keep reading the AI to the end, there is just no one to send it to.
+        if(!open())continue;
+        if(!res.write(Buffer.from(value)))await new Promise(resolve=>{const go=()=>{res.off("drain",go);res.off("close",go);resolve()};res.on("drain",go);res.on("close",go);if(!open())go();});
       }
-      if(!res.writableEnded&&!res.destroyed)res.end();
+      if(job){
+        if(job.cancelled)endJob(job,"cancelled");
+        else{
+          const note=job.error?`\n\n_Răspunsul a fost întrerupt: ${job.error}_`:"";
+          saveJobMessage(job,job.text||!job.error?{content:(job.text||"Nu am primit răspuns.")+note,routeInfo}:{content:`Eroare: ${job.error}`,routeInfo,error:true});
+          endJob(job,"done");
+        }
+      }
+      if(open())res.end();
     }catch(e){
+      const message=timer.signal.aborted&&!clientGone.signal.aborted?timeoutMessage(timer):(e.status?e.message:roError(e));
+      // A failure while the page was closed is saved in the conversation, so the person sees what happened.
+      if(job&&!job.cancelled&&job.status==="running"){
+        if(job.clientGone)saveJobMessage(job,job.text?{content:job.text+`\n\n_Răspunsul a fost întrerupt: ${message}_`,routeInfo:job.routeInfo}:{content:`Eroare: ${message}`,error:true});
+        endJob(job,"error",{error:message});
+      }
       if(clientGone.signal.aborted||res.destroyed)return;
-      const message=timer.signal.aborted?timeoutMessage(timer):(e.status?e.message:roError(e));
       if(!res.headersSent)res.status(timer.signal.aborted?504:(e.status||502)).json({error:message});else{res.write(`data: ${JSON.stringify({error:message})}\n\n`);res.end();}
-    }finally{timer.clear()}
+    }finally{timer.clear();if(job?.status==="running")endJob(job,job.cancelled?"cancelled":"error")}
   });
 
   // One non-streaming answer through the same route and fallback as chat (used by Design).

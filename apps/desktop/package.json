@@ -1,8 +1,8 @@
 {
   "name": "ai-stoica-desktop",
-  "version": "0.7.19",
+  "version": "0.7.20",
   "private": true,
-  "description": "Serasmart AI 0.7.19 - the public name Serasmart AI everywhere, kept in one place (lib/brand.json)",
+  "description": "Serasmart AI 0.7.20 - answers, pictures and videos keep going when the app is minimised or closed; only Stop cancels them",
   "main": "main.cjs",
   "repository": {
     "type": "git",

@@ -287,7 +287,9 @@ function createWindow(show = true) {
     width: 1440, height: 920, minWidth: 980, minHeight: 680,
     backgroundColor: "#05070b", title: BRAND_NAME, autoHideMenuBar: true,
     show: false,
-    webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true }
+    webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true,
+      // Minimised or hidden in the tray, the window keeps receiving the answer at full speed.
+      backgroundThrottling: false }
   });
 
   const reveal = () => {
