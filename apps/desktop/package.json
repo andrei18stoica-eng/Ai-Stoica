@@ -1,8 +1,8 @@
 {
   "name": "serasmart-desktop",
-  "version": "0.7.26",
+  "version": "0.7.27",
   "private": true,
-  "description": "Serasmart AI 0.7.26 - a new interface: English by default with 24 languages, a dark premium theme with blue accents and an optional light one",
+  "description": "Serasmart AI 0.7.27 - Settings and Usage in English (with the translations), weekly credits counted from the plan start day",
   "main": "main.cjs",
   "repository": {
     "type": "git",

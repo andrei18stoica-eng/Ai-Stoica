@@ -69,7 +69,7 @@ async function main() {
     for (const s of ["export function AccessRequestDialog", "export function PhoneNotifications", "/api/admin/push/subscribe", "applicationServerKey", 'get("access")']) expect(ui.includes(s), "accessRequest.jsx must contain " + s);
     const main = fs.readFileSync(path.join(__dirname, "..", "renderer", "src", "main.jsx"), "utf8");
     expect(main.includes('authPost("/auth/verify-email"') && main.includes('authPost("/auth/resend-code"') && main.includes('autoComplete="one-time-code"'), "the sign-in screen must have the email-code step");
-    expect(main.includes("<AccessRequestDialog/>") && main.includes('["notify",Bell,"Notificări",true]') && main.includes("{webServer&&<PhoneNotifications/>}"), "main.jsx must mount the dialog, and the Owner on the site gets phone notifications in the Notifications tab (0.7.23)");
+    expect(main.includes("<AccessRequestDialog/>") && main.includes('["notify",Bell,"Notifications",true]') && main.includes("{webServer&&<PhoneNotifications/>}"), "main.jsx must mount the dialog, and the Owner on the site gets phone notifications in the Notifications tab (0.7.23)");
     console.log("ACCESS_REQUEST_TESTS_PASSED");
   } finally {
     cloud.close();

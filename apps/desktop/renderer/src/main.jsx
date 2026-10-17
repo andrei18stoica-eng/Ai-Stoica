@@ -1250,13 +1250,13 @@ function ServerKeysBox() {
     setState({busy:true,text:"",bad:false});
     try{
       const r=await window.Serasmart.copyServerKeys();
-      const skipped=r?.skipped?.length?` Nu am copiat ${r.skipped.join(", ")}: au caractere pe care serverul nu le acceptă.`:"";
-      setState({busy:false,bad:!r?.ok,text:r?.ok?`Am copiat ${r.count===1?"o cheie":r.count+" chei"} pentru server. Lipește-le când scriptul de pe server îți cere (click dreapta). Se șterg din clipboard în 2 minute.${skipped}`:(r?.error||"Cheile nu au putut fi copiate.")});
+      const skipped=r?.skipped?.length?" "+tr("I did not copy {names}: they have characters the server does not accept.",{names:r.skipped.join(", ")}):"";
+      setState({busy:false,bad:!r?.ok,text:r?.ok?tr(r.count===1?"I copied 1 key for the server. Paste it when the script on the server asks (right click). It is cleared from the clipboard in 2 minutes.":"I copied {n} keys for the server. Paste them when the script on the server asks (right click). They are cleared from the clipboard in 2 minutes.",{n:r.count})+skipped:(r?.error||tr("The keys could not be copied."))});
     }catch(e){setState({busy:false,bad:true,text:e.message})}
   }
   return <div className="providerTest">
-    <div className="providerTestHead"><div><b>Cheile pentru server</b><span>Copiază cheile salvate pe acest PC, ca site-ul {BRAND_DOMAIN} să aibă aceleași modele.</span></div>
-      <button className="secondary" onClick={run} disabled={state.busy}>{state.busy?"Se copiază…":"Copiază cheile pentru server"}</button></div>
+    <div className="providerTestHead"><div><b>{tr("Keys for the server")}</b><span>{tr("Copies the keys saved on this PC, so the {domain} site has the same models.",{domain:BRAND_DOMAIN})}</span></div>
+      <button className="secondary" onClick={run} disabled={state.busy}>{state.busy?tr("Copying…"):tr("Copy the keys for the server")}</button></div>
     {state.text&&<div className={cx("providerRow",state.bad?"bad":"good")}>{state.bad?<X size={15}/>:<Check size={15}/>}<span>{state.text}</span></div>}
   </div>;
 }
@@ -1271,15 +1271,15 @@ function ProviderTestBox() {
     catch(e){setState({busy:false,data:null,media:[],omni:null,error:e.message})}
   }
   return <div className="providerTest">
-    <div className="providerTestHead"><div><b>Testează cheile</b><span>Verifică OmniRoute (cheia și câte un model Gemini, Grok, OpenAI, Claude) și fiecare API salvat. Salvează setările înainte de test.</span></div>
-      <button className="secondary" onClick={run} disabled={state.busy}>{state.busy?"Se testează…":"Testează acum"}</button></div>
+    <div className="providerTestHead"><div><b>{tr("Test the keys")}</b><span>{tr("Checks OmniRoute (the key and one Gemini, Grok, OpenAI and Claude model) and every saved API. Save the settings before testing.")}</span></div>
+      <button className="secondary" onClick={run} disabled={state.busy}>{state.busy?tr("Testing…"):tr("Test now")}</button></div>
     {state.error&&<div className="providerRow bad"><X size={15}/><span>{state.error}</span></div>}
-    {state.omni&&<div className={cx("providerRow",state.omni.ok?"good":"bad")}>{state.omni.ok?<Check size={15}/>:<X size={15}/>}<b>OmniRoute</b><span>{state.omni.ok?`cheia e bună · ${state.omni.models} modele, ${state.omni.combos} combinații · ${(state.omni.ms/1000).toFixed(1)} s`:state.omni.error}</span></div>}
-    {state.omni?.expired?.length>0&&<div className="providerRow bad omniExpired"><X size={15}/><b>Reconectează în OmniRoute</b><span>Loginul a expirat la: {state.omni.expired.map(x=>OMNI_CONNECTIONS[x]||x).join(", ")}. Panoul OmniRoute de pe server → Providers → fiecare cont → Reconnect (sau pune o cheie API).</span></div>}
-    {(state.omni?.checks||[]).map(c=><div key={c.model} className={cx("providerRow omniCheck",c.ok?"good":"bad")}>{c.ok?<Check size={15}/>:<X size={15}/>}<b>{c.model}</b><span>{c.ok?`răspunde · ${(c.ms/1000).toFixed(1)} s`:c.error||("HTTP "+c.status)}</span></div>)}
-    {state.data&&!state.data.length&&!state.omni?.ok&&<div className="providerRow bad"><X size={15}/><span>Nu ai nicio cheie de chat salvată. Adaugă de exemplu o cheie Gemini sau Groq și salvează.</span></div>}
-    {(state.data||[]).map(x=><div key={x.provider} className={cx("providerRow",x.ok?"good":"bad")}>{x.ok?<Check size={15}/>:<X size={15}/>}<b>{x.label}</b><span>{x.model}{x.ok?` · ${(x.ms/1000).toFixed(1)} s`:` · ${x.error||("HTTP "+x.status)}`}{x.paid?" · cu plată":""}</span></div>)}
-    {state.data&&state.media.length>0&&<div className="providerMedia">Imagini și video (nu se generează la test, pentru a nu consuma credite): {state.media.map(m=>`${m.label} ${m.configured?"✓":"—"}`).join(" · ")}</div>}
+    {state.omni&&<div className={cx("providerRow",state.omni.ok?"good":"bad")}>{state.omni.ok?<Check size={15}/>:<X size={15}/>}<b>OmniRoute</b><span>{state.omni.ok?tr("the key works · {models} models, {combos} combinations · {s} s",{models:state.omni.models,combos:state.omni.combos,s:(state.omni.ms/1000).toFixed(1)}):state.omni.error}</span></div>}
+    {state.omni?.expired?.length>0&&<div className="providerRow bad omniExpired"><X size={15}/><b>{tr("Reconnect in OmniRoute")}</b><span>{tr("The login expired for: {names}. OmniRoute panel on the server → Providers → each account → Reconnect (or add an API key).",{names:state.omni.expired.map(x=>OMNI_CONNECTIONS[x]||x).join(", ")})}</span></div>}
+    {(state.omni?.checks||[]).map(c=><div key={c.model} className={cx("providerRow omniCheck",c.ok?"good":"bad")}>{c.ok?<Check size={15}/>:<X size={15}/>}<b>{c.model}</b><span>{c.ok?tr("answers · {s} s",{s:(c.ms/1000).toFixed(1)}):c.error||("HTTP "+c.status)}</span></div>)}
+    {state.data&&!state.data.length&&!state.omni?.ok&&<div className="providerRow bad"><X size={15}/><span>{tr("No chat key is saved. Add, for example, a Gemini or Groq key and save.")}</span></div>}
+    {(state.data||[]).map(x=><div key={x.provider} className={cx("providerRow",x.ok?"good":"bad")}>{x.ok?<Check size={15}/>:<X size={15}/>}<b>{x.label}</b><span>{x.model}{x.ok?` · ${(x.ms/1000).toFixed(1)} s`:` · ${x.error||("HTTP "+x.status)}`}{x.paid?" · "+tr("paid"):""}</span></div>)}
+    {state.data&&state.media.length>0&&<div className="providerMedia">{tr("Pictures and video (not generated in the test, so no credit is used):")} {state.media.map(m=>`${m.label} ${m.configured?"✓":"—"}`).join(" · ")}</div>}
   </div>;
 }
 function FirstRunGuide({onDone,onOpenSettings}) {
@@ -1317,7 +1317,7 @@ function FirstRunGuide({onDone,onOpenSettings}) {
 
 function ProviderHead({name,id,cfg,children}) {
   const url=cfg?.providerKeyPages?.[id];
-  return <div className="providerGroup"><div className="providerGroupTop"><b>{name}</b>{url&&<button type="button" className="providerKeyLink" onClick={()=>openLink(url)}>Ia cheia gratuită <ExternalLink size={12}/></button>}</div><small>{children}</small></div>;
+  return <div className="providerGroup"><div className="providerGroupTop"><b>{name}</b>{url&&<button type="button" className="providerKeyLink" onClick={()=>openLink(url)}>{tr("Get the free key")} <ExternalLink size={12}/></button>}</div><small>{children}</small></div>;
 }
 // Settings → API-uri AI: which companies' models the chat uses. Unticked = their models leave the list and never answer
 // (not even as a fallback). Cerebras starts unticked.
@@ -1325,8 +1325,8 @@ const CHAT_FAMILIES=[["openai","OpenAI (ChatGPT, Codex)"],["anthropic","Claude (
 function ProviderUseList({cfg,set}) {
   const blocked=new Set(String(cfg.blockedProviders??"cerebras").split(",").map(x=>x.trim()).filter(Boolean));
   const toggle=(id,on)=>{const next=new Set(blocked);if(on)next.delete(id);else next.add(id);set({blockedProviders:[...next].join(",")})};
-  return <fieldset className="providerUse"><legend>Furnizori folosiți în chat</legend>
-    <p className="settingsHelp">Debifat: modelele lui nu apar în listă și nu răspund, nici ca rezervă. Combinațiile OmniRoute („Ai principal”) rămân; ce modele conțin le alegi în panoul OmniRoute.</p>
+  return <fieldset className="providerUse"><legend>{tr("Providers used in chat")}</legend>
+    <p className="settingsHelp">{tr("Unticked: its models leave the list and never answer, not even as a fallback. OmniRoute combinations stay; you choose what they contain in the OmniRoute panel.")}</p>
     <div className="providerUseGrid">{CHAT_FAMILIES.map(([id,label])=><label key={id} className="providerUseItem"><input type="checkbox" checked={!blocked.has(id)} onChange={e=>toggle(id,e.target.checked)}/><span>{label}</span></label>)}</div>
   </fieldset>;
 }
@@ -1339,16 +1339,16 @@ function SharedCombos({cfg,set}) {
   const has=name=>chosen.some(x=>x.toLowerCase()===name.toLowerCase());
   const toggle=(name,on)=>set({sharedCombos:(on?[...chosen.filter(x=>x.toLowerCase()!==name.toLowerCase()),name]:chosen.filter(x=>x.toLowerCase()!==name.toLowerCase())).join(",")});
   const names=[...new Set([...(combos||[]),...chosen])];
-  return <fieldset className="providerUse"><legend>Combinații pentru toate conturile</legend>
-    <p className="settingsHelp">Celelalte conturi folosesc toate modelele gratuite (Gemini, Groq, Mistral, OpenRouter :free…). Abonamentele tale (Codex, Claude Code, Copilot, Kiro, conturile web) rămân doar ale tale: condițiile lor nu permit împărțirea contului. O combinație OmniRoute o folosesc și ei doar dacă o bifezi aici; bifează doar combinații făcute din modele gratuite.</p>
-    {combos===null?<p className="settingsHelp">Încarc combinațiile…</p>:names.length?<div className="providerUseGrid">{names.map(name=><label key={name} className="providerUseItem"><input type="checkbox" checked={has(name)} onChange={e=>toggle(name,e.target.checked)}/><span>{name}</span></label>)}</div>:<p className="settingsHelp">OmniRoute nu are încă nicio combinație.</p>}
+  return <fieldset className="providerUse"><legend>{tr("Combinations for every account")}</legend>
+    <p className="settingsHelp">{tr("Other accounts use every free model (Gemini, Groq, Mistral, OpenRouter :free…). Your subscriptions (Codex, Claude Code, Copilot, Kiro, the web accounts) stay yours alone: their terms do not allow sharing the account. They use an OmniRoute combination only if you tick it here; tick only combinations made of free models.")}</p>
+    {combos===null?<p className="settingsHelp">{tr("Loading the combinations…")}</p>:names.length?<div className="providerUseGrid">{names.map(name=><label key={name} className="providerUseItem"><input type="checkbox" checked={has(name)} onChange={e=>toggle(name,e.target.checked)}/><span>{name}</span></label>)}</div>:<p className="settingsHelp">{tr("OmniRoute has no combinations yet.")}</p>}
   </fieldset>;
 }
 // Poze / Video → «Făcute de» (0.7.24): every maker by default, best first; a list keeps only those. OpenAI makes no video
 // any more (Sora closed on 24 September 2026).
 const MEDIA_MAKERS={
-  image:[["","Toți, cei mai buni întâi (ChatGPT, Gemini, Grok, gratuite)"],["openai","Doar ChatGPT · GPT Image"],["gemini","Doar Gemini · Nano Banana"],["gemini,openai,xai","ChatGPT, Gemini și Grok"]],
-  video:[["","Toți, cei mai buni întâi (gratuite, Gemini Veo, Grok)"],["gemini","Doar Gemini · Veo"],["gemini,xai","Gemini și Grok"]]
+  image:[["","All, the best first (ChatGPT, Gemini, Grok, free ones)"],["openai","ChatGPT only · GPT Image"],["gemini","Gemini only · Nano Banana"],["gemini,openai,xai","ChatGPT, Gemini and Grok"]],
+  video:[["","All, the best first (free ones, Gemini Veo, Grok)"],["gemini","Gemini only · Veo"],["gemini,xai","Gemini and Grok"]]
 };
 const GEMINI_MEDIA_MODELS={
   image:[["gemini-3.1-flash-image","Nano Banana 2 · gemini-3.1-flash-image"],["gemini-3-pro-image-preview","Nano Banana Pro · gemini-3-pro-image-preview"],["gemini-2.5-flash-image","Nano Banana · gemini-2.5-flash-image"]],
@@ -1357,27 +1357,27 @@ const GEMINI_MEDIA_MODELS={
 function MediaMakers({kind,cfg,set,paidOff}) {
   const field=kind==="image"?"imageProviders":"videoProviders",modelField=kind==="image"?"geminiImageModel":"geminiVideoModel";
   const value=String(cfg[field]??"").split(",").map(x=>x.trim().toLowerCase()).filter(x=>x&&!(kind==="video"&&x==="openai")).join(",");
-  const options=MEDIA_MAKERS[kind].some(([v])=>v===value)?MEDIA_MAKERS[kind]:[...MEDIA_MAKERS[kind],[value,"Ales de tine: "+value]];
+  const options=MEDIA_MAKERS[kind].some(([v])=>v===value)?MEDIA_MAKERS[kind]:[...MEDIA_MAKERS[kind],[value,tr("Your choice: {value}",{value})]];
   const model=String(cfg[modelField]||GEMINI_MEDIA_MODELS[kind][0][0]);
   const models=GEMINI_MEDIA_MODELS[kind].some(([v])=>v===model)?GEMINI_MEDIA_MODELS[kind]:[...GEMINI_MEDIA_MODELS[kind],[model,model]];
   const geminiOnly=value==="gemini";
-  return <fieldset className="providerUse"><legend>{kind==="image"?"Poze făcute de":"Video făcut de"}</legend>
-    <label>Furnizori<select value={value} onChange={e=>set({[field]:e.target.value})}>{options.map(([v,l])=><option key={v||"all"} value={v}>{l}</option>)}</select></label>
-    <label>{kind==="image"?"Model Gemini (Nano Banana)":"Model Gemini (Veo)"}<select value={model} onChange={e=>set({[modelField]:e.target.value})}>{models.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>
+  return <fieldset className="providerUse"><legend>{kind==="image"?tr("Pictures made by"):tr("Videos made by")}</legend>
+    <label>{tr("Providers")}<select value={value} onChange={e=>set({[field]:e.target.value})}>{options.map(([v,l])=><option key={v||"all"} value={v}>{tr(l)}</option>)}</select></label>
+    <label>{kind==="image"?tr("Gemini model (Nano Banana)"):tr("Gemini model (Veo)")}<select value={model} onChange={e=>set({[modelField]:e.target.value})}>{models.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>
     <p className="settingsHelp">{geminiOnly
-      ?`Doar Gemini: prin Gemini conectat în OmniRoute (abonament, fără API) sau prin cheia Gemini de la API-uri AI. Ceilalți furnizori de mai jos nu sunt folosiți.${paidOff?" Gemini prin API e cu plată: ca să meargă cu cheia, alege mai jos «Permite provideri cu plată».":""}`
-      :`Dacă modelul Gemini ales nu există pentru cheia ta, ${BRAND_NAME} încearcă singur celelalte nume Gemini, apoi furnizorii permiși aici.`}
-      {" "}Sub câmpul de mesaj, în modul {kind==="image"?"Poză":"Video"}, poți alege de fiecare dată cine îl face. Pe «Automat», când în chat ai ales un model {kind==="image"?"Gemini, ChatGPT sau Grok":"Gemini sau Grok"}, {kind==="image"?"poza o face":"videoclipul îl face"} compania acelui model (întâi abonamentul din OmniRoute, apoi API-ul ei); altfel se folosește setarea de aici.</p>
+      ?tr("Gemini only: through Gemini connected in OmniRoute (subscription, no API) or through the Gemini key under AI APIs. The other providers below are not used.")+(paidOff?" "+tr("Gemini through the API is paid: to use it with the key, choose «Allow paid providers» below."):"")
+      :tr("If the chosen Gemini model does not exist for your key, {brand} tries the other Gemini names on its own, then the providers allowed here.",{brand:BRAND_NAME})}
+      {" "}{kind==="image"?tr("Under the message box, in Picture mode, you can choose each time who makes it. On «Automatic», when you picked a Gemini, ChatGPT or Grok model in the chat, that model's company makes the picture (first the subscription in OmniRoute, then its API); otherwise this setting is used."):tr("Under the message box, in Video mode, you can choose each time who makes it. On «Automatic», when you picked a Gemini or Grok model in the chat, that model's company makes the video (first the subscription in OmniRoute, then its API); otherwise this setting is used.")}</p>
   </fieldset>;
 }
 function KeyField({label,name,cfg,keys,setKeys,placeholder,token=false}) {
   const pending=keys[name]||"",clearing=pending==="__CLEAR__",saved=!!cfg?.[name];
-  const savedText=token?"Token salvat — lasă gol pentru a-l păstra":"Cheie salvată — lasă gol pentru a o păstra";
+  const savedText=token?tr("Token saved — leave empty to keep it"):tr("Key saved — leave empty to keep it");
   return <label>{label}<span className="keyRow">
-    <input type="password" value={clearing?"":pending} disabled={clearing} onChange={e=>setKeys(k=>({...k,[name]:e.target.value}))} placeholder={clearing?"Va fi ștearsă la salvare":saved?savedText:placeholder} autoComplete="off"/>
+    <input type="password" value={clearing?"":pending} disabled={clearing} onChange={e=>setKeys(k=>({...k,[name]:e.target.value}))} placeholder={clearing?tr("It will be deleted when you save"):saved?savedText:placeholder} autoComplete="off"/>
     {saved&&(clearing
-      ?<button type="button" className="smallBtn" onClick={()=>setKeys(k=>({...k,[name]:""}))}>Anulează</button>
-      :<button type="button" className="smallBtn dangerSmall" onClick={()=>setKeys(k=>({...k,[name]:"__CLEAR__"}))} title={`Șterge ${token?"tokenul salvat":"cheia salvată"}`}>Șterge</button>)}
+      ?<button type="button" className="smallBtn" onClick={()=>setKeys(k=>({...k,[name]:""}))}>{tr("Cancel")}</button>
+      :<button type="button" className="smallBtn dangerSmall" onClick={()=>setKeys(k=>({...k,[name]:"__CLEAR__"}))} title={token?tr("Delete the saved token"):tr("Delete the saved key")}>{tr("Delete")}</button>)}
   </span></label>;
 }
 
@@ -1404,7 +1404,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
     if(!bridge)return;
     Promise.all([bridge.getConfig(),bridge.systemStatus?.().catch(()=>null)])
       .then(([c,s])=>{if(mounted.current){setCfg(c||{});setStatus(s)}})
-      .catch(e=>{if(mounted.current)setError("Nu am putut citi setările: "+e.message)});
+      .catch(e=>{if(mounted.current)setError(tr("Could not read the settings:")+" "+e.message)});
   },[]);
   useEffect(()=>{if(!machineSettingsAllowed&&["ai","chatapis","images","video"].includes(tab))setTab("general")},[machineSettingsAllowed,tab]);
   const set=patch=>setCfg(c=>({...c,...patch}));
@@ -1412,227 +1412,227 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
     if(saving||!cfg)return;
     setError("");
     const gw=webServer?GATEWAY:cleanGatewayUrl(cfg.gatewayUrl||DEFAULT_GATEWAY);
-    if(machineSettingsAllowed&&!gw){setError("Adresa serviciului local nu este validă. Exemplu: "+DEFAULT_GATEWAY);setTab("ai");return;}
+    if(machineSettingsAllowed&&!gw){setError(tr("The local service address is not valid. Example: {url}",{url:DEFAULT_GATEWAY}));setTab("ai");return;}
     const ownerEmail=String(cfg.ownerEmail||"").trim().toLowerCase();
-    if(machineSettingsAllowed&&!webServer&&ownerEmail&&!/^\S+@\S+\.\S+$/.test(ownerEmail)){setError("Emailul Owner nu este valid.");setTab("account");return;}
+    if(machineSettingsAllowed&&!webServer&&ownerEmail&&!/^\S+@\S+\.\S+$/.test(ownerEmail)){setError(tr("The Owner email is not valid."));setTab("account");return;}
     setSaving(true);
     try{
       if(machineSettingsAllowed&&gw!==GATEWAY){
         try{const r=await fetch(`${gw}/health`,{signal:AbortSignal.timeout(5000)});if(!r.ok)throw new Error("HTTP "+r.status)}
-        catch{throw new Error(`Nu pot contacta serviciul ${BRAND_NAME} la ${gw}. Verifică adresa sau folosește ${DEFAULT_GATEWAY}.`)}
+        catch{throw new Error(tr("I cannot reach the {brand} service at {url}. Check the address or use {local}.",{brand:BRAND_NAME,url:gw,local:DEFAULT_GATEWAY}))}
       }
       const changedKeys=Object.fromEntries(Object.entries(keys).filter(([,v])=>v));
       const payload={...cfg,...(machineSettingsAllowed&&!webServer?{gatewayUrl:gw,ownerEmail}:{}),...changedKeys};
       const r=await bridge.setConfig(payload);
-      if(r&&r.ok===false)throw new Error(r.error||"Setările nu au putut fi salvate.");
+      if(r&&r.ok===false)throw new Error(r.error||tr("The settings could not be saved."));
       if(machineSettingsAllowed&&!webServer)setGatewayUrl(gw);
       DICTATION_LANG=String(payload.speechLanguage||"ro");
       onSaved?.(r?.config||payload);
-      toast("Setările au fost salvate.","ok");
+      toast(tr("Settings saved."),"ok");
       onClose();
     }catch(e){if(mounted.current)setError(e.message)}
     finally{if(mounted.current)setSaving(false)}
   }
-  async function testMic(){setMicStatus("Se verifică…");try{const s=await navigator.mediaDevices.getUserMedia({audio:true});s.getTracks().forEach(t=>t.stop());setMicStatus("Microfon disponibil și permis ✓")}catch{setMicStatus("Microfon indisponibil sau fără permisiune")}}
-  async function testServer(){setToolStatus("Testez conexiunea SSH…");try{const d=await api("/api/tools/server/check",{method:"POST",body:JSON.stringify({serverHost:cfg.serverHost,serverPort:cfg.serverPort,serverUser:cfg.serverUser,serverKeyPath:cfg.serverKeyPath})});setToolStatus(d?.output||"Server conectat ✓")}catch(e){setToolStatus("Server: "+e.message)}}
+  async function testMic(){setMicStatus(tr("Checking…"));try{const s=await navigator.mediaDevices.getUserMedia({audio:true});s.getTracks().forEach(t=>t.stop());setMicStatus(tr("Microphone available and allowed ✓"))}catch{setMicStatus(tr("Microphone unavailable or not allowed"))}}
+  async function testServer(){setToolStatus(tr("Testing the SSH connection…"));try{const d=await api("/api/tools/server/check",{method:"POST",body:JSON.stringify({serverHost:cfg.serverHost,serverPort:cfg.serverPort,serverUser:cfg.serverUser,serverKeyPath:cfg.serverKeyPath})});setToolStatus(d?.output||tr("Server connected ✓"))}catch(e){setToolStatus("Server: "+e.message)}}
   async function checkUpdate(){
     if(!window.Serasmart?.checkUpdate)return;
-    setUpdateStatus("Caut actualizări…");
-    try{const r=await window.Serasmart.checkUpdate();setUpdateStatus(!r?.ok?`Nu am putut verifica: ${r?.error||"eroare"}`:r.available===false||!r.version?"Folosești ultima versiune.":r.available===true?`Versiunea ${r.version} este disponibilă. Se descarcă automat; vei primi o notificare când e gata.`:`Ultima versiune publicată: ${r.version}.`)}
-    catch(e){setUpdateStatus("Nu am putut verifica: "+e.message)}
+    setUpdateStatus(tr("Looking for updates…"));
+    try{const r=await window.Serasmart.checkUpdate();setUpdateStatus(!r?.ok?tr("Could not check:")+" "+(r?.error||tr("error")):r.available===false||!r.version?tr("You have the latest version."):r.available===true?tr("Version {v} is available. It downloads on its own; you get a notification when it is ready.",{v:r.version}):tr("Latest published version: {v}.",{v:r.version}))}
+    catch(e){setUpdateStatus(tr("Could not check:")+" "+e.message)}
   }
   const keyProps={cfg,keys,setKeys};
   // The site's server allows paid pictures when nothing was chosen (no imageCostPolicy in .env); Windows saves "free_only".
   const imageCost=cfg?.imageCostPolicy||(webServer?"allow_paid":"free_only");
-  const tabs=[["profile",User,"Profil",true],["general",SlidersHorizontal,"General",!!bridge],["ai",Bot,"AI & OmniRoute",machineSettingsAllowed&&!!bridge],["chatapis",Plug,"API-uri AI",machineSettingsAllowed&&!!bridge],["images",ImageIcon,"Poze",machineSettingsAllowed&&!!bridge],["video",Play,"Video",machineSettingsAllowed&&!!bridge],["voice",Volume2,"Voce și microfon",!!bridge],["notify",Bell,"Notificări",true],["privacy",ShieldCheck,"Confidențialitate",true],["security",Lock,"Securitate",true],["account",HardDrive,"Owner pe acest PC",machineSettingsAllowed&&!webServer&&!!bridge]];
+  const tabs=[["profile",User,"Profile",true],["general",SlidersHorizontal,"General",!!bridge],["ai",Bot,"AI & OmniRoute",machineSettingsAllowed&&!!bridge],["chatapis",Plug,"AI APIs",machineSettingsAllowed&&!!bridge],["images",ImageIcon,"Pictures",machineSettingsAllowed&&!!bridge],["video",Play,"Video",machineSettingsAllowed&&!!bridge],["voice",Volume2,"Voice and microphone",!!bridge],["notify",Bell,"Notifications",true],["privacy",ShieldCheck,"Privacy",true],["security",Lock,"Security",true],["account",HardDrive,"Owner on this PC",machineSettingsAllowed&&!webServer&&!!bridge]];
   const onAccountTab=accountOnly||ACCOUNT_TABS.includes(tab);
-  return <div className="modalBackdrop" {...backdropProps}><div className="settingsModal" ref={ref} role="dialog" aria-modal="true" aria-label={`Setări ${BRAND_NAME}`} tabIndex={-1}><div className="modalHead"><div><h2>Setări {BRAND_NAME}</h2><p>{accountOnly?"Profilul tău, cum îți răspunde AI-ul, notificări, confidențialitate și securitate.":"Contul tău, aplicația, vocea, serviciile AI și actualizările."}</p></div><button className="iconOnly" onClick={onClose} aria-label="Închide" title="Închide"><X size={20}/></button></div>
-    {!cfg&&!onAccountTab?<div className="settingsLoading">{error||"Se încarcă setările…"}{error&&<ServerUpdate/>}</div>:<>
+  return <div className="modalBackdrop" {...backdropProps}><div className="settingsModal" ref={ref} role="dialog" aria-modal="true" aria-label={tr("{brand} settings",{brand:BRAND_NAME})} tabIndex={-1}><div className="modalHead"><div><h2>{tr("{brand} settings",{brand:BRAND_NAME})}</h2><p>{accountOnly?tr("Your profile, how the AI answers you, notifications, privacy and security."):tr("Your account, the app, voice, the AI services and updates.")}</p></div><button className="iconOnly" onClick={onClose} aria-label={tr("Close")} title={tr("Close")}><X size={20}/></button></div>
+    {!cfg&&!onAccountTab?<div className="settingsLoading">{error||tr("Loading the settings…")}{error&&<ServerUpdate/>}</div>:<>
     <div className="settingsBody"><div className="settingsNav" role="tablist" aria-orientation="vertical">
-      {tabs.filter(t=>t[3]).map(([k,Icon,label])=><button key={k} role="tab" aria-selected={tab===k} className={tab===k?"active":""} onClick={()=>setTab(k)}><Icon size={17}/> {label}</button>)}
+      {tabs.filter(t=>t[3]).map(([k,Icon,label])=><button key={k} role="tab" aria-selected={tab===k} className={tab===k?"active":""} onClick={()=>setTab(k)}><Icon size={17}/> {tr(label)}</button>)}
     </div>
     <div className="settingsPane">
       {tab==="profile"&&<ProfileTab account={account} models={models} preferences={preferences} onPreferences={onPreferences} prefBusy={prefBusy}/>}
       {tab==="privacy"&&<PrivacyTab account={account} onDataDeleted={onDataDeleted}/>}
       {tab==="security"&&<SecurityTab account={account} onAccountDeleted={onAccountDeleted}/>}
-      {tab==="general"&&cfg&&<><h3>General</h3>
+      {tab==="general"&&cfg&&<><h3>{tr("General")}</h3>
         {!IS_WEB&&<>
-        <label className="toggleRow"><div><b>Pornește {BRAND_NAME} cu Windows</b><span>Aplicația pornește automat și poate rămâne în fundal.</span></div><input type="checkbox" checked={!!cfg.startWithWindows} onChange={e=>set({startWithWindows:e.target.checked})}/></label>
-        <label className="toggleRow"><div><b>Închidere în zona de notificare</b><span>Butonul X ascunde aplicația fără să oprească serviciile.</span></div><input type="checkbox" checked={cfg.closeToTray!==false} onChange={e=>set({closeToTray:e.target.checked})}/></label>
-        <label className="toggleRow"><div><b>Actualizări automate (aplicația Windows)</b><span>La pornire, {BRAND_NAME} descarcă singur versiunea nouă din GitHub Releases și te anunță când e gata de instalat.</span></div><input type="checkbox" checked={cfg.autoUpdate!==false} onChange={e=>set({autoUpdate:e.target.checked})}/></label>
-        {window.Serasmart?.checkUpdate&&<div className="settingsButtons"><button type="button" className="secondary" onClick={checkUpdate}><RotateCcw size={15}/> Caută actualizări acum</button></div>}
+        <label className="toggleRow"><div><b>{tr("Start {brand} with Windows",{brand:BRAND_NAME})}</b><span>{tr("The app starts on its own and can stay in the background.")}</span></div><input type="checkbox" checked={!!cfg.startWithWindows} onChange={e=>set({startWithWindows:e.target.checked})}/></label>
+        <label className="toggleRow"><div><b>{tr("Close to the notification area")}</b><span>{tr("The X button hides the app without stopping the services.")}</span></div><input type="checkbox" checked={cfg.closeToTray!==false} onChange={e=>set({closeToTray:e.target.checked})}/></label>
+        <label className="toggleRow"><div><b>{tr("Automatic updates (Windows app)")}</b><span>{tr("At start, {brand} downloads the new version from GitHub Releases on its own and tells you when it is ready to install.",{brand:BRAND_NAME})}</span></div><input type="checkbox" checked={cfg.autoUpdate!==false} onChange={e=>set({autoUpdate:e.target.checked})}/></label>
+        {window.Serasmart?.checkUpdate&&<div className="settingsButtons"><button type="button" className="secondary" onClick={checkUpdate}><RotateCcw size={15}/> {tr("Check for updates now")}</button></div>}
         {updateStatus&&<div className="micStatus" role="status">{updateStatus}</div>}
         </>}
         <ServerUpdate/>
       </>}
-      {tab==="ai"&&cfg&&<><h3>AI & OmniRoute</h3>
-        {webServer&&<p className="settingsHelp">Setările site-ului: se salvează pe server și se aplică imediat pentru toate conturile. Cheile rămân pe server și se văd doar mascat. Emailul Owner și înregistrarea conturilor rămân în fișierul <code>.env</code> de pe server.</p>}
+      {tab==="ai"&&cfg&&<><h3>{tr("AI & OmniRoute")}</h3>
+        {webServer&&<p className="settingsHelp">{tr("The site's settings: saved on the server and applied at once for every account. The keys stay on the server and are only shown masked. The Owner email and sign-ups stay in the .env file on the server.")}</p>}
         {!webServer&&<>
-        <label>Adresa serviciului {BRAND_NAME}<input value={cfg.gatewayUrl||DEFAULT_GATEWAY} onChange={e=>set({gatewayUrl:e.target.value})} placeholder={DEFAULT_GATEWAY}/></label>
-        <p className="settingsHelp">Lasă {DEFAULT_GATEWAY} dacă nu folosești un server {BRAND_NAME} separat. Adresa este verificată înainte de salvare.</p>
+        <label>{tr("{brand} service address",{brand:BRAND_NAME})}<input value={cfg.gatewayUrl||DEFAULT_GATEWAY} onChange={e=>set({gatewayUrl:e.target.value})} placeholder={DEFAULT_GATEWAY}/></label>
+        <p className="settingsHelp">{tr("Leave {url} unless you use a separate {brand} server. The address is checked before saving.",{url:DEFAULT_GATEWAY,brand:BRAND_NAME})}</p>
         <label>{BRAND_SHORT} Cloud API<input value={cfg.controlApiUrl||""} onChange={e=>set({controlApiUrl:e.target.value})} placeholder="https://api.aistoica.ro"/></label>
-        <p className="settingsHelp">Cu Cloud API configurat, conturile, aprobările și permisiunile sunt gestionate central de Owner. Lasă câmpul gol pentru folosire doar pe acest PC.</p>
+        <p className="settingsHelp">{tr("With the Cloud API set, the Owner manages accounts, approvals and permissions centrally. Leave it empty to use this PC only.")}</p>
         </>}
-        <label>Adresa OmniRoute<input value={cfg.baseUrl||""} onChange={e=>set({baseUrl:e.target.value})}/></label>
-        <KeyField label="Cheie API OmniRoute" name="apiKey" placeholder="Cheie OmniRoute" {...keyProps}/>
-        <p className="settingsHelp">OmniRoute 3.8 nu răspunde fără cheie. Creeaz-o în OmniRoute: <button type="button" className="linkBtn" onClick={()=>openLink(String(cfg.baseUrl||"http://127.0.0.1:20128/v1").replace(/\/v1\/?$/,"")+"/dashboard/api-manager")}>API Manager → Create API Key</button>, lipește-o aici și apasă „Testează cheile”.</p>
-        <label><span className="labelLine">Model preferat <span className="optional">folosit când nu ai ales altul în lista de sus</span></span><input value={cfg.model||""} onChange={e=>set({model:e.target.value})} placeholder="Ex. gemini/gemini-3.5-flash"/></label>
-        <label><span className="labelLine">Model generare imagini <span className="optional">opțional</span></span><input value={cfg.imageModel||""} onChange={e=>set({imageModel:e.target.value})} placeholder="Automat — primul model de imagine disponibil"/></label>
-        <details className="mediaProviderSettings"><summary>Internet live, GitHub{isOwner?" și server":""}</summary>
-          <p className="settingsHelp">Aceste unelte permit {BRAND_NAME} să verifice informații actuale și să aducă fragmente relevante dintr-un repository GitHub.{isOwner?" Rularea de cod și SSH sunt disponibile doar pentru Owner.":" Rularea de cod, GitHub Solve și SSH sunt disponibile doar pentru contul Owner (vezi „Email Owner pe acest PC” în tabul Cont și date)."}</p>
-          <label className="toggleRow"><div><b>Internet în timp real</b><span>Caută automat surse actuale pentru cereri despre informații recente, versiuni și API-uri.</span></div><input type="checkbox" checked={cfg.webSearchEnabled!==false} onChange={e=>set({webSearchEnabled:e.target.checked})}/></label>
-          <label className="toggleRow"><div><b>Context între conversațiile proiectului</b><span>Folosește conversațiile relevante din același proiect fără să le copiezi manual.</span></div><input type="checkbox" checked={cfg.projectContextEnabled!==false} onChange={e=>set({projectContextEnabled:e.target.checked})}/></label>
-          <label className="toggleRow"><div><b>Caută automat în GitHub</b><span>Pentru întrebări de cod, caută fișiere relevante din repository înainte de răspuns.</span></div><input type="checkbox" checked={cfg.githubAutoContext!==false} onChange={e=>set({githubAutoContext:e.target.checked})}/></label>
+        <label>{tr("OmniRoute address")}<input value={cfg.baseUrl||""} onChange={e=>set({baseUrl:e.target.value})}/></label>
+        <KeyField label={tr("OmniRoute API key")} name="apiKey" placeholder={tr("OmniRoute key")} {...keyProps}/>
+        <p className="settingsHelp">{tr("OmniRoute 3.8 does not answer without a key. Create it in OmniRoute:")} <button type="button" className="linkBtn" onClick={()=>openLink(String(cfg.baseUrl||"http://127.0.0.1:20128/v1").replace(/\/v1\/?$/,"")+"/dashboard/api-manager")}>API Manager → Create API Key</button>{tr(", paste it here and press «Test the keys».")}</p>
+        <label><span className="labelLine">{tr("Preferred model")} <span className="optional">{tr("used when you did not pick another in the list at the top")}</span></span><input value={cfg.model||""} onChange={e=>set({model:e.target.value})} placeholder={tr("E.g. gemini/gemini-3.5-flash")}/></label>
+        <label><span className="labelLine">{tr("Picture model")} <span className="optional">{tr("optional")}</span></span><input value={cfg.imageModel||""} onChange={e=>set({imageModel:e.target.value})} placeholder={tr("Automatic — the first picture model available")}/></label>
+        <details className="mediaProviderSettings"><summary>{isOwner?tr("Live internet, GitHub and server"):tr("Live internet and GitHub")}</summary>
+          <p className="settingsHelp">{tr("These tools let {brand} check current information and bring relevant parts of a GitHub repository.",{brand:BRAND_NAME})} {isOwner?tr("Running code and SSH are for the Owner only."):tr("Running code, GitHub Solve and SSH are for the Owner account only (see «Owner email on this PC»).")}</p>
+          <label className="toggleRow"><div><b>{tr("Real-time internet")}</b><span>{tr("Searches current sources on its own for questions about recent information, versions and APIs.")}</span></div><input type="checkbox" checked={cfg.webSearchEnabled!==false} onChange={e=>set({webSearchEnabled:e.target.checked})}/></label>
+          <label className="toggleRow"><div><b>{tr("Context across the project's chats")}</b><span>{tr("Uses the relevant chats of the same project without copying them by hand.")}</span></div><input type="checkbox" checked={cfg.projectContextEnabled!==false} onChange={e=>set({projectContextEnabled:e.target.checked})}/></label>
+          <label className="toggleRow"><div><b>{tr("Search GitHub automatically")}</b><span>{tr("For code questions, looks for relevant files in the repository before answering.")}</span></div><input type="checkbox" checked={cfg.githubAutoContext!==false} onChange={e=>set({githubAutoContext:e.target.checked})}/></label>
           <label>GitHub repository<input value={cfg.githubRepo||""} onChange={e=>set({githubRepo:e.target.value})} placeholder="owner/repository"/></label>
           <label>GitHub branch<input value={cfg.githubBranch||"main"} onChange={e=>set({githubBranch:e.target.value})} placeholder="main"/></label>
-          <KeyField label="Token GitHub (pentru repository privat)" name="githubToken" placeholder="github_pat_... sau ghp_..." token {...keyProps}/>
+          <KeyField label={tr("GitHub token (for a private repository)")} name="githubToken" placeholder={tr("github_pat_... or ghp_...")} token {...keyProps}/>
           {isOwner&&!webServer&&<>
-            <label>Server SSH · adresă<input value={cfg.serverHost||""} onChange={e=>set({serverHost:e.target.value})} placeholder="IP sau domeniu"/></label>
-            <div className="claudeFormRow"><label>Utilizator SSH<input value={cfg.serverUser||"root"} onChange={e=>set({serverUser:e.target.value})}/></label><label>Port SSH<input type="number" min="1" max="65535" value={cfg.serverPort||22} onChange={e=>set({serverPort:Number(e.target.value)||22})}/></label></div>
-            <label>Calea cheii private SSH<input value={cfg.serverKeyPath||""} onChange={e=>set({serverKeyPath:e.target.value})} placeholder="C:\Users\Nume\.ssh\id_ed25519"/></label>
-            <button type="button" className="secondary testMicBtn" onClick={testServer}>Testează serverul</button>{toolStatus&&<div className="micStatus" role="status">{toolStatus}</div>}
+            <label>{tr("SSH server · address")}<input value={cfg.serverHost||""} onChange={e=>set({serverHost:e.target.value})} placeholder={tr("IP or domain")}/></label>
+            <div className="claudeFormRow"><label>{tr("SSH user")}<input value={cfg.serverUser||"root"} onChange={e=>set({serverUser:e.target.value})}/></label><label>Port SSH<input type="number" min="1" max="65535" value={cfg.serverPort||22} onChange={e=>set({serverPort:Number(e.target.value)||22})}/></label></div>
+            <label>{tr("SSH private key path")}<input value={cfg.serverKeyPath||""} onChange={e=>set({serverKeyPath:e.target.value})} placeholder={tr("C:\\Users\\you\\.ssh\\id_ed25519")}/></label>
+            <button type="button" className="secondary testMicBtn" onClick={testServer}>{tr("Test the server")}</button>{toolStatus&&<div className="micStatus" role="status">{toolStatus}</div>}
           </>}
         </details>
-        <p className="settingsHelp">Când ceri o poză sau un videoclip, {BRAND_NAME} returnează fișierul real în chat, cu buton de descărcare.</p>
+        <p className="settingsHelp">{tr("When you ask for a picture or a video, {brand} puts the real file in the chat, with a download button.",{brand:BRAND_NAME})}</p>
         {!webServer&&<>
-        <label>Comandă OmniRoute<input value={cfg.omniCommand||"omniroute.cmd"} onChange={e=>set({omniCommand:e.target.value})}/></label>
-        <label className="toggleRow"><div><b>Pornește OmniRoute automat</b><span>Dacă serviciul cade, {BRAND_NAME} încearcă să îl repornească.</span></div><input type="checkbox" checked={!!cfg.autoStartOmniRoute} onChange={e=>set({autoStartOmniRoute:e.target.checked})}/></label>
-        <div className="statusGrid"><div><span>Serviciul {BRAND_NAME}</span><b>{status?.gatewayRunning?"Pornit":"Indisponibil"}</b></div><div><span>OmniRoute</span><b>{status?.omniRunning?"Conectat":status?.omniInstalled===false?"Neinstalat — npm install -g omniroute":"Indisponibil"}</b></div></div>
+        <label>{tr("OmniRoute command")}<input value={cfg.omniCommand||"omniroute.cmd"} onChange={e=>set({omniCommand:e.target.value})}/></label>
+        <label className="toggleRow"><div><b>{tr("Start OmniRoute automatically")}</b><span>{tr("If the service stops, {brand} tries to restart it.",{brand:BRAND_NAME})}</span></div><input type="checkbox" checked={!!cfg.autoStartOmniRoute} onChange={e=>set({autoStartOmniRoute:e.target.checked})}/></label>
+        <div className="statusGrid"><div><span>{tr("{brand} service",{brand:BRAND_NAME})}</span><b>{status?.gatewayRunning?tr("Running"):tr("Unavailable")}</b></div><div><span>OmniRoute</span><b>{status?.omniRunning?tr("Connected"):status?.omniInstalled===false?tr("Not installed — npm install -g omniroute"):tr("Unavailable")}</b></div></div>
         </>}
       </>}
-      {tab==="chatapis"&&cfg&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><Plug size={22}/></div><div><h3>API-uri AI</h3><p>Modelele lor apar în listă și răspund direct, fără OmniRoute.</p></div></div>
+      {tab==="chatapis"&&cfg&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><Plug size={22}/></div><div><h3>{tr("AI APIs")}</h3><p>{tr("Their models appear in the list and answer directly, without OmniRoute.")}</p></div></div>
         <ProviderTestBox/>
         <ServerKeysBox/>
-        <label className="toggleRow"><div><b>Folosește API-urile directe</b><span>Modelele lor apar în listă (Groq, Gemini, Cerebras…). Răspund când le alegi sau când nu ai ales niciun model.</span></div><input type="checkbox" checked={cfg.directChatEnabled!==false} onChange={e=>set({directChatEnabled:e.target.checked})}/></label>
-        <label className="toggleRow"><div><b>Rezervă automată</b><span>Dacă modelul ales nu răspunde, trece singur la API-urile directe. Oprit: răspunde doar modelul ales, iar altfel vezi eroarea.</span></div><input type="checkbox" checked={cfg.chatFallbackOnFailure===true} onChange={e=>set({chatFallbackOnFailure:e.target.checked})}/></label>
+        <label className="toggleRow"><div><b>{tr("Use the direct APIs")}</b><span>{tr("Their models appear in the list (Groq, Gemini, Cerebras…). They answer when you pick them or when no model is picked.")}</span></div><input type="checkbox" checked={cfg.directChatEnabled!==false} onChange={e=>set({directChatEnabled:e.target.checked})}/></label>
+        <label className="toggleRow"><div><b>{tr("Automatic fallback")}</b><span>{tr("If the chosen model does not answer, it moves to the direct APIs on its own. Off: only the chosen model answers, otherwise you see the error.")}</span></div><input type="checkbox" checked={cfg.chatFallbackOnFailure===true} onChange={e=>set({chatFallbackOnFailure:e.target.checked})}/></label>
         <ProviderUseList cfg={cfg} set={set}/>
         {(webServer||cfg.controlApiUrl)&&<SharedCombos cfg={cfg} set={set}/>}
-        <label>Protecție costuri<select value={cfg.directChatCostPolicy||"free_only"} onChange={e=>set({directChatCostPolicy:e.target.value})}><option value="free_only">Doar provideri fără cost direct</option><option value="allow_paid">Permite și API-urile plătite (OpenAI, Grok)</option></select></label>
-        <label>Ordinea de încercare<input value={cfg.directChatProviderOrder||"cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai,xai"} onChange={e=>set({directChatProviderOrder:e.target.value})}/></label>
-        <p className="settingsHelp">Fiecare model din liste apare în lista de modele de sus. Dacă lipsește cheia, providerul răspunde cu 429/404/503 sau nu răspunde deloc, {BRAND_NAME} încearcă următorul model, apoi următorul provider.</p>
-        <ProviderHead name="Cerebras" id="cerebras" cfg={cfg}>Compatibil OpenAI.</ProviderHead>
-        <KeyField label="Cheie API Cerebras" name="cerebrasApiKey" placeholder="csk-..." {...keyProps}/>
-        <label>Modele Cerebras · separate prin virgulă<input value={cfg.cerebrasModel||""} onChange={e=>set({cerebrasModel:e.target.value})}/></label>
-        <ProviderHead name="Groq" id="groq" cfg={cfg}>Compatibil OpenAI, răspunsuri rapide.</ProviderHead>
-        <KeyField label="Cheie API Groq" name="groqApiKey" placeholder="gsk_..." {...keyProps}/>
-        <label>Modele Groq · separate prin virgulă<input value={cfg.groqModel||""} onChange={e=>set({groqModel:e.target.value})}/></label>
-        <ProviderHead name="Gemini" id="gemini" cfg={cfg}>Încearcă modelele în ordine până găsește cotă disponibilă.</ProviderHead>
-        <KeyField label="Cheie API Gemini" name="geminiApiKey" placeholder="AIza..." {...keyProps}/>
-        <label>Modele Gemini · separate prin virgulă<input value={cfg.geminiModels||""} onChange={e=>set({geminiModels:e.target.value})}/></label>
-        <ProviderHead name="Mistral" id="mistral" cfg={cfg}>Compatibil OpenAI.</ProviderHead>
-        <KeyField label="Cheie API Mistral" name="mistralApiKey" placeholder="Cheie API" {...keyProps}/>
-        <label>Modele Mistral · separate prin virgulă<input value={cfg.mistralModel||""} onChange={e=>set({mistralModel:e.target.value})}/></label>
-        <ProviderHead name="NVIDIA" id="nvidia" cfg={cfg}>NVIDIA API / NIM, compatibil OpenAI.</ProviderHead>
-        <KeyField label="Cheie API NVIDIA" name="nvidiaApiKey" placeholder="nvapi-..." {...keyProps}/>
-        <label>Modele NVIDIA · separate prin virgulă<input value={cfg.nvidiaModel||""} onChange={e=>set({nvidiaModel:e.target.value})}/></label>
-        <ProviderHead name="GitHub Models" id="github" cfg={cfg}>Token „fine-grained” cu permisiunea Models: Read. Același token e folosit și la GitHub.</ProviderHead>
+        <label>{tr("Cost protection")}<select value={cfg.directChatCostPolicy||"free_only"} onChange={e=>set({directChatCostPolicy:e.target.value})}><option value="free_only">{tr("Only providers with no direct cost")}</option><option value="allow_paid">{tr("Also allow the paid APIs (OpenAI, Grok)")}</option></select></label>
+        <label>{tr("Order to try")}<input value={cfg.directChatProviderOrder||"cerebras,groq,gemini,mistral,nvidia,github,openrouter,cloudflare,cohere,huggingface,openai,xai"} onChange={e=>set({directChatProviderOrder:e.target.value})}/></label>
+        <p className="settingsHelp">{tr("Every model in these lists appears in the model list at the top. If the key is missing, or the provider answers 429/404/503 or not at all, {brand} tries the next model, then the next provider.",{brand:BRAND_NAME})}</p>
+        <ProviderHead name="Cerebras" id="cerebras" cfg={cfg}>{tr("OpenAI compatible.")}</ProviderHead>
+        <KeyField label={tr("Cerebras API key")} name="cerebrasApiKey" placeholder="csk-..." {...keyProps}/>
+        <label>{tr("Cerebras models · separated by commas")}<input value={cfg.cerebrasModel||""} onChange={e=>set({cerebrasModel:e.target.value})}/></label>
+        <ProviderHead name="Groq" id="groq" cfg={cfg}>{tr("OpenAI compatible, fast answers.")}</ProviderHead>
+        <KeyField label={tr("Groq API key")} name="groqApiKey" placeholder="gsk_..." {...keyProps}/>
+        <label>{tr("Groq models · separated by commas")}<input value={cfg.groqModel||""} onChange={e=>set({groqModel:e.target.value})}/></label>
+        <ProviderHead name="Gemini" id="gemini" cfg={cfg}>{tr("Tries the models in order until one has quota left.")}</ProviderHead>
+        <KeyField label={tr("Gemini API key")} name="geminiApiKey" placeholder="AIza..." {...keyProps}/>
+        <label>{tr("Gemini models · separated by commas")}<input value={cfg.geminiModels||""} onChange={e=>set({geminiModels:e.target.value})}/></label>
+        <ProviderHead name="Mistral" id="mistral" cfg={cfg}>{tr("OpenAI compatible.")}</ProviderHead>
+        <KeyField label={tr("Mistral API key")} name="mistralApiKey" placeholder={tr("API key")} {...keyProps}/>
+        <label>{tr("Mistral models · separated by commas")}<input value={cfg.mistralModel||""} onChange={e=>set({mistralModel:e.target.value})}/></label>
+        <ProviderHead name="NVIDIA" id="nvidia" cfg={cfg}>{tr("NVIDIA API / NIM, OpenAI compatible.")}</ProviderHead>
+        <KeyField label={tr("NVIDIA API key")} name="nvidiaApiKey" placeholder="nvapi-..." {...keyProps}/>
+        <label>{tr("NVIDIA models · separated by commas")}<input value={cfg.nvidiaModel||""} onChange={e=>set({nvidiaModel:e.target.value})}/></label>
+        <ProviderHead name="GitHub Models" id="github" cfg={cfg}>{tr("A fine-grained token with the Models: Read permission. The same token is used for GitHub.")}</ProviderHead>
         <KeyField label="Token GitHub" name="githubToken" placeholder="github_pat_..." token {...keyProps}/>
-        <label>Modele GitHub · separate prin virgulă<input value={cfg.githubModelsModel||""} onChange={e=>set({githubModelsModel:e.target.value})}/></label>
-        <ProviderHead name="OpenRouter" id="openrouter" cfg={cfg}>AUTO_FREE caută automat primul model gratuit disponibil.</ProviderHead>
-        <KeyField label="Cheie API OpenRouter" name="openRouterApiKey" placeholder="sk-or-..." {...keyProps}/>
-        <label>Model OpenRouter<input value={cfg.openRouterChatModel||"AUTO_FREE"} onChange={e=>set({openRouterChatModel:e.target.value})}/></label>
-        <ProviderHead name="Cloudflare Workers AI" id="cloudflare" cfg={cfg}>Token cu șablonul „Workers AI”. Account ID e în dash.cloudflare.com → AI → Workers AI. Același token ca la Poze.</ProviderHead>
+        <label>{tr("GitHub models · separated by commas")}<input value={cfg.githubModelsModel||""} onChange={e=>set({githubModelsModel:e.target.value})}/></label>
+        <ProviderHead name="OpenRouter" id="openrouter" cfg={cfg}>{tr("AUTO_FREE finds the first free model available on its own.")}</ProviderHead>
+        <KeyField label={tr("OpenRouter API key")} name="openRouterApiKey" placeholder="sk-or-..." {...keyProps}/>
+        <label>{tr("OpenRouter model")}<input value={cfg.openRouterChatModel||"AUTO_FREE"} onChange={e=>set({openRouterChatModel:e.target.value})}/></label>
+        <ProviderHead name="Cloudflare Workers AI" id="cloudflare" cfg={cfg}>{tr("A token with the «Workers AI» template. The Account ID is in dash.cloudflare.com → AI → Workers AI. The same token as for Pictures.")}</ProviderHead>
         <label>Cloudflare Account ID<input value={cfg.cloudflareAccountId||""} onChange={e=>set({cloudflareAccountId:e.target.value})}/></label>
-        <KeyField label="Token API Cloudflare" name="cloudflareApiToken" placeholder="Token API" token {...keyProps}/>
-        <label>Modele Cloudflare · separate prin virgulă<input value={cfg.cloudflareChatModel||""} onChange={e=>set({cloudflareChatModel:e.target.value})}/></label>
-        <ProviderHead name="Cohere" id="cohere" cfg={cfg}>API de compatibilitate.</ProviderHead>
-        <KeyField label="Cheie API Cohere" name="cohereApiKey" placeholder="Cheie API" {...keyProps}/>
-        <label>Modele Cohere · separate prin virgulă<input value={cfg.cohereModel||""} onChange={e=>set({cohereModel:e.target.value})}/></label>
-        <ProviderHead name="Hugging Face" id="huggingface" cfg={cfg}>Router compatibil OpenAI; același token ca la secțiunea Poze.</ProviderHead>
+        <KeyField label={tr("Cloudflare API token")} name="cloudflareApiToken" placeholder={tr("API token")} token {...keyProps}/>
+        <label>{tr("Cloudflare models · separated by commas")}<input value={cfg.cloudflareChatModel||""} onChange={e=>set({cloudflareChatModel:e.target.value})}/></label>
+        <ProviderHead name="Cohere" id="cohere" cfg={cfg}>{tr("Compatibility API.")}</ProviderHead>
+        <KeyField label={tr("Cohere API key")} name="cohereApiKey" placeholder={tr("API key")} {...keyProps}/>
+        <label>{tr("Cohere models · separated by commas")}<input value={cfg.cohereModel||""} onChange={e=>set({cohereModel:e.target.value})}/></label>
+        <ProviderHead name="Hugging Face" id="huggingface" cfg={cfg}>{tr("OpenAI-compatible router; the same token as in Pictures.")}</ProviderHead>
         <KeyField label="Token Hugging Face" name="hfToken" placeholder="hf_..." token {...keyProps}/>
-        <label>Modele Hugging Face · separate prin virgulă<input value={cfg.huggingFaceChatModel||""} onChange={e=>set({huggingFaceChatModel:e.target.value})}/></label>
-        <ProviderHead name="OpenAI" id="openai" cfg={cfg}>Inclus, dar blocat implicit de protecția costurilor.</ProviderHead>
-        <KeyField label="Cheie API OpenAI" name="openAiApiKey" placeholder="sk-..." {...keyProps}/>
-        <label>Modele OpenAI · separate prin virgulă<input value={cfg.openAiChatModels||""} onChange={e=>set({openAiChatModels:e.target.value})}/></label>
-        <ProviderHead name="Grok (xAI)" id="xai" cfg={cfg}>Plătit pe consum; aceeași cheie face și poze și video Grok Imagine. Pornește-l cu „Permite și API-urile plătite”.</ProviderHead>
-        <KeyField label="Cheie API xAI" name="xaiApiKey" placeholder="xai-..." {...keyProps}/>
-        <label>Modele Grok · separate prin virgulă<input value={cfg.xaiModels||""} onChange={e=>set({xaiModels:e.target.value})} placeholder="grok-4.6,grok-4.3"/></label>
+        <label>{tr("Hugging Face models · separated by commas")}<input value={cfg.huggingFaceChatModel||""} onChange={e=>set({huggingFaceChatModel:e.target.value})}/></label>
+        <ProviderHead name="OpenAI" id="openai" cfg={cfg}>{tr("Included, but blocked by cost protection by default.")}</ProviderHead>
+        <KeyField label={tr("OpenAI API key")} name="openAiApiKey" placeholder="sk-..." {...keyProps}/>
+        <label>{tr("OpenAI models · separated by commas")}<input value={cfg.openAiChatModels||""} onChange={e=>set({openAiChatModels:e.target.value})}/></label>
+        <ProviderHead name="Grok (xAI)" id="xai" cfg={cfg}>{tr("Paid per use; the same key also makes Grok Imagine pictures and videos. Turn it on with «Also allow the paid APIs».")}</ProviderHead>
+        <KeyField label={tr("xAI API key")} name="xaiApiKey" placeholder="xai-..." {...keyProps}/>
+        <label>{tr("Grok models · separated by commas")}<input value={cfg.xaiModels||""} onChange={e=>set({xaiModels:e.target.value})} placeholder="grok-4.6,grok-4.3"/></label>
       </>}
-      {tab==="images"&&cfg&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><ImageIcon size={22}/></div><div><h3>Poze</h3><p>Generare imagini, API-uri, modele și încercare automată a altui provider.</p></div></div>
+      {tab==="images"&&cfg&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><ImageIcon size={22}/></div><div><h3>{tr("Pictures")}</h3><p>{tr("Picture generation, APIs, models and trying another provider on its own.")}</p></div></div>
         <MediaMakers kind="image" cfg={cfg} set={set} paidOff={imageCost!=="allow_paid"||cfg.imageProviderMode==="free"}/>
-        <label><span className="labelLine">Model generare imagini <span className="optional">opțional</span></span><input value={cfg.imageModel||""} onChange={e=>set({imageModel:e.target.value})} placeholder="Automat — primul model de imagine disponibil"/></label>
-        <details className="mediaProviderSettings" open><summary>Provideri de imagini</summary>
-          <p className="settingsHelp">Poți conecta mai multe servicii. {BRAND_NAME} încearcă providerii în ordine și trece automat la următorul dacă unul eșuează. {webServer?"Cheile stau pe server și se văd doar mascat.":"Cheile sunt criptate pe acest PC."}</p>
-          <label>Mod de alegere<select value={cfg.imageProviderMode||"auto"} onChange={e=>set({imageProviderMode:e.target.value})}><option value="auto">Automat — ordinea mea</option><option value="fast">⚡ Rapid</option><option value="quality">✨ Calitate</option><option value="free">🛡️ Doar gratuit</option></select></label>
-          <label>Protecție costuri<select value={imageCost} onChange={e=>set({imageCostPolicy:e.target.value})}><option value="free_only">Nu permite costuri directe</option><option value="allow_paid">Permite provideri cu plată</option></select></label>
-          <p className="settingsHelp">{imageCost==="free_only"?`Protecție activă: ${BRAND_NAME} încearcă direct Cloudflare și Pollinations. Hugging Face, Together, OpenAI, Stability, fal.ai și Replicate sunt blocate dacă ar putea consuma credit plătit. La OpenRouter se verifică prețul înainte de apel.`:"Atenție: providerii configurați pot consuma credit conform tarifelor lor."}</p>
-          <label>Ordinea de încercare<input value={cfg.imageProviderOrder||"cloudflare,pollinations,huggingface,together,openrouter,fal,replicate,stability,openai,gemini,xai"} onChange={e=>set({imageProviderOrder:e.target.value})}/></label>
-          <div className="providerGroup"><b>Cloudflare Workers AI</b><small>FLUX.1 Schnell · provider prioritar în modul gratuit.</small></div>
+        <label><span className="labelLine">{tr("Picture model")} <span className="optional">{tr("optional")}</span></span><input value={cfg.imageModel||""} onChange={e=>set({imageModel:e.target.value})} placeholder={tr("Automatic — the first picture model available")}/></label>
+        <details className="mediaProviderSettings" open><summary>{tr("Picture providers")}</summary>
+          <p className="settingsHelp">{tr("You can connect several services. {brand} tries the providers in order and moves to the next one if one fails.",{brand:BRAND_NAME})} {webServer?tr("The keys stay on the server and are only shown masked."):tr("The keys are encrypted on this PC.")}</p>
+          <label>{tr("How to choose")}<select value={cfg.imageProviderMode||"auto"} onChange={e=>set({imageProviderMode:e.target.value})}><option value="auto">{tr("Automatic — my order")}</option><option value="fast">{tr("⚡ Fast")}</option><option value="quality">{tr("✨ Quality")}</option><option value="free">{tr("🛡️ Free only")}</option></select></label>
+          <label>{tr("Cost protection")}<select value={imageCost} onChange={e=>set({imageCostPolicy:e.target.value})}><option value="free_only">{tr("Do not allow direct costs")}</option><option value="allow_paid">{tr("Allow paid providers")}</option></select></label>
+          <p className="settingsHelp">{imageCost==="free_only"?tr("Protection on: {brand} tries Cloudflare and Pollinations directly. Hugging Face, Together, OpenAI, Stability, fal.ai and Replicate are blocked if they could use paid credit. For OpenRouter the price is checked before the call.",{brand:BRAND_NAME}):tr("Careful: the providers you set up can use credit at their own prices.")}</p>
+          <label>{tr("Order to try")}<input value={cfg.imageProviderOrder||"cloudflare,pollinations,huggingface,together,openrouter,fal,replicate,stability,openai,gemini,xai"} onChange={e=>set({imageProviderOrder:e.target.value})}/></label>
+          <div className="providerGroup"><b>Cloudflare Workers AI</b><small>{tr("FLUX.1 Schnell · the first provider in free mode.")}</small></div>
           <label>Cloudflare Account ID<input value={cfg.cloudflareAccountId||""} onChange={e=>set({cloudflareAccountId:e.target.value})} placeholder="Account ID"/></label>
-          <KeyField label="Token API Cloudflare" name="cloudflareApiToken" placeholder="Token API" token {...keyProps}/>
-          <div className="providerGroup"><b>Hugging Face</b><small>FLUX.1 Schnell prin HF Inference Router, doar dacă protecția costurilor permite.</small></div>
+          <KeyField label={tr("Cloudflare API token")} name="cloudflareApiToken" placeholder={tr("API token")} token {...keyProps}/>
+          <div className="providerGroup"><b>Hugging Face</b><small>{tr("FLUX.1 Schnell through the HF Inference Router, only if cost protection allows it.")}</small></div>
           <KeyField label="Token Hugging Face" name="hfToken" placeholder="hf_..." token {...keyProps}/>
-          <div className="providerGroup"><b>Together AI</b><small>FLUX.1 Schnell. Creditele promoționale pot fi limitate.</small></div>
-          <KeyField label="Cheie API Together" name="togetherApiKey" placeholder="Cheie API" {...keyProps}/>
-          <div className="providerGroup"><b>OpenRouter</b><small>Mai multe modele de imagine printr-o singură cheie.</small></div>
-          <KeyField label="Cheie API OpenRouter" name="openRouterApiKey" placeholder="sk-or-..." {...keyProps}/>
-          <label>Model imagine OpenRouter<input value={cfg.openRouterImageModel||"google/gemini-3.1-flash-image"} onChange={e=>set({openRouterImageModel:e.target.value})}/></label>
-          <div className="providerGroup"><b>OpenAI</b><small>GPT Image prin API OpenAI.</small></div>
-          <KeyField label="Cheie API OpenAI" name="openAiApiKey" placeholder="sk-..." {...keyProps}/>
-          <label>Model imagine OpenAI<input value={cfg.openAiImageModel||"gpt-image-1-mini"} onChange={e=>set({openAiImageModel:e.target.value})}/></label>
-          <div className="providerGroup"><b>Google Gemini</b><small>„Nano Banana”; modelul îl alegi sus, la «Poze făcute de». Aceeași cheie ca la API-uri AI și Video.</small></div>
-          <KeyField label="Cheie API Gemini" name="geminiApiKey" placeholder="AIza..." {...keyProps}/>
-          <div className="providerGroup"><b>Grok Imagine (xAI)</b><small>Prin cheia xAI de la API-uri AI.</small></div>
-          <label>Model imagine Grok<input value={cfg.xaiImageModel||"grok-imagine-image"} onChange={e=>set({xaiImageModel:e.target.value})}/></label>
+          <div className="providerGroup"><b>Together AI</b><small>{tr("FLUX.1 Schnell. Promotional credits can be limited.")}</small></div>
+          <KeyField label={tr("Together API key")} name="togetherApiKey" placeholder={tr("API key")} {...keyProps}/>
+          <div className="providerGroup"><b>OpenRouter</b><small>{tr("Several picture models with one key.")}</small></div>
+          <KeyField label={tr("OpenRouter API key")} name="openRouterApiKey" placeholder="sk-or-..." {...keyProps}/>
+          <label>{tr("OpenRouter picture model")}<input value={cfg.openRouterImageModel||"google/gemini-3.1-flash-image"} onChange={e=>set({openRouterImageModel:e.target.value})}/></label>
+          <div className="providerGroup"><b>OpenAI</b><small>{tr("GPT Image through the OpenAI API.")}</small></div>
+          <KeyField label={tr("OpenAI API key")} name="openAiApiKey" placeholder="sk-..." {...keyProps}/>
+          <label>{tr("OpenAI picture model")}<input value={cfg.openAiImageModel||"gpt-image-1-mini"} onChange={e=>set({openAiImageModel:e.target.value})}/></label>
+          <div className="providerGroup"><b>Google Gemini</b><small>{tr("«Nano Banana»; you choose the model above, under «Pictures made by». The same key as for AI APIs and Video.")}</small></div>
+          <KeyField label={tr("Gemini API key")} name="geminiApiKey" placeholder="AIza..." {...keyProps}/>
+          <div className="providerGroup"><b>Grok Imagine (xAI)</b><small>{tr("With the xAI key from AI APIs.")}</small></div>
+          <label>{tr("Grok picture model")}<input value={cfg.xaiImageModel||"grok-imagine-image"} onChange={e=>set({xaiImageModel:e.target.value})}/></label>
           <div className="providerGroup"><b>Stability AI</b><small>Stable Image REST API.</small></div>
-          <KeyField label="Cheie API Stability" name="stabilityApiKey" placeholder="sk-..." {...keyProps}/>
-          <label>Motor Stability<select value={cfg.stabilityImageEngine||"core"} onChange={e=>set({stabilityImageEngine:e.target.value})}><option value="core">Core</option><option value="ultra">Ultra</option><option value="sd3">SD3</option></select></label>
-          <div className="providerGroup"><b>fal.ai</b><small>Modele rapide de generare prin fal.run.</small></div>
-          <KeyField label="Cheie API fal" name="falApiKey" placeholder="FAL_KEY" {...keyProps}/>
-          <label>Model fal.ai<input value={cfg.falImageModel||"fal-ai/z-image/turbo"} onChange={e=>set({falImageModel:e.target.value})}/></label>
-          <div className="providerGroup"><b>Replicate</b><small>Modele oficiale și din comunitate prin Predictions API.</small></div>
-          <KeyField label="Token API Replicate" name="replicateApiToken" placeholder="r8_..." token {...keyProps}/>
-          <label>Model Replicate<input value={cfg.replicateImageModel||"black-forest-labs/flux-schnell"} onChange={e=>set({replicateImageModel:e.target.value})}/></label>
-          <div className="providerGroup"><b>Pollinations</b><small>Provider media de rezervă.</small></div>
-          <KeyField label="Cheie API Pollinations" name="pollinationsApiKey" placeholder="sk_..." {...keyProps}/>
-          <label>Model Pollinations<input value={cfg.pollinationsImageModel||"black-forest-labs/flux.1-schnell"} onChange={e=>set({pollinationsImageModel:e.target.value})}/></label>
+          <KeyField label={tr("Stability API key")} name="stabilityApiKey" placeholder="sk-..." {...keyProps}/>
+          <label>{tr("Stability engine")}<select value={cfg.stabilityImageEngine||"core"} onChange={e=>set({stabilityImageEngine:e.target.value})}><option value="core">Core</option><option value="ultra">Ultra</option><option value="sd3">SD3</option></select></label>
+          <div className="providerGroup"><b>fal.ai</b><small>{tr("Fast generation models through fal.run.")}</small></div>
+          <KeyField label={tr("fal API key")} name="falApiKey" placeholder="FAL_KEY" {...keyProps}/>
+          <label>{tr("fal.ai model")}<input value={cfg.falImageModel||"fal-ai/z-image/turbo"} onChange={e=>set({falImageModel:e.target.value})}/></label>
+          <div className="providerGroup"><b>Replicate</b><small>{tr("Official and community models through the Predictions API.")}</small></div>
+          <KeyField label={tr("Replicate API token")} name="replicateApiToken" placeholder="r8_..." token {...keyProps}/>
+          <label>{tr("Replicate model")}<input value={cfg.replicateImageModel||"black-forest-labs/flux-schnell"} onChange={e=>set({replicateImageModel:e.target.value})}/></label>
+          <div className="providerGroup"><b>Pollinations</b><small>{tr("Fallback media provider.")}</small></div>
+          <KeyField label={tr("Pollinations API key")} name="pollinationsApiKey" placeholder="sk_..." {...keyProps}/>
+          <label>{tr("Pollinations model")}<input value={cfg.pollinationsImageModel||"black-forest-labs/flux.1-schnell"} onChange={e=>set({pollinationsImageModel:e.target.value})}/></label>
         </details>
-        <p className="settingsHelp">Când ceri o poză, {BRAND_NAME} încearcă providerii în ordinea stabilită, pune fișierul real în chat și îl salvează în Bibliotecă.</p>
+        <p className="settingsHelp">{tr("When you ask for a picture, {brand} tries the providers in the order set, puts the real file in the chat and saves it in the Library.",{brand:BRAND_NAME})}</p>
       </>}
-      {tab==="video"&&cfg&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><Play size={22}/></div><div><h3>Video</h3><p>Generare videoclipuri, API-uri, modele și încercare automată a altui provider.</p></div></div>
+      {tab==="video"&&cfg&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><Play size={22}/></div><div><h3>{tr("Video")}</h3><p>{tr("Video generation, APIs, models and trying another provider on its own.")}</p></div></div>
         <MediaMakers kind="video" cfg={cfg} set={set} paidOff={cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free"}/>
-        <label>Mod video<select value={cfg.videoMode||"fast"} onChange={e=>{const videoMode=e.target.value;const quality=videoMode==="quality";set({videoMode,videoModel:quality?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast",openRouterVideoModel:quality?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast",geminiVideoModel:quality?"veo-3.1-generate-preview":"veo-3.1-fast-generate-preview"})}}><option value="fast">⚡ Rapid</option><option value="quality">🎬 Calitate</option><option value="free">🛡️ Doar gratuit</option></select></label>
-        <label>Protecție costuri<select value={cfg.videoCostPolicy||"free_only"} onChange={e=>set({videoCostPolicy:e.target.value})}><option value="free_only">Nu porni joburi cu plată</option><option value="allow_paid">Permite provideri cu plată</option></select></label>
-        <p className="settingsHelp">{(cfg.videoCostPolicy||"free_only")==="free_only"?`${BRAND_NAME} verifică prețul publicat când este disponibil și nu pornește generarea dacă nu poate confirma costul zero. Gemini Veo, fal.ai și Replicate rămân blocate în acest mod.`:"Atenție: generarea video poate consuma rapid credit. Costul depinde de model, durată și rezoluție."}</p>
-        <label>Ordinea de încercare<input value={cfg.videoProviderOrder||"pollinations,openrouter,gemini,fal,replicate,openai,xai"} onChange={e=>set({videoProviderOrder:e.target.value})}/></label>
-        <div className="providerGroup"><b>Pollinations Video</b><small>Cheia este comună cu secțiunea Poze.</small></div>
-        <KeyField label="Cheie API Pollinations" name="pollinationsApiKey" placeholder="sk_..." {...keyProps}/>
-        <label>Model video Pollinations<input value={cfg.pollinationsVideoModel||"google/veo-3.1-fast"} onChange={e=>set({pollinationsVideoModel:e.target.value})}/></label>
-        <div className="providerGroup"><b>OpenRouter Video</b><small>Seedance, Veo, Wan și alte modele prin același API.</small></div>
-        <KeyField label="Cheie API OpenRouter" name="openRouterApiKey" placeholder="sk-or-..." {...keyProps}/>
-        <label>Model video OpenRouter<input value={cfg.openRouterVideoModel||(cfg.videoMode==="quality"?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast")} onChange={e=>set({openRouterVideoModel:e.target.value})}/></label>
-        <div className="providerGroup"><b>Gemini · Veo</b><small>Veo prin aceeași cheie Gemini folosită la chat; modelul îl alegi sus, la «Video făcut de».</small></div>
-        <KeyField label="Cheie API Gemini" name="geminiApiKey" placeholder="AIza..." {...keyProps}/>
-        <p className="settingsHelp">OpenAI (ChatGPT) nu mai face videoclipuri: Sora a fost închis pe 24 septembrie 2026, și aplicația, și API-ul. Pozele cu ChatGPT merg în continuare.</p>
-        <div className="providerGroup"><b>Grok Imagine Video (xAI)</b><small>Prin cheia xAI de la API-uri AI; 1–15 secunde.</small></div>
-        <label>Model video Grok<input value={cfg.xaiVideoModel||"grok-imagine-video"} onChange={e=>set({xaiVideoModel:e.target.value})}/></label>
-        <div className="providerGroup"><b>fal.ai Video</b><small>LTX Video. Poate folosi creditele inițiale, apoi credit plătit.</small></div>
-        <KeyField label="Cheie API fal" name="falApiKey" placeholder="FAL_KEY" {...keyProps}/>
-        <label>Model video fal<input value={cfg.falVideoModel||"fal-ai/ltx-video"} onChange={e=>set({falVideoModel:e.target.value})}/></label>
-        <div className="providerGroup"><b>Replicate Video</b><small>Modele video oficiale prin Predictions API.</small></div>
-        <KeyField label="Token API Replicate" name="replicateApiToken" placeholder="r8_..." token {...keyProps}/>
-        <label>Model video Replicate<input value={cfg.replicateVideoModel||"wan-video/wan-2.2-t2v-fast"} onChange={e=>set({replicateVideoModel:e.target.value})}/></label>
-        <p className="settingsHelp">Când ceri un videoclip, {BRAND_NAME} încearcă providerii în ordine, descarcă fișierul MP4 real, îl pune în chat și îl salvează în Bibliotecă.</p>
+        <label>{tr("Video mode")}<select value={cfg.videoMode||"fast"} onChange={e=>{const videoMode=e.target.value;const quality=videoMode==="quality";set({videoMode,videoModel:quality?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast",openRouterVideoModel:quality?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast",geminiVideoModel:quality?"veo-3.1-generate-preview":"veo-3.1-fast-generate-preview"})}}><option value="fast">{tr("⚡ Fast")}</option><option value="quality">{tr("🎬 Quality")}</option><option value="free">{tr("🛡️ Free only")}</option></select></label>
+        <label>{tr("Cost protection")}<select value={cfg.videoCostPolicy||"free_only"} onChange={e=>set({videoCostPolicy:e.target.value})}><option value="free_only">{tr("Do not start paid jobs")}</option><option value="allow_paid">{tr("Allow paid providers")}</option></select></label>
+        <p className="settingsHelp">{(cfg.videoCostPolicy||"free_only")==="free_only"?tr("{brand} checks the published price when there is one and does not start if it cannot confirm a zero cost. Gemini Veo, fal.ai and Replicate stay blocked in this mode.",{brand:BRAND_NAME}):tr("Careful: video generation can use credit fast. The cost depends on the model, length and resolution.")}</p>
+        <label>{tr("Order to try")}<input value={cfg.videoProviderOrder||"pollinations,openrouter,gemini,fal,replicate,openai,xai"} onChange={e=>set({videoProviderOrder:e.target.value})}/></label>
+        <div className="providerGroup"><b>Pollinations Video</b><small>{tr("The key is shared with Pictures.")}</small></div>
+        <KeyField label={tr("Pollinations API key")} name="pollinationsApiKey" placeholder="sk_..." {...keyProps}/>
+        <label>{tr("Pollinations video model")}<input value={cfg.pollinationsVideoModel||"google/veo-3.1-fast"} onChange={e=>set({pollinationsVideoModel:e.target.value})}/></label>
+        <div className="providerGroup"><b>OpenRouter Video</b><small>{tr("Seedance, Veo, Wan and other models through the same API.")}</small></div>
+        <KeyField label={tr("OpenRouter API key")} name="openRouterApiKey" placeholder="sk-or-..." {...keyProps}/>
+        <label>{tr("OpenRouter video model")}<input value={cfg.openRouterVideoModel||(cfg.videoMode==="quality"?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast")} onChange={e=>set({openRouterVideoModel:e.target.value})}/></label>
+        <div className="providerGroup"><b>Gemini · Veo</b><small>{tr("Veo with the same Gemini key used for chat; you choose the model above, under «Videos made by».")}</small></div>
+        <KeyField label={tr("Gemini API key")} name="geminiApiKey" placeholder="AIza..." {...keyProps}/>
+        <p className="settingsHelp">{tr("OpenAI (ChatGPT) no longer makes videos: Sora closed on 24 September 2026, both the app and the API. ChatGPT pictures still work.")}</p>
+        <div className="providerGroup"><b>Grok Imagine Video (xAI)</b><small>{tr("With the xAI key from AI APIs; 1–15 seconds.")}</small></div>
+        <label>{tr("Grok video model")}<input value={cfg.xaiVideoModel||"grok-imagine-video"} onChange={e=>set({xaiVideoModel:e.target.value})}/></label>
+        <div className="providerGroup"><b>fal.ai Video</b><small>{tr("LTX Video. Can use the starting credits, then paid credit.")}</small></div>
+        <KeyField label={tr("fal API key")} name="falApiKey" placeholder="FAL_KEY" {...keyProps}/>
+        <label>{tr("fal video model")}<input value={cfg.falVideoModel||"fal-ai/ltx-video"} onChange={e=>set({falVideoModel:e.target.value})}/></label>
+        <div className="providerGroup"><b>Replicate Video</b><small>{tr("Official video models through the Predictions API.")}</small></div>
+        <KeyField label={tr("Replicate API token")} name="replicateApiToken" placeholder="r8_..." token {...keyProps}/>
+        <label>{tr("Replicate video model")}<input value={cfg.replicateVideoModel||"wan-video/wan-2.2-t2v-fast"} onChange={e=>set({replicateVideoModel:e.target.value})}/></label>
+        <p className="settingsHelp">{tr("When you ask for a video, {brand} tries the providers in order, downloads the real MP4 file, puts it in the chat and saves it in the Library.",{brand:BRAND_NAME})}</p>
       </>}
-      {tab==="voice"&&cfg&&<><h3>Voce și microfon</h3>
-        <label>Limba dictării, a transcrierii și a citirii cu voce<select value={cfg.speechLanguage||"ro"} onChange={e=>set({speechLanguage:e.target.value})}><option value="ro">Română</option><option value="en">English</option><option value="fr">Français</option></select></label>
-        {machineSettingsAllowed&&<label>Model transcriere<input value={cfg.speechModel||"openai/whisper-1"} onChange={e=>set({speechModel:e.target.value})}/></label>}
-        <button type="button" className="secondary testMicBtn" onClick={testMic}><Mic size={16}/> Testează microfonul</button>{micStatus&&<div className="micStatus" role="status">{micStatus}</div>}
-        <p className="settingsHelp">Apasă microfonul o dată pentru a începe înregistrarea și încă o dată pentru a o opri. {BRAND_NAME} salvează vocalul în Bibliotecă și îl transcrie automat.</p>
+      {tab==="voice"&&cfg&&<><h3>{tr("Voice and microphone")}</h3>
+        <label>{tr("Language for dictation, transcription and reading aloud")}<select value={cfg.speechLanguage||"ro"} onChange={e=>set({speechLanguage:e.target.value})}><option value="ro">Română</option><option value="en">English</option><option value="fr">Français</option></select></label>
+        {machineSettingsAllowed&&<label>{tr("Transcription model")}<input value={cfg.speechModel||"openai/whisper-1"} onChange={e=>set({speechModel:e.target.value})}/></label>}
+        <button type="button" className="secondary testMicBtn" onClick={testMic}><Mic size={16}/> {tr("Test the microphone")}</button>{micStatus&&<div className="micStatus" role="status">{micStatus}</div>}
+        <p className="settingsHelp">{tr("Press the microphone once to start recording and again to stop. {brand} writes out what you said and sends it.",{brand:BRAND_NAME})}</p>
       </>}
       {tab==="notify"&&<NotifyTab account={account}>{webServer&&<PhoneNotifications/>}</NotifyTab>}
-      {tab==="account"&&cfg&&<><h3>Owner pe acest PC</h3>
-        <div className="accountSettingsCard"><div className="accountAvatar big">{(user?.name||user?.email||"S")[0].toUpperCase()}</div><div><b>{user?.name||`Cont ${BRAND_NAME}`}</b><span>{user?.email}{user?.role==="owner"?" · Owner":""}</span></div></div>
-        <p className="settingsHelp">Conversațiile, memoria, biblioteca, designurile, proiectele, pluginurile și sarcinile programate sunt păstrate {IS_WEB?`pe serverul ${BRAND_NAME}`:"pe acest calculator"}.</p>
+      {tab==="account"&&cfg&&<><h3>{tr("Owner on this PC")}</h3>
+        <div className="accountSettingsCard"><div className="accountAvatar big">{(user?.name||user?.email||"S")[0].toUpperCase()}</div><div><b>{user?.name||tr("{brand} account",{brand:BRAND_NAME})}</b><span>{user?.email}{user?.role==="owner"?" · Owner":""}</span></div></div>
+        <p className="settingsHelp">{IS_WEB?tr("Chats, memory, the library, designs, projects, apps and automations are kept on the {brand} server.",{brand:BRAND_NAME}):tr("Chats, memory, the library, designs, projects, apps and automations are kept on this computer.")}</p>
         {machineSettingsAllowed&&!webServer&&<>
-          <label><span className="labelLine">Email Owner pe acest PC <span className="optional">opțional</span></span><input type="email" value={cfg.ownerEmail||""} onChange={e=>set({ownerEmail:e.target.value})} placeholder="nume@email.ro" autoComplete="off"/></label>
-          <p className="settingsHelp">Contul local cu acest email primește drepturi de Owner: rulare de cod, GitHub Solve, verificare server. Se aplică doar când {BRAND_SHORT} Cloud nu este configurat. Reautentifică-te după schimbare.</p>
+          <label><span className="labelLine">{tr("Owner email on this PC")} <span className="optional">{tr("optional")}</span></span><input type="email" value={cfg.ownerEmail||""} onChange={e=>set({ownerEmail:e.target.value})} placeholder={tr("name@example.com")} autoComplete="off"/></label>
+          <p className="settingsHelp">{tr("The local account with this email gets Owner rights: running code, GitHub Solve, checking the server. It applies only when {brand} Cloud is not set up. Sign in again after the change.",{brand:BRAND_SHORT})}</p>
         </>}
       </>}
       {error&&<div className="inlineError" role="alert">{error}</div>}
     </div></div>
-    {onAccountTab?<div className="modalActions"><button className="secondary" onClick={onClose}>Închide</button></div>
-    :<div className="modalActions"><button className="secondary" onClick={onClose}>Anulează</button><button className="primary" onClick={save} disabled={saving}>{saving?"Se salvează…":"Salvează setările"}</button></div>}
+    {onAccountTab?<div className="modalActions"><button className="secondary" onClick={onClose}>{tr("Close")}</button></div>
+    :<div className="modalActions"><button className="secondary" onClick={onClose}>{tr("Cancel")}</button><button className="primary" onClick={save} disabled={saving}>{saving?tr("Saving…"):tr("Save settings")}</button></div>}
     </>}
   </div></div>;
 }

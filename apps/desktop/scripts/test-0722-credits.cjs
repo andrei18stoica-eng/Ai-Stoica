@@ -63,7 +63,7 @@ function units() {
   expect(L.status("ana").week.left === 0 && last.warning?.level === 100, "100% reached");
   err = null; try { L.reserve("ana", 10); } catch (e) { err = e; }
   expect(err?.code === "credits_exhausted" && /renew on \w+day, \d+ \w+ at \d\d:\d\d/.test(err.message) && err.info.renewsAt === start + 7 * DAY, "at 100%: buy credits or wait until the date: " + err?.message);
-  expect(L.status("ana").free.limit === 15, "with a plan used up, 15 free messages a day");
+  expect(L.status("ana").free.limit === 5, "with a plan used up, 5 free messages a day (0.7.27, as without a plan)");
   // Extra credits: used at once, no weekly limit.
   L.addExtra("ana", 100);
   expect(L.status("ana").available === 100, "extra credits are available at once");
