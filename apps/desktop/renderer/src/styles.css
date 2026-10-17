@@ -1312,3 +1312,5 @@ h1,h2,h3,.wordmark,.welcome h1,.modalHead h2{font-family:var(--font-display)}
 .weekParts span.done{opacity:.6}
 .weekParts span.now{border-color:var(--accent-strong);background:var(--accent-bg);color:var(--text-strong)}
 .weekParts span.now b{color:var(--accent)}
+.makerRow{flex-wrap:wrap;gap:8px}
+.makerPick.lengthPick select{min-width:0}

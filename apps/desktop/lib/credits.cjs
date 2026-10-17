@@ -21,20 +21,37 @@ const CREDIT_LEI = 0.01, SAFETY = 1.15, CARD_PCT = 0.015, CARD_FIXED = 1.27, TAX
 // What each plan adds (0.7.25, the Owner's table of 2026-10-17: Start, Plus, Pro, Pro x2, Pro Max x5, Pro Max x10 =
 // Business for 5 people, Enterprise for 15). Pro x2 / x5 / x10 have 2 / 5 / 10 times Pro's credits (the same formula).
 // "tiers": the model classes it may use. null = no limit. videoSeconds: the longest video (one clip is at most
-// VIDEO_CLIP_MAX seconds for now). plugins: how many apps the account may connect (the built-in ones are for all).
+// VIDEO_CLIP_MAX seconds, in one generation). imagesPerDay: pictures a day (Start: 5; missing = only the credits). plugins: how many apps the account may connect (the built-in ones are for all).
 const PLANS = {
-  start: { name: "Start", price: 29.99, yearly: 299.99, credits: 1120, seats: 1, tiers: ["fast", "advanced"], imageHd: false, videoSeconds: 0, plugins: 0, deepResearch: false, compare: 2, automations: 3, skills: 10, priority: false },
+  start: { name: "Start", price: 29.99, yearly: 299.99, credits: 1120, seats: 1, tiers: ["fast", "advanced"], imageHd: false, imagesPerDay: 5, videoSeconds: 0, plugins: 0, deepResearch: false, compare: 2, automations: 3, skills: 10, priority: false },
   plus: { name: "Plus", price: 64.99, yearly: 649.99, credits: 2570, seats: 1, tiers: ["fast", "advanced"], imageHd: true, videoSeconds: 6, plugins: 3, deepResearch: false, compare: 3, automations: 10, skills: 25, priority: false },
   pro: { name: "Pro", price: 99.99, yearly: 999.99, credits: 4010, seats: 1, tiers: ["fast", "advanced", "top"], imageHd: true, videoSeconds: 8, plugins: 10, deepResearch: true, compare: 4, automations: 25, skills: 50, priority: false },
-  pro2: { name: "Pro x2", price: 199.99, yearly: 1999.99, credits: 8150, seats: 1, tiers: ["fast", "advanced", "top"], imageHd: true, videoSeconds: 10, plugins: null, deepResearch: true, compare: 4, automations: 50, skills: 100, priority: true },
-  max5: { name: "Pro Max x5", price: 499.99, yearly: 4999.99, credits: 20540, seats: 1, tiers: ["fast", "advanced", "top"], imageHd: true, videoSeconds: 15, plugins: null, deepResearch: true, compare: 6, automations: null, skills: null, priority: true },
-  business: { name: "Pro Max x10", label: "Business", price: 999.99, yearly: 9999.99, credits: 41190, seats: 5, tiers: ["fast", "advanced", "top"], imageHd: true, videoSeconds: 20, plugins: null, deepResearch: true, compare: 6, automations: null, skills: null, priority: true, team: true },
+  pro2: { name: "Pro x2", price: 199.99, yearly: 1999.99, credits: 8150, seats: 1, tiers: ["fast", "advanced", "top"], imageHd: true, videoSeconds: 15, plugins: null, deepResearch: true, compare: 4, automations: 50, skills: 100, priority: true },
+  max5: { name: "Pro Max x5", price: 499.99, yearly: 4999.99, credits: 20540, seats: 1, tiers: ["fast", "advanced", "top"], imageHd: true, videoSeconds: 20, plugins: null, deepResearch: true, compare: 6, automations: null, skills: null, priority: true },
+  business: { name: "Pro Max x10", label: "Business", price: 999.99, yearly: 9999.99, credits: 41190, seats: 5, tiers: ["fast", "advanced", "top"], imageHd: true, videoSeconds: 30, plugins: null, deepResearch: true, compare: 6, automations: null, skills: null, priority: true, team: true },
   enterprise: { name: "Enterprise", price: 1999.99, yearly: 19999.99, credits: 82490, seats: 15, tiers: ["fast", "advanced", "top"], imageHd: true, videoSeconds: 30, plugins: null, deepResearch: true, compare: 6, automations: null, skills: null, priority: true, team: true, api: true }
 };
 // Plans that were renamed: a wallet on the old key moves to the new one when it is read (Max 199,99 → Pro x2).
 const LEGACY_PLANS = { max: "pro2" };
-// One generated clip is at most this long (Grok Imagine: 15 s; Veo: 8 s). Longer videos need joined clips.
-const VIDEO_CLIP_MAX = 15;
+// A video is made in one generation, never joined from clips (the Owner, 2026-10-17). One generation is at most 30 s
+// (Seedance 2.5); Grok Imagine, Kling, Wan and MiniMax go up to 15 s, Veo to 8 s. Longer than VIDEO_LONG_FROM seconds
+// only a model that makes it in one pass (VIDEO_LONG_MODELS) is used.
+const VIDEO_CLIP_MAX = 30, VIDEO_LONG_FROM = 15;
+const VIDEO_LONG_MODELS = /seedance[-_ ]?2\.5/i;
+// Credits per second of video, from the provider's official price per second (August 2026, USD) at about 4.4 lei per
+// dollar: 1 credit = 0.01 lei of real cost, so the plan's 50% profit holds for every model and length.
+const USD_LEI = 4.4;
+const VIDEO_USD_PER_SECOND = [
+  [/veo[^/]*lite/i, 0.08], [/veo[^/]*fast/i, 0.12], [/veo/i, 0.40],
+  [/grok|xai/i, 0.08], [/seedance[-_ ]?2\.5/i, 0.14], [/seedance/i, 0.10],
+  [/kling/i, 0.11], [/minimax|hailuo/i, 0.13], [/wan/i, 0.10], [/ltx/i, 0.08], [/sora/i, 0.10]
+];
+const VIDEO_DEFAULT_USD = 0.12;
+function videoRate(model) {
+  const m = String(model || "");
+  const usd = (VIDEO_USD_PER_SECOND.find(([re]) => re.test(m)) || [null, VIDEO_DEFAULT_USD])[1];
+  return Math.ceil((usd * USD_LEI) / CREDIT_LEI);
+}
 // No plan: free models only, a few messages a day; the trial tries Start for two days.
 const FREE_FEATURES = { name: "Free", tiers: ["fast"], imageHd: false, videoSeconds: 0, plugins: 0, deepResearch: false, compare: 0, automations: 0, skills: 3, priority: false };
 const TRIAL = { days: 2, credits: 50 };
@@ -42,7 +59,7 @@ const FREE_DAILY = { noPlan: 5, planExhausted: 5 };
 const WARN_AT = [25, 50, 75, 90];
 
 // Starting costs per action, in credits (recalculated in phase 9 from the real costs).
-const COSTS = { fast: 1, advanced: 10, top: 40, web: 5, image: 20, imageHd: 50, videoBase: 300, videoBaseSeconds: 6, videoExtraSecond: 50, transcribeMinute: 3 };
+const COSTS = { fast: 1, advanced: 10, top: 40, web: 5, image: 20, imageHd: 50, transcribeMinute: 3 };
 const MIN_PACK = 100;
 
 const round10 = (n) => Math.floor(n / 10) * 10;
@@ -89,7 +106,7 @@ function isFreeModel(model) {
 function cost(kind, opts = {}) {
   if (kind === "chat") return (isFreeModel(opts.model) ? COSTS.fast : COSTS[modelTier(opts.model)] || COSTS.advanced) + (opts.web ? COSTS.web : 0);
   if (kind === "image") return opts.hd ? COSTS.imageHd : COSTS.image;
-  if (kind === "video") { const s = Math.max(1, Math.ceil(Number(opts.seconds) || COSTS.videoBaseSeconds)); return COSTS.videoBase + Math.max(0, s - COSTS.videoBaseSeconds) * COSTS.videoExtraSecond; }
+  if (kind === "video") return Math.max(1, Math.ceil(Number(opts.seconds) || 6)) * videoRate(opts.model);
   if (kind === "transcribe") return Math.max(1, Math.ceil((Number(opts.seconds) || 60) / 60)) * COSTS.transcribeMinute;
   return 0;
 }
@@ -202,7 +219,7 @@ function createCredits(dataDir, { now: clock = () => Date.now(), timeZone = "Eur
       trial: trial ? { active: trial.active, left: trial.left, endsAt: trial.endsAt, credits: TRIAL.credits } : null,
       extras, available, held: held(w.id),
       free: { limit: freeLimit, used: freeUsed, left: Math.max(0, freeLimit - freeUsed) },
-      features: { name: features.name, tiers: features.tiers, imageHd: !!features.imageHd, videoSeconds: features.videoSeconds, plugins: features.plugins, deepResearch: features.deepResearch, compare: features.compare, automations: features.automations, skills: features.skills, priority: !!features.priority, team: !!features.team, api: !!features.api, seats: features.seats || 1 },
+      features: { name: features.name, tiers: features.tiers, imageHd: !!features.imageHd, videoSeconds: features.videoSeconds, plugins: features.plugins, deepResearch: features.deepResearch, compare: features.compare, automations: features.automations, skills: features.skills, priority: !!features.priority, team: !!features.team, api: !!features.api, seats: features.seats || 1, imagesPerDay: features.imagesPerDay || null },
       notice: w.notice || null
     };
   }
@@ -350,9 +367,9 @@ function catalog() {
   return {
     plans: Object.entries(PLANS).map(([key, p]) => ({ key, ...p, perWeek: Math.floor(p.credits / 4) })),
     free: { ...FREE_FEATURES, dailyMessages: FREE_DAILY.noPlan },
-    trial: TRIAL, costs: COSTS, minPack: MIN_PACK, warnAt: WARN_AT, freeDaily: FREE_DAILY, videoClipMax: VIDEO_CLIP_MAX,
+    trial: TRIAL, costs: COSTS, minPack: MIN_PACK, warnAt: WARN_AT, freeDaily: FREE_DAILY, videoClipMax: VIDEO_CLIP_MAX, videoLongFrom: VIDEO_LONG_FROM,
     packs: [100, 500, 1000, 5000, 10000].map((c) => ({ credits: c, price: priceForCredits(c) }))
   };
 }
 
-module.exports = { PLANS, LEGACY_PLANS, VIDEO_CLIP_MAX, FREE_FEATURES, TRIAL, FREE_DAILY, COSTS, WARN_AT, MIN_PACK, creditsForPrice, priceForCredits, modelTier, isFreeModel, cost, CreditError, createCredits, catalog, when };
+module.exports = { PLANS, LEGACY_PLANS, VIDEO_CLIP_MAX, VIDEO_LONG_FROM, VIDEO_LONG_MODELS, videoRate, FREE_FEATURES, TRIAL, FREE_DAILY, COSTS, WARN_AT, MIN_PACK, creditsForPrice, priceForCredits, modelTier, isFreeModel, cost, CreditError, createCredits, catalog, when };
