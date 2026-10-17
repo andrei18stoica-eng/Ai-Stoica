@@ -75,7 +75,16 @@ else
 fi
 
 say "4. Dosarele: $OLD_ROOT -> $NEW_ROOT, $OLD_ETC -> $NEW_ETC"
-run compose "${MCP_ARGS[@]}" down
+# --remove-orphans: the old ai-stoica-mcp container is no longer in the compose files but still runs as the aistoica
+# user, and step 5 cannot rename a user that still has processes.
+run compose "${MCP_ARGS[@]}" down --remove-orphans
+if [ "$APPLY" = 1 ] && id "$OLD_USER" >/dev/null 2>&1 && ! id "$NEW_USER" >/dev/null 2>&1 && pgrep -u "$OLD_USER" >/dev/null 2>&1; then
+  echo "  STOP: utilizatorul $OLD_USER mai are procese pornite după oprirea containerelor:"
+  ps -u "$OLD_USER" -o pid,comm,args --no-headers | cut -c1-120
+  echo "  Nimic nu e mutat încă; pornesc site-ul la loc. Oprește procesele de mai sus și rulează din nou."
+  compose up -d; if [ "${#MCP_ARGS[@]}" -gt 0 ]; then compose "${MCP_ARGS[@]}" up -d || true; fi
+  exit 1
+fi
 if [ -d "$OLD_ROOT" ] && [ ! -L "$OLD_ROOT" ] && [ ! -e "$NEW_ROOT" ]; then
   run mv "$OLD_ROOT" "$NEW_ROOT"; run ln -s "$NEW_ROOT" "$OLD_ROOT"
 else echo "  $NEW_ROOT: deja făcut"; fi
