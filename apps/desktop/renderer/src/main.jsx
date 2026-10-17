@@ -265,6 +265,7 @@ async function authPost(path,body){
   return {ok:r.ok,status:r.status,data,error:r.ok?"":errorFromBody(text,r.status)};
 }
 function AuthScreen({ onAuth, notice:initialNotice="" }) {
+  useLanguage();
   const [code,setCode]=useState(""),[resendIn,setResendIn]=useState(0);
   useEffect(()=>{if(resendIn<=0)return;const t=setTimeout(()=>setResendIn(n=>n-1),1000);return()=>clearTimeout(t)},[resendIn]);
   const [mode,setMode]=useState("login"),[name,setName]=useState(""),[email,setEmail]=useState(""),[password,setPassword]=useState(""),[error,setError]=useState(""),[notice,setNotice]=useState(initialNotice),[busy,setBusy]=useState(false),[cloud,setCloud]=useState(null),[networkIssue,setNetworkIssue]=useState(false);
@@ -280,56 +281,56 @@ function AuthScreen({ onAuth, notice:initialNotice="" }) {
       if(mode==="verify"){
         const v=await authPost("/auth/verify-email",{email,code:code.trim()});
         if(!v.ok)throw new Error(v.error);
-        setNotice(v.data.message||"Email confirmat. Accesul așteaptă aprobarea Owner-ului.");setMode("login");setCode("");setPassword("");return;
+        setNotice(v.data?.token?tr("Email confirmed."):tr("Email confirmed. Your access is waiting for the Owner's approval."));setMode("login");setCode("");setPassword("");return;
       }
       const r = await authPost(mode==="login"?"/auth/login":"/auth/register",mode==="login"?{email,password}:{name,email,password});
       if(r.data?.status==="verify_email"){
-        setMode("verify");setCode("");setNotice(r.ok?(r.data.message||"Ți-am trimis un cod pe email."):"Confirmă mai întâi emailul cu codul primit. Dacă nu-l găsești, uită-te și în Spam sau cere unul nou.");if(r.ok)setResendIn(60);return;
+        setMode("verify");setCode("");setNotice(r.ok?tr("We sent you a code by email."):tr("First confirm your email with the code you got. If you cannot find it, look in Spam or ask for a new one."));if(r.ok)setResendIn(60);return;
       }
       if(!r.ok)throw new Error(r.error);
       const data=r.data;
       if(data?.status==="pending"&&!data?.token){
-        setNotice(data.message||"Contul a fost creat și așteaptă aprobarea Owner-ului.");
+        setNotice(tr("The account was created and is waiting for the Owner's approval."));
         setMode("login"); setPassword(""); return;
       }
-      if(!data?.token||!data?.user) throw new Error("Serverul nu a returnat o sesiune validă.");
+      if(!data?.token||!data?.user) throw new Error(tr("The server did not return a valid session."));
       storage.set(TOKEN_KEY,data.token); storage.set(USER_KEY,JSON.stringify(data.user)); storage.set(PERMISSIONS_KEY,JSON.stringify(data.permissions||{}));
       onAuth(data.user,data.permissions||{});
     } catch(e2){ setError(e2.message); if(/failed to fetch|networkerror|load failed/i.test(e2.message))setNetworkIssue(true); } finally { setBusy(false); }
   }
   async function resendCode(){
     if(busy||resendIn>0)return;setBusy(true);setError("");
-    try{const r=await authPost("/auth/resend-code",{email});if(!r.ok)throw new Error(r.error);setNotice(r.data.message||"Ți-am trimis un cod nou.");setResendIn(60)}
+    try{const r=await authPost("/auth/resend-code",{email});if(!r.ok)throw new Error(r.error);setNotice(tr("We sent you a new code."));setResendIn(60)}
     catch(e){setError(e.message)}finally{setBusy(false)}
   }
-  function resetGateway(){setGatewayUrl(DEFAULT_GATEWAY);Promise.resolve(window.Serasmart?.setConfig?.({gatewayUrl:DEFAULT_GATEWAY})).catch(()=>{});setNetworkIssue(false);setError("");setNotice("Am revenit la serviciul local implicit. Încearcă din nou autentificarea.");}
-  return <div className="authShell"><div className="authGlow"/>
-    <div className="authBrand"><img src="./serasmart-ai-768.webp" alt={`${BRAND_NAME}`}/><h1>{BRAND_NAME}</h1><p>Asistentul tău AI</p>
-      <div className="authFeature"><Sparkles size={17}/> Chat AI profesional, memorie, fișiere, design și sarcini programate.</div>
-      <div className="authFeature"><Wifi size={17}/> Conectare prin OmniRoute sau prin API-uri directe.</div>
-      <div className="authFeature"><User size={17}/> {cloud?"Cont personal cu aprobare Owner.":"Cont personal protejat cu parolă."}</div>
+  function resetGateway(){setGatewayUrl(DEFAULT_GATEWAY);Promise.resolve(window.Serasmart?.setConfig?.({gatewayUrl:DEFAULT_GATEWAY})).catch(()=>{});setNetworkIssue(false);setError("");setNotice(tr("Back to the default local service. Try signing in again."));}
+  return <div className="authShell"><div className="authGlow"/><div className="authTopTools"><ThemeSwitch/><LanguageMenu/></div>
+    <div className="authBrand"><img src="./serasmart-ai-768.webp" alt={`${BRAND_NAME}`}/><h1>{BRAND_NAME}</h1><p>{tr("Your AI, every model")}</p>
+      <div className="authFeature"><Sparkles size={17}/> {tr("Chat with every top AI, memory, files, pictures, video and automations.")}</div>
+      <div className="authFeature"><Wifi size={17}/> {tr("Your apps connected: the AI reads and works in them with your approval.")}</div>
+      <div className="authFeature"><User size={17}/> {tr("A personal account, confirmed by email and protected by your password.")}</div>
     </div>
     <form className="authCard" onSubmit={submit}>
-      <div className="authTabs" role="tablist"><button type="button" role="tab" aria-selected={mode==="login"} className={mode==="login"?"active":""} onClick={()=>{setMode("login");setError("");}}>Autentificare</button><button type="button" role="tab" aria-selected={mode==="register"} className={mode==="register"?"active":""} onClick={()=>{setMode("register");setError("");setNotice("");}}>Creează cont</button></div>
+      <div className="authTabs" role="tablist"><button type="button" role="tab" aria-selected={mode==="login"} className={mode==="login"?"active":""} onClick={()=>{setMode("login");setError("");}}>{tr("Sign in")}</button><button type="button" role="tab" aria-selected={mode==="register"} className={mode==="register"?"active":""} onClick={()=>{setMode("register");setError("");setNotice("");}}>{tr("Create account")}</button></div>
       {mode==="verify"?<>
-      <h2>Confirmă emailul</h2>
-      <p className="muted">Am trimis un cod de 6 cifre la <b>{email}</b>. Dacă nu-l vezi, uită-te și în Spam. Codul expiră în 15 minute.</p>
-      <label>Cod din email<input value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="123456" inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} required autoFocus className="codeInput"/></label>
+      <h2>{tr("Confirm your email")}</h2>
+      <p className="muted">{tr("We sent a 6-digit code to {email}. If you do not see it, look in Spam. The code expires in 15 minutes.",{email})}</p>
+      <label>{tr("Code from the email")}<input value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="123456" inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} required autoFocus className="codeInput"/></label>
       {notice&&<div className="authNotice" role="status"><UserCheck size={17}/><span>{notice}</span></div>}
       {error&&<div className="authError" role="alert">{error}</div>}
-      <button className="primaryWide" disabled={busy||code.length!==6}>{busy?"Se procesează…":"Confirmă emailul"}</button>
-      <div className="codeActions"><button type="button" className="linkBtn" disabled={busy||resendIn>0} onClick={resendCode}>{resendIn>0?`Retrimite codul (${resendIn}s)`:"Retrimite codul"}</button><button type="button" className="linkBtn" onClick={()=>{setMode("login");setError("");setNotice("")}}>Înapoi</button></div>
+      <button className="primaryWide" disabled={busy||code.length!==6}>{busy?tr("Working…"):tr("Confirm email")}</button>
+      <div className="codeActions"><button type="button" className="linkBtn" disabled={busy||resendIn>0} onClick={resendCode}>{resendIn>0?tr("Send the code again ({s}s)",{s:resendIn}):tr("Send the code again")}</button><button type="button" className="linkBtn" onClick={()=>{setMode("login");setError("");setNotice("")}}>{tr("Back")}</button></div>
       </>:<>
-      <h2>{mode==="login"?"Bine ai revenit":`Creează contul ${BRAND_NAME}`}</h2>
-      <p className="muted">{mode==="register"?(cloud?"Primești un cod pe email ca să confirmi adresa, apoi contul e aprobat de Owner.":IS_WEB?`Contul se creează pe serverul ${BRAND_NAME}.`:"Contul se creează pe acest calculator și îl poți folosi imediat."):`Folosește emailul contului tău ${BRAND_NAME}.`}</p>
-      {mode==="register"&&<label>Nume<input value={name} onChange={e=>setName(e.target.value)} placeholder="Numele tău" autoComplete="name"/></label>}
-      <label>Email<input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="nume@email.ro" required autoComplete="email"/></label>
-      <label>Parolă<input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder={mode==="register"?"Minimum 10 caractere":"Parola contului"} required minLength={mode==="register"?10:undefined} autoComplete={mode==="register"?"new-password":"current-password"}/></label>
+      <h2>{mode==="login"?tr("Welcome back"):tr("Create your {brand} account",{brand:BRAND_NAME})}</h2>
+      <p className="muted">{mode==="register"?(cloud?tr("You get a code by email to confirm the address, then the Owner approves the account."):IS_WEB?tr("The account is created on the {brand} server.",{brand:BRAND_NAME}):tr("The account is created on this computer and you can use it right away.")):tr("Use the email of your {brand} account.",{brand:BRAND_NAME})}</p>
+      {mode==="register"&&<label>{tr("Name")}<input value={name} onChange={e=>setName(e.target.value)} placeholder={tr("Your name")} autoComplete="name"/></label>}
+      <label>{tr("Email")}<input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="name@example.com" required autoComplete="email"/></label>
+      <label>{tr("Password")}<input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder={mode==="register"?tr("At least 10 characters"):tr("Your account password")} required minLength={mode==="register"?10:undefined} autoComplete={mode==="register"?"new-password":"current-password"}/></label>
       {notice&&<div className="authNotice" role="status"><UserCheck size={17}/><span>{notice}</span></div>}
       {error&&<div className="authError" role="alert">{error}</div>}
-      {networkIssue&&GATEWAY!==DEFAULT_GATEWAY&&<button type="button" className="secondary wideBtn" onClick={resetGateway}>Folosește serviciul local implicit</button>}
-      <button className="primaryWide" disabled={busy}>{busy?"Se procesează…":mode==="login"?`Intră în ${BRAND_NAME}`:(cloud?"Trimite cererea de acces":"Creează contul")}</button>
-      <div className="localNote">{cloud?"Owner-ul controlează aprobarea conturilor și permisiunile serviciilor AI.":IS_WEB?`Conturile și conversațiile sunt păstrate pe serverul ${BRAND_NAME}.`:"Conturile și conversațiile sunt păstrate pe acest calculator."}</div>
+      {networkIssue&&GATEWAY!==DEFAULT_GATEWAY&&<button type="button" className="secondary wideBtn" onClick={resetGateway}>{tr("Use the default local service")}</button>}
+      <button className="primaryWide" disabled={busy}>{busy?tr("Working…"):mode==="login"?tr("Sign in to {brand}",{brand:BRAND_NAME}):(cloud?tr("Send the access request"):tr("Create the account"))}</button>
+      <div className="localNote">{cloud?tr("The Owner approves accounts and decides which AI services they can use."):IS_WEB?tr("Accounts and chats are kept on the {brand} server.",{brand:BRAND_NAME}):tr("Accounts and chats are kept on this computer.")}</div>
       </>}
       <InstallApp/>
     </form>
@@ -538,7 +539,7 @@ function Header({deniedCount,lockedModels=[],onMenu,model,onSelectModel,models,o
     <button className="iconOnly menuBtn" onClick={onMenu} aria-label={tr("Show or hide the menu")} title={tr("Menu")}><Menu size={20}/></button>
     <ModelPicker model={model} onSelect={onSelectModel} models={models} onRefresh={onRefreshModels} refreshing={refreshingModels} policyEnforced={policyEnforced} deniedCount={deniedCount} locked={lockedModels}/>
     <div className="topSpacer"/>
-    {showOmni&&<div className={cx("connection",omni===true?"ok":"bad")} title={omni===true?tr("OmniRoute is answering."):omni==="key"?tr("OmniRoute is running but needs an API key: make one in OmniRoute → API Manager and put it in Settings → AI & OmniRoute. Until then the direct APIs (Groq, Gemini…) answer, if you pick them in the list."):tr("OmniRoute is not answering. Pick a model from a direct API (Groq, Gemini…) in the list, or turn on the automatic fallback.")}>{omni===true?<Wifi size={15}/>:<WifiOff size={15}/>} {omni===true?tr("OmniRoute connected"):omni==="key"?tr("OmniRoute needs an API key"):tr("OmniRoute stopped")}</div>}
+    {showOmni&&<div className={cx("connection",omni===true?"ok":"bad")} title={omni===true?tr("OmniRoute is answering."):omni==="key"?tr("OmniRoute is running but needs an API key: make one in OmniRoute → API Manager and put it in Settings → AI & OmniRoute. Until then the direct APIs (Groq, Gemini…) answer, if you pick them in the list."):tr("OmniRoute is not answering. Pick a model from a direct API (Groq, Gemini…) in the list, or turn on the automatic fallback.")}>{omni===true?<Wifi size={15}/>:<WifiOff size={15}/>} {omni===true?tr("OmniRoute connected"):omni==="key"?tr("OmniRoute needs an API key"):omni==="offline"?tr("Can't reach the server, reconnecting…"):tr("OmniRoute stopped")}</div>}
     <ThemeSwitch/>
     <LanguageMenu/>
     <button className="topAction" onClick={onShare} disabled={!current} title={tr("Copy the chat to the clipboard")}><Share2 size={16}/> <span>{tr("Copy chat")}</span></button>
@@ -794,6 +795,33 @@ function imageProvidersText(){return "Pick who makes the picture under the messa
 const makerKey=(kind)=>`serasmart-media-maker-${kind}`;
 function savedMaker(kind){try{return localStorage.getItem(makerKey(kind))||""}catch{return ""}}
 function saveMaker(kind,value){try{if(value)localStorage.setItem(makerKey(kind),value);else localStorage.removeItem(makerKey(kind))}catch{}}
+// Video length (0.7.27): one generation, up to the plan's seconds (free tier 6, Owner / no credits 30). The number
+// written in the message ("a 10 second video") wins over the menu.
+const VIDEO_LENGTHS=[4,6,8,10,15,20,30],VIDEO_LEN_KEY="serasmart-video-seconds";
+let videoMaxCache=null;
+function videoMaxSeconds(){
+  if(videoMaxCache)return videoMaxCache;
+  videoMaxCache=api("/api/credits?peek=1").then(d=>!d?.enabled||d.unlimited?30:d.plan&&d.features?.videoSeconds>0?d.features.videoSeconds:6).catch(()=>6);
+  return videoMaxCache;
+}
+function savedVideoSeconds(){try{return Number(localStorage.getItem(VIDEO_LEN_KEY))||0}catch{return 0}}
+function videoSecondsFor(prompt,max){
+  const m=String(prompt||"").match(/(\d{1,2})\s*(?:-\s*)?(?:s\b|sec\b|secs\b|second|seconds|secunde|secundă|secunda|segundos|secondes|sekunden)/i);
+  const asked=m?Number(m[1]):savedVideoSeconds()||6;
+  return Math.max(1,Math.min(max||30,asked));
+}
+function VideoLengthPick() {
+  useLanguage();
+  const [max,setMax]=useState(null),[value,setValue]=useState(()=>savedVideoSeconds()||6);
+  useEffect(()=>{let live=true;videoMaxSeconds().then(m=>{if(live)setMax(m)});return()=>{live=false}},[]);
+  const options=VIDEO_LENGTHS.filter(n=>n<=(max||6));
+  const shown=options.includes(value)?value:options[options.length-1]||6;
+  return <label className="makerPick lengthPick"><span>{tr("Length")}</span>
+    <select value={shown} disabled={max===null} onChange={e=>{const n=Number(e.target.value);setValue(n);try{localStorage.setItem(VIDEO_LEN_KEY,String(n))}catch{}}}>
+      {options.map(n=><option key={n} value={n}>{tr("{n} seconds",{n})}</option>)}
+    </select>
+  </label>;
+}
 function MediaMakerPick({kind}) {
   const [options,setOptions]=useState(null),[value,setValue]=useState(()=>savedMaker(kind));
   useEffect(()=>{
@@ -1020,7 +1048,7 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
       <div className="composerLine">
         <textarea ref={ta} value={draft} onChange={e=>{setDraft(e.target.value);setMentionClosedFor(null)}} onPaste={pasteIntoComposer} spellCheck={true} aria-label={tr("Message {brand}",{brand:BRAND_NAME})} placeholder={placeholder} onKeyDown={onKeyDown}/>
       </div>
-      {mediaMode&&<div className="makerRow"><MediaMakerPick kind={mediaMode}/></div>}
+      {mediaMode&&<div className="makerRow"><MediaMakerPick kind={mediaMode}/>{mediaMode==="video"&&<VideoLengthPick/>}</div>}
       {/* One toolbar under the text, as in the big chat apps: attach and modes on the left, voice and send on the right. */}
       <div className="composerTools">
         <div className="attachWrap" ref={attachRef}><button className="composerIcon" onClick={()=>setMenu(v=>!v)} title={tr("Files and tools")} aria-label={tr("Files and tools")} aria-haspopup="menu" aria-expanded={menu}><Plus size={20}/></button>{menu&&<div className="attachMenu" role="menu">
@@ -1955,7 +1983,7 @@ function App() {
     async function poll(){
       if(document.hidden)return;
       try{const r=await fetch(`${GATEWAY}/health`,{signal:AbortSignal.timeout(7000)});const h=await r.json();if(stopped)return;setOmni(h.omni?true:h.omniNeedsKey?"key":false);setCloudConfigured(!!h.cloudConfigured)}
-      catch{if(!stopped)setOmni(false)}
+      catch{if(!stopped)setOmni("offline")}
     }
     poll();
     const id=setInterval(poll,8000);
@@ -2126,7 +2154,8 @@ function App() {
     try{
       let message;
       try{
-        const d=await api(kind==="video"?"/api/generate/video":"/api/generate/image",{method:"POST",body:JSON.stringify({prompt,via:baseConv.model||model||"",maker:savedMaker(kind)||"auto",requestId:base.id,conversationId:convId}),signal:controller.signal});
+        const duration=kind==="video"?videoSecondsFor(prompt,await videoMaxSeconds()):undefined;
+        const d=await api(kind==="video"?"/api/generate/video":"/api/generate/image",{method:"POST",body:JSON.stringify({prompt,via:baseConv.model||model||"",maker:savedMaker(kind)||"auto",duration,requestId:base.id,conversationId:convId}),signal:controller.signal});
         const file={...d.data,type:d.data?.kind||kind,kind:d.data?.kind||kind};
         message={...base,content:d.data?.note||"",attachments:[file],routeInfo:{task:kind==="video"?"video_generation":"image_generation",model:file.model||"",provider:inferModelProvider(file.model||"")}};
         checkCreditNotice();

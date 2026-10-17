@@ -13,7 +13,7 @@ function units() {
   expect(C.PLANS.pro2.credits === 2 * C.PLANS.pro.credits + 130 && Math.round(C.PLANS.max5.credits / C.PLANS.pro.credits) === 5 && Math.round(C.PLANS.business.credits / C.PLANS.pro.credits) === 10, "x2 / x5 / x10 of Pro's credits");
   expect(C.PLANS.business.name === "Pro Max x10" && C.PLANS.business.label === "Business" && C.PLANS.business.seats === 5 && C.PLANS.business.team && C.PLANS.enterprise.api && C.PLANS.enterprise.seats === 15, "Business and Enterprise");
   const video = Object.values(C.PLANS).map((p) => p.videoSeconds);
-  expect(video.join() === "0,6,8,10,15,20,30", "who pays more gets longer video: " + video.join());
+  expect(video.join() === "0,6,8,15,20,30,30", "who pays more gets longer video (0.7.27, one generation, at most 30 s): " + video.join());
   for (const k of ["max5", "business", "enterprise"]) for (const f of ["plugins", "skills", "automations"]) expect(C.PLANS[k][f] === null, `${k}: ${f} unlimited`);
   expect(!C.PLANS.start.imageHd && C.PLANS.plus.imageHd && C.PLANS.start.plugins === 0 && C.PLANS.plus.plugins === 3 && C.PLANS.pro.plugins === 10 && C.PLANS.pro2.plugins === null, "HD pictures and connected apps per plan");
   // The old Max (199,99) is Pro x2 now: a wallet saved with it, and the Owner giving it by the old name.
@@ -21,7 +21,7 @@ function units() {
   fs.writeFileSync(path.join(dir, "credits.json"), JSON.stringify({ accounts: { ana: { walletId: "ana", firstSeenAt: Date.now() - 1000 } }, wallets: { ana: { id: "ana", plan: "max", billing: "monthly", startedAt: Date.now() - 1000, extras: [], history: [] } } }));
   const L = C.createCredits(dir);
   let s = L.status("ana");
-  expect(s.plan?.key === "pro2" && s.plan.name === "Pro x2" && s.features.videoSeconds === 10 && s.features.plugins === null && s.features.imageHd === true, "an old Max wallet reads as Pro x2: " + JSON.stringify(s.plan));
+  expect(s.plan?.key === "pro2" && s.plan.name === "Pro x2" && s.features.videoSeconds === 15 && s.features.plugins === null && s.features.imageHd === true, "an old Max wallet reads as Pro x2: " + JSON.stringify(s.plan));
   s = L.setPlan("bob", "max");
   expect(s.plan.key === "pro2", "the old name gives Pro x2");
   expect(C.catalog().plans.length === 7 && C.catalog().videoClipMax === C.VIDEO_CLIP_MAX, "the catalog");
@@ -67,7 +67,7 @@ async function gateway() {
 
 function sources() {
   const gw = fs.readFileSync(path.join(__dirname, "..", "local-gateway.cjs"), "utf8");
-  expect(/Math\.min\(askedDuration,videoMax,creditsLib\.VIDEO_CLIP_MAX\)/.test(gw), "a video is billed for at most one clip's length");
+  expect(/Math\.min\(askedDuration,videoMax,creditsLib\.VIDEO_CLIP_MAX\)/.test(gw), "a video is billed for at most one generation's length");
   const ui = fs.readFileSync(path.join(__dirname, "..", "renderer", "src", "pages", "Usage.jsx"), "utf8");
   for (const f of ["Top models", "HD pictures", "Video generation", "Deep Research", "Connected apps", "Skills", "Automations", "Priority access", "Team admin", "API access"]) expect(ui.includes(`["${f}`), `the plans list «${f}»`);
   expect(/<s>\{tr\(label\)\}<\/s>/.test(ui) && /popular=\{p\.key === "pro"\}/.test(ui) && /toLocaleString\("ro-RO"/.test(ui), "struck through when not included, Pro marked, prices as 1.999,99");

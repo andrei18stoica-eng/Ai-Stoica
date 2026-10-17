@@ -2568,7 +2568,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const headers={"Content-Type":"application/json",Authorization:`Bearer ${key}`,"X-Title":`${BRAND_NAME}`};
     const submit=await fetch("https://openrouter.ai/api/v1/videos",{
       method:"POST",headers,
-      body:JSON.stringify({model,prompt,duration:Math.max(1,Math.min(15,Number(duration||4))),resolution:"720p",aspect_ratio:String(aspectRatio||"16:9"),generate_audio:false}),
+      body:JSON.stringify({model,prompt,duration:Math.max(1,Math.min(creditsLib.VIDEO_LONG_MODELS.test(model)?creditsLib.VIDEO_CLIP_MAX:creditsLib.VIDEO_LONG_FROM,Number(duration||4))),resolution:"720p",aspect_ratio:String(aspectRatio||"16:9"),generate_audio:false}),
       signal:mediaSignal(60000)
     });
     const text=await submit.text();let job={};try{job=JSON.parse(text)}catch{}
@@ -2816,18 +2816,23 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(cfg.videoMode==="fast")return ["pollinations","openrouter","xai","fal","replicate","gemini"];
     return base;
   }
+  // Videos longer than 15 s are made in one generation only by this model (0.7.27: never joined from clips).
+  const LONG_VIDEO_MODEL="bytedance/seedance-2.5";
+  // The longest video an OmniRoute model makes in one generation.
+  const omniVideoMax=(model)=>/veo/i.test(model)?8:creditsLib.VIDEO_LONG_MODELS.test(model)?creditsLib.VIDEO_CLIP_MAX:creditsLib.VIDEO_LONG_FROM;
   async function directVideoAttempts(cfg,prompt,duration,aspectRatio,{withPaid=false}={}){
     const strictFree=cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free";
+    const long=Number(duration)>creditsLib.VIDEO_LONG_FROM;
     const openRouterModel=String(cfg.openRouterVideoModel||"bytedance/seedance-2.0-fast").trim();
     const pollinationsModel=String(cfg.pollinationsVideoModel||"google/veo-3.1-fast").trim();
     const [orFree,pollFree]=strictFree?await Promise.all([openRouterVideoIsFree(cfg,openRouterModel),pollinationsVideoIsFree(cfg,pollinationsModel)]):[true,true];
     const defs={
-      pollinations:{label:"Pollinations",configured:!!String(cfg.pollinationsApiKey||"").trim(),paidRisk:!pollFree,run:()=>directPollinationsVideo(cfg,prompt,duration)},
-      openrouter:{label:"OpenRouter",configured:!!directOpenRouterKey(cfg),paidRisk:!orFree,run:()=>directOpenRouterVideo(cfg,prompt,duration,aspectRatio)},
-      gemini:{label:"Gemini Veo",configured:!!String(cfg.geminiApiKey||"").trim(),paidRisk:true,run:()=>directGeminiVideo(cfg,prompt,duration,aspectRatio)},
-      fal:{label:"fal.ai",configured:!!String(cfg.falApiKey||"").trim(),paidRisk:true,run:()=>directFalVideo(cfg,prompt,duration,aspectRatio)},
-      replicate:{label:"Replicate",configured:!!String(cfg.replicateApiToken||"").trim(),paidRisk:true,run:()=>directReplicateVideo(cfg,prompt,duration,aspectRatio)},
-      xai:{label:"Grok Imagine (xAI)",configured:!!String(cfg.xaiApiKey||"").trim(),paidRisk:true,run:()=>directXaiVideo(cfg,prompt,duration,aspectRatio)}
+      pollinations:{label:"Pollinations",configured:!!String(cfg.pollinationsApiKey||"").trim(),paidRisk:!pollFree,maxSeconds:10,run:()=>directPollinationsVideo(cfg,prompt,duration)},
+      openrouter:{label:long?"OpenRouter · Seedance 2.5":"OpenRouter",configured:!!directOpenRouterKey(cfg),paidRisk:long||!orFree,maxSeconds:long||creditsLib.VIDEO_LONG_MODELS.test(openRouterModel)?creditsLib.VIDEO_CLIP_MAX:creditsLib.VIDEO_LONG_FROM,run:()=>directOpenRouterVideo(long?{...cfg,openRouterVideoModel:LONG_VIDEO_MODEL}:cfg,prompt,duration,aspectRatio)},
+      gemini:{label:"Gemini Veo",configured:!!String(cfg.geminiApiKey||"").trim(),paidRisk:true,maxSeconds:8,run:()=>directGeminiVideo(cfg,prompt,duration,aspectRatio)},
+      fal:{label:"fal.ai",configured:!!String(cfg.falApiKey||"").trim(),paidRisk:true,maxSeconds:10,run:()=>directFalVideo(cfg,prompt,duration,aspectRatio)},
+      replicate:{label:"Replicate",configured:!!String(cfg.replicateApiToken||"").trim(),paidRisk:true,maxSeconds:10,run:()=>directReplicateVideo(cfg,prompt,duration,aspectRatio)},
+      xai:{label:"Grok Imagine (xAI)",configured:!!String(cfg.xaiApiKey||"").trim(),paidRisk:true,maxSeconds:15,run:()=>directXaiVideo(cfg,prompt,duration,aspectRatio)}
     };
     return videoProviderOrder(cfg).map(id=>({id,...defs[id]})).filter(x=>x.configured&&(withPaid||!strictFree||!x.paidRisk)&&mediaProviderAllowed(cfg,"video",x.id));
   }
@@ -3177,6 +3182,13 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const hd=String(size).split("x").some(n=>Number(n)>1024),billModel=requestedModel||makerModel(maker)||via;
       if(hd)requirePlanFeature(req,"imageHd","HD pictures");
       const bill=mediaBill(req,"image",{hd,model:billModel});
+      // 0.7.27: a plan with a daily picture limit (Start: 5) counts them; a failed picture is not counted.
+      const perDay=bill?credits.status(req.user.id).features?.imagesPerDay:null;
+      if(perDay>0){
+        if(quotaUsed(req.user.id,"planImage")>=perDay){credits.release(bill.hold);throw policyFailure(`Your plan includes ${perDay} pictures a day and you have made them all today. They reset tomorrow; the Plus plan has no daily limit.`,429);}
+        quotaAdd(req.user.id,"planImage",1);
+        res.once("close",()=>{if(res.statusCode>=400)quotaAdd(req.user.id,"planImage",-1);});
+      }
       if(bill)mediaSettle(bill,res,"image",{hd,model:billModel},job);else reserveQuota(req,res,"image");
       const freeTier=!quotaUnlimited(req)&&!bill;
       const chosen=requestedModel?null:await chosenMaker(req,"image",maker,freeTier);
@@ -3313,8 +3325,10 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const videoMax=metered(req)?credits.status(req.user.id).features.videoSeconds:0;
       // One clip is at most VIDEO_CLIP_MAX seconds: nobody pays for seconds that do not come out.
       const billSeconds=videoMax>0?Math.min(askedDuration,videoMax,creditsLib.VIDEO_CLIP_MAX):0,billModel=requestedModel||makerModel(maker)||via;
-      const bill=billSeconds?mediaBill(req,"video",{seconds:billSeconds,model:billModel}):null;
-      if(bill)mediaSettle(bill,res,"video",{seconds:billSeconds,model:billModel},job);else reserveQuota(req,res,"video");
+      // Credits follow the model that really made the video (done() sets it): Grok, Veo, Seedance… cost differently.
+      const billOpts={seconds:billSeconds,model:billModel};
+      const bill=billSeconds?mediaBill(req,"video",billOpts):null;
+      if(bill)mediaSettle(bill,res,"video",billOpts,job);else reserveQuota(req,res,"video");
       const freeTier=!quotaUnlimited(req)&&!bill;
       const chosen=requestedModel?null:await chosenMaker(req,"video",maker,freeTier);
       // Free tier: a short video from the free providers, whatever model the chat is on.
@@ -3327,6 +3341,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const done=async(resolved,meta)=>{
         if(signal.aborted)return true;
         const data=await saveGeneratedMedia(req,{...resolved,kind:"video",prompt,...meta});
+        billOpts.model=data.model||meta.model||billOpts.model;
         if(retiredNote)data.note=retiredNote+" Videoclipul e făcut de "+mediaLabel(data.model||meta.model||"")+".";
         if(job){saveJobMessage(job,{content:data.note||"",mediaKind:"video",mediaPrompt:prompt,attachments:[{...data,type:data.kind||"video",kind:data.kind||"video"}],routeInfo:{task:"video_generation",model:data.model||"",provider:data.provider||""}});endJob(job,"done",{attachment:data});}
         if(!res.destroyed&&!res.writableEnded)res.json({data});
@@ -3361,8 +3376,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const videoUrl=String(cfg.baseUrl).replace(/\/+$/,"")+"/videos/generations";
       const videoHeaders={"Content-Type":"application/json",...(cfg.apiKey?{Authorization:"Bearer "+cfg.apiKey}:{})};
       // One attempt: true when the video is saved (or the user cancelled).
+      const tooShort=[];
       const runVideoStep=async(step)=>{
         if(signal.aborted)return true;
+        // One generation, the whole length: a maker that cannot make it is skipped (never a shorter video).
+        const stepMax=step.direct?Number(step.direct.maxSeconds||creditsLib.VIDEO_LONG_FROM):omniVideoMax(step.omni);
+        if(stepMax<duration){tooShort.push(`${step.direct?step.direct.label:step.omni} (${stepMax} s)`);return false;}
         if(step.direct){
           const attempt=step.direct;
           try{
@@ -3412,6 +3431,9 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         for(const step of byCooldown("video",steps2,x=>x.key))if(await runVideoStep(step))return;
       }
       if(preferredVideoDown&&await runPreferredVideo())return;
+      if(tooShort.length&&!errors.length)throw policyFailure(duration>creditsLib.VIDEO_LONG_FROM
+        ?`A ${duration}-second video is made in one go only by Seedance 2.5, through OpenRouter: add an OpenRouter key and allow paid providers in Settings → Video, or ask for ${creditsLib.VIDEO_LONG_FROM} seconds or less. These make shorter videos: ${tooShort.slice(0,6).join(", ")}.`
+        :`None of the available makers does ${duration} seconds in one go (${tooShort.slice(0,6).join(", ")}). Ask for a shorter video or allow Grok Imagine or Seedance in Settings → Video.`,400);
 
       if(!tried&&freeTier)throw policyFailure("Videoclipul gratuit nu este disponibil acum: serverul nu are un serviciu video gratuit conectat. Owner-ul îl pornește conectând «veoaifree-web» în OmniRoute sau cheia Pollinations în Setări.",503);
       if(!tried&&directApisAllowed(req))throw policyFailure(mediaProviders(cfg,"video").size?((retiredNote?retiredNote+" ":"")+"Nu am cu ce face videoclipul."+mediaOnlyHint(cfg,"video",strictFree,madeBy)+" "+errors.slice(0,10).join(" | ")).trim():VIDEO_NEEDS_PROVIDER,400);

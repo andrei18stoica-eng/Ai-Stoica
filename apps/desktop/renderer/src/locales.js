@@ -502,7 +502,7 @@ export const LOCALES = {
   "since {when}": "din {when}",
   "Signing out…": "Se deconectează…",
   "Sign out the other devices": "Deconectează celelalte dispozitive",
-  "Password": "Parola",
+  "Password": "Parolă",
   "Current password": "Parola actuală",
   "New password": "Parola nouă",
   "Again": "Din nou",
@@ -657,7 +657,48 @@ export const LOCALES = {
   "This period's credit parts": "Părțile de credite din această perioadă",
   "Part {n}": "Partea {n}",
   "Your plan, this week's credits and extra credits.": "Planul tău, creditele săptămânii și creditele extra.",
-  "A plan's credits come in four equal parts, one every 7 days counted from the day your plan started (for example, a plan started on a Wednesday gets its credits every Wednesday). What you don't use moves to the next week. At 100% the paid models stop until the next part, or you buy extra credits; meanwhile you keep {n} messages a day on the free models.": "Creditele unui plan vin în patru părți egale, câte una la fiecare 7 zile, numărate din ziua în care a pornit planul (de exemplu, un plan pornit miercuri primește credite în fiecare miercuri). Ce nu folosești trece în săptămâna următoare. La 100% modelele plătite se opresc până la partea următoare sau până cumperi credite extra; între timp ai {n} mesaje pe zi pe modelele gratuite."
+  "A plan's credits come in four equal parts, one every 7 days counted from the day your plan started (for example, a plan started on a Wednesday gets its credits every Wednesday). What you don't use moves to the next week. At 100% the paid models stop until the next part, or you buy extra credits; meanwhile you keep {n} messages a day on the free models.": "Creditele unui plan vin în patru părți egale, câte una la fiecare 7 zile, numărate din ziua în care a pornit planul (de exemplu, un plan pornit miercuri primește credite în fiecare miercuri). Ce nu folosești trece în săptămâna următoare. La 100% modelele plătite se opresc până la partea următoare sau până cumperi credite extra; între timp ai {n} mesaje pe zi pe modelele gratuite.",
+  "Length": "Durată",
+  "{n} seconds": "{n} secunde",
+  "{n} a day": "{n} pe zi",
+  "Email confirmed.": "Email confirmat.",
+  "Email confirmed. Your access is waiting for the Owner's approval.": "Email confirmat. Accesul așteaptă aprobarea Owner-ului.",
+  "We sent you a code by email.": "Ți-am trimis un cod pe email.",
+  "First confirm your email with the code you got. If you cannot find it, look in Spam or ask for a new one.": "Confirmă mai întâi emailul cu codul primit. Dacă nu-l găsești, uită-te și în Spam sau cere unul nou.",
+  "The account was created and is waiting for the Owner's approval.": "Contul a fost creat și așteaptă aprobarea Owner-ului.",
+  "The server did not return a valid session.": "Serverul nu a returnat o sesiune validă.",
+  "We sent you a new code.": "Ți-am trimis un cod nou.",
+  "Back to the default local service. Try signing in again.": "Am revenit la serviciul local implicit. Încearcă din nou autentificarea.",
+  "Chat with every top AI, memory, files, pictures, video and automations.": "Chat cu cele mai bune AI-uri, memorie, fișiere, poze, video și automatizări.",
+  "Your apps connected: the AI reads and works in them with your approval.": "Aplicațiile tale conectate: AI-ul citește și lucrează în ele cu acordul tău.",
+  "A personal account, confirmed by email and protected by your password.": "Cont personal, confirmat pe email și protejat cu parola ta.",
+  "Sign in": "Autentificare",
+  "Create account": "Creează cont",
+  "Confirm your email": "Confirmă emailul",
+  "We sent a 6-digit code to {email}. If you do not see it, look in Spam. The code expires in 15 minutes.": "Am trimis un cod de 6 cifre la {email}. Dacă nu-l vezi, uită-te și în Spam. Codul expiră în 15 minute.",
+  "Code from the email": "Cod din email",
+  "Working…": "Se procesează…",
+  "Confirm email": "Confirmă emailul",
+  "Send the code again ({s}s)": "Retrimite codul ({s}s)",
+  "Send the code again": "Retrimite codul",
+  "Back": "Înapoi",
+  "Welcome back": "Bine ai revenit",
+  "Create your {brand} account": "Creează contul {brand}",
+  "You get a code by email to confirm the address, then the Owner approves the account.": "Primești un cod pe email ca să confirmi adresa, apoi contul e aprobat de Owner.",
+  "The account is created on the {brand} server.": "Contul se creează pe serverul {brand}.",
+  "The account is created on this computer and you can use it right away.": "Contul se creează pe acest calculator și îl poți folosi imediat.",
+  "Use the email of your {brand} account.": "Folosește emailul contului tău {brand}.",
+  "Your name": "Numele tău",
+  "At least 10 characters": "Minimum 10 caractere",
+  "Your account password": "Parola contului",
+  "Use the default local service": "Folosește serviciul local implicit",
+  "Sign in to {brand}": "Intră în {brand}",
+  "Send the access request": "Trimite cererea de acces",
+  "Create the account": "Creează contul",
+  "The Owner approves accounts and decides which AI services they can use.": "Owner-ul controlează aprobarea conturilor și permisiunile serviciilor AI.",
+  "Accounts and chats are kept on the {brand} server.": "Conturile și conversațiile sunt păstrate pe serverul {brand}.",
+  "Accounts and chats are kept on this computer.": "Conturile și conversațiile sunt păstrate pe acest calculator.",
+  "Can't reach the server, reconnecting…": "Serverul nu răspunde, mă reconectez…"
  },
  "es": {
   "AI model: {model}": "Modelo de IA: {model}",
@@ -848,7 +889,9 @@ export const LOCALES = {
   "Install": "Instalar",
   "Hide the steps": "Ocultar los pasos",
   "How to install": "Cómo instalar",
-  "Close": "Cerrar"
+  "Close": "Cerrar",
+  "Length": "Duración",
+  "{n} seconds": "{n} segundos"
  },
  "fr": {
   "AI model: {model}": "Modèle d'IA : {model}",
@@ -1039,7 +1082,9 @@ export const LOCALES = {
   "Install": "Installer",
   "Hide the steps": "Masquer les étapes",
   "How to install": "Comment installer",
-  "Close": "Fermer"
+  "Close": "Fermer",
+  "Length": "Durée",
+  "{n} seconds": "{n} secondes"
  },
  "de": {
   "AI model: {model}": "KI-Modell: {model}",
@@ -1230,6 +1275,8 @@ export const LOCALES = {
   "Install": "Installieren",
   "Hide the steps": "Schritte ausblenden",
   "How to install": "So installierst du",
-  "Close": "Schließen"
+  "Close": "Schließen",
+  "Length": "Länge",
+  "{n} seconds": "{n} Sekunden"
  }
 };
