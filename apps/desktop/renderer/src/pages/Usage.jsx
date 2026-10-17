@@ -142,7 +142,7 @@ export function UsagePage({ onClose }) {
   useEffect(() => () => { mounted.current = false; }, []);
   useEffect(() => { api("/api/credits?peek=1").then((x) => mounted.current && setD(x)).catch((e) => mounted.current && setError(e.message)); }, []);
   const cat = d?.catalog;
-  return <ToolShell title={tr("Usage")} subtitle={tr("Your plan, this week's credits and what each action costs.")} onClose={onClose} className="pageModal usagePage">
+  return <ToolShell title={tr("Usage")} subtitle={tr("Your plan, this week's credits and extra credits.")} onClose={onClose} className="pageModal usagePage">
     <div className="pageBody">
       {error && <div className="emptyState small">{error}</div>}
       {!d && !error && <div className="emptyState small">{tr("Loading…")}</div>}
@@ -171,12 +171,6 @@ export function UsagePage({ onClose }) {
           <div className="planGrid">{cat.plans.map((p) => <PlanCard key={p.key} plan={p} current={d.plan?.key === p.key} popular={p.key === "pro"} />)}<ExtraCreditsCard min={cat.minPack} /></div>
           <p className="settingsHelp">{tr("Without a plan: {n} messages a day on the free models, after a {days}-day trial with {credits} credits. Card payments open soon; until then plans are given by the Owner.", { n: cat.free.dailyMessages, days: cat.trial.days, credits: num(cat.trial.credits) })}</p>
           <p className="settingsHelp">{tr("A plan's credits come in four equal parts, one every 7 days counted from the day your plan started (for example, a plan started on a Wednesday gets its credits every Wednesday). What you don't use moves to the next week. At 100% the paid models stop until the next part, or you buy extra credits; {n} messages a day stay on the free models.", { n: cat.freeDaily.planExhausted })}</p>
-        </section>
-        <section className="usageSection">
-          <h3>{tr("What things cost")}</h3>
-          <div className="usageCosts">
-            {[["Message, fast model", cat.costs.fast], ["Web search", `+${cat.costs.web}`], ["Message, advanced model", cat.costs.advanced], ["Picture", cat.costs.image], ["Message, top model", cat.costs.top], ["Picture HD", cat.costs.imageHd], ["Short video (~6 s)", tr("from {n}", { n: cat.costs.videoBase })], ["Voice to text", tr("{n} a minute", { n: cat.costs.transcribeMinute })]].map(([k, v]) => <div key={k}><span>{tr(k)}</span><b>{v}</b></div>)}
-          </div>
         </section>
         {d.enabled && !d.unlimited && d.history?.length > 0 && <section className="usageSection">
           <h3><Clock size={17} /> {tr("Recent")}</h3>

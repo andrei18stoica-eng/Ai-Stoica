@@ -656,7 +656,8 @@ export const LOCALES = {
   "Credits used up": "Creditele s-au terminat",
   "See plans": "Vezi planurile",
   "This period's credit parts": "Părțile de credite din această perioadă",
-  "Part {n}": "Partea {n}"
+  "Part {n}": "Partea {n}",
+  "Your plan, this week's credits and extra credits.": "Planul tău, creditele săptămânii și creditele extra."
  },
  "es": {
   "AI model: {model}": "Modelo de IA: {model}",
