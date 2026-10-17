@@ -68,7 +68,7 @@ function defaults() {
     videoMode: "fast",
     videoModel: "bytedance/seedance-2.0-fast",
     videoCostPolicy: "free_only",
-    videoProviderOrder: "pollinations,openrouter,gemini,fal,replicate,openai,xai",
+    videoProviderOrder: "pollinations,openrouter,gemini,fal,replicate,xai",
     geminiVideoModel: "veo-3.1-fast-generate-preview",
     falVideoModel: "fal-ai/ltx-video",
     replicateVideoModel: "wan-video/wan-2.2-t2v-fast",
@@ -76,8 +76,9 @@ function defaults() {
     xaiApiKey: "",
     blockedProviders: "cerebras",
     sharedCombos: "",
-    imageProviders: "gemini",
-    videoProviders: "gemini",
+    imageProviders: "",
+    videoProviders: "",
+    mediaMakers: 2,
     openRouterApiKey: "",
     cerebrasApiKey: "",
     groqApiKey: "",
@@ -120,6 +121,12 @@ function defaults() {
     serverUser: "root",
     serverKeyPath: ""
   };
+}
+function mediaMakersValue(cfg, key) {
+  if (typeof cfg[key] !== "string") return "";
+  const list = cfg[key].split(",").map(x => x.trim().toLowerCase()).filter(x => /^[a-z0-9@-]{2,20}$/.test(x) && !(key === "videoProviders" && x === "openai"));
+  const value = list.join(",");
+  return cfg.mediaMakers !== 2 && value === "gemini" ? "" : value;
 }
 function loadConfig() {
   let raw;
@@ -168,13 +175,14 @@ function saveConfig(input) {
     blockedProviders: typeof cfg.blockedProviders === "string" ? cfg.blockedProviders.split(",").map(x => x.trim().toLowerCase()).filter(x => /^[a-z0-9@-]{2,20}$/.test(x)).join(",") : "cerebras",
     // OmniRoute combinations the other accounts may use too (Setări → API-uri AI); "" = only the Owner's.
     sharedCombos: comboNames(cfg.sharedCombos),
-    // Who makes pictures and videos (Poze / Video → «Făcute de»); "" lets every provider in. Older configs: Gemini only.
-    imageProviders: typeof cfg.imageProviders === "string" ? cfg.imageProviders.split(",").map(x => x.trim().toLowerCase()).filter(x => /^[a-z0-9@-]{2,20}$/.test(x)).join(",") : "gemini",
-    videoProviders: typeof cfg.videoProviders === "string" ? cfg.videoProviders.split(",").map(x => x.trim().toLowerCase()).filter(x => /^[a-z0-9@-]{2,20}$/.test(x)).join(",") : "gemini",
+    // Who makes pictures and videos (Poze / Video → «Făcute de»); "" = every maker. 0.7.24: the old default "gemini",
+    // saved before the choice existed (no mediaMakers), becomes every maker once; OpenAI is never a video maker (Sora closed).
+    imageProviders: mediaMakersValue(cfg, "imageProviders"),
+    videoProviders: mediaMakersValue(cfg, "videoProviders"),
+    mediaMakers: 2,
     xaiModels: String(cfg.xaiModels || DIRECT_MODEL_DEFAULTS.xaiModels).trim(),
     xaiImageModel: String(cfg.xaiImageModel || "grok-imagine-image").trim(),
     xaiVideoModel: String(cfg.xaiVideoModel || "grok-imagine-video").trim(),
-    openAiVideoModel: String(cfg.openAiVideoModel || "sora-2").trim(),
     geminiImageModel: String(cfg.geminiImageModel || "gemini-3.1-flash-image").trim(),
     cerebrasModel: String(cfg.cerebrasModel || DIRECT_MODEL_DEFAULTS.cerebrasModel).trim(),
     groqModel: String(cfg.groqModel || DIRECT_MODEL_DEFAULTS.groqModel).trim(),

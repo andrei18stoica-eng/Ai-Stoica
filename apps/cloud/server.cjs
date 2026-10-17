@@ -8,6 +8,7 @@ const port = Number(process.env.PORT || 8787);
 const host = process.env.HOST || "0.0.0.0";
 const dataDir = process.env.DATA_DIR || "/data";
 const env = name => String(process.env[name] || "").trim();
+const mediaMakersEnv = name => { const v = env(name).toLowerCase().replace(/\s+/g, ""); return v === "gemini" ? "" : v; };
 
 // "Ai principal"/"Serasmart AI" as the default are dropped: an empty model lets the gateway choose, and it picks your first
 // OmniRoute combination ("Ai principal" when you have it).
@@ -55,9 +56,10 @@ function envConfig() {
     blockedProviders: process.env.SERASMART_BLOCKED_PROVIDERS === undefined ? undefined : env("SERASMART_BLOCKED_PROVIDERS"),
     // OmniRoute combinations the other accounts may use too (Setări → API-uri AI → «Combinații pentru toate conturile»).
     sharedCombos: env("SERASMART_SHARED_COMBOS"),
-    // Who makes pictures and videos (Setări → Poze / Video → «Făcute de»). Not set: Gemini only; empty: every provider.
-    imageProviders: process.env.SERASMART_IMAGE_PROVIDERS === undefined ? undefined : env("SERASMART_IMAGE_PROVIDERS"),
-    videoProviders: process.env.SERASMART_VIDEO_PROVIDERS === undefined ? undefined : env("SERASMART_VIDEO_PROVIDERS"),
+    // Who makes pictures and videos (Setări → Poze / Video → «Făcute de»). 0.7.24: not set or empty = every maker; "gemini",
+    // the old default written in .env files, counts as every maker too ("Doar Gemini" is now chosen in Setări on the site).
+    imageProviders: mediaMakersEnv("SERASMART_IMAGE_PROVIDERS"),
+    videoProviders: mediaMakersEnv("SERASMART_VIDEO_PROVIDERS"),
     // «Făcute de» is tried first; when those makers fail the other working providers are tried. true: only them.
     mediaStrict: env("SERASMART_MEDIA_STRICT").toLowerCase() === "true",
     // Plans and credits (0.7.22): off until the Owner turns them on. The Owner is never charged.

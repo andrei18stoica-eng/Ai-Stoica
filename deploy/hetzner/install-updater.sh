@@ -9,6 +9,9 @@ set -euo pipefail
 # The checkout this script lives in (/opt/serasmart, or /opt/ai-stoica on a server not yet moved); SERASMART_ROOT
 # (or the older AI_STOICA_ROOT) overrides it.
 ROOT="${SERASMART_ROOT:-${AI_STOICA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}}"
+# The real folder, not the /opt/ai-stoica link left by the move: its owner (stat) is the user git runs as, and a link
+# belongs to root, which has no deploy key ("git fetch a eșuat" on 2026-10-17).
+ROOT="$(cd "$ROOT" 2>/dev/null && pwd -P || printf "%s" "$ROOT")"
 DIR="${SERASMART_UPDATE_DIR:-${AI_STOICA_UPDATE_DIR:-/var/lib/serasmart-update}}"
 UNITS="${SERASMART_SYSTEMD_DIR:-${AI_STOICA_SYSTEMD_DIR:-/etc/systemd/system}}"
 WEB_UID="${SERASMART_WEB_UID:-${AI_STOICA_WEB_UID:-1000}}"   # user "node" in the apps/cloud image

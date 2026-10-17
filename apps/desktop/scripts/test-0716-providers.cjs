@@ -1,6 +1,6 @@
 // 0.7.16, at the Owner's request: Cerebras is left out of the chat unless turned back on (Settings → API-uri AI →
 // "Furnizori folosiți"), any provider can be left out the same way, and Grok (xAI) works as a direct API for chat,
-// pictures and video. Pictures also come from Gemini ("Nano Banana") and video from OpenAI Sora.
+// pictures and video. Pictures also come from Gemini ("Nano Banana"). OpenAI makes no video since 0.7.24 (Sora closed).
 const fs = require("fs"), http = require("http"), os = require("os"), path = require("path");
 const { startLocalGateway } = require("../local-gateway.cjs");
 
@@ -39,7 +39,8 @@ async function main() {
     baseUrl: `http://127.0.0.1:${omniPort}/v1`, apiKey: "sk-omni", model: "", webSearchEnabled: false, githubAutoContext: false, ownerEmail: "owner@example.com",
     directChatEnabled: true, directChatCostPolicy: "allow_paid", directChatProviderOrder: "cerebras,groq,xai",
     cerebrasApiKey: "k-cerebras", groqApiKey: "k-groq", xaiApiKey: "xai-test", openAiApiKey: "sk-openai-test", geminiApiKey: "AIza-test",
-    pollinationsFreeEnabled: false, imageCostPolicy: "allow_paid", videoCostPolicy: "allow_paid"
+    pollinationsFreeEnabled: false, imageCostPolicy: "allow_paid", videoCostPolicy: "allow_paid",
+    imageProviders: "gemini", videoProviders: "gemini"
   };
   const calls = { cerebras: 0, groq: 0, xaiChat: [], xaiImage: [], geminiImage: [], xaiVideo: 0, xaiPoll: 0, sora: [], soraPoll: 0, soraContent: 0 };
   const realFetch = globalThis.fetch;
@@ -143,7 +144,7 @@ async function main() {
 
     // Pictures: Grok Imagine.
     const image = async () => { const res = await call("/api/generate/image", { method: "POST", token, body: { prompt: "Un pătrat albastru" } }); return { status: res.status, j: await res.json() }; };
-    // (Pictures and video are Gemini-only by default; test-0716-gemini-media.cjs covers that. Here every provider is in.)
+    // (Gemini only is covered by test-0716-gemini-media.cjs. Here every provider is in, the default since 0.7.24.)
     Object.assign(cfg, { imageProviders: "", videoProviders: "", imageProviderOrder: "xai", imageProviderMode: "auto" });
     let out = await image();
     expect(out.status === 200 && out.j.data?.kind === "image" && out.j.data.model === "xai/grok-imagine-image" && calls.xaiImage[0]?.response_format === "b64_json", "Grok Imagine picture: " + JSON.stringify(out));
@@ -152,14 +153,14 @@ async function main() {
     out = await image();
     expect(out.status === 200 && out.j.data?.model === "gemini/good-model" && calls.geminiImage.join() === "missing-model,good-model", "Gemini picture: " + JSON.stringify({ out, calls: calls.geminiImage }));
 
-    // Video: Grok Imagine Video (start, poll, download) and OpenAI Sora (start, poll, download /content with the key).
+    // Video: Grok Imagine Video (start, poll, download). OpenAI is no video maker any more (Sora closed on 24.09.2026).
     const video = async () => { const res = await call("/api/generate/video", { method: "POST", token, body: { prompt: "Un val pe plajă", duration: 5, aspectRatio: "16:9" } }); return { status: res.status, j: await res.json() }; };
     Object.assign(cfg, { videoProviderOrder: "xai", videoMode: "auto" });
     out = await video();
     expect(out.status === 200 && out.j.data?.kind === "video" && out.j.data.model === "xai/grok-imagine-video" && calls.xaiVideo === 1 && calls.xaiPoll >= 1, "Grok video: " + JSON.stringify({ out, calls }));
     Object.assign(cfg, { videoProviderOrder: "openai" });
     out = await video();
-    expect(out.status === 200 && out.j.data?.model === "openai/sora-2" && calls.sora[0]?.model === "sora-2" && calls.sora[0]?.seconds === "4" && calls.soraContent === 1, "Sora video: " + JSON.stringify({ out, calls }));
+    expect(out.status === 200 && out.j.data?.model === "xai/grok-imagine-video" && calls.sora.length === 0, "no Sora: OpenAI in the order is skipped: " + JSON.stringify({ out, calls }));
 
     // Paid pictures and video stay off under «Nu permite costuri directe».
     Object.assign(cfg, { imageCostPolicy: "free_only", imageProviderOrder: "xai" });
@@ -171,7 +172,7 @@ async function main() {
     await gw.close(); omni.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
-  console.log("0.7.16 providers (Cerebras off, Grok, Gemini pictures, Sora) OK");
+  console.log("0.7.16 providers (Cerebras off, Grok, Gemini pictures, no Sora) OK");
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

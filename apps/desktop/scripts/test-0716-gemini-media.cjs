@@ -36,6 +36,8 @@ async function main() {
     baseUrl: `http://127.0.0.1:${omniPort}/v1`, apiKey: "sk-omni", model: "", webSearchEnabled: false, githubAutoContext: false, ownerEmail: "owner@example.com",
     geminiApiKey: "AIza-test", xaiApiKey: "xai-test", openAiApiKey: "sk-openai-test", pollinationsFreeEnabled: true,
     imageCostPolicy: "allow_paid", videoCostPolicy: "allow_paid",
+    // «Doar Gemini», chosen (since 0.7.24 every maker is the default).
+    imageProviders: "gemini", videoProviders: "gemini",
     // 0.7.18: «Făcute de» falls back to the other providers by default; these checks keep the strict rule (only them).
     mediaStrict: true
   };
@@ -127,11 +129,11 @@ async function main() {
   expect(/imageProviders:[^\n]*SERASMART_IMAGE_PROVIDERS/.test(server) && /videoProviders:[^\n]*SERASMART_VIDEO_PROVIDERS/.test(server), "apps/cloud/server.cjs must read SERASMART_IMAGE_PROVIDERS / SERASMART_VIDEO_PROVIDERS");
   for (const f of [["apps", "cloud", "docker-compose.yml"], ["deploy", "hetzner", "docker-compose.yml"]]) {
     const text = fs.readFileSync(path.join(repo, ...f), "utf8");
-    expect(text.includes("SERASMART_IMAGE_PROVIDERS: ${SERASMART_IMAGE_PROVIDERS-${AI_STOICA_IMAGE_PROVIDERS-gemini}}") && text.includes("SERASMART_VIDEO_PROVIDERS: ${SERASMART_VIDEO_PROVIDERS-${AI_STOICA_VIDEO_PROVIDERS-gemini}}"), f.join("/") + ": Gemini by default, an empty value kept");
+    expect(text.includes("SERASMART_IMAGE_PROVIDERS: ${SERASMART_IMAGE_PROVIDERS-${AI_STOICA_IMAGE_PROVIDERS-}}") && text.includes("SERASMART_VIDEO_PROVIDERS: ${SERASMART_VIDEO_PROVIDERS-${AI_STOICA_VIDEO_PROVIDERS-}}"), f.join("/") + ": every maker by default (0.7.24)");
   }
   const { EDITABLE } = require("../lib/serversettings.cjs");
   expect(EDITABLE.includes("imageProviders") && EDITABLE.includes("videoProviders"), "the Owner can change them on the site");
-  console.log("0.7.16 pictures by Gemini Nano Banana, videos by Gemini Veo OK");
+  console.log("0.7.16 «Doar Gemini»: pictures by Nano Banana, videos by Veo OK");
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
