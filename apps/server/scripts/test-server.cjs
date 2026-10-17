@@ -38,7 +38,12 @@ function query(sql, params = []) {
   if (/^\s*DELETE FROM email_codes WHERE user_id=\$1/.test(q)) { db.codes.delete(params[0]); return result([]); }
   if (/^\s*UPDATE users SET email_verified_at=NOW\(\)/.test(q)) { const u = db.users.find(x => x.id === params[0]); if (u) u.email_verified_at = new Date(); return result([]); }
   if (/^\s*DELETE FROM users WHERE id=\$1/.test(q)) { db.users = db.users.filter(x => x.id !== params[0]); return result([]); }
-  if (/^\s*INSERT INTO sessions/.test(q)) { db.sessions.set(params[0], { user_id: params[1], expires_at: params[2] }); return result([]); }
+  if (/^\s*INSERT INTO sessions/.test(q)) { db.sessions.set(params[0], { user_id: params[1], expires_at: params[2], user_agent: params[3], ip_address: params[4], created_at: new Date() }); return result([]); }
+  if (/^\s*SELECT token_hash, created_at, expires_at, user_agent, ip_address FROM sessions WHERE user_id=\$1/.test(q)) return result([...db.sessions].filter(([, s]) => s.user_id === params[0] && s.expires_at > new Date()).map(([token_hash, s]) => ({ token_hash, ...s })));
+  if (/^\s*DELETE FROM sessions WHERE user_id=\$1 AND LEFT\(token_hash,16\)=\$2 AND token_hash<>\$3/.test(q)) { let n = 0; for (const [h, s] of db.sessions) if (s.user_id === params[0] && h.slice(0, 16) === params[1] && h !== params[2]) { db.sessions.delete(h); n++; } return { rows: [], rowCount: n }; }
+  if (/^\s*DELETE FROM sessions WHERE user_id=\$1 AND token_hash<>\$2/.test(q)) { let n = 0; for (const [h, s] of db.sessions) if (s.user_id === params[0] && h !== params[1]) { db.sessions.delete(h); n++; } return { rows: [], rowCount: n }; }
+  if (/^\s*UPDATE users SET name=\$2/.test(q)) { const u = db.users.find(x => x.id === params[0]); if (u) u.name = params[1]; return result([]); }
+  if (/^\s*UPDATE users SET password_hash=\$2/.test(q)) { const u = db.users.find(x => x.id === params[0]); if (u) u.password_hash = params[1]; return result([]); }
   if (/FROM sessions s\s+JOIN users u/.test(q)) {
     const s = db.sessions.get(params[0]);
     const u = s && s.expires_at > new Date() && db.users.find(x => x.id === s.user_id);
@@ -258,6 +263,34 @@ function freePort() {
   assert.equal(r.status, 400, "only automation notices may be sent this way");
   r = await call("POST", "/api/notifications/self", { body: { type: "automation", title: "x" } });
   assert.equal(r.status, 401, "a session is needed");
+
+  // 0.7.23: the account's own sessions, password and deletion.
+  const mariaA = (await call("POST", "/auth/login", { body: { email: "maria@gmail.com", password: "parola123" } })).data.token;
+  const mariaB = (await call("POST", "/auth/login", { body: { email: "maria@gmail.com", password: "parola123" } })).data.token;
+  r = await call("PATCH", "/auth/profile", { token: mariaA, body: { name: "  Maria   Popescu " } });
+  assert.ok(r.status === 200 && db.users.find(u => u.email === "maria@gmail.com").name === "Maria Popescu", "an account renames itself");
+  assert.equal((await call("PATCH", "/auth/profile", { token: mariaA, body: { name: " " } })).status, 400, "the name cannot be empty");
+  r = await call("GET", "/auth/sessions", { token: mariaA });
+  assert.ok(r.status === 200 && r.data.data.length >= 2 && r.data.data.filter(x => x.current).length === 1 && r.data.data.every(x => /^[0-9a-f]{16}$/.test(x.id)), "an account lists its sessions");
+  const other = r.data.data.find(x => !x.current);
+  r = await call("DELETE", "/auth/sessions/" + other.id, { token: mariaA });
+  assert.equal(r.data.revoked, 1, "one session is revoked");
+  r = await call("POST", "/auth/sessions/revoke-others", { token: mariaA });
+  assert.equal((await call("GET", "/auth/me", { token: mariaB })).status, 401, "the other device is signed out");
+  assert.equal((await call("GET", "/auth/me", { token: mariaA })).status, 200, "this device stays signed in");
+  r = await call("POST", "/auth/password", { token: mariaA, body: { current: "gresita1", next: "parolanoua123" } });
+  assert.equal(r.status, 401, "the current password is checked");
+  r = await call("POST", "/auth/password", { token: mariaA, body: { current: "parola123", next: "scurt" } });
+  assert.equal(r.status, 400, "a short new password is refused");
+  r = await call("POST", "/auth/password", { token: mariaA, body: { current: "parola123", next: "parolanoua123" } });
+  assert.equal(r.status, 200, "the password changes");
+  assert.equal((await call("POST", "/auth/login", { body: { email: "maria@gmail.com", password: "parolanoua123" } })).status, 200, "and the new one signs in");
+  r = await call("DELETE", "/auth/me", { token: owner, body: { password: "x" } });
+  assert.equal(r.status, 400, "the Owner cannot delete the Owner account");
+  r = await call("DELETE", "/auth/me", { token: mariaA, body: { password: "gresita1" } });
+  assert.equal(r.status, 401, "deleting the account needs the password");
+  r = await call("DELETE", "/auth/me", { token: mariaA, body: { password: "parolanoua123" } });
+  assert.ok(r.status === 200 && !db.users.some(u => u.email === "maria@gmail.com"), "an account deletes itself");
 
   r = await call("POST", "/auth/logout", { token: owner });
   assert.equal(r.status, 200);

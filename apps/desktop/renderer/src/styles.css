@@ -218,64 +218,64 @@
 
 
 /* v0.6.2 — Serasmart AI plugin marketplace, ChatGPT-inspired layout */
-.toolModal:has(.stoicaPluginStore){width:min(1080px,98vw);max-height:92vh;background:#0e1117;border-color:#252b34;padding:18px 22px}
-.toolModal:has(.stoicaPluginStore)>.toolHead{padding:0;border:0;height:0;overflow:visible;position:relative;z-index:5}
-.toolModal:has(.stoicaPluginStore)>.toolHead>div{display:none}
-.toolModal:has(.stoicaPluginStore)>.toolHead>.iconOnly{position:absolute;right:0;top:0}
-.stoicaPluginStore{padding:2px 4px 12px;color:#e7e8ea}
-.stoicaPluginTop{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;min-height:46px;margin-bottom:12px}
-.stoicaPluginMainTabs{grid-column:2;display:flex;gap:6px;padding:4px;background:#161a20;border-radius:12px}
-.stoicaPluginMainTabs button{border:0;background:transparent;color:#a5abb4;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:650;cursor:pointer}
-.stoicaPluginMainTabs button.active{background:#242a32;color:#f4f5f6;box-shadow:0 1px 0 #ffffff0a inset}
-.stoicaAddButton{grid-column:3;justify-self:end;margin-right:40px;border:1px solid #39404a;background:#252a31;color:#f0f2f4;border-radius:10px;padding:8px 11px;display:flex;gap:6px;align-items:center;cursor:pointer;font-size:12px}
-@media (hover:hover) and (pointer:fine){.stoicaAddButton:hover{background:#2d333c}}
-.stoicaPluginSearch{height:44px;border:1px solid #313740;background:#12161c;border-radius:13px;display:flex;align-items:center;gap:9px;padding:0 13px;color:#858d98;margin:0 0 16px}
-.stoicaPluginSearch:focus-within{border-color:#555f6b;box-shadow:0 0 0 1px #555f6b33}
-.stoicaPluginSearch input{flex:1;border:0;outline:0;background:transparent;color:#edf0f2;font-size:14px}
-.stoicaPluginSearch input::placeholder{color:#747c87}
-.stoicaInstalled{margin:0 0 14px}
-.stoicaSectionTitle{border:0;background:transparent;color:#e8e9eb;font-size:14px;font-weight:700;padding:5px 0 8px;cursor:default;text-align:left}
-.stoicaSectionTitle span{color:#767e89;font-size:18px;margin-left:3px}
-.stoicaInstalledIcons{display:flex;gap:10px;flex-wrap:wrap}
-.stoicaInstalledIcon{width:38px;height:38px;border:0;background:#1a1f26;border-radius:10px;color:#edf0f4;display:grid;place-items:center;cursor:pointer}
-@media (hover:hover) and (pointer:fine){.stoicaInstalledIcon:hover{background:#242b34}}
-.stoicaInstalledIcon span{font-size:10px;font-weight:800}
-.stoicaScopeTabs{display:flex;gap:4px;margin:2px 0 16px}
-.stoicaScopeTabs button{border:0;background:transparent;color:#8e96a1;padding:7px 11px;border-radius:8px;cursor:pointer;font-size:12px}
-.stoicaScopeTabs button.active{background:#252a31;color:#f0f1f3}
-.stoicaCatalog{display:grid;gap:22px}
-.stoicaPluginSection{min-width:0}
-.stoicaPluginGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:26px;row-gap:2px}
-.stoicaPluginCard{width:100%;min-width:0;display:grid;grid-template-columns:38px minmax(0,1fr) 28px;gap:11px;align-items:center;border:0;background:transparent;color:#e7e9ec;padding:8px 7px;border-radius:10px;text-align:left;cursor:pointer}
-@media (hover:hover) and (pointer:fine){.stoicaPluginCard:hover{background:#171c23}}
-.stoicaPluginLogo{width:36px;height:36px;border-radius:9px;background:#171c23;border:1px solid #2c333d;display:grid;place-items:center;overflow:hidden;color:#e9edf2;font-size:10px;font-weight:800}
-.stoicaPluginLogo img{max-width:23px;max-height:23px;display:block}
-.stoicaPluginLogo>span{width:100%;height:100%;place-items:center}
-.stoicaPluginInfo{min-width:0}
-.stoicaPluginInfo b,.stoicaPluginInfo small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.stoicaPluginInfo b{font-size:13px;color:#eef0f2;font-weight:650}
-.stoicaPluginInfo small{font-size:10.5px;color:#858d98;margin-top:3px}
-.stoicaPluginAdd{justify-self:end;width:26px;height:26px;border-radius:8px;display:grid;place-items:center;color:#9ca4af}
-@media (hover:hover) and (pointer:fine){.stoicaPluginCard:hover .stoicaPluginAdd{background:#252b34;color:#fff}}
-.stoicaPluginAdd.connected{color:#80c79f}
-.stoicaPluginEmpty{padding:34px;border:1px dashed #303741;border-radius:13px;text-align:center;color:#7e8792;font-size:12px}
-.stoicaPersonalList{display:grid;gap:5px}
-.stoicaManageRow{display:grid;grid-template-columns:38px minmax(0,1fr) auto auto auto;gap:10px;align-items:center;padding:9px;border-radius:10px}
-@media (hover:hover) and (pointer:fine){.stoicaManageRow:hover{background:#171c23}}
-.stoicaSkillsGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.stoicaSkillCard{display:grid;grid-template-columns:38px minmax(0,1fr) 20px;gap:10px;align-items:center;border:1px solid #2b323c;background:#141920;border-radius:12px;padding:11px}
-.stoicaSkillCard b,.stoicaSkillCard small{display:block}
-.stoicaSkillCard b{font-size:13px}
-.stoicaSkillCard small{font-size:10px;color:#858d98;margin-top:3px;line-height:1.35}
-.stoicaSkillCard>svg{color:#7bc49a}
+.toolModal:has(.seraPluginStore){width:min(1080px,98vw);max-height:92vh;background:#0e1117;border-color:#252b34;padding:18px 22px}
+.toolModal:has(.seraPluginStore)>.toolHead{padding:0;border:0;height:0;overflow:visible;position:relative;z-index:5}
+.toolModal:has(.seraPluginStore)>.toolHead>div{display:none}
+.toolModal:has(.seraPluginStore)>.toolHead>.iconOnly{position:absolute;right:0;top:0}
+.seraPluginStore{padding:2px 4px 12px;color:#e7e8ea}
+.seraPluginTop{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;min-height:46px;margin-bottom:12px}
+.seraPluginMainTabs{grid-column:2;display:flex;gap:6px;padding:4px;background:#161a20;border-radius:12px}
+.seraPluginMainTabs button{border:0;background:transparent;color:#a5abb4;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:650;cursor:pointer}
+.seraPluginMainTabs button.active{background:#242a32;color:#f4f5f6;box-shadow:0 1px 0 #ffffff0a inset}
+.seraAddButton{grid-column:3;justify-self:end;margin-right:40px;border:1px solid #39404a;background:#252a31;color:#f0f2f4;border-radius:10px;padding:8px 11px;display:flex;gap:6px;align-items:center;cursor:pointer;font-size:12px}
+@media (hover:hover) and (pointer:fine){.seraAddButton:hover{background:#2d333c}}
+.seraPluginSearch{height:44px;border:1px solid #313740;background:#12161c;border-radius:13px;display:flex;align-items:center;gap:9px;padding:0 13px;color:#858d98;margin:0 0 16px}
+.seraPluginSearch:focus-within{border-color:#555f6b;box-shadow:0 0 0 1px #555f6b33}
+.seraPluginSearch input{flex:1;border:0;outline:0;background:transparent;color:#edf0f2;font-size:14px}
+.seraPluginSearch input::placeholder{color:#747c87}
+.seraInstalled{margin:0 0 14px}
+.seraSectionTitle{border:0;background:transparent;color:#e8e9eb;font-size:14px;font-weight:700;padding:5px 0 8px;cursor:default;text-align:left}
+.seraSectionTitle span{color:#767e89;font-size:18px;margin-left:3px}
+.seraInstalledIcons{display:flex;gap:10px;flex-wrap:wrap}
+.seraInstalledIcon{width:38px;height:38px;border:0;background:#1a1f26;border-radius:10px;color:#edf0f4;display:grid;place-items:center;cursor:pointer}
+@media (hover:hover) and (pointer:fine){.seraInstalledIcon:hover{background:#242b34}}
+.seraInstalledIcon span{font-size:10px;font-weight:800}
+.seraScopeTabs{display:flex;gap:4px;margin:2px 0 16px}
+.seraScopeTabs button{border:0;background:transparent;color:#8e96a1;padding:7px 11px;border-radius:8px;cursor:pointer;font-size:12px}
+.seraScopeTabs button.active{background:#252a31;color:#f0f1f3}
+.seraCatalog{display:grid;gap:22px}
+.seraPluginSection{min-width:0}
+.seraPluginGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:26px;row-gap:2px}
+.seraPluginCard{width:100%;min-width:0;display:grid;grid-template-columns:38px minmax(0,1fr) 28px;gap:11px;align-items:center;border:0;background:transparent;color:#e7e9ec;padding:8px 7px;border-radius:10px;text-align:left;cursor:pointer}
+@media (hover:hover) and (pointer:fine){.seraPluginCard:hover{background:#171c23}}
+.seraPluginLogo{width:36px;height:36px;border-radius:9px;background:#171c23;border:1px solid #2c333d;display:grid;place-items:center;overflow:hidden;color:#e9edf2;font-size:10px;font-weight:800}
+.seraPluginLogo img{max-width:23px;max-height:23px;display:block}
+.seraPluginLogo>span{width:100%;height:100%;place-items:center}
+.seraPluginInfo{min-width:0}
+.seraPluginInfo b,.seraPluginInfo small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seraPluginInfo b{font-size:13px;color:#eef0f2;font-weight:650}
+.seraPluginInfo small{font-size:10.5px;color:#858d98;margin-top:3px}
+.seraPluginAdd{justify-self:end;width:26px;height:26px;border-radius:8px;display:grid;place-items:center;color:#9ca4af}
+@media (hover:hover) and (pointer:fine){.seraPluginCard:hover .seraPluginAdd{background:#252b34;color:#fff}}
+.seraPluginAdd.connected{color:#80c79f}
+.seraPluginEmpty{padding:34px;border:1px dashed #303741;border-radius:13px;text-align:center;color:#7e8792;font-size:12px}
+.seraPersonalList{display:grid;gap:5px}
+.seraManageRow{display:grid;grid-template-columns:38px minmax(0,1fr) auto auto auto;gap:10px;align-items:center;padding:9px;border-radius:10px}
+@media (hover:hover) and (pointer:fine){.seraManageRow:hover{background:#171c23}}
+.seraSkillsGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.seraSkillCard{display:grid;grid-template-columns:38px minmax(0,1fr) 20px;gap:10px;align-items:center;border:1px solid #2b323c;background:#141920;border-radius:12px;padding:11px}
+.seraSkillCard b,.seraSkillCard small{display:block}
+.seraSkillCard b{font-size:13px}
+.seraSkillCard small{font-size:10px;color:#858d98;margin-top:3px;line-height:1.35}
+.seraSkillCard>svg{color:#7bc49a}
 @media(max-width:760px){
-  .toolModal:has(.stoicaPluginStore){padding:14px}
-  .stoicaPluginTop{grid-template-columns:1fr auto}
-  .stoicaPluginMainTabs{grid-column:1}
-  .stoicaAddButton{grid-column:2;margin-right:34px}
-  .stoicaPluginGrid,.stoicaSkillsGrid{grid-template-columns:1fr}
-  .stoicaManageRow{grid-template-columns:38px minmax(0,1fr) auto}
-  .stoicaManageRow .smallBtn{grid-column:2}
+  .toolModal:has(.seraPluginStore){padding:14px}
+  .seraPluginTop{grid-template-columns:1fr auto}
+  .seraPluginMainTabs{grid-column:1}
+  .seraAddButton{grid-column:2;margin-right:34px}
+  .seraPluginGrid,.seraSkillsGrid{grid-template-columns:1fr}
+  .seraManageRow{grid-template-columns:38px minmax(0,1fr) auto}
+  .seraManageRow .smallBtn{grid-column:2}
 }
 
 
@@ -626,11 +626,11 @@
 .pluginResult.ok{border-color:#1d5a43;color:#9be0b9}
 .pluginResult.error{border-color:#5a2a33;color:#ffb3bf}
 .pluginResult.info{border-color:#2b4a6d;color:#cfe2f8}
-.stoicaSectionTitle.linkish{cursor:pointer}
-@media (hover:hover) and (pointer:fine){.stoicaSectionTitle.linkish:hover{color:#fff}}
-h3.stoicaSectionTitle{margin:0}
-.stoicaInstalledIcon.more span{font-size:11px}
-.stoicaSkillCard.locked>svg{color:#a0a8b3}
+.seraSectionTitle.linkish{cursor:pointer}
+@media (hover:hover) and (pointer:fine){.seraSectionTitle.linkish:hover{color:#fff}}
+h3.seraSectionTitle{margin:0}
+.seraInstalledIcon.more span{font-size:11px}
+.seraSkillCard.locked>svg{color:#a0a8b3}
 .apiOnlyTag{font-style:normal;color:#9a8f7c}
 .oauthBox{display:grid;gap:10px;border:1px solid #2b3038;border-radius:12px;padding:12px}
 .oauthBox code{font-size:11px;overflow-wrap:anywhere;color:#d7dce3}
@@ -1132,3 +1132,17 @@ h1,h2,h3{text-wrap:balance}
 .usageOwnerForm{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}.usageOwnerForm input{flex:1 1 200px;min-width:0}.usageOwnerForm input[type=number]{flex:0 0 110px}
 .creditsDialog .formActions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
 @media(max-width:640px){.usageStats{grid-template-columns:1fr}.usageCosts{grid-template-columns:1fr}.usageRow{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) minmax(0,.8fr)}.usageRow.head span:nth-child(4),.usageRow span:nth-child(4){display:none}}
+
+/* 0.7.23 — account settings: profile, notifications, privacy, security */
+.accountForm{display:grid;gap:12px}.accountForm h3{margin:6px 0 0}
+.accountGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.accountGrid .span2{grid-column:1/-1}
+.accountForm label,.accountGrid label{display:grid;gap:6px;font-size:13px;color:#b9c7d8;min-width:0}
+.accountForm textarea,.accountForm select,.accountGrid select,.accountInline select{background:#080d14;border:1px solid #26354a;border-radius:10px;color:#edf3fb;padding:10px 12px;outline:0}.accountForm textarea{resize:vertical;min-height:70px;line-height:1.45}.accountForm input:disabled{opacity:.6}
+.accountInline{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px;color:#b9c7d8}.accountInline select{width:auto;min-width:180px}
+.accountActions{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}.accountActions .wide{width:auto;padding:0 14px;height:36px;gap:6px;display:inline-flex;align-items:center;border-radius:10px}
+.sessionList{display:grid;border:1px solid #1f2d40;border-radius:12px;overflow:hidden;margin-bottom:8px}
+.sessionRow{display:flex;align-items:center;gap:12px;padding:10px 12px;border-top:1px solid #162233}.sessionRow:first-child{border-top:0}.sessionRow svg{color:#8fa0b5;flex:none}
+.sessionRow>div{flex:1;min-width:0}.sessionRow b{display:flex;align-items:center;gap:8px;font-size:13.5px}.sessionRow small{display:block;color:#7d8da2;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sessionNow{font-size:11px;font-weight:600;color:#5fd39a;background:#0f2a1f;border-radius:999px;padding:1px 8px}
+.settingsPane h4{margin:16px 0 8px;font-size:14px}
+@media(max-width:640px){.accountGrid{grid-template-columns:1fr}}

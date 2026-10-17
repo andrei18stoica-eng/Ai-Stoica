@@ -623,6 +623,62 @@ app.post("/auth/logout", auth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Account security (0.7.23): the account's own sessions, its password and deleting the account. A session is shown by
+// the first 16 characters of its hash (the token itself is never stored, so nothing here can be used to sign in).
+const sessionView = (row, current) => ({ id: String(row.token_hash).slice(0, 16), createdAt: row.created_at, expiresAt: row.expires_at, userAgent: row.user_agent || "", ip: row.ip_address || "", current: row.token_hash === current });
+app.get("/auth/sessions", auth, async (req, res, next) => {
+  try {
+    const q = await pool.query("SELECT token_hash, created_at, expires_at, user_agent, ip_address FROM sessions WHERE user_id=$1 AND expires_at>NOW() ORDER BY created_at DESC LIMIT 50", [req.user.id]);
+    res.json({ data: q.rows.map(r => sessionView(r, req.sessionTokenHash)) });
+  } catch (e) { next(e); }
+});
+app.delete("/auth/sessions/:id", auth, async (req, res, next) => {
+  try {
+    const id = String(req.params.id || "");
+    if (!/^[0-9a-f]{16}$/.test(id)) return res.status(400).json({ error: "Sesiune necunoscută." });
+    const r = await pool.query("DELETE FROM sessions WHERE user_id=$1 AND LEFT(token_hash,16)=$2 AND token_hash<>$3", [req.user.id, id, req.sessionTokenHash]);
+    res.json({ ok: true, revoked: r.rowCount });
+  } catch (e) { next(e); }
+});
+app.post("/auth/sessions/revoke-others", auth, async (req, res, next) => {
+  try {
+    const r = await pool.query("DELETE FROM sessions WHERE user_id=$1 AND token_hash<>$2", [req.user.id, req.sessionTokenHash]);
+    await audit(req.user.id, "account.sessions_revoke_others", req.user.id, { count: r.rowCount });
+    res.json({ ok: true, revoked: r.rowCount });
+  } catch (e) { next(e); }
+});
+app.patch("/auth/profile", auth, async (req, res, next) => {
+  try {
+    const name = String(req.body?.name ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+    if (!name) return res.status(400).json({ error: "Numele nu poate fi gol." });
+    await pool.query("UPDATE users SET name=$2, updated_at=NOW() WHERE id=$1", [req.user.id, name]);
+    res.json({ ok: true, name });
+  } catch (e) { next(e); }
+});
+app.post("/auth/password", authLimiter, auth, async (req, res, next) => {
+  try {
+    const current = typeof req.body?.current === "string" ? req.body.current : "", fresh = typeof req.body?.next === "string" ? req.body.next : "";
+    if (fresh.length < 8 || fresh.length > 200) return res.status(400).json({ error: "Parola nouă trebuie să aibă între 8 și 200 de caractere." });
+    if (!(await bcrypt.compare(current, req.user.password_hash || DUMMY_HASH))) return res.status(401).json({ error: "Parola actuală nu este corectă." });
+    await pool.query("UPDATE users SET password_hash=$2, updated_at=NOW() WHERE id=$1", [req.user.id, await bcrypt.hash(fresh, 12)]);
+    // The other devices sign in again with the new password; this one stays signed in.
+    const r = await pool.query("DELETE FROM sessions WHERE user_id=$1 AND token_hash<>$2", [req.user.id, req.sessionTokenHash]);
+    await audit(req.user.id, "account.password_change", req.user.id, { otherSessionsRevoked: r.rowCount });
+    res.json({ ok: true, otherSessionsRevoked: r.rowCount });
+  } catch (e) { next(e); }
+});
+app.delete("/auth/me", authLimiter, auth, async (req, res, next) => {
+  try {
+    if (req.user.role === "owner") return res.status(400).json({ error: "Contul Owner nu poate fi șters din aplicație." });
+    const password = typeof req.body?.password === "string" ? req.body.password : "";
+    if (!(await bcrypt.compare(password, req.user.password_hash || DUMMY_HASH))) return res.status(401).json({ error: "Parola nu este corectă." });
+    await audit(req.user.id, "account.delete_self", req.user.id, { email: req.user.email });
+    // Sessions, permissions, notifications and the rest go with the account (ON DELETE CASCADE).
+    await pool.query("DELETE FROM users WHERE id=$1", [req.user.id]);
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 app.get("/auth/me", meLimiter, auth, async (req, res, next) => {
   try {
     await pool.query("UPDATE sessions SET expires_at=$2 WHERE token_hash=$1", [req.sessionTokenHash, new Date(Date.now() + SESSION_TTL_DAYS * 86400000)]);

@@ -21,6 +21,7 @@ const { QUESTIONS_RULE, sanitizeQuestions } = require("./lib/questions.cjs");
 const { BUILTIN_PLUGINS, runBuiltinPlugin, builtinKeywordMatch, publicBuiltinList } = require("./lib/builtinplugins.cjs");
 const { SKILL_TEMPLATES, MAX_SKILLS, validateSkill, skillsForMessage, skillSystemText, publicSkill } = require("./lib/skills.cjs");
 const creditsLib = require("./lib/credits.cjs");
+const accountLib = require("./lib/accountsettings.cjs");
 const { DESIGN_KINDS, MAX_VERSIONS: MAX_DESIGN_VERSIONS, designMessages, reviseMessages, extractHtml, htmlTitle, previewToken, verifyPreviewToken } = require("./lib/design.cjs");
 function normalizeModelKey(value){return String(value||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g," ").trim();}
 function isSmartAlias(value){
@@ -901,6 +902,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       if (!payload.exp && (!payload.iat || Date.now() / 1000 - payload.iat > SESSION_DAYS * 86400)) return null;
       if (isRevoked(payload, token)) return null;
       const user = store.read().users.find((u) => u.id === payload.sub);
+      // «Deconectează celelalte dispozitive» / a new password: tokens made before are no longer accepted.
+      if (user?.sessionsValidAfter && Number(payload.iat || 0) < user.sessionsValidAfter) return null;
       return user ? { user, payload } : null;
     } catch { return null; }
   }
@@ -1251,6 +1254,136 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if (!user) return res.status(404).json({ error: "Contul nu a fost găsit." });
     if (Object.keys(changes).length) { Object.assign(user, changes); store.write(db); }
     res.json({ data: { preferences: userPreferences(user) } });
+  });
+  // ---- Account settings (0.7.23, phase 3): each account's profile, personalisation, default model, notifications,
+  // privacy (conversations kept for N days, export, deleting data or the account) and security (sessions, password). ----
+  function settingsView(user){
+    return {name:user.name||"",email:user.email,role:roleFor(user,null),local:!cloudBase(),...accountLib.accountSettings(user),preferences:userPreferences(user)};
+  }
+  app.get("/api/me/settings", auth, (req,res) => {
+    const user=store.read().users.find(u=>u.id===req.user.id);if(!user)return res.status(404).json({error:"Contul nu a fost găsit."});
+    res.json({data:{...settingsView(user),role:roleFor(user,req.cloudUser)},options:{tones:Object.keys(accountLib.TONES),languages:Object.keys(accountLib.LANGUAGES),retention:accountLib.RETENTION}});
+  });
+  app.patch("/api/me/settings", auth, async (req,res) => {
+    const v=accountLib.validateAccountSettings(req.body||{});if(v.error)return res.status(400).json({error:v.error});
+    const {name,...rest}=v.value;
+    // The name of a Serasmart Cloud account lives in the Cloud (it comes back at every sign-in).
+    if(name!==undefined&&cloudBase()&&req.cloudToken){
+      try{
+        const r=await cloudFetch("/auth/profile",{method:"PATCH",headers:{Authorization:`Bearer ${req.cloudToken}`},body:{name},timeout:8000});
+        if(!r.ok){const d=await r.json().catch(()=>({}));return res.status(r.status).json({error:d?.error||`${BRAND_SHORT} Cloud nu a salvat numele.`});}
+      }catch{return res.status(503).json({error:cloudDownMessage(0)})}
+    }
+    const db=store.read(),user=db.users.find(u=>u.id===req.user.id);if(!user)return res.status(404).json({error:"Contul nu a fost găsit."});
+    if(name!==undefined)user.name=name;
+    user.settings={...(user.settings&&typeof user.settings==="object"?user.settings:{}),...rest};
+    store.write(db);
+    if(rest.retentionDays)applyRetention(user.id);
+    res.json({data:{...settingsView(user),role:roleFor(user,req.cloudUser)}});
+  });
+  // Conversations older than the account's choice (30 / 90 / 365 days) are deleted; pinned ones stay.
+  function applyRetention(onlyUserId=null){
+    const db=store.read(),now=Date.now();let removed=0;
+    const days=new Map(db.users.map(u=>[u.id,Number(accountLib.accountSettings(u).retentionDays)||0]));
+    db.conversations=db.conversations.filter(c=>{
+      if(onlyUserId&&c.userId!==onlyUserId)return true;
+      const d=days.get(c.userId)||0;
+      if(!d||c.pinned)return true;
+      const old=(Number(c.updatedAt||c.createdAt)||now)<now-d*86400000;
+      if(old)removed++;
+      return !old;
+    });
+    if(removed)store.write(db);
+    return removed;
+  }
+  const retentionTimer=setInterval(()=>{try{applyRetention()}catch{}},60*60*1000);retentionTimer.unref?.();
+  // Everything the account has, as one JSON file (no passwords, keys or session tokens).
+  app.get("/api/me/export", auth, (req,res) => {
+    const db=store.read(),uid=req.user.id,mine=k=>(db[k]||[]).filter(x=>x.userId===uid);
+    const user=db.users.find(u=>u.id===uid)||req.user;
+    const data={
+      exportedAt:new Date().toISOString(),product:BRAND_NAME,
+      account:{name:user.name,email:user.email,createdAt:user.createdAt,settings:accountLib.accountSettings(user),preferences:userPreferences(user)},
+      conversations:mine("conversations"),projects:mine("projects"),assistants:mine("assistants"),memories:mine("memories"),
+      skills:mine("skills").map(publicSkill),automations:mine("automations").map(publicAutomation),plugins:mine("plugins").map(publicPlugin),
+      designs:mine("designs").map(publicDesign),library:mine("library").map(({filePath,...x})=>x),
+      credits:metered(req)?{status:credits.status(uid),history:credits.history(uid,300)}:null
+    };
+    res.setHeader("Content-Disposition",`attachment; filename="${BRAND_SHORT.toLowerCase()}-date-${new Date().toISOString().slice(0,10)}.json"`);
+    res.type("application/json").send(JSON.stringify(data,null,2));
+  });
+  // Deletes part or all of the account's data on this server. The word "STERGE" is the confirmation.
+  async function deleteUserData(uid,scope){
+    const db=store.read(),counts={};
+    const drop=(k)=>{const before=(db[k]||[]).length;db[k]=(db[k]||[]).filter(x=>x.userId!==uid);counts[k]=before-db[k].length;return before-db[k].length;};
+    let files=[];
+    if(scope==="conversations"||scope==="all")drop("conversations");
+    if(scope==="memories"||scope==="all")drop("memories");
+    if(scope==="library"||scope==="all"){files=db.library.filter(x=>x.userId===uid&&x.filePath).map(x=>x.filePath);drop("library");}
+    if(scope==="all")for(const k of ["projects","assistants","skills","automations","plugins","designs"])drop(k);
+    store.write(db);
+    for(const f of files)await fs.promises.unlink(f).catch(()=>{});
+    if(scope==="all"||scope==="library")for(const id of [...libraryChunkCache.keys()])if(!store.read().library.some(x=>x.id===id))libraryChunkCache.delete(id);
+    return counts;
+  }
+  app.post("/api/me/delete-data", auth, async (req,res) => {
+    const scope=String(req.body?.scope||"");
+    if(!["conversations","memories","library","all"].includes(scope))return res.status(400).json({error:"Alege ce ștergi: conversations, memories, library sau all."});
+    if(String(req.body?.confirm||"").trim().toUpperCase()!=="STERGE")return res.status(400).json({error:"Scrie STERGE ca să confirmi."});
+    res.json({ok:true,deleted:await deleteUserData(req.user.id,scope)});
+  });
+  // Deleting the account: the password confirms it; the Owner's account cannot be deleted from the app.
+  app.delete("/api/me", auth, async (req,res) => {
+    const password=typeof req.body?.password==="string"?req.body.password:"";
+    if(roleFor(req.user,req.cloudUser)==="owner")return res.status(400).json({error:"Contul Owner nu poate fi șters din aplicație."});
+    if(cloudBase()){
+      if(!req.cloudToken)return res.status(401).json({error:`Autentifică-te din nou prin ${BRAND_SHORT} Cloud.`});
+      let r;try{r=await cloudFetch("/auth/me",{method:"DELETE",headers:{Authorization:`Bearer ${req.cloudToken}`},body:{password},timeout:10000})}catch{return res.status(503).json({error:cloudDownMessage(0)})}
+      if(!r.ok){const d=await r.json().catch(()=>({}));return res.status(r.status).json({error:d?.error||"Contul nu a putut fi șters."});}
+      cloudAuthCache.delete(tokenHash(req.cloudToken));
+    }else{
+      let ok=false;try{ok=!!req.user.passwordHash&&await bcrypt.compare(password,req.user.passwordHash)}catch{}
+      if(!ok)return res.status(401).json({error:"Parola nu este corectă."});
+    }
+    await deleteUserData(req.user.id,"all");
+    const db=store.read();db.users=db.users.filter(u=>u.id!==req.user.id);store.write(db);
+    res.json({ok:true});
+  });
+  // Sessions and password: Serasmart Cloud keeps the sessions; a local account (Windows) signs every other device out.
+  async function cloudAccount(req,res,path,method="GET",body){
+    try{
+      const r=await cloudFetch(path,{method,headers:{Authorization:`Bearer ${req.cloudToken}`},...(body?{body}:{}),timeout:10000});
+      const d=await r.json().catch(()=>({}));res.status(r.status).json(d);
+    }catch{res.status(503).json({error:cloudDownMessage(0)})}
+  }
+  app.get("/api/me/sessions", auth, (req,res) => {
+    if(cloudBase()&&req.cloudToken)return cloudAccount(req,res,"/auth/sessions");
+    res.json({data:[{id:"this-device",current:true,createdAt:req.localSession?.iat?new Date(req.localSession.iat*1000).toISOString():null,userAgent:String(req.headers["user-agent"]||""),ip:""}],local:true});
+  });
+  app.delete("/api/me/sessions/:id", auth, (req,res) => {
+    if(cloudBase()&&req.cloudToken)return cloudAccount(req,res,`/auth/sessions/${encodeURIComponent(req.params.id)}`,"DELETE");
+    res.status(400).json({error:"Pe acest calculator există o singură sesiune; folosește «Deconectează celelalte»."});
+  });
+  function signOutOthersLocally(userId){
+    const db=store.read(),user=db.users.find(u=>u.id===userId);if(!user)return null;
+    user.sessionsValidAfter=Math.floor(Date.now()/1000);store.write(db);
+    return sign(user);
+  }
+  app.post("/api/me/sessions/revoke-others", auth, (req,res) => {
+    if(cloudBase()&&req.cloudToken)return cloudAccount(req,res,"/auth/sessions/revoke-others","POST",{});
+    const token=signOutOthersLocally(req.user.id);
+    res.json({ok:true,token});
+  });
+  app.post("/api/me/password", auth, async (req,res) => {
+    if(rateLimited(req,res,"login"))return;
+    if(cloudBase()&&req.cloudToken)return cloudAccount(req,res,"/auth/password","POST",{current:req.body?.current,next:req.body?.next});
+    const current=typeof req.body?.current==="string"?req.body.current:"",next=typeof req.body?.next==="string"?req.body.next:"";
+    if(next.length<8||next.length>200)return res.status(400).json({error:"Parola nouă trebuie să aibă între 8 și 200 de caractere."});
+    let ok=false;try{ok=!!req.user.passwordHash&&await bcrypt.compare(current,req.user.passwordHash)}catch{}
+    if(!ok){countAttempt(req,"login");return res.status(401).json({error:"Parola actuală nu este corectă."});}
+    const db=store.read(),user=db.users.find(u=>u.id===req.user.id);
+    user.passwordHash=await bcrypt.hash(next,12);store.write(db);
+    res.json({ok:true,token:signOutOthersLocally(user.id)});
   });
   app.post("/auth/logout", auth, async (req, res) => {
     if (req.cloudToken) {
@@ -1839,8 +1972,12 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   }
   app.get("/api/credits", auth, (req,res) => {
     const out=creditView(req);
-    // A warning is shown once: reading it clears it.
-    if(out.notice&&req.query.peek!=="1")credits.takeNotice(req.user.id);
+    // A warning is shown once: reading it clears it. The account can turn the 25–90% warnings off (100% always shows).
+    if(out.notice&&req.query.peek!=="1"){
+      credits.takeNotice(req.user.id);
+      const me=store.read().users.find(u=>u.id===req.user.id);
+      if(out.notice.level<100&&accountLib.accountSettings(me).notifyCredits===false)out.notice=null;
+    }
     res.json(out);
   });
   app.get("/api/credits/price", auth, (req,res) => {
@@ -3811,6 +3948,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const assistant=db.assistants.find(a=>a.id===assistantId&&a.userId===userId);if(assistant?.systemPrompt)system.push(assistant.systemPrompt);
     const skillText=skillSystemText(skillsForMessage((db.skills||[]).filter(x=>x.userId===userId),typedText(latest?.content)||latestText));if(skillText)system.push(skillText);
     const user=db.users.find(u=>u.id===userId);
+    const personal=accountLib.personalizationText(user);if(personal)system.push(personal);
     if(user?.memoryEnabled!==false){
       const mem=await embeddingIndex.search(cfg,db,userId,query,8);if(mem.length)system.push("Memorie relevantă despre utilizator și conversațiile anterioare:\n"+mem.map((m,i)=>`${i+1}. ${m.text}`).join("\n"));
     }
@@ -4405,12 +4543,14 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       // "Rulează acum" does not consume a one-time automation and does not move the schedule.
       if(!manual){if(target.frequency==="once"){target.enabled=false;target.nextRunAt=null;}else target.nextRunAt=target.enabled?nextRun(target,Date.now()+1000):null;}
       store.write(fresh);
-      if(stillActive&&!noNotification&&target.notify!==false&&typeof onAutomationResult==="function"){
+      // The account can turn these notices off (Setări → Notificări).
+      const wantsNotice=accountLib.accountSettings(user).notifyAutomations!==false;
+      if(stillActive&&!noNotification&&target.notify!==false&&wantsNotice&&typeof onAutomationResult==="function"){
         try{onAutomationResult({title:target.title,body:answer.slice(0,500),automationId:item.id,userId:item.userId})}catch{}
       }
       // 0.7.18: on the site (and on Windows signed in to Serasmart Cloud) the result reaches the account as a notification
       // and on its phones; before, the web version ran the automation and told no one.
-      if(stillActive&&!noNotification&&target.notify!==false&&ctx.cloudToken&&cloudBase()){
+      if(stillActive&&!noNotification&&target.notify!==false&&wantsNotice&&ctx.cloudToken&&cloudBase()){
         cloudFetch("/api/notifications/self",{method:"POST",headers:{Authorization:`Bearer ${ctx.cloudToken}`},body:{type:"automation",title:String(target.title||"Automatizare").slice(0,120),body:answer.slice(0,1000)},timeout:8000})
           .then(r=>r.text()).catch(e=>console.warn(`[${BRAND_NAME}] Notificarea automatizării nu a ajuns:`,e?.message||e));
       }
