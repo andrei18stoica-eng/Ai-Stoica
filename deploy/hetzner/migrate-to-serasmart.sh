@@ -94,17 +94,23 @@ else echo "  $NEW_ETC: deja făcut sau nu există"; fi
 [ "$APPLY" = 1 ] && { ROOT="$NEW_ROOT"; DEPLOY="$ROOT/deploy/hetzner"; ENV_FILE="$DEPLOY/.env"; }
 
 say "5. Utilizatorul Linux: $OLD_USER -> $NEW_USER"
+# Each part is checked on its own, so a run stopped halfway (0.7.24: user renamed, home not moved) finishes the rest.
+# The home folder is read before the rename: afterwards the old name finds nothing (and with pipefail that stopped the
+# script on 2026-10-17, with the containers down).
 if id "$OLD_USER" >/dev/null 2>&1 && ! id "$NEW_USER" >/dev/null 2>&1; then
   if pgrep -u "$OLD_USER" >/dev/null 2>&1; then echo "  STOP la pasul 5: utilizatorul $OLD_USER are procese pornite (închide sesiunea lui și rulează din nou)."; [ "$APPLY" = 1 ] && exit 1; fi
   run usermod -l "$NEW_USER" "$OLD_USER"
-  getent group "$OLD_USER" >/dev/null && run groupmod -n "$NEW_USER" "$OLD_USER"
-  OLD_HOME="$(getent passwd "$OLD_USER" 2>/dev/null | cut -d: -f6)"; [ -n "$OLD_HOME" ] || OLD_HOME="/home/$OLD_USER"
-  [ -d "$OLD_HOME" ] && [ ! -e "/home/$NEW_USER" ] && run usermod -d "/home/$NEW_USER" -m "$NEW_USER"
-  for f in /etc/sudoers.d/*; do [ -f "$f" ] && grep -q "\b$OLD_USER\b" "$f" && run sed -i "s/\b$OLD_USER\b/$NEW_USER/g" "$f"; done
-else echo "  deja făcut sau nu există"; fi
+  if getent group "$OLD_USER" >/dev/null; then run groupmod -n "$NEW_USER" "$OLD_USER"; fi
+else echo "  numele: deja făcut sau nu există"; fi
+CUR_HOME="$(getent passwd "$NEW_USER" 2>/dev/null | cut -d: -f6 || true)"
+[ "$APPLY" = 1 ] || CUR_HOME="$(getent passwd "$OLD_USER" 2>/dev/null | cut -d: -f6 || true)"
+if [ -n "$CUR_HOME" ] && [ "$CUR_HOME" != "/home/$NEW_USER" ] && [ -d "$CUR_HOME" ] && [ ! -e "/home/$NEW_USER" ]; then
+  run usermod -d "/home/$NEW_USER" -m "$NEW_USER"
+fi
+for f in /etc/sudoers.d/*; do if [ -f "$f" ] && grep -q "\b$OLD_USER\b" "$f"; then run sed -i "s/\b$OLD_USER\b/$NEW_USER/g" "$f"; fi; done
 SSH_CFG="/home/$NEW_USER/.ssh/config"
-if [ -f "$SSH_CFG" ] && grep -q "github-ai-stoica" "$SSH_CFG"; then
-  run sed -i "s/github-ai-stoica/github-serasmart/g" "$SSH_CFG"
+if [ -f "$SSH_CFG" ] && grep -qE "github-ai-stoica|/home/$OLD_USER/" "$SSH_CFG"; then
+  run sed -i "s/github-ai-stoica/github-serasmart/g; s#/home/$OLD_USER/#/home/$NEW_USER/#g" "$SSH_CFG"
 fi
 if [ -d "$ROOT/.git" ]; then
   GIT_USER="$(stat -c %U "$ROOT")"
