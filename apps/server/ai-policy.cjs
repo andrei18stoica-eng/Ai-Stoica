@@ -14,7 +14,7 @@ const PERSONAL_PREFIXES = [
 ];
 // OmniRoute services without an account (Pollinations, Cloudflare Playground, DuckDuckGo AI, Felo…).
 const KEYLESS_PREFIXES = ["pol","pollinations","cfp","cloudflare-playground","ddgw","duckduckgo-web","felo","felo-web","veo-free","veoaifree-web","tllm","theoldllm","pepper","chipotle"];
-// "github/…" here is GitHub Models (AI Stoica's direct API, free). OmniRoute's own "github" is GitHub Copilot, a
+// "github/…" here is GitHub Models (Serasmart AI's direct API, free). OmniRoute's own "github" is GitHub Copilot, a
 // subscription: the gateway knows the two apart (OmniRoute's list) and stops Copilot before asking here (isPersonalModel).
 const PREFIX_PROVIDERS = {
   openai:"openai", anthropic:"anthropic",
@@ -61,7 +61,8 @@ function providerSignals(model) {
 
 function isManagedPaidAlias(model) {
   const n = normalizeKey(model);
-  return n === "ai principal" || n === "ai stoica" || n === "aistoica";
+  // "AI Stoica" / "aistoica" are the names before 0.7.21; "Serasmart" / "Serasmart AI" the new ones.
+  return n === "ai principal" || n === "ai stoica" || n === "aistoica" || n === "serasmart" || n === "serasmart ai";
 }
 
 function comboForModel(combinations, model) {

@@ -1,5 +1,5 @@
-// Spam-bot email domains (uberip.com always, AI_STOICA_BLOCKED_EMAIL_DOMAINS too) cannot register or sign in,
-// on the web version and on Windows, before anything is stored or sent to AI Stoica Cloud.
+// Spam-bot email domains (uberip.com always, SERASMART_BLOCKED_EMAIL_DOMAINS too) cannot register or sign in,
+// on the web version and on Windows, before anything is stored or sent to Serasmart Cloud.
 const fs = require("fs"), http = require("http"), os = require("os"), path = require("path");
 
 function expect(v, m) { if (!v) throw new Error(m); }
@@ -13,9 +13,9 @@ function request(port, method, p, body) {
 }
 
 async function main() {
-  process.env.AI_STOICA_BLOCKED_EMAIL_DOMAINS = " @Spam.example , ";
+  process.env.SERASMART_BLOCKED_EMAIL_DOMAINS = " @Spam.example , ";
   const { startLocalGateway } = require("../local-gateway.cjs");
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-blocked-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-blocked-"));
   const cfg = { baseUrl: "http://127.0.0.1:65530/v1", model: "test/m", webSearchEnabled: false, githubAutoContext: false, directChatEnabled: false };
   const port = 8879;
   const gw = startLocalGateway({ dataDir: path.join(root, "data"), port, host: "127.0.0.1", getOmniConfig: () => cfg });

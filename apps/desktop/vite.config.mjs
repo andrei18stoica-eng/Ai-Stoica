@@ -11,7 +11,7 @@ export default defineConfig({
   // The strict Content-Security-Policy in index.html blocks the inline React refresh script that the
   // Vite dev server injects, so it is removed only while developing (production builds keep it).
   plugins: [react(), {
-    name: "ai-stoica-dev-csp",
+    name: "serasmart-dev-csp",
     apply: "serve",
     transformIndexHtml: (html) => html.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>\s*/i, "")
   }],

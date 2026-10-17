@@ -10,7 +10,7 @@ function expect(v, m) { if (!v) throw new Error(m); }
 async function main() {
   const content = "# Ecuația de gradul doi\n\nPentru $ax^2+bx+c=0$ cu $a \\neq 0$, discriminantul este $\\Delta = b^2-4ac$.\n\n$$x_{1,2}=\\frac{-b\\pm\\sqrt{\\Delta}}{2a}$$\n\n\\[\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\\]\n\nPrețul este 5$ sau 10$ pe lună.\n";
   const { bytes } = await createExportBytes("pdf", "Matematică", content);
-  const file = path.join(require("os").tmpdir(), `ai-stoica-pdf-math-${process.pid}.pdf`);
+  const file = path.join(require("os").tmpdir(), `serasmart-pdf-math-${process.pid}.pdf`);
   fs.writeFileSync(file, bytes);
   let text;
   try { const r = await extractText(file, "application/pdf", "test.pdf"); text = String(r?.text ?? r ?? ""); } finally { fs.rmSync(file, { force: true }); }

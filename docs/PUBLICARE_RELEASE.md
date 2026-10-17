@@ -1,4 +1,4 @@
-# Cum se publică o versiune AI Stoica
+# Cum se publică o versiune Serasmart AI
 
 Procedura de mai jos a fost folosită pentru 0.7.11 și funcționează pentru orice versiune viitoare. Înlocuiește `<V>` cu numărul versiunii (de exemplu `0.7.12`).
 
@@ -24,7 +24,7 @@ Orice patch sau ZIP a fost făcut peste un commit anume. Pentru 0.7.11 baza era 
 ## 2. Ramură și aplicare
 
 ```bash
-git checkout -b release/ai-stoica-<V> origin/main     # sau ramura desemnată sesiunii
+git checkout -b release/serasmart-<V> origin/main     # sau ramura desemnată sesiunii
 git apply --index <fisier.patch>                      # dacă refuză: git apply --3way
 ```
 
@@ -44,7 +44,7 @@ Toate trebuie să treacă. Scriptul acoperă YAML-ul workflow-urilor, versiunile
 
 ## 5. Commit, push, PR
 
-Mesaj de commit și titlu PR: „AI Stoica <V> — <rezumat>”. Fără secrete în fișiere. PR către `main`.
+Mesaj de commit și titlu PR: „Serasmart AI <V> — <rezumat>”. Fără secrete în fișiere. PR către `main`.
 
 ## 6. Verificările din GitHub
 
@@ -52,13 +52,13 @@ Toate cinci trebuie să fie verzi:
 
 | Nume în GitHub | Ce face |
 |---|---|
-| AI Stoica Desktop Check | sintaxă, build interfață, toate testele desktop |
-| AI Stoica Server Check | `apps/server` + Docker |
-| Check AI Stoica Cloudflare | `npm test` + `wrangler deploy --dry-run` |
-| Check AI Stoica Mobile | `expo-doctor` + export iOS și Android |
-| AI Stoica - ZIP complet Windows (job `build-zip`) | testele pe Windows + build + ZIP; pe PR nu publică |
+| Serasmart AI Desktop Check | sintaxă, build interfață, toate testele desktop |
+| Serasmart AI Server Check | `apps/server` + Docker |
+| Check Serasmart Cloudflare | `npm test` + `wrangler deploy --dry-run` |
+| Check Serasmart AI Mobile | `expo-doctor` + export iOS și Android |
+| Serasmart AI - ZIP complet Windows (job `build-zip`) | testele pe Windows + build + ZIP; pe PR nu publică |
 
-- Dacă una nu pornește singură, o poți porni cu `workflow_dispatch` pe ramura PR-ului. **Atenție:** `ai-stoica-windows-zip.yml` publică în Release la pornire manuală, nu doar la PR.
+- Dacă una nu pornește singură, o poți porni cu `workflow_dispatch` pe ramura PR-ului. **Atenție:** `serasmart-windows-zip.yml` publică în Release la pornire manuală, nu doar la PR.
 - Dacă pică ceva, **nu face merge**: arată-i utilizatorului pasul și log-ul.
 - Dacă jobul pică în câteva secunde, fără pași: vezi secțiunea „Joburi blocate de facturare”.
 
@@ -68,30 +68,30 @@ Doar cu verificările verzi: merge commit (nu squash), apoi șterge ramura. Făr
 
 ## 8. Release
 
-Pe `main` pornește „Build AI Stoica Windows”. Verifică Release-ul `v<V>`:
+Pe `main` pornește „Build Serasmart AI Windows”. Verifică Release-ul `v<V>`:
 
 ```bash
 gh release view v<V> --json assets --jq '.assets[].name'
 ```
 
-Trebuie să conțină `AI_Stoica_Setup_<V>_x64.exe`, `latest.yml` și `AI_Stoica_Setup_<V>_x64.exe.blockmap`. Fără `latest.yml` și `.blockmap`, actualizarea automată nu ajunge la utilizatori. Workflow-ul ZIP mai adaugă `AI_Stoica_Windows_<V>_COMPLET.zip`.
+Trebuie să conțină `Serasmart_Setup_<V>_x64.exe`, `latest.yml` și `Serasmart_Setup_<V>_x64.exe.blockmap`. Fără `latest.yml` și `.blockmap`, actualizarea automată nu ajunge la utilizatori. Workflow-ul ZIP mai adaugă `Serasmart_Windows_<V>_COMPLET.zip`.
 
 **Verifică și potrivirea.** `latest.yml` și `.blockmap` trebuie să vină din același build ca `.exe`; altfel `electron-updater` respinge actualizarea (sha512 diferit):
 
 ```bash
-R=andrei18stoica-eng/Ai-Stoica
+R=andrei18stoica-eng/Serasmart-AI
 id() { gh api "repos/$R/releases/tags/v<V>" --jq ".assets[]|select(.name==\"$1\")|.id"; }
 gh api -H "Accept: application/octet-stream" "repos/$R/releases/assets/$(id latest.yml)" | grep -E '^(sha512|path|version)|size'
-gh api -H "Accept: application/octet-stream" "repos/$R/releases/assets/$(id AI_Stoica_Setup_<V>_x64.exe)" | openssl dgst -sha512 -binary | base64 -w0; echo
+gh api -H "Accept: application/octet-stream" "repos/$R/releases/assets/$(id Serasmart_Setup_<V>_x64.exe)" | openssl dgst -sha512 -binary | base64 -w0; echo
 ```
 
-Cele două sume `sha512` trebuie să fie identice. Pe 2026-10-03, la `v0.7.11`, nu erau: „Build AI Stoica Windows” a urcat `.exe`, apoi workflow-ul ZIP (alt build) a rescris `latest.yml` și `.blockmap` cu `--clobber`. Din 0.7.13 workflow-ul ZIP urcă doar ZIP-ul, iar cele trei fișiere de actualizare le publică numai „Build AI Stoica Windows” (`apps/desktop/scripts/test-release-workflows.cjs` păzește regula). Dacă sumele tot diferă, verifică ordinea rulărilor și ce a mai urcat în Release.
+Cele două sume `sha512` trebuie să fie identice. Pe 2026-10-03, la `v0.7.11`, nu erau: „Build Serasmart AI Windows” a urcat `.exe`, apoi workflow-ul ZIP (alt build) a rescris `latest.yml` și `.blockmap` cu `--clobber`. Din 0.7.13 workflow-ul ZIP urcă doar ZIP-ul, iar cele trei fișiere de actualizare le publică numai „Build Serasmart AI Windows” (`apps/desktop/scripts/test-release-workflows.cjs` păzește regula). Dacă sumele tot diferă, verifică ordinea rulărilor și ce a mai urcat în Release.
 
 ## 9. Restul infrastructurii (separat de GitHub)
 
-- **Hetzner:** `sudo bash /opt/ai-stoica/deploy/hetzner/update.sh`, apoi `curl http://127.0.0.1:8787/health`.
+- **Hetzner:** `sudo bash /opt/serasmart/deploy/hetzner/update.sh`, apoi `curl http://127.0.0.1:8787/health`.
 - **Cloudflare:** migrările și deploy-ul din `apps/cloudflare/README.md`.
-- **Telefon:** workflow-ul „Build AI Stoica Mobile with EAS”.
+- **Telefon:** workflow-ul „Build Serasmart AI Mobile with EAS”.
 
 ## 10. Raport
 
@@ -102,15 +102,15 @@ Cele două sume `sha512` trebuie să fie identice. Pe 2026-10-03, la `v0.7.11`, 
 **Semn:** toate joburile pică în 2–5 secunde, fără pași, fără log (404), cu `runner_id: 0`. Citește motivul:
 
 ```bash
-gh api repos/andrei18stoica-eng/Ai-Stoica/check-runs/<id>/annotations --jq '.[].message'
+gh api repos/andrei18stoica-eng/Serasmart-AI/check-runs/<id>/annotations --jq '.[].message'
 ```
 
 Pe 2026-10-03 mesajul era: „The job was not started because recent account payments have failed or your spending limit needs to be increased.” Nu se rezolvă din cod; proprietarul verifică *GitHub → Settings → Billing & plans*.
 
-**Spațiul consumat de artifacte** poate fi una dintre cauze. Atunci erau 68 de artifacte, ~15,8 GB (50 dintre ele erau copii `AI-Stoica-Windows` de ~232 MB din 26–27 septembrie). Limita gratuită pentru repo-uri private este mult mai mică. Installerele rămân în Releases, care nu consumă din această limită.
+**Spațiul consumat de artifacte** poate fi una dintre cauze. Atunci erau 68 de artifacte, ~15,8 GB (50 dintre ele erau copii `Serasmart-AI-Windows` de ~232 MB din 26–27 septembrie). Limita gratuită pentru repo-uri private este mult mai mică. Installerele rămân în Releases, care nu consumă din această limită.
 
 ```bash
-R=andrei18stoica-eng/Ai-Stoica
+R=andrei18stoica-eng/Serasmart-AI
 # listă (id, nume, MB)
 gh api "repos/$R/actions/artifacts?per_page=100" --paginate \
   --jq '.artifacts[] | select(.expired==false) | [.id,.name,(.size_in_bytes/1048576|floor)] | @tsv'

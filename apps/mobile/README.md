@@ -1,4 +1,4 @@
-# AI Stoica Mobile — iPhone, iPad și Android
+# Serasmart AI Mobile — iPhone, iPad și Android
 
 Aplicația mobilă folosește Expo/React Native și același cod pentru iOS și Android.
 
@@ -14,11 +14,11 @@ Gateway-ul Docker din `apps/cloud` (Oracle/VPS) este pentru aplicația desktop; 
 
 Alege una dintre variante:
 
-1. În `eas.json`, la fiecare profil (`preview`, `production`), înlocuiește `https://ai-stoica.SUBDOMENIUL-TAU.workers.dev` cu adresa reală a Worker-ului.
+1. În `eas.json`, la fiecare profil (`preview`, `production`), înlocuiește `https://serasmart.SUBDOMENIUL-TAU.workers.dev` cu adresa reală a Worker-ului.
 2. Sau păstrează `eas.json` și creează variabila în EAS:
 
 ```bash
-eas env:create --name EXPO_PUBLIC_GATEWAY_URL --value https://ai-stoica.<subdomain>.workers.dev --environment preview --environment production --visibility plaintext
+eas env:create --name EXPO_PUBLIC_GATEWAY_URL --value https://serasmart.<subdomain>.workers.dev --environment preview --environment production --visibility plaintext
 ```
 
    apoi șterge cheia `EXPO_PUBLIC_GATEWAY_URL` din `env` în `eas.json`, ca adresa să fie definită într-un singur loc.
@@ -64,7 +64,7 @@ eas submit --platform ios --profile production
 
 Numărul build-ului este ținut de EAS (`cli.appVersionSource: "remote"`), deci crește corect și când build-ul pornește din GitHub Actions. Actualizările OTA (`expo-updates`) sunt oprite; pentru ele rulează `eas update:configure`.
 
-Repository-ul include și workflow-ul GitHub Actions **Build AI Stoica Mobile with EAS**, care are nevoie de secretul `EXPO_TOKEN`. Adresa serverului vine din `eas.json` sau din variabilele EAS (vezi mai sus).
+Repository-ul include și workflow-ul GitHub Actions **Build Serasmart AI Mobile with EAS**, care are nevoie de secretul `EXPO_TOKEN`. Adresa serverului vine din `eas.json` sau din variabilele EAS (vezi mai sus).
 
 Nu salva tokenuri Apple, Expo sau chei de AI în repository.
 

@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# AI Stoica: one-time setup of the site (aistoica.ro), the free phone app (PWA) and OmniRoute on this server.
+# Serasmart AI: one-time setup of the site (aistoica.ro), the free phone app (PWA) and OmniRoute on this server.
 # It asks step by step, keeps every value already in .env and backs .env up first, so it is safe to run again.
-#   sudo bash /opt/ai-stoica/deploy/hetzner/setup-web.sh
+#   sudo bash /opt/serasmart/deploy/hetzner/setup-web.sh
 set -euo pipefail
 
 DEPLOY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$DEPLOY/.env"
-MEMINFO="${AI_STOICA_MEMINFO:-/proc/meminfo}"
+MEMINFO="${SERASMART_MEMINFO:-${AI_STOICA_MEMINFO:-/proc/meminfo}}"
 OMNI_VERSION_DEFAULT="3.8.51"
 # The keys the web service reads (same names as apps/cloud/server.cjs and docker-compose.yml).
 AI_KEYS=(CEREBRAS_API_KEY GROQ_API_KEY GEMINI_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY MISTRAL_API_KEY
-  NVIDIA_API_KEY COHERE_API_KEY HF_TOKEN CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN AI_STOICA_GITHUB_TOKEN
+  NVIDIA_API_KEY COHERE_API_KEY HF_TOKEN CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN SERASMART_GITHUB_TOKEN
   POLLINATIONS_API_KEY FAL_API_KEY REPLICATE_API_TOKEN TOGETHER_API_KEY STABILITY_API_KEY XAI_API_KEY)
 # What the Windows app copies with Settings → API-uri AI → "Copiază cheile pentru server".
 PASTE_KEYS=(OMNIROUTE_API_KEY "${AI_KEYS[@]}")
@@ -46,6 +46,12 @@ known_key() { local k; for k in "${PASTE_KEYS[@]}"; do [ "$k" = "$1" ] && return
 
 env_get() {
   [ -f "$ENV_FILE" ] || return 0
+  local v; v="$(env_get_raw "$1")"
+  # A .env written before 0.7.21 has AI_STOICA_* where the new name is SERASMART_*.
+  if [ -z "$v" ] && [ "${1#SERASMART_}" != "$1" ]; then v="$(env_get_raw "AI_STOICA_${1#SERASMART_}")"; fi
+  printf '%s\n' "$v"
+}
+env_get_raw() {
   awk -v k="$1" -v q="'" '
     index($0, k "=") == 1 { v = substr($0, length(k) + 2) }
     END {
@@ -69,7 +75,7 @@ env_set() {
     { print }
     END { if (!done) print k "=" v }' "$ENV_FILE" > "$tmp"
   chmod 600 "$tmp"
-  # Keep the owner of .env (the deploy user on ai-stoica-prod) when the script runs under sudo.
+  # Keep the owner of .env (the deploy user on serasmart-prod) when the script runs under sudo.
   chown --reference="$ENV_FILE" "$tmp" 2>/dev/null || true
   mv "$tmp" "$ENV_FILE"
 }
@@ -88,7 +94,7 @@ cd "$DEPLOY"
 command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 || die "Docker Compose lipsește. Instalează Docker după deploy/hetzner/README.md."
 docker info >/dev/null 2>&1 || die "Nu pot folosi Docker. Rulează cu sudo: sudo bash $DEPLOY/setup-web.sh"
 
-echo "AI Stoica — site-ul, aplicația de telefon și OmniRoute pe acest server."
+echo "Serasmart AI — site-ul, aplicația de telefon și OmniRoute pe acest server."
 echo "Răspunde la întrebări; Enter alege valoarea din paranteze. Ce e deja salvat în .env rămâne."
 
 step "1/8 Setările serverului (.env)"
@@ -139,12 +145,12 @@ elif [ -z "$(env_get OWNER_INITIAL_PASSWORD)" ]; then
     fi
   fi
 fi
-if [ -z "$(env_get AI_STOICA_DOMAIN)" ]; then
+if [ -z "$(env_get SERASMART_DOMAIN)" ]; then
   ask "Adresa API-ului" "api.aistoica.ro"
   valid_value "$REPLY" || die "adresă invalidă: $REPLY"
-  env_set AI_STOICA_DOMAIN "${REPLY,,}"
+  env_set SERASMART_DOMAIN "${REPLY,,}"
 fi
-api_domain="$(env_get AI_STOICA_DOMAIN)"
+api_domain="$(env_get SERASMART_DOMAIN)"
 
 step "2/8 Memorie pentru construirea site-ului"
 mem="$(awk '/^MemTotal:/ { print int($2 / 1024) }' "$MEMINFO" 2>/dev/null || true)"
@@ -165,11 +171,11 @@ else
 fi
 
 step "3/8 Adresa site-ului și DNS"
-domain="$(env_get AI_STOICA_WEB_DOMAIN)"
+domain="$(env_get SERASMART_WEB_DOMAIN)"
 ask "Adresa site-ului" "${domain:-aistoica.ro}"
 domain="${REPLY,,}"
 valid_value "$domain" || die "adresă invalidă: $domain"
-env_set AI_STOICA_WEB_DOMAIN "$domain"
+env_set SERASMART_WEB_DOMAIN "$domain"
 server_ips=" $(hostname -I 2>/dev/null || true) "
 public_ip=""
 for ip in $server_ips; do
@@ -310,6 +316,6 @@ echo
 echo "GATA. Ce urmează:"
 echo "  1. Deschide https://$domain și intră cu contul Owner ($owner)."
 echo "  2. Telefon: iPhone → Safari → Distribuie → „Adaugă pe ecranul principal”; Android → Chrome → „Instalează aplicația”."
-echo "  3. Windows: AI Stoica → Setări → AI & OmniRoute → Adresa serviciului AI Stoica: https://$domain"
+echo "  3. Windows: Serasmart AI → Setări → AI & OmniRoute → Adresa serviciului Serasmart AI: https://$domain"
 echo "  4. După ce totul merge: o cheie OmniRoute nouă în API Manager, apoi rulează din nou acest script."
 echo "  Actualizări: sudo bash $(cd "$DEPLOY/../.." && pwd)/deploy/hetzner/update.sh"

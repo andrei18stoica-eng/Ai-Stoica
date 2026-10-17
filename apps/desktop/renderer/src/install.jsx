@@ -18,7 +18,7 @@ const isStandalone = () => window.matchMedia?.("(display-mode: standalone)")?.ma
 const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 // On iPhone only Safari can add a site to the home screen; Chrome/Firefox/in-app browsers (WhatsApp, Instagram…) hide it.
 const isIosSafari = () => isIos() && /safari/i.test(navigator.userAgent) && !/crios|fxios|edgios|opios|gsa\/|fban|fbav|instagram|whatsapp/i.test(navigator.userAgent);
-const DISMISS_KEY = "aiStoicaInstallDismissedAt";
+const DISMISS_KEY = "serasmartInstallDismissedAt";
 const DISMISS_DAYS = 7;
 
 function useInstallState() {
@@ -46,8 +46,8 @@ function InstallSteps() {
   </ol>;
 }
 
-// "Convertește AI Stoica în aplicație": a card with the logo and the name, on the sign-in page and (until dismissed
-// for a week) as a banner under the app's header, whenever AI Stoica is open in a browser instead of as the installed
+// "Convertește Serasmart AI în aplicație": a card with the logo and the name, on the sign-in page and (until dismissed
+// for a week) as a banner under the app's header, whenever Serasmart AI is open in a browser instead of as the installed
 // app. The banner takes its own row, so it never covers the conversation or the side menu.
 export function InstallApp({ banner = false }) {
   const refresh = useInstallState();

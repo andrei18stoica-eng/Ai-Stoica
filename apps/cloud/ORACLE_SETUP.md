@@ -1,6 +1,6 @@
-# Oracle Cloud Always Free — AI Stoica 24/7
+# Oracle Cloud Always Free — Serasmart AI 24/7
 
-Acest ghid pornește AI Stoica Gateway + OmniRoute + Redis + HTTPS pe un VM Oracle Cloud Ubuntu, pentru aplicația desktop. Aplicația de telefon folosește Worker-ul Cloudflare (vezi pasul 8).
+Acest ghid pornește Serasmart AI Gateway + OmniRoute + Redis + HTTPS pe un VM Oracle Cloud Ubuntu, pentru aplicația desktop. Aplicația de telefon folosește Worker-ul Cloudflare (vezi pasul 8).
 
 ## 1. Creează VM-ul
 
@@ -24,7 +24,7 @@ OmniRoute publică imagini Docker native pentru `linux/arm64`, deci Ampere A1 po
 NU publica în internet:
 
 - 20128 — OmniRoute;
-- 8787 — AI Stoica Gateway;
+- 8787 — Serasmart AI Gateway;
 - 6379 — Redis.
 
 Aceste porturi rămân private/loopback prin Docker Compose.
@@ -46,11 +46,11 @@ Acesta rezolvă către IP-ul VM-ului și Caddy poate obține automat un certific
 După conectarea SSH și clonarea repository-ului:
 
 ```bash
-cd Ai-Stoica
+cd Serasmart-AI
 sudo bash apps/cloud/install-ubuntu.sh
 ```
 
-## 5. Configurează AI Stoica
+## 5. Configurează Serasmart AI
 
 ```bash
 cd apps/cloud
@@ -61,18 +61,18 @@ openssl rand -hex 32
 Editează `.env`:
 
 ```env
-AI_STOICA_DOMAIN=203.0.113.10.sslip.io
-AI_STOICA_OWNER_EMAIL=emailul-tau@exemplu.ro
+SERASMART_DOMAIN=203.0.113.10.sslip.io
+SERASMART_OWNER_EMAIL=emailul-tau@exemplu.ro
 OMNIROUTE_BASE_URL=http://omniroute:20128/v1
 OMNIROUTE_API_KEY=
-AI_STOICA_DEFAULT_MODEL=
-AI_STOICA_SPEECH_MODEL=openai/whisper-1
-AI_STOICA_SPEECH_LANGUAGE=ro
-AI_STOICA_OPEN_REGISTRATION=false
+SERASMART_DEFAULT_MODEL=
+SERASMART_SPEECH_MODEL=openai/whisper-1
+SERASMART_SPEECH_LANGUAGE=ro
+SERASMART_OPEN_REGISTRATION=false
 OMNIROUTE_WS_BRIDGE_SECRET=SECRETUL_GENERAT_MAI_SUS
 ```
 
-`AI_STOICA_DEFAULT_MODEL` gol înseamnă că Gateway-ul alege modelul: prima ta combinație OmniRoute (de exemplu „Ai principal”). Poți pune și un id exact din OmniRoute (de exemplu `groq/openai/gpt-oss-120b`). Celelalte variabile opționale sunt descrise în `.env.example`.
+`SERASMART_DEFAULT_MODEL` gol înseamnă că Gateway-ul alege modelul: prima ta combinație OmniRoute (de exemplu „Ai principal”). Poți pune și un id exact din OmniRoute (de exemplu `groq/openai/gpt-oss-120b`). Celelalte variabile opționale sunt descrise în `.env.example`.
 
 ## 6. Pornește serviciile
 
@@ -88,7 +88,7 @@ https://DOMENIU/health
 
 Containerele folosesc `restart: unless-stopped`, deci repornesc automat după reboot.
 
-Creează imediat contul tău cu e-mailul din `AI_STOICA_OWNER_EMAIL`: cât timp `AI_STOICA_OPEN_REGISTRATION=false`, după primul cont nu se mai pot crea altele.
+Creează imediat contul tău cu e-mailul din `SERASMART_OWNER_EMAIL`: cât timp `SERASMART_OPEN_REGISTRATION=false`, după primul cont nu se mai pot crea altele.
 
 ## 7. Configurează OmniRoute
 
@@ -111,7 +111,7 @@ Conectează furnizorii și modelele. În aplicația desktop fiecare utilizator a
 Telefonul NU se leagă de acest Gateway: aplicația mobilă folosește Worker-ul Cloudflare (`apps/cloudflare`), care are încărcarea de fișiere, exportul și aprobarea conturilor de care are nevoie. Publică Worker-ul după `apps/cloudflare/README.md`, apoi pune adresa lui în `apps/mobile/eas.json`:
 
 ```env
-EXPO_PUBLIC_GATEWAY_URL=https://ai-stoica.<subdomain>.workers.dev
+EXPO_PUBLIC_GATEWAY_URL=https://serasmart.<subdomain>.workers.dev
 EXPO_PUBLIC_DEFAULT_MODEL=AI Stoica Performance Max
 ```
 

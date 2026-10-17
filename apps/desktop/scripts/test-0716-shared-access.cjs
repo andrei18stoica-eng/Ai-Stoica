@@ -66,7 +66,7 @@ async function main() {
     if (u === "https://api.openai.com/v1/chat/completions") { direct.push("openai/" + model); return json(answer("openai " + model)); }
     return new Response("{}", { status: 503 });
   };
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-shared-access-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-shared-access-"));
   const gw = startLocalGateway({ dataDir: dir, port: 8879, host: "127.0.0.1", getOmniConfig: () => cfg });
   const base = "http://127.0.0.1:8879";
   const call = (p, token, payload) => realFetch(base + p, { method: payload ? "POST" : "GET", headers: { "content-type": "application/json", authorization: "Bearer " + token }, body: payload ? JSON.stringify(payload) : undefined });
@@ -132,9 +132,9 @@ async function main() {
   const repo = path.join(__dirname, "..", "..", "..");
   const { EDITABLE } = require("../lib/serversettings.cjs");
   expect(EDITABLE.includes("sharedCombos"), "the Owner can share combinations from the site");
-  expect(/sharedCombos:[^\n]*AI_STOICA_SHARED_COMBOS/.test(fs.readFileSync(path.join(repo, "apps", "cloud", "server.cjs"), "utf8")), "apps/cloud reads AI_STOICA_SHARED_COMBOS");
+  expect(/sharedCombos:[^\n]*SERASMART_SHARED_COMBOS/.test(fs.readFileSync(path.join(repo, "apps", "cloud", "server.cjs"), "utf8")), "apps/cloud reads SERASMART_SHARED_COMBOS");
   for (const f of [["apps", "cloud", "docker-compose.yml"], ["deploy", "hetzner", "docker-compose.yml"]])
-    expect(fs.readFileSync(path.join(repo, ...f), "utf8").includes("AI_STOICA_SHARED_COMBOS: ${AI_STOICA_SHARED_COMBOS-}"), f.join("/") + " passes AI_STOICA_SHARED_COMBOS");
+    expect(fs.readFileSync(path.join(repo, ...f), "utf8").includes("SERASMART_SHARED_COMBOS: ${SERASMART_SHARED_COMBOS-${AI_STOICA_SHARED_COMBOS-}}"), f.join("/") + " passes SERASMART_SHARED_COMBOS");
   const ui = fs.readFileSync(path.join(__dirname, "..", "renderer", "src", "main.jsx"), "utf8");
   expect(/function SharedCombos/.test(ui), "Settings show «Combinații pentru toate conturile»");
   expect(ui.includes("locked={lockedModels}") && ui.includes('className="modelOption locked" onClick={()=>notAllowed(x)}') && ui.includes("nu îți este permis de Owner"), "the model list shows the locked models and says why when one is chosen");

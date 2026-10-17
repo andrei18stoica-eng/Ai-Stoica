@@ -39,7 +39,7 @@ async function units() {
 }
 
 async function gateway() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-skills-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-skills-"));
   const systems = [];
   const omni = http.createServer((req, res) => {
     let body = ""; req.on("data", (c) => body += c); req.on("end", () => {

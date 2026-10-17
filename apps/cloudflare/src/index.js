@@ -275,7 +275,7 @@ async function storeFile(env, userId, { name, mimeType, bytes, source = "generat
   return { id, name: clean, mimeType: mime, size: data.byteLength, source, createdAt };
 }
 
-function maxUploadMb(env) { return Math.max(1, Number(env.AI_STOICA_FILE_MAX_MB || 25)); }
+function maxUploadMb(env) { return Math.max(1, Number(env.SERASMART_FILE_MAX_MB || 25)); }
 async function saveUpload(env, user, request, name, mime) {
   const maxMb = maxUploadMb(env), maxBytes = maxMb * 1024 * 1024;
   const tooLarge = () => fail(413, "Fișierul depășește limita de " + maxMb + " MB.");
@@ -475,7 +475,7 @@ async function makePptx(title, content) {
 
 async function githubApi(env, suffix, options = {}) {
   if (!env.GITHUB_TOKEN) throw fail(503, "GitHub nu este configurat în Serasmart Cloud (lipsește secretul GITHUB_TOKEN).");
-  const repo = env.GITHUB_REPO || "andrei18stoica-eng/Ai-Stoica";
+  const repo = env.GITHUB_REPO || "andrei18stoica-eng/Serasmart-AI";
   let r;
   try {
     r = await fetch("https://api.github.com/repos/" + repo + suffix, {
@@ -485,7 +485,7 @@ async function githubApi(env, suffix, options = {}) {
         "Accept": "application/vnd.github+json",
         "Authorization": "Bearer " + env.GITHUB_TOKEN,
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "AI-Stoica",
+        "User-Agent": "Serasmart-AI",
         ...(options.headers || {})
       }
     });
@@ -542,7 +542,7 @@ function memoryCategory(text) {
 }
 const EXPLICIT_MEMORY = /(^|[^a-z])(tine minte|retine|memoreaza|noteaza(-ti)?|sa nu uiti|nu uita|remember|keep in mind)([^a-z]|$)/;
 const REQUEST_START = /^(te rog[, ]+)?(fa|fa-mi|faceti|scrie|scrie-mi|genereaza|creeaza|da-mi|trimite|spune|spune-mi|explica|explica-mi|rezuma|rezuma-mi|tradu|traduce|calculeaza|cauta|verifica|arata|arata-mi|ajuta|ajuta-ma|poti|puteti|as vrea|vreau (sa|un|o|niste)|ce|cum|cand|unde|cine|care|de ce|cat|cati|cate)([^a-z]|$)/;
-const DURABLE_FACT = /(^|[^a-z])(prefer|imi place|nu imi place|nu-mi place|ma numesc|numele meu|locuiesc|stau in|sunt din|sunt de profesie|lucrez (la|ca|in|pentru)|firma mea|compania mea|afacerea mea|proiectul meu|am decis|decizia (mea|noastra)|de acum (inainte|incolo)|intotdeauna|mereu sa|niciodata sa|folosesc (mereu|de obicei|zilnic)|obiectivul meu|scopul meu|limba mea|stilul meu|vreau ca (ai stoica|tu|raspunsurile|raspunsul)|raspunde(-mi)? (mereu|intotdeauna|doar|numai))([^a-z]|$)/;
+const DURABLE_FACT = /(^|[^a-z])(prefer|imi place|nu imi place|nu-mi place|ma numesc|numele meu|locuiesc|stau in|sunt din|sunt de profesie|lucrez (la|ca|in|pentru)|firma mea|compania mea|afacerea mea|proiectul meu|am decis|decizia (mea|noastra)|de acum (inainte|incolo)|intotdeauna|mereu sa|niciodata sa|folosesc (mereu|de obicei|zilnic)|obiectivul meu|scopul meu|limba mea|stilul meu|vreau ca (serasmart( ai)?|ai stoica|tu|raspunsurile|raspunsul)|raspunde(-mi)? (mereu|intotdeauna|doar|numai))([^a-z]|$)/;
 function durableMemoryCandidate(userText) {
   const clean = String(userText || "").trim();
   if (clean.length < 12) return "";
@@ -597,13 +597,13 @@ function extractText(data) {
   if (Array.isArray(data.output)) return data.output.flatMap(x => x?.content || []).map(x => x?.text || x?.content || "").join("").trim();
   return "";
 }
-function temperature(env) { const t = Number(env.AI_STOICA_TEMPERATURE); return Number.isFinite(t) ? t : 0.35; }
+function temperature(env) { const t = Number(env.SERASMART_TEMPERATURE); return Number.isFinite(t) ? t : 0.35; }
 
 async function callCloudflare(env, messages, model) {
   const selectedModel = model || env.CF_MODEL || "@cf/nvidia/nemotron-3-120b-a12b";
   const result = await withTimeout(env.AI.run(selectedModel, {
     messages,
-    max_tokens: Number(env.AI_STOICA_MAX_OUTPUT || 4096),
+    max_tokens: Number(env.SERASMART_MAX_OUTPUT || 4096),
     temperature: temperature(env)
   }), 120000, "Cloudflare AI nu a răspuns la timp.");
   const text = extractText(result);
@@ -628,7 +628,7 @@ async function callOpenAICompatible({ baseUrl, apiKey, model, messages, provider
 
 async function routeAI(env, messages, perms = {}) {
   const errors = [], allowed = p => perms[p] !== false;
-  const maxOutput = Number(env.AI_STOICA_MAX_OUTPUT || 4096), temp = temperature(env);
+  const maxOutput = Number(env.SERASMART_MAX_OUTPUT || 4096), temp = temperature(env);
   let tried = 0;
   if (env.CEREBRAS_API_KEY && allowed("cerebras")) {
     tried++;
@@ -667,7 +667,7 @@ async function itemData(env, userId, kind, id) {
 
 async function chatMessages(env, user, incoming, { projectId, assistantId } = {}) {
   const expanded = await expandAttachmentMessages(env, user.id, incoming);
-  const raw = performanceContext(expanded, Number(env.AI_STOICA_MAX_HISTORY || 80), Number(env.AI_STOICA_MAX_CONTEXT_CHARS || 300000));
+  const raw = performanceContext(expanded, Number(env.SERASMART_MAX_HISTORY || 80), Number(env.SERASMART_MAX_CONTEXT_CHARS || 300000));
   const latest = [...raw].reverse().find(m => m.role === "user")?.content || "";
   const memoryOn = user.memory_enabled == null || Number(user.memory_enabled) !== 0;
   const memories = memoryOn ? await relevantMemories(env, user.id, latest, 16) : [];
@@ -1023,7 +1023,7 @@ route("POST", "/api/generate/image", async ctx => {
     return json({ error: "Modelul de imagini nu a putut genera imaginea: " + e.message }, 502);
   }
   const file = await storeFile(env, user.id, {
-    name: "ai-stoica-image-" + new Date().toISOString().replace(/[:.]/g, "-") + ".jpg",
+    name: "serasmart-image-" + new Date().toISOString().replace(/[:.]/g, "-") + ".jpg",
     mimeType: "image/jpeg", bytes, source: "ai-image"
   });
   return json({ data: file, model });
@@ -1050,7 +1050,7 @@ route("POST", "/api/github/solve", async ctx => {
   if (original.length > 220000) return json({ error: "Fișierul este prea mare pentru rezolvarea automată într-un singur pas." }, 413);
   const messages = [
     { role: "system", content: "Ești agentul de programare Serasmart AI. Primești un fișier din repository și o cerință. Returnează EXCLUSIV conținutul complet al fișierului corectat, fără explicații și fără delimitatoare Markdown." },
-    { role: "user", content: "Repository: " + (env.GITHUB_REPO || "andrei18stoica-eng/Ai-Stoica") + "\nFișier: " + path + "\nCerință: " + instruction + "\n\nCONȚINUT ACTUAL:\n" + original }
+    { role: "user", content: "Repository: " + (env.GITHUB_REPO || "andrei18stoica-eng/Serasmart-AI") + "\nFișier: " + path + "\nCerință: " + instruction + "\n\nCONȚINUT ACTUAL:\n" + original }
   ];
   const out = await routeAI(env, messages, await permissionsOf(ctx));
   const proposal = String(out.text || "").trim().replace(/^\x60\x60\x60[^\n]*\n/, "").replace(/\n\x60\x60\x60$/, "").trim();

@@ -7,7 +7,7 @@ function expect(v, m) { if (!v) throw new Error(m); }
 const listen = (srv) => new Promise((r) => srv.listen(0, "127.0.0.1", () => r(srv.address().port)));
 
 async function main() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-voice17-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-voice17-"));
   const omni = http.createServer((req, res) => { req.on("data", () => {}); req.on("end", () => { res.statusCode = 404; res.end("{}"); }); });
   const omniPort = await listen(omni);
   const cfg = { baseUrl: `http://127.0.0.1:${omniPort}/v1`, apiKey: "k", model: "", webSearchEnabled: false, githubAutoContext: false, groqApiKey: "gsk-test" };
@@ -39,7 +39,7 @@ async function main() {
   const micFn = ui.slice(ui.indexOf("async function mic(){"), ui.indexOf("const hasContent="));
   expect(!/file_upload/.test(micFn), "the microphone must not need the file permission");
   expect(/r\.interimResults=true/.test(ui) && /setDraft\(base\+heard\)/.test(ui), "the words must appear in the box while speaking");
-  expect(/api\("\/api\/transcribe"/.test(ui) && /startRecorder\(\);return;/.test(ui), "when recognition fails the recording is transcribed by AI Stoica");
+  expect(/api\("\/api\/transcribe"/.test(ui) && /startRecorder\(\);return;/.test(ui), "when recognition fails the recording is transcribed by Serasmart AI");
   expect(/function finishVoice\(text\)/.test(ui) && /setVoiceTick/.test(ui), "stopping sends the message");
   console.log("test-0717-voice: OK");
 }

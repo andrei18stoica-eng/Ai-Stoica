@@ -73,7 +73,7 @@ function memoryCategory(text) {
 
 const EXPLICIT_MEMORY = /(^|[^a-z])(tine minte|retine|memoreaza|noteaza(-ti)?|sa nu uiti|nu uita|remember|keep in mind)([^a-z]|$)/;
 const REQUEST_START = /^(te rog[, ]+)?(fa|fa-mi|faceti|scrie|scrie-mi|genereaza|creeaza|da-mi|trimite|spune|spune-mi|explica|explica-mi|rezuma|rezuma-mi|tradu|traduce|calculeaza|cauta|verifica|arata|arata-mi|ajuta|ajuta-ma|poti|puteti|as vrea|vreau (sa|un|o|niste)|ce|cum|cand|unde|cine|care|de ce|cat|cati|cate)([^a-z]|$)/;
-const DURABLE_FACT = /(^|[^a-z])(prefer|imi place|nu imi place|nu-mi place|ma numesc|numele meu|locuiesc|stau in|sunt din|sunt de profesie|lucrez (la|ca|in|pentru)|firma mea|compania mea|afacerea mea|proiectul meu|am decis|decizia (mea|noastra)|de acum (inainte|incolo)|intotdeauna|mereu sa|niciodata sa|folosesc (mereu|de obicei|zilnic)|obiectivul meu|scopul meu|limba mea|stilul meu|vreau ca (ai stoica|tu|raspunsurile|raspunsul)|raspunde(-mi)? (mereu|intotdeauna|doar|numai))([^a-z]|$)/;
+const DURABLE_FACT = /(^|[^a-z])(prefer|imi place|nu imi place|nu-mi place|ma numesc|numele meu|locuiesc|stau in|sunt din|sunt de profesie|lucrez (la|ca|in|pentru)|firma mea|compania mea|afacerea mea|proiectul meu|am decis|decizia (mea|noastra)|de acum (inainte|incolo)|intotdeauna|mereu sa|niciodata sa|folosesc (mereu|de obicei|zilnic)|obiectivul meu|scopul meu|limba mea|stilul meu|vreau ca (serasmart( ai)?|ai stoica|tu|raspunsurile|raspunsul)|raspunde(-mi)? (mereu|intotdeauna|doar|numai))([^a-z]|$)/;
 
 // Only explicit requests ("ține minte …") and first-person durable facts or preferences are kept.
 // Questions, one-off requests and long pasted text are not memories.

@@ -3,8 +3,8 @@ import { SquareTerminal, GitBranch, Sparkles, ShieldCheck } from "lucide-react";
 import { api, toast, ToolShell } from "../core.jsx";
 import { BRAND_NAME } from "../brand.js";
 
-// "Code AI Stoica": start a programming conversation with Codex or Claude Code. The Owner uses the subscriptions
-// connected in OmniRoute; an account the Owner gave access to (Control Center → "Code AI Stoica") uses the paid APIs.
+// "Code Serasmart AI": start a programming conversation with Codex or Claude Code. The Owner uses the subscriptions
+// connected in OmniRoute; an account the Owner gave access to (Control Center → "Code Serasmart AI") uses the paid APIs.
 const GROUPS = [
   ["codex", "Codex", "Abonamentul tău ChatGPT, conectat în OmniRoute"],
   ["claude-code", "Claude Code", "Abonamentul tău Claude, conectat în OmniRoute"],

@@ -1,7 +1,7 @@
 // 0.7.18, from the diagnosis of 2026-10-16: pictures and video were set to «Gemini only» and Gemini was down in
 // OmniRoute (503) with no Gemini key working, so every picture and video failed. «Făcute de» is now the order of
 // preference: Gemini first, and when it makes nothing the other providers that work (the ChatGPT subscription for the
-// Owner, the free web video, Pollinations without a key). AI_STOICA_MEDIA_STRICT=true keeps the old rule.
+// Owner, the free web video, Pollinations without a key). SERASMART_MEDIA_STRICT=true keeps the old rule.
 const fs = require("fs"), http = require("http"), os = require("os"), path = require("path");
 const { startLocalGateway } = require("../local-gateway.cjs");
 
@@ -11,7 +11,7 @@ const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 const mp4 = Buffer.concat([Buffer.from("000000186674797069736f6d0000020069736f6d69736f32", "hex"), Buffer.alloc(64)]);
 
 async function main() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-media-fallback-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-media-fallback-"));
   const omniAsked = [];
   // OmniRoute: Gemini Web is down (503), the ChatGPT subscription makes pictures, the free web video makes video.
   const omni = http.createServer((req, res) => {
@@ -86,9 +86,9 @@ async function main() {
   }
   const repo = path.join(__dirname, "..", "..", "..");
   const server = fs.readFileSync(path.join(repo, "apps", "cloud", "server.cjs"), "utf8");
-  expect(/mediaStrict:[^\n]*AI_STOICA_MEDIA_STRICT/.test(server), "apps/cloud/server.cjs reads AI_STOICA_MEDIA_STRICT");
+  expect(/mediaStrict:[^\n]*SERASMART_MEDIA_STRICT/.test(server), "apps/cloud/server.cjs reads SERASMART_MEDIA_STRICT");
   for (const f of [["apps", "cloud", "docker-compose.yml"], ["deploy", "hetzner", "docker-compose.yml"]]) {
-    expect(fs.readFileSync(path.join(repo, ...f), "utf8").includes("AI_STOICA_MEDIA_STRICT: ${AI_STOICA_MEDIA_STRICT:-false}"), f.join("/") + " passes AI_STOICA_MEDIA_STRICT");
+    expect(fs.readFileSync(path.join(repo, ...f), "utf8").includes("SERASMART_MEDIA_STRICT: ${SERASMART_MEDIA_STRICT:-${AI_STOICA_MEDIA_STRICT:-false}}"), f.join("/") + " passes SERASMART_MEDIA_STRICT");
   }
   const { EDITABLE } = require("../lib/serversettings.cjs");
   expect(EDITABLE.includes("mediaStrict"), "the Owner can change it on the site");

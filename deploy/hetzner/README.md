@@ -1,21 +1,21 @@
-# AI Stoica — Hetzner Production
+# Serasmart AI — Hetzner Production
 
-Production foundation for Ubuntu 26.04 LTS + Docker. This is the "AI Stoica Cloud" API used by the desktop app in cloud mode (accounts, approval, permissions, AI policy, notifications, audit).
+Production foundation for Ubuntu 26.04 LTS + Docker. This is the "Serasmart Cloud" API used by the desktop app in cloud mode (accounts, approval, permissions, AI policy, notifications, audit).
 
 ## Default stack
 
 - PostgreSQL 17
-- AI Stoica Server
+- Serasmart AI Server
 - Caddy is optional until a real domain is configured
 - API is bound to 127.0.0.1:8787 and is not directly exposed to the internet
 
 ## First start
 
-Clone the repository to `/opt/ai-stoica` (the path `update.sh` expects):
+Clone the repository to `/opt/serasmart` (the path `update.sh` expects):
 
 ```bash
-sudo git clone https://github.com/andrei18stoica-eng/Ai-Stoica.git /opt/ai-stoica
-cd /opt/ai-stoica/deploy/hetzner
+sudo git clone https://github.com/andrei18stoica-eng/Serasmart-AI.git /opt/serasmart
+cd /opt/serasmart/deploy/hetzner
 cp .env.example .env
 ```
 
@@ -34,7 +34,7 @@ Database migrations (`apps/server/migrations/*.sql`) run automatically at start-
 ## Updates
 
 ```bash
-sudo bash /opt/ai-stoica/deploy/hetzner/update.sh
+sudo bash /opt/serasmart/deploy/hetzner/update.sh
 ```
 
 The script refuses to run when the checkout has local changes, pulls `main`, rebuilds the API and waits for `/health`.
@@ -83,12 +83,12 @@ The API container runs as the unprivileged `node` user.
 
 ## Web: aistoica.ro and the free phone app (PWA)
 
-The `web` service (profile `web`) runs the AI Stoica service with the web interface (image `apps/cloud`, which also builds the React interface). Its accounts, approval and permissions come from the `api` service, so they are the same accounts as the Windows app in cloud mode. Caddy serves it at `AI_STOICA_WEB_DOMAIN` with HTTPS.
+The `web` service (profile `web`) runs the Serasmart AI service with the web interface (image `apps/cloud`, which also builds the React interface). Its accounts, approval and permissions come from the `api` service, so they are the same accounts as the Windows app in cloud mode. Caddy serves it at `SERASMART_WEB_DOMAIN` with HTTPS.
 
-**Guided setup (0.7.15):** after the DNS record below, `sudo bash /opt/ai-stoica/deploy/hetzner/setup-web.sh` does steps 2–3 and the OmniRoute part: it backs `.env` up, checks DNS and memory (offers a 2 GB swap file on small servers), turns on `edge,web`, generates the OmniRoute secrets, takes the keys pasted from the Windows app (Settings → API-uri AI → "Copiază cheile pentru server"), starts OmniRoute, explains the database import, checks the OmniRoute key, builds the site and checks `/health` and HTTPS. Running it again keeps every value.
+**Guided setup (0.7.15):** after the DNS record below, `sudo bash /opt/serasmart/deploy/hetzner/setup-web.sh` does steps 2–3 and the OmniRoute part: it backs `.env` up, checks DNS and memory (offers a 2 GB swap file on small servers), turns on `edge,web`, generates the OmniRoute secrets, takes the keys pasted from the Windows app (Settings → API-uri AI → "Copiază cheile pentru server"), starts OmniRoute, explains the database import, checks the OmniRoute key, builds the site and checks `/health` and HTTPS. Running it again keeps every value.
 
 1. DNS: an **A** record for `aistoica.ro` pointing to this server (the same IP as `api.aistoica.ro`).
-2. In `.env`: `AI_STOICA_WEB_DOMAIN=aistoica.ro`, `COMPOSE_PROFILES=edge,web`, a random `OMNIROUTE_WS_BRIDGE_SECRET` (`openssl rand -hex 32`) and the same AI keys as in the Windows app (Settings → API-uri AI): the web version then lists the same models. Free: Cerebras, Groq, Gemini, Mistral, NVIDIA, GitHub Models (`AI_STOICA_GITHUB_TOKEN`), Cloudflare, Cohere, Hugging Face (`HF_TOKEN`); images and video: Pollinations, fal, Replicate, Together, Stability.
+2. In `.env`: `SERASMART_WEB_DOMAIN=aistoica.ro`, `COMPOSE_PROFILES=edge,web`, a random `OMNIROUTE_WS_BRIDGE_SECRET` (`openssl rand -hex 32`) and the same AI keys as in the Windows app (Settings → API-uri AI): the web version then lists the same models. Free: Cerebras, Groq, Gemini, Mistral, NVIDIA, GitHub Models (`SERASMART_GITHUB_TOKEN`), Cloudflare, Cohere, Hugging Face (`HF_TOKEN`); images and video: Pollinations, fal, Replicate, Together, Stability.
 3. Start it:
 
 ```bash
@@ -109,9 +109,9 @@ On phones the site installs as an app for free: Safari → Share → "Add to Hom
 ## Update from the app (0.7.16)
 
 `update.sh` also installs (as root, through `install-updater.sh`) a small systemd service: the site's Owner button
-**Setări → „Actualizează site-ul acum”** only drops a request file in `/var/lib/ai-stoica-update` (mounted in the web
-container as `/update`); `ai-stoica-update.path` then runs `update-runner.sh`, which runs `update.sh` and writes
-`status.json` (result and the last 40 log lines) for the site. `ai-stoica-update-check.timer` looks for a new version
+**Setări → „Actualizează site-ul acum”** only drops a request file in `/var/lib/serasmart-update` (mounted in the web
+container as `/update`); `serasmart-update.path` then runs `update-runner.sh`, which runs `update.sh` and writes
+`status.json` (result and the last 40 log lines) for the site. `serasmart-update-check.timer` looks for a new version
 every hour (`available.json`) and installs it when the Owner turned on automatic updates (file `auto`).
-Check it with `systemctl status ai-stoica-update.path ai-stoica-update-check.timer` and `cat /var/lib/ai-stoica-update/update.log`.
+Check it with `systemctl status serasmart-update.path serasmart-update-check.timer` and `cat /var/lib/serasmart-update/update.log`.
 

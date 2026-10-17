@@ -9,7 +9,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 
 async function main() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-0714-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-0714-"));
   // OmniRoute 3.8 stand-in: every /v1 route needs the client key, combinations are owned_by "combo".
   const omniSeen = [];
   const omni = http.createServer((req, res) => {

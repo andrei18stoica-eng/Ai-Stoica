@@ -10,7 +10,7 @@ async function expect(cond, msg) {
 }
 
 async function main() {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-doc-test-"));
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-doc-test-"));
   const port = 8797;
   const gateway = startLocalGateway({
     dataDir,
@@ -32,7 +32,7 @@ async function main() {
     const headers = { "content-type": "application/json", authorization: "Bearer " + auth.token };
 
     const content = [
-      "# Raport pentru AI Stoica",
+      "# Raport pentru Serasmart AI",
       "",
       "Acesta este un test cu diacritice românești: ă â î ș ț Ă Â Î Ș Ț.",
       "",
@@ -73,7 +73,7 @@ async function main() {
         if(format==="docx")await expect(!!archive.file("word/document.xml"),"DOCX fără word/document.xml");
         if(format==="pptx")await expect(!!archive.file("ppt/presentation.xml"),"PPTX fără ppt/presentation.xml");
         if(format==="xlsx")await expect(!!archive.file("xl/workbook.xml")&&!!archive.file("xl/worksheets/sheet1.xml"),"XLSX fără structura workbook");
-        if(format==="zip")await expect(!!archive.file("README.md"),"ZIP-ul AI Stoica nu conține README.md");
+        if(format==="zip")await expect(!!archive.file("README.md"),"ZIP-ul Serasmart AI nu conține README.md");
       } else if(format==="csv") {
         await expect(buf.toString("utf8").includes("Primul punct"),"CSV fără conținutul așteptat");
       } else if(format==="json") {

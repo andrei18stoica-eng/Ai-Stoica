@@ -1,4 +1,4 @@
-// Phone notifications for the Owner (Web Push, through the installed AI Stoica app on aistoica.ro).
+// Phone notifications for the Owner (Web Push, through the installed Serasmart AI app on aistoica.ro).
 // The VAPID keys come from VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY, or are generated once and kept in system_settings,
 // so nothing has to be added to .env. Expired phone subscriptions (404/410) are removed when a send fails.
 const { BRAND_NAME, BRAND_DOMAIN } = require("./brand.cjs");

@@ -217,7 +217,7 @@
 }
 
 
-/* v0.6.2 — AI Stoica plugin marketplace, ChatGPT-inspired layout */
+/* v0.6.2 — Serasmart AI plugin marketplace, ChatGPT-inspired layout */
 .toolModal:has(.stoicaPluginStore){width:min(1080px,98vw);max-height:92vh;background:#0e1117;border-color:#252b34;padding:18px 22px}
 .toolModal:has(.stoicaPluginStore)>.toolHead{padding:0;border:0;height:0;overflow:visible;position:relative;z-index:5}
 .toolModal:has(.stoicaPluginStore)>.toolHead>div{display:none}
@@ -476,7 +476,7 @@
 .stopButton svg{width:15px;height:15px}
 .composerLine textarea:not(:disabled){pointer-events:auto;user-select:text}
 
-/* AI Stoica 0.7.1 — ChatGPT-inspired response modes and tool composer */
+/* Serasmart AI 0.7.1 — ChatGPT-inspired response modes and tool composer */
 
 
 
@@ -484,7 +484,7 @@
 .attachMenu .menuDivider{height:1px;background:rgba(255,255,255,.08);margin:5px 0}
 
 
-/* AI Stoica 0.7.2 — ChatGPT-like conversation search */
+/* Serasmart AI 0.7.2 — ChatGPT-like conversation search */
 .searchBox{position:relative}
 .searchBox .searchClear{display:grid;place-items:center;border:0;background:transparent;color:inherit;opacity:.65;cursor:pointer;padding:4px}
 @media (hover:hover) and (pointer:fine){.searchBox .searchClear:hover{opacity:1}}
@@ -505,14 +505,14 @@
 .searchNoResults{display:flex;align-items:center;gap:8px;padding:12px 8px;font-size:11px;opacity:.6}
 
 
-/* AI Stoica 0.7.3 — multi-provider image settings */
+/* Serasmart AI 0.7.3 — multi-provider image settings */
 .providerGroup{display:flex;flex-direction:column;gap:2px;margin:14px 0 5px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08)}
 .providerGroup:first-of-type{margin-top:6px}
 .providerGroup>b{font-size:12px}
 .providerGroup>small{font-size:10px;opacity:.6}
 
 
-/* AI Stoica 0.7.4 — jump to latest message like ChatGPT */
+/* Serasmart AI 0.7.4 — jump to latest message like ChatGPT */
 .jumpToLatest{
   position:absolute;
   left:50%;
@@ -542,7 +542,7 @@
 }
 
 
-/* AI Stoica 0.7.6 — dedicated Photos settings section */
+/* Serasmart AI 0.7.6 — dedicated Photos settings section */
 .settingsSectionTitle{display:flex;align-items:center;gap:11px;margin:0 0 14px}
 .settingsSectionTitle h3{margin:0}
 .settingsSectionTitle p{margin:3px 0 0;color:#738299;font-size:11px}
@@ -550,13 +550,13 @@
 .providerTest{margin:14px 0;border:1px solid #233249;background:#0a1018;border-radius:13px;padding:12px;display:grid;gap:8px}.providerTestHead{display:flex;align-items:center;gap:12px}.providerTestHead>div{flex:1}.providerTestHead b,.providerTestHead span{display:block}.providerTestHead span{color:#718197;font-size:11px;margin-top:3px}.providerRow{display:flex;align-items:center;gap:8px;border-radius:9px;padding:8px 10px;font-size:12px;border:1px solid #233249}.providerRow b{white-space:nowrap}.providerRow span{color:#8d9bb0;min-width:0;overflow:hidden;text-overflow:ellipsis}.providerRow.good{border-color:#1d5a43;color:#71d09b}.providerRow.bad{border-color:#5a2a33;color:#ff8b9b}.providerMedia{color:#718197;font-size:11px;line-height:1.5}
 .firstRun{width:min(560px,94vw)}.firstRunSteps{margin:6px 0 12px;padding-left:20px;display:grid;gap:14px}.firstRunSteps li{display:grid;gap:7px}.firstRunSteps li b{font-size:14px}.firstRunSteps li span{color:#7d8da2;font-size:12px}.firstRunSteps .primary,.firstRunSteps .secondary{width:fit-content}.firstRunSteps input{border:1px solid #26354a;background:#080d14;color:white;border-radius:10px;padding:11px 12px;outline:0}.linkBtn{border:0;background:transparent;color:#6daeff;cursor:pointer;padding:0;text-decoration:underline}
 
-/* AI Stoica 0.7.11 — accesibilitate, notificări, permisiuni, arhivă și corecturi de afișare */
+/* Serasmart AI 0.7.11 — accesibilitate, notificări, permisiuni, arhivă și corecturi de afișare */
 .crashScreen{height:100vh;background:#05070b;color:#e9eef7;display:grid;place-items:center;font-family:"Segoe UI",sans-serif;padding:24px}
 .crashScreen>div{max-width:720px}
 .crashScreen h1{margin-top:0}
 .crashScreen p{color:#9ba9bc;line-height:1.6}
 .crashScreen pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:40vh;overflow:auto;background:#0d131d;border:1px solid #26354a;border-radius:12px;padding:14px;color:#ffb0b8}
-#aiStoicaToasts{position:fixed;right:18px;bottom:18px;z-index:1000;display:grid;gap:8px;width:min(420px,calc(100vw - 36px));pointer-events:none}
+#serasmartToasts{position:fixed;right:18px;bottom:18px;z-index:1000;display:grid;gap:8px;width:min(420px,calc(100vw - 36px));pointer-events:none}
 .aiToast{pointer-events:auto;display:flex;align-items:flex-start;gap:10px;padding:11px 12px;border-radius:12px;font-size:13px;line-height:1.45;box-shadow:0 18px 50px #000a;border:1px solid #5a2a33;background:#22121a;color:#ffd5db;animation:toastIn .16s ease-out}
 .aiToast.ok{border-color:#1d5a43;background:#0f2219;color:#c7f0d8}
 .aiToast.info{border-color:#2b4a6d;background:#0f1a28;color:#d5e6fb}
@@ -664,7 +664,7 @@ html,body{overflow:hidden}
 
 .labelLine{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
 .labelLine .optional{font-size:10px;color:#6f7d90;font-weight:400;text-align:right}
-#aiStoicaToasts{top:72px;bottom:auto}
+#serasmartToasts{top:72px;bottom:auto}
 
 .providerGroupTop{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .providerKeyLink{display:inline-flex;align-items:center;gap:5px;border:1px solid #2b4a6f;background:#10233b;color:#9cc9ff;border-radius:8px;padding:4px 9px;font-size:11px;font-weight:600;cursor:pointer}
@@ -850,7 +850,7 @@ html,body{overflow:hidden}
 @media(max-width:760px){.designLayout{grid-template-columns:1fr}.designList{display:none}.toolModal.pageModal{padding:14px 14px 0}.designLayout{margin:0 -14px}}
 .toolHead>.toolHeadActions{flex:none}
 .pageModal select,.taskFormModal select{font-size:13px}
-body:has(.modalBackdrop) #aiStoicaToasts{top:auto;bottom:18px}
+body:has(.modalBackdrop) #serasmartToasts{top:auto;bottom:18px}
 .runResult.assistantBody{font-size:13.5px;line-height:1.6}
 
 .appShell.sidebarCollapsed{grid-template-columns:minmax(0,1fr)}
@@ -865,7 +865,7 @@ body:has(.modalBackdrop) #aiStoicaToasts{top:auto;bottom:18px}
 .installHint b{color:#dfe8f4}
 @supports(height:100dvh){.appShell,.mainArea,.authShell,.loadingScreen{height:100dvh}}
 
-/* Install card ("Convertește AI Stoica în aplicație") on the sign-in page and floating in the web app */
+/* Install card ("Convertește Serasmart AI în aplicație") on the sign-in page and floating in the web app */
 .installCard{display:flex;align-items:flex-start;gap:12px;margin-top:14px;padding:12px;border:1px solid #2a3a55;border-radius:14px;background:linear-gradient(135deg,#0d1522,#0a0f18);color:#dfe8f4;text-align:left}
 .installCard img{flex:0 0 auto;width:44px;height:44px;border-radius:11px}
 .installCard .installText{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
@@ -877,7 +877,7 @@ body:has(.modalBackdrop) #aiStoicaToasts{top:auto;bottom:18px}
 .installSteps b{color:#fff}
 @media (max-width:420px){.installCard{flex-wrap:wrap}.installCard .installBtn{order:3;width:100%;justify-content:center}}
 
-/* File viewer: open images, video, PDF and documents inside AI Stoica */
+/* File viewer: open images, video, PDF and documents inside Serasmart AI */
 .viewerBackdrop{padding:10px}
 .fileViewer{width:min(1100px,96vw);height:min(92vh,1000px);display:flex;flex-direction:column;background:#0b1119;border:1px solid #26354a;border-radius:16px;overflow:hidden;box-shadow:0 30px 100px #000}
 .viewerHead{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #1e2938}
@@ -923,8 +923,8 @@ button,[role=button],summary{-webkit-user-select:none;user-select:none;-webkit-t
 /* Notch / home indicator (viewport-fit=cover in index.html). */
 .appShell{padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
 .composerDock{padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))}
-#aiStoicaToasts{top:calc(72px + env(safe-area-inset-top,0px))}
-body:has(.modalBackdrop) #aiStoicaToasts{top:auto;bottom:calc(18px + env(safe-area-inset-bottom,0px))}
+#serasmartToasts{top:calc(72px + env(safe-area-inset-top,0px))}
+body:has(.modalBackdrop) #serasmartToasts{top:auto;bottom:calc(18px + env(safe-area-inset-bottom,0px))}
 @media (max-width:600px){.fileViewer{padding-bottom:env(safe-area-inset-bottom,0px)}}
 
 /* Side menu on phones/tablets: slides with transform (not "left"), on the iOS drawer curve; hidden from Tab when closed. */
@@ -957,9 +957,9 @@ body:has(.modalBackdrop) #aiStoicaToasts{top:auto;bottom:calc(18px + env(safe-ar
 /* Tables: numbers stay whole ("12.345.678,90 lei" was split over three lines); a wide table scrolls sideways. */
 .assistantBody th,.assistantBody td{overflow-wrap:break-word;font-variant-numeric:tabular-nums}
 
-/* "Convertește AI Stoica în aplicație": its own row under the header, so it never covers the chat or the side menu. */
+/* "Convertește Serasmart AI în aplicație": its own row under the header, so it never covers the chat or the side menu. */
 .installCard.banner{flex:none;align-items:center;width:min(820px,calc(100% - 32px));margin:10px auto 0}
-/* On a phone: logo, text and ✕ on one row, the button under them (the logo already says "AI Stoica"). */
+/* On a phone: logo, text and ✕ on one row, the button under them (the logo already says "Serasmart AI"). */
 @media (max-width:420px){
   .installCard.banner{width:calc(100% - 20px);padding:10px;gap:8px 10px}
   .installCard.banner img{width:36px;height:36px;border-radius:9px}
@@ -1050,7 +1050,7 @@ h1,h2,h3{text-wrap:balance}
 .renameForm input{flex:1;min-width:140px;border:1px solid #2f6db1;background:#080d14;color:#e9eef7;border-radius:8px;padding:6px 9px;outline:0;font:inherit}
 @media (max-width:480px){.renameForm input{flex-basis:100%}}
 
-/* Code AI Stoica */
+/* Code Serasmart AI */
 .codePage .pageBody{display:flex;flex-direction:column;gap:14px}
 .codeGroup{border:1px solid #1f2c3c;border-radius:14px;padding:12px 14px;background:#0a1018}
 .codeGroupHead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px}
@@ -1104,3 +1104,31 @@ h1,h2,h3{text-wrap:balance}
 .skillSlug span{color:#55a8ff;font-weight:700}.skillSlug input{border:0;background:transparent;flex:1}.skillForm .formActions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
 .builtinSection h3{color:#72d9a2}
 @media(max-width:560px){.skillCard{flex-wrap:wrap}.skillCardActions{width:100%;justify-content:flex-end}.skillAuto span{display:none}}
+
+/* 0.7.22 — Usage: plan, this week's credits, packs, plans, Owner accounts */
+.usagePage .pageBody{display:grid;gap:18px}
+.usageOff{margin:0}
+.usageHero{border:1px solid #23344a;background:linear-gradient(180deg,#0f1722,#0b1119);border-radius:16px;padding:16px;display:grid;gap:12px}
+.usageHeroHead{display:flex;align-items:center;gap:12px}.usageHeroHead b{display:block;font-size:16px}.usageHeroHead small{color:#8fa0b5}
+.usageMeter{height:10px;border-radius:999px;background:#152132;overflow:hidden}.usageMeter span{display:block;height:100%;background:#3d8bff;border-radius:inherit;transition:width .4s cubic-bezier(.2,.8,.2,1)}
+.usageMeter.high span{background:#f0a23a}.usageMeter.full span{background:#ff5d73}
+.usageWeek{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:#b9c7d8;font-size:13px}
+.usageStats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.usageStats div{background:#0c131c;border:1px solid #1f2d40;border-radius:12px;padding:10px 12px;min-width:0}
+.usageStats small{display:block;color:#8fa0b5;font-size:12px}.usageStats b{font-size:18px;font-variant-numeric:tabular-nums}
+.usageSection h3{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:15px}
+.usagePack{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}.usagePack label{display:grid;gap:6px;font-size:13px;color:#b9c7d8}.usagePack input{width:150px}
+.usagePackPrice{display:grid;gap:2px;min-width:180px;flex:1}.usagePackPrice b{font-size:20px;font-variant-numeric:tabular-nums}.usagePackPrice small{color:#8fa0b5}
+.usagePlans{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.usagePlan{border:1px solid #1f2d40;background:#0c131c;border-radius:14px;padding:12px 14px;display:grid;gap:4px;align-content:start}.usagePlan.current{border-color:#3d8bff}
+.usagePlan b{display:flex;align-items:center;gap:6px}.usagePlanPrice{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}.usagePlanPrice small{font-size:12px;font-weight:500;color:#8fa0b5}
+.usagePlan>small{color:#8fa0b5}.usagePlan ul{margin:6px 0 0;padding-left:16px;color:#b9c7d8;font-size:13px;display:grid;gap:2px}
+.usageCosts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 18px}.usageCosts div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid #162233;padding:6px 0;font-size:13px}.usageCosts b{font-variant-numeric:tabular-nums}
+.usageTable{display:grid;border:1px solid #1f2d40;border-radius:12px;overflow:hidden}
+.usageRow{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,.7fr);gap:10px;padding:8px 12px;border-top:1px solid #162233;font-size:13px;align-items:center}
+.usageRow:first-child{border-top:0}.usageRow.head{background:#0f1722;color:#8fa0b5;font-size:12px}
+.usageRow span{min-width:0;overflow:hidden;text-overflow:ellipsis}.usageRow small{display:block;color:#7d8da2;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.usageRow .plus{color:#5fd39a}
+.usageTable.history .usageRow{grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,.6fr)}.usageTable.history .usageRow span:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.usageOwnerForm{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}.usageOwnerForm input{flex:1 1 200px;min-width:0}.usageOwnerForm input[type=number]{flex:0 0 110px}
+.creditsDialog .formActions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+@media(max-width:640px){.usageStats{grid-template-columns:1fr}.usageCosts{grid-template-columns:1fr}.usageRow{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) minmax(0,.8fr)}.usageRow.head span:nth-child(4),.usageRow span:nth-child(4){display:none}}

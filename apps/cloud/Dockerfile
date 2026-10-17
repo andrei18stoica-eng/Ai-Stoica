@@ -10,7 +10,7 @@ COPY apps/desktop/renderer ./renderer
 COPY apps/desktop/lib/brand.json ./lib/brand.json
 RUN npx vite build --config vite.config.mjs
 
-# Stage 2: the AI Stoica service, which also serves the web interface and the installable phone app (PWA) at "/".
+# Stage 2: the Serasmart AI service, which also serves the web interface and the installable phone app (PWA) at "/".
 FROM node:22-bookworm-slim
 
 WORKDIR /app

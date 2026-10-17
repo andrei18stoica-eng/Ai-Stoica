@@ -26,7 +26,7 @@ expect(!allowed(ctx(),"openai/gpt-5"),"OpenAI must be blocked by default");
 expect(!allowed(ctx(),"anthropic/claude-sonnet"),"Claude must be blocked by default");
 expect(!allowed(ctx(),"GPT + Claude"),"Paid combination must be blocked by default");
 expect(!allowed(ctx(),"Ai principal"),"Legacy direct Ai principal route must remain blocked without paid permissions");
-expect(!allowed(ctx(),"AI Stoica"),"Legacy direct AI Stoica route must remain blocked without paid permissions");
+expect(!allowed(ctx(),"Serasmart AI"),"Legacy direct Serasmart AI route must remain blocked without paid permissions");
 expect(!allowed(ctx(),"mystery-model"),"Unknown model must fail closed for normal users");
 expect(!allowed(ctx(),"openrouter/auto"),"OpenRouter auto must be blocked by default because it can incur costs");
 expect(allowed(ctx({permissions:{openrouter:true}}),"openrouter/meta-llama/llama-3.3"),"OpenRouter requires explicit permission when paid AI is enabled");

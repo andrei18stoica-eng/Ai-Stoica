@@ -10,7 +10,7 @@ const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 const mp4 = Buffer.concat([Buffer.from("000000186674797069736f6d0000020069736f6d69736f32", "hex"), Buffer.alloc(64)]);
 
 async function main() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-0716-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-0716-"));
   const asked = { chat: [], image: [], video: [] };
   let codexDown = false, groqDown = false;
   const omni = http.createServer((req, res) => {
@@ -69,7 +69,7 @@ async function main() {
 
     // A direct-API model from the list (not in OmniRoute) is answered by that API, and only by it.
     r = await chat("groq/llama-test"); j = await r.json();
-    expect(r.status === 200 && r.headers.get("x-ai-stoica-route") === "direct" && j.choices[0].message.content === "GROQ llama-test" && calls.cerebras === 0, "a chosen direct-API model must answer: " + JSON.stringify({ status: r.status, j, calls }));
+    expect(r.status === 200 && r.headers.get("x-serasmart-route") === "direct" && j.choices[0].message.content === "GROQ llama-test" && calls.cerebras === 0, "a chosen direct-API model must answer: " + JSON.stringify({ status: r.status, j, calls }));
     r = await call("/api/chat/stream", { method: "POST", token, body: { model: "groq/llama-test", messages: [{ role: "user", content: "salut" }] } });
     expect(r.status === 200 && /GROQ llama-test/.test(await r.text()), "streaming with a chosen direct-API model");
     groqDown = true;
@@ -80,14 +80,14 @@ async function main() {
     // «Rezervă automată» on: the direct APIs answer when the chosen model fails.
     cfg.chatFallbackOnFailure = true; await new Promise((x) => setTimeout(x, 2100));
     r = await chat("broken/model"); j = await r.json();
-    expect(r.status === 200 && r.headers.get("x-ai-stoica-route") === "direct-fallback" && j.choices[0].message.content === "CEREBRAS", "with «Rezervă automată» the direct APIs answer: " + JSON.stringify(j));
+    expect(r.status === 200 && r.headers.get("x-serasmart-route") === "direct-fallback" && j.choices[0].message.content === "CEREBRAS", "with «Rezervă automată» the direct APIs answer: " + JSON.stringify(j));
     cfg.chatFallbackOnFailure = false; await new Promise((x) => setTimeout(x, 2100));
 
     // No model chosen: your own combination ("Ai principal"), before auto/* and the direct APIs.
     const before = { ...calls };
     r = await chat(""); j = await r.json();
     expect(r.status === 200 && j.choices[0].message.content === "OMNI Ai principal" && asked.chat.at(-1) === "Ai principal", "without a model the main combination must answer: " + JSON.stringify(j) + " asked " + asked.chat);
-    expect(r.headers.get("x-ai-stoica-route") === "auto" && calls.cerebras === before.cerebras, "the route must be the automatic combination, not a direct API");
+    expect(r.headers.get("x-serasmart-route") === "auto" && calls.cerebras === before.cerebras, "the route must be the automatic combination, not a direct API");
 
     // Images: the ChatGPT subscription (Codex) before OpenAI and before OmniRoute's other image models.
     r = await call("/api/generate/image", { method: "POST", token, body: { prompt: "un logo albastru" } }); j = await r.json();
@@ -139,7 +139,7 @@ async function main() {
     r = await call("/api/generate/video", { method: "POST", token, body: { prompt: "un apus pe mare" } }); j = await r.json();
     expect(r.status === 200 && asked.video.length === 1 && asked.video[0] === "veoaifree-web/veo", "free web video must work under «Doar gratuit»: " + JSON.stringify({ status: r.status, asked: asked.video, j }).slice(0, 400));
 
-    // Files open inside AI Stoica: a Word file shows its text through /preview, only for its owner.
+    // Files open inside Serasmart AI: a Word file shows its text through /preview, only for its owner.
     const { createExportBytes } = require("../lib/documents.cjs");
     const docx = (await createExportBytes("docx", "Raport", "# Raport\n\nVânzări în creștere cu 12%.")).bytes;
     r = await realFetch(base + "/api/library/upload", { method: "POST", headers: { authorization: "Bearer " + token, "x-file-name": encodeURIComponent("raport.docx"), "x-file-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "x-file-size": String(docx.length) }, body: docx });

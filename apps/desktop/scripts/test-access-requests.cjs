@@ -1,4 +1,4 @@
-// Permite / Refuză from the Owner's phone notification: the gateway passes /auth/access-requests/<token> to AI Stoica
+// Permite / Refuză from the Owner's phone notification: the gateway passes /auth/access-requests/<token> to Serasmart AI
 // Cloud without a login (the phone's service worker has none), counts failed links, and the service worker and the
 // web interface carry the push handlers, the two buttons and the Settings tab.
 const fs = require("fs"), http = require("http"), os = require("os"), path = require("path");
@@ -29,7 +29,7 @@ async function main() {
       res.statusCode = 404; res.end(JSON.stringify({ error: "Cererea nu mai există." }));
     });
   }).listen(8883, "127.0.0.1");
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-access-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-access-"));
   const cfg = { baseUrl: "http://127.0.0.1:65530/v1", model: "test/m", webSearchEnabled: false, githubAutoContext: false, directChatEnabled: false, controlApiUrl: "http://127.0.0.1:8883" };
   const local = { ...cfg, controlApiUrl: "" };
   const gw = startLocalGateway({ dataDir: path.join(root, "a"), port: 8881, host: "127.0.0.1", getOmniConfig: () => cfg });
@@ -50,7 +50,7 @@ async function main() {
     r = await request(8881, "POST", "/auth/resend-code", { email: "maria@gmail.com" });
     expect(r.status === 200, "resend passes through: " + r.body);
     r = await request(8882, "POST", "/auth/verify-email", { email: "maria@gmail.com", code: "123456" });
-    expect(r.status === 404, "no email codes without AI Stoica Cloud");
+    expect(r.status === 404, "no email codes without Serasmart Cloud");
 
     r = await request(8881, "GET", `/auth/access-requests/${good}`);
     expect(r.status === 200 && r.json.request?.name === "Maria", "GET passes through without login: " + r.body);
@@ -61,7 +61,7 @@ async function main() {
     r = await request(8881, "GET", `/auth/access-requests/${good}`);
     expect(r.status === 429, "guessing links is rate limited, got " + r.status);
     r = await request(8882, "GET", `/auth/access-requests/${good}`);
-    expect(r.status === 404, "without AI Stoica Cloud there are no access requests");
+    expect(r.status === 404, "without Serasmart Cloud there are no access requests");
 
     const sw = fs.readFileSync(path.join(__dirname, "..", "renderer", "public", "sw.js"), "utf8");
     for (const s of ['addEventListener("push"', 'addEventListener("notificationclick"', 'action: "allow", title: "Permite"', 'action: "deny", title: "Refuză"', "/auth/access-requests/", "requireInteraction"]) expect(sw.includes(s), "sw.js must contain " + s);

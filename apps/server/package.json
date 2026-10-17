@@ -1,5 +1,5 @@
 {
-  "name": "ai-stoica-server",
+  "name": "serasmart-server",
   "version": "1.0.7",
   "private": true,
   "main": "server.cjs",

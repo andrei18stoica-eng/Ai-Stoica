@@ -9,7 +9,7 @@ function expect(v, m) { if (!v) throw new Error(m); }
 const DEPLOY = path.join(__dirname, "..", "..", "..", "deploy", "hetzner");
 
 async function gatewayRoutes() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-update-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-update-"));
   const updateDir = path.join(root, "update"); fs.mkdirSync(updateDir);
   const cfg = { baseUrl: "http://127.0.0.1:65530/v1", model: "", webSearchEnabled: false, githubAutoContext: false, ownerEmail: "owner@example.com" };
   const gw = startLocalGateway({ dataDir: path.join(root, "data"), port: 8876, host: "127.0.0.1", getOmniConfig: () => cfg, updateDir });
@@ -63,22 +63,22 @@ function sh(cwd, cmd, args, env = {}) {
 }
 
 function runnerScript() {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-runner-"));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-runner-"));
   try {
     const origin = path.join(tmp, "origin.git"), work = path.join(tmp, "work"), root = path.join(tmp, "root"), dir = path.join(tmp, "update");
     sh(tmp, "git", ["init", "-q", "--bare", "-b", "main", origin]);
     sh(tmp, "git", ["clone", "-q", origin, work]);
     const commit = (version, script) => {
-      fs.writeFileSync(path.join(work, "package.json"), JSON.stringify({ name: "ai-stoica", version }, null, 2) + "\n");
+      fs.writeFileSync(path.join(work, "package.json"), JSON.stringify({ name: "serasmart", version }, null, 2) + "\n");
       fs.mkdirSync(path.join(work, "deploy", "hetzner"), { recursive: true });
       fs.writeFileSync(path.join(work, "deploy", "hetzner", "update.sh"), script);
       sh(work, "git", ["add", "-A"]); sh(work, "git", ["commit", "-q", "-m", "v" + version]); sh(work, "git", ["push", "-q", "origin", "HEAD:main"]);
     };
-    const goodUpdate = "#!/usr/bin/env bash\nset -e\ncd \"$(dirname \"$0\")/../..\"\ngit pull -q --ff-only origin main\necho 'AI Stoica API is healthy.'\n";
+    const goodUpdate = "#!/usr/bin/env bash\nset -e\ncd \"$(dirname \"$0\")/../..\"\ngit pull -q --ff-only origin main\necho 'Serasmart AI API is healthy.'\n";
     commit("1.0.0", goodUpdate);
     sh(tmp, "git", ["clone", "-q", origin, root]);
     commit("1.0.1", goodUpdate);
-    const env = { AI_STOICA_ROOT: root, AI_STOICA_UPDATE_DIR: dir };
+    const env = { SERASMART_ROOT: root, SERASMART_UPDATE_DIR: dir };
     const runner = path.join(DEPLOY, "update-runner.sh");
     const read = (f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
 
@@ -106,7 +106,7 @@ function runnerScript() {
 }
 
 function installer() {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-installer-"));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-installer-"));
   try {
     const bin = path.join(tmp, "bin"), units = path.join(tmp, "units"), dir = path.join(tmp, "update"), log = path.join(tmp, "calls.log");
     fs.mkdirSync(bin); fs.mkdirSync(units);
@@ -115,14 +115,14 @@ function installer() {
       chown: `#!/bin/sh\necho "chown $*" >> ${log}\n`,
       systemctl: `#!/bin/sh\necho "systemctl $*" >> ${log}\n`
     })) { fs.writeFileSync(path.join(bin, name), body); fs.chmodSync(path.join(bin, name), 0o755); }
-    const env = { ...process.env, PATH: bin + ":" + process.env.PATH, AI_STOICA_ROOT: "/opt/ai-stoica", AI_STOICA_UPDATE_DIR: dir, AI_STOICA_SYSTEMD_DIR: units };
+    const env = { ...process.env, PATH: bin + ":" + process.env.PATH, SERASMART_ROOT: "/opt/serasmart", SERASMART_UPDATE_DIR: dir, SERASMART_SYSTEMD_DIR: units };
     let r = spawnSync("bash", [path.join(DEPLOY, "install-updater.sh")], { env, encoding: "utf8" });
     expect(r.status === 0, "installer: " + r.stdout + r.stderr);
-    const service = fs.readFileSync(path.join(units, "ai-stoica-update.service"), "utf8"), pathUnit = fs.readFileSync(path.join(units, "ai-stoica-update.path"), "utf8");
-    expect(/ExecStart=\/bin\/bash \/opt\/ai-stoica\/deploy\/hetzner\/update-runner\.sh run/.test(service) && pathUnit.includes(`PathExists=${dir}/request`), "the units must run the fixed script when the site drops a request");
-    expect(/OnUnitActiveSec=1h/.test(fs.readFileSync(path.join(units, "ai-stoica-update-check.timer"), "utf8")), "hourly check timer");
+    const service = fs.readFileSync(path.join(units, "serasmart-update.service"), "utf8"), pathUnit = fs.readFileSync(path.join(units, "serasmart-update.path"), "utf8");
+    expect(/ExecStart=\/bin\/bash \/opt\/serasmart\/deploy\/hetzner\/update-runner\.sh run/.test(service) && pathUnit.includes(`PathExists=${dir}/request`), "the units must run the fixed script when the site drops a request");
+    expect(/OnUnitActiveSec=1h/.test(fs.readFileSync(path.join(units, "serasmart-update-check.timer"), "utf8")), "hourly check timer");
     let calls = fs.readFileSync(log, "utf8");
-    expect(calls.includes(`chown 1000:1000 ${dir}`) && calls.includes("daemon-reload") && calls.includes("enable --now ai-stoica-update.path") && calls.includes("enable --now ai-stoica-update-check.timer") && fs.existsSync(path.join(dir, "installed")), "installer must hand the folder to the site's user and enable the units: " + calls);
+    expect(calls.includes(`chown 1000:1000 ${dir}`) && calls.includes("daemon-reload") && calls.includes("enable --now serasmart-update.path") && calls.includes("enable --now serasmart-update-check.timer") && fs.existsSync(path.join(dir, "installed")), "installer must hand the folder to the site's user and enable the units: " + calls);
     fs.writeFileSync(log, "");
     r = spawnSync("bash", [path.join(DEPLOY, "install-updater.sh"), "--quiet"], { env, encoding: "utf8" });
     calls = fs.readFileSync(log, "utf8");

@@ -1,4 +1,4 @@
-name: AI Stoica - ZIP complet Windows
+name: Serasmart AI - ZIP complet Windows
 
 on:
   workflow_dispatch:
@@ -7,16 +7,16 @@ on:
       - main
     paths:
       - "apps/desktop/**"
-      - ".github/workflows/ai-stoica-windows-zip.yml"
+      - ".github/workflows/serasmart-windows-zip.yml"
   pull_request:
     branches:
       - main
     paths:
       - "apps/desktop/**"
-      - ".github/workflows/ai-stoica-windows-zip.yml"
+      - ".github/workflows/serasmart-windows-zip.yml"
 
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('zip-pr-{0}', github.ref) || format('ai-stoica-release-{0}', github.ref) }}
+  group: ${{ github.event_name == 'pull_request' && format('zip-pr-{0}', github.ref) || format('serasmart-release-{0}', github.ref) }}
   cancel-in-progress: false
 
 permissions:
@@ -39,7 +39,7 @@ jobs:
         shell: pwsh
         run: |
           $version = node -p "require('./apps/desktop/package.json').version"
-          "AI_STOICA_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "SERASMART_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Instaleaza dependentele
         working-directory: apps/desktop
@@ -57,21 +57,21 @@ jobs:
         shell: bash
         run: for t in scripts/test-*.cjs; do echo "::group::$t"; node "$t"; echo "::endgroup::"; done
 
-      - name: Construieste AI Stoica Windows
+      - name: Construieste Serasmart AI Windows
         working-directory: apps/desktop
         run: npm run build
 
       - name: Creeaza pachetul ZIP complet
         shell: pwsh
         run: |
-          $version = $env:AI_STOICA_VERSION
+          $version = $env:SERASMART_VERSION
           $releaseDir = "apps/desktop/release"
-          $installer = Join-Path $releaseDir "AI_Stoica_Setup_${version}_x64.exe"
+          $installer = Join-Path $releaseDir "Serasmart_Setup_${version}_x64.exe"
           $latest = Join-Path $releaseDir "latest.yml"
           $blockmap = "$installer.blockmap"
           $portable = Join-Path $releaseDir "win-unpacked"
-          $packageDir = "AI_Stoica_Windows_${version}_COMPLET"
-          $zip = "AI_Stoica_Windows_${version}_COMPLET.zip"
+          $packageDir = "Serasmart_Windows_${version}_COMPLET"
+          $zip = "Serasmart_Windows_${version}_COMPLET.zip"
 
           if (!(Test-Path $installer)) {
             Write-Error "Installerul nu a fost gasit: $installer"
@@ -95,17 +95,17 @@ jobs:
           Copy-Item $blockmap -Destination $packageDir
           Copy-Item "$portable\*" -Destination (Join-Path $packageDir "Portable") -Recurse -Force
 
-          "AI STOICA $version - WINDOWS" | Out-File -FilePath (Join-Path $packageDir "README_INSTALLARE.txt") -Encoding utf8
+          "SERASMART AI $version - WINDOWS" | Out-File -FilePath (Join-Path $packageDir "README_INSTALLARE.txt") -Encoding utf8
           "" | Out-File -FilePath (Join-Path $packageDir "README_INSTALLARE.txt") -Append -Encoding utf8
-          "INSTALARE: ruleaza AI_Stoica_Setup_${version}_x64.exe." | Out-File -FilePath (Join-Path $packageDir "README_INSTALLARE.txt") -Append -Encoding utf8
-          "PORTABIL: intra in folderul Portable si ruleaza AI Stoica.exe." | Out-File -FilePath (Join-Path $packageDir "README_INSTALLARE.txt") -Append -Encoding utf8
+          "INSTALARE: ruleaza Serasmart_Setup_${version}_x64.exe." | Out-File -FilePath (Join-Path $packageDir "README_INSTALLARE.txt") -Append -Encoding utf8
+          "PORTABIL: intra in folderul Portable si ruleaza Serasmart AI.exe." | Out-File -FilePath (Join-Path $packageDir "README_INSTALLARE.txt") -Append -Encoding utf8
 
           $installerHash = (Get-FileHash $installer -Algorithm SHA256).Hash
-          $portableExe = Join-Path $packageDir "Portable\AI Stoica.exe"
+          $portableExe = Join-Path $packageDir "Portable\Serasmart AI.exe"
           $portableHash = if (Test-Path $portableExe) { (Get-FileHash $portableExe -Algorithm SHA256).Hash } else { "N/A" }
           "SHA256" | Out-File -FilePath (Join-Path $packageDir "SHA256SUMS.txt") -Encoding utf8
-          "AI_Stoica_Setup_${version}_x64.exe  $installerHash" | Out-File -FilePath (Join-Path $packageDir "SHA256SUMS.txt") -Append -Encoding utf8
-          "Portable\AI Stoica.exe        $portableHash" | Out-File -FilePath (Join-Path $packageDir "SHA256SUMS.txt") -Append -Encoding utf8
+          "Serasmart_Setup_${version}_x64.exe  $installerHash" | Out-File -FilePath (Join-Path $packageDir "SHA256SUMS.txt") -Append -Encoding utf8
+          "Portable\Serasmart AI.exe        $portableHash" | Out-File -FilePath (Join-Path $packageDir "SHA256SUMS.txt") -Append -Encoding utf8
 
           if (Test-Path $zip) { Remove-Item $zip -Force }
           Compress-Archive -Path "$packageDir\*" -DestinationPath $zip -CompressionLevel Optimal
@@ -117,25 +117,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = $env:AI_STOICA_VERSION
+          $version = $env:SERASMART_VERSION
           $tag = "v$version"
-          $zip = "AI_Stoica_Windows_${version}_COMPLET.zip"
-          # Only the ZIP goes to the Release. latest.yml and the .blockmap are published by "Build AI Stoica Windows"
+          $zip = "Serasmart_Windows_${version}_COMPLET.zip"
+          # Only the ZIP goes to the Release. latest.yml and the .blockmap are published by "Build Serasmart AI Windows"
           # together with the .exe from the same build; this job builds again, so its hashes would not match that .exe
           # and electron-updater would reject the update.
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $zip --clobber
           } else {
-            gh release create $tag $zip --title "AI Stoica $version" --notes "AI Stoica principal pentru Windows."
+            gh release create $tag $zip --title "Serasmart AI $version" --notes "Serasmart AI principal pentru Windows."
           }
 
       - name: Incarca ZIP ca Artifact
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: AI-Stoica-Windows-${{ env.AI_STOICA_VERSION }}-COMPLET
-          path: AI_Stoica_Windows_${{ env.AI_STOICA_VERSION }}_COMPLET.zip
+          name: Serasmart-AI-Windows-${{ env.SERASMART_VERSION }}-COMPLET
+          path: Serasmart_Windows_${{ env.SERASMART_VERSION }}_COMPLET.zip
           if-no-files-found: error
           retention-days: 7
 
@@ -143,9 +143,9 @@ jobs:
         if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
-          $version = $env:AI_STOICA_VERSION
-          $url = "https://github.com/andrei18stoica-eng/Ai-Stoica/releases/download/v$version/AI_Stoica_Windows_${version}_COMPLET.zip"
-          "# AI Stoica Windows ZIP complet este gata" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          $version = $env:SERASMART_VERSION
+          $url = "https://github.com/andrei18stoica-eng/Serasmart-AI/releases/download/v$version/Serasmart_Windows_${version}_COMPLET.zip"
+          "# Serasmart AI Windows ZIP complet este gata" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
           "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           "## [DESCARCA ZIP COMPLET]($url)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8

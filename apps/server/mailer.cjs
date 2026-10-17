@@ -1,4 +1,4 @@
-// Email from AI Stoica Cloud (sign-up codes). SMTP settings come from .env:
+// Email from Serasmart Cloud (sign-up codes). SMTP settings come from .env:
 //   SMTP_HOST, SMTP_PORT (587 by default; Hetzner blocks outgoing 25 and 465 on new projects), SMTP_USER, SMTP_PASS,
 //   MAIL_FROM (default: SMTP_USER), SMTP_SECURE=true only for port 465.
 // Without SMTP_HOST nothing is sent and sign-up works without a code, as before.

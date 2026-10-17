@@ -62,7 +62,7 @@ async function main() {
   });
   const plugins = http.createServer((req, res) => { pluginHits.push(req.url.split("?")[0]); res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ ok: req.url.split("?")[0] })); });
   const omniPort = await listen(omni), pluginPort = await listen(plugins);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-0713-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-0713-"));
   const cfg = { baseUrl: `http://127.0.0.1:${omniPort}/v1`, model: "test/model", imageProviders: "", videoProviders: "", webSearchEnabled: false, githubAutoContext: false, directChatEnabled: false };
   const port = await freePort(), base = "http://127.0.0.1:" + port;
   const gw = startLocalGateway({ dataDir: dir, port, host: "127.0.0.1", getOmniConfig: () => cfg });
@@ -209,7 +209,7 @@ async function main() {
     pbody = await p.text();
     expect(p.status === 401 && pbody.includes("Linkul de previzualizare a expirat.") && !/json/.test(p.headers.get("content-type") || ""), "tampered token -> 401 page");
     const secret = fs.readFileSync(path.join(dir, "auth-secret.txt"), "utf8").trim();
-    const userA = JSON.parse(fs.readFileSync(path.join(dir, "ai-stoica-data.json"), "utf8")).users.find((u) => u.email === "a@example.com");
+    const userA = JSON.parse(fs.readFileSync(path.join(dir, "serasmart-data.json"), "utf8")).users.find((u) => u.email === "a@example.com");
     const expired = previewToken(secret, userA.id, design.id, 2, Date.now() - 16 * 60 * 1000);
     p = await realFetch(`${base}/api/designs/${design.id}/preview?v=2&t=${encodeURIComponent(expired)}`);
     expect(p.status === 401 && (await p.text()).includes("Linkul de previzualizare a expirat."), "expired token -> 401");

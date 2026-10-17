@@ -1,11 +1,11 @@
-name: AI Stoica MCP Check
+name: Serasmart AI MCP Check
 on:
   pull_request:
     paths:
       - "integrations/claude-mcp/**"
       - "deploy/hetzner/claude-mcp.override.yml"
       - "deploy/hetzner/Caddyfile"
-      - ".github/workflows/ai-stoica-mcp-check.yml"
+      - ".github/workflows/serasmart-mcp-check.yml"
   workflow_dispatch:
 jobs:
   test:

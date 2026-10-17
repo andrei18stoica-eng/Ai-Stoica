@@ -1,4 +1,4 @@
-// Free direct AI providers: the models AI Stoica lists for each one and where its free key is created.
+// Free direct AI providers: the models Serasmart AI lists for each one and where its free key is created.
 // Model lists were checked against each provider's catalog in October 2026. Every list is comma-separated
 // in Settings, so a model can be added or removed without a new version.
 const DIRECT_MODEL_DEFAULTS = {

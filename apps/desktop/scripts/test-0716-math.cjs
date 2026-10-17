@@ -81,7 +81,7 @@ async function main() {
   const { parseCMap } = require("../lib/pdftext.cjs");
   const fs = require("fs"), os = require("os");
   const ro = await createExportBytes("pdf", "Raport", "Vânzările în ședința de marți au crescut cu 12%.\n\n| Țară | Sumă |\n|---|---|\n| România | 100 |");
-  const pdfPath = path.join(os.tmpdir(), "ai-stoica-0716-" + process.pid + ".pdf");
+  const pdfPath = path.join(os.tmpdir(), "serasmart-0716-" + process.pid + ".pdf");
   fs.writeFileSync(pdfPath, ro.bytes);
   try {
     const got = await extractText(pdfPath, "application/pdf", "raport.pdf");
@@ -97,7 +97,7 @@ async function main() {
   });
   const pdfWith = (stream, dict) => Buffer.concat([Buffer.from("%PDF-1.5\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >> endobj\n4 0 obj << " + dict + " /Length " + stream.length + " /Filter /FlateDecode >> stream\n", "latin1"), stream, Buffer.from("\nendstream endobj\ntrailer << /Root 1 0 R /Size 5 >>\n%%EOF\n", "latin1")]);
   for (const [label, dict] of [["page content", ""], ["object stream", "/Type /ObjStm /N 1 /First 4"]]) {
-    const bombPath = path.join(os.tmpdir(), "ai-stoica-0716-bomb-" + process.pid + ".pdf");
+    const bombPath = path.join(os.tmpdir(), "serasmart-0716-bomb-" + process.pid + ".pdf");
     fs.writeFileSync(bombPath, pdfWith(bomb, dict));
     try {
       const t0 = Date.now(), got = await extractText(bombPath, "application/pdf", "bomb.pdf"), ms = Date.now() - t0;

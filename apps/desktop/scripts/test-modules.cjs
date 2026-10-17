@@ -22,7 +22,7 @@ async function testStore(dir) {
   expect(fresh.memories.length === 1 && fresh.projects.length === 1, "Store lost a concurrent change");
 
   // External edit (backup restore, another tool) is picked up.
-  const file = path.join(dir, "ai-stoica-data.json");
+  const file = path.join(dir, "serasmart-data.json");
   const raw = JSON.parse(fs.readFileSync(file, "utf8"));
   raw.users.push({ id: "x", email: "x@example.com" });
   await new Promise((r) => setTimeout(r, 20));
@@ -95,7 +95,7 @@ async function testExtract(dir) {
 }
 
 async function main() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-modules-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-modules-"));
   try {
     await testStore(path.join(dir, "store"));
     testMemory();

@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${AI_STOICA_ROOT:-/opt/ai-stoica}"
+# The checkout this script lives in (/opt/serasmart, or /opt/ai-stoica on a server not yet moved); SERASMART_ROOT
+# (or the older AI_STOICA_ROOT) overrides it.
+ROOT="${SERASMART_ROOT:-${AI_STOICA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}}"
 DEPLOY="$ROOT/deploy/hetzner"
 
 cd "$ROOT"
 
-# The checkout can belong to a deploy user whose SSH config holds the GitHub deploy key (on ai-stoica-prod: user
-# "aistoica", remote "github-ai-stoica:..."). Under sudo, git runs as that user: root has neither the key nor the
+# The checkout can belong to a deploy user whose SSH config holds the GitHub deploy key (on serasmart-prod: user
+# "serasmart", remote "github-serasmart:..."). Under sudo, git runs as that user: root has neither the key nor the
 # host alias, and git refuses a repository owned by someone else ("dubious ownership").
 OWNER="$(stat -c %U "$ROOT")"
 repo_git() {
@@ -19,7 +21,7 @@ if [[ -n "$(repo_git status --porcelain)" ]]; then
   exit 2
 fi
 
-echo "==> Updating AI Stoica from GitHub"
+echo "==> Updating Serasmart AI from GitHub"
 repo_git pull --ff-only origin main
 
 cd "$DEPLOY"
@@ -40,12 +42,12 @@ fi
 
 echo "==> Waiting for API health"
 # The answer is kept in a variable, not in a file under /tmp: a file left there by another user (for example a run
-# as "aistoica") cannot be overwritten even by root on Ubuntu (fs.protected_regular), and every check then failed with
+# as "serasmart") cannot be overwritten even by root on Ubuntu (fs.protected_regular), and every check then failed with
 # "Permission denied".
 for i in {1..30}; do
   if health="$(curl -fsS http://127.0.0.1:8787/health 2>/dev/null)"; then
     echo "$health"
-    echo "AI Stoica API is healthy."
+    echo "Serasmart AI API is healthy."
     docker compose ps
     exit 0
   fi

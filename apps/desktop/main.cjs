@@ -12,6 +12,26 @@ const { serverEnvLines } = require("./lib/serverenv.cjs");
 
 if (process.platform === "win32") app.disableHardwareAcceleration();
 
+// 0.7.21: the data folder followed the old product name (%APPDATA%\AI Stoica). It is copied once into the new one
+// (%APPDATA%\Serasmart AI) before anything reads it: settings, keys, conversations, the saved login. The old folder
+// stays untouched as a backup; browser caches are not copied (they rebuild themselves).
+const LEGACY_DATA_DIR_NAME = "AI Stoica";
+const SKIP_ON_COPY = new Set(["Cache", "Code Cache", "GPUCache", "DawnGraphiteCache", "DawnWebGPUCache", "ShaderCache", "Crashpad", "SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"]);
+function migrateLegacyDataDir() {
+  try {
+    const target = app.getPath("userData"), legacy = path.join(app.getPath("appData"), LEGACY_DATA_DIR_NAME);
+    if (path.resolve(legacy) === path.resolve(target) || !fs.existsSync(legacy)) return;
+    const hasData = (dir) => ["config.json", "serasmart-data.json", "ai-stoica-data.json"].some((f) => fs.existsSync(path.join(dir, f)));
+    if (hasData(target) || !hasData(legacy)) return;
+    fs.mkdirSync(target, { recursive: true });
+    fs.cpSync(legacy, target, { recursive: true, force: false, errorOnExist: false, filter: (src) => !SKIP_ON_COPY.has(path.basename(src)) });
+    fs.writeFileSync(path.join(target, "migrated-from-ai-stoica.txt"), `Copied from ${legacy} on ${new Date().toISOString()}\n`);
+  } catch (e) {
+    try { fs.appendFileSync(path.join(app.getPath("userData"), "serasmart-errors.log"), `[${new Date().toISOString()}] data folder copy failed: ${e?.message || e}\n`); } catch {}
+  }
+}
+migrateLegacyDataDir();
+
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
@@ -28,7 +48,7 @@ const SECRET_KEYS = ["apiKey","openAiApiKey","openRouterApiKey","cerebrasApiKey"
 const MASK = "••••••••";
 function configPath() { return path.join(app.getPath("userData"), "config.json"); }
 function logError(line) {
-  try { fs.appendFileSync(path.join(app.getPath("userData"), "ai-stoica-errors.log"), `[${new Date().toISOString()}] ${line}\n`); } catch {}
+  try { fs.appendFileSync(path.join(app.getPath("userData"), "serasmart-errors.log"), `[${new Date().toISOString()}] ${line}\n`); } catch {}
 }
 function defaults() {
   return {
@@ -287,7 +307,9 @@ function createWindow(show = true) {
     width: 1440, height: 920, minWidth: 980, minHeight: 680,
     backgroundColor: "#05070b", title: BRAND_NAME, autoHideMenuBar: true,
     show: false,
-    webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true }
+    webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true,
+      // Minimised or hidden in the tray, the window keeps receiving the answer at full speed.
+      backgroundThrottling: false }
   });
 
   const reveal = () => {
@@ -301,7 +323,7 @@ function createWindow(show = true) {
 
   const EXTERNAL = /^(https?:|mailto:)/i;
   const openOutside = (url) => { if (EXTERNAL.test(String(url || ""))) shell.openExternal(String(url)).catch(() => {}); };
-  // Links never replace the app window: web pages open in the system browser and never get the AI Stoica bridge.
+  // Links never replace the app window: web pages open in the system browser and never get the Serasmart AI bridge.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => { openOutside(url); return { action: "deny" }; });
   mainWindow.webContents.on("will-navigate", (e, url) => {
     if (url !== mainWindow.webContents.getURL()) { e.preventDefault(); openOutside(url); }
@@ -449,7 +471,7 @@ app.on("second-instance", () => { if (app.isReady()) showMain(); });
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;
   registerIpcHandlers();
-  if (process.platform === "win32") app.setAppUserModelId("ro.stoica.aistoica");
+  if (process.platform === "win32") app.setAppUserModelId("ro.serasmart.ai");
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === "media");
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(permission === "media"));
   const cfg = loadConfig();

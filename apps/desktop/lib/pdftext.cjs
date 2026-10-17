@@ -1,4 +1,4 @@
-// PDF text through the fonts' own character maps (ToUnicode). Word, browsers and AI Stoica itself write PDFs whose text
+// PDF text through the fonts' own character maps (ToUnicode). Word, browsers and Serasmart AI itself write PDFs whose text
 // is glyph numbers (fonts with ș, ț, ă, emoji…), which cannot be read without the font's map. pdf-lib (already used to
 // make PDFs) opens the file; the page content is read here, following the font in use for every piece of text.
 const { PDFDocument, PDFName, PDFDict, PDFArray, PDFRef, PDFRawStream, PDFStream } = require("pdf-lib");

@@ -5,9 +5,11 @@
 # automatic updates (file $DIR/auto), installs it.
 set -uo pipefail
 
-ROOT="${AI_STOICA_ROOT:-/opt/ai-stoica}"
+# The checkout this script lives in (/opt/serasmart, or /opt/ai-stoica on a server not yet moved); SERASMART_ROOT
+# (or the older AI_STOICA_ROOT) overrides it.
+ROOT="${SERASMART_ROOT:-${AI_STOICA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}}"
 DEPLOY="$ROOT/deploy/hetzner"
-DIR="${AI_STOICA_UPDATE_DIR:-/var/lib/ai-stoica-update}"
+DIR="${SERASMART_UPDATE_DIR:-${AI_STOICA_UPDATE_DIR:-/var/lib/serasmart-update}}"
 MODE="${1:-run}"
 mkdir -p "$DIR"
 
