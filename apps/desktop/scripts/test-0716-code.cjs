@@ -1,4 +1,4 @@
-// 0.7.16, at the Owner's request: "Code AI Stoica" with Codex and Claude Code. The Owner codes with the subscriptions
+// 0.7.16, at the Owner's request: "Code Serasmart AI" with Codex and Claude Code. The Owner codes with the subscriptions
 // connected in OmniRoute; another account gets Code only when the Owner gives it "code", and then only through the paid
 // APIs (OpenAI / Claude), never through the Owner's subscriptions.
 const fs = require("fs"), http = require("http"), os = require("os"), path = require("path");
@@ -9,14 +9,14 @@ const listen = (srv) => new Promise((r) => srv.listen(0, "127.0.0.1", () => r(sr
 const OMNI_MODELS = ["Ai principal", "cx/gpt-5.6-codex", "cc/claude-sonnet-4.6", "openai/gpt-5.6", "anthropic/claude-sonnet-4.6", "groq/llama-x"];
 
 async function main() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-code-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-code-"));
   const omni = http.createServer((req, res) => {
     res.setHeader("content-type", "application/json");
     if (req.url === "/v1/models") return res.end(JSON.stringify({ data: OMNI_MODELS.map((id) => ({ id, owned_by: id.includes("/") ? id.split("/")[0] : "combo" })) }));
     res.statusCode = 404; res.end("{}");
   });
   const omniPort = await listen(omni);
-  // AI Stoica Cloud stand-in: one account the Owner gave Code to, one without it.
+  // Serasmart Cloud stand-in: one account the Owner gave Code to, one without it.
   const cloud = http.createServer((req, res) => {
     let body = ""; req.on("data", (c) => body += c); req.on("end", () => {
       res.setHeader("content-type", "application/json");
@@ -49,7 +49,7 @@ async function main() {
     r = await call(8881, "/auth/me", owner); j = await r.json();
     expect(j.permissions.code === true, "the Owner's permissions include Code");
 
-    // A Code session: the "AI Stoica Code" assistant (made once) and the chosen model.
+    // A Code session: the "Serasmart Code" assistant (made once) and the chosen model.
     r = await call(8881, "/api/code/session", owner, "POST", { model: "cc/claude-sonnet-4.6" }); j = await r.json();
     expect(r.status === 200 && j.data.model === "cc/claude-sonnet-4.6" && j.assistant?.codeAssistant && /Serasmart Code/.test(j.assistant.systemPrompt) && j.data.assistantId === j.assistant.id, "Code session: " + JSON.stringify(j).slice(0, 300));
     const firstAssistant = j.assistant.id;
@@ -90,7 +90,7 @@ async function main() {
     await local.close(); await web.close(); omni.close(); cloud.close();
     fs.rmSync(root, { recursive: true, force: true });
   }
-  console.log("0.7.16 Code AI Stoica OK");
+  console.log("0.7.16 Code Serasmart AI OK");
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

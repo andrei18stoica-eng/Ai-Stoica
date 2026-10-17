@@ -10,7 +10,7 @@ import * as Sharing from "expo-sharing";
 
 const GATEWAY=(process.env.EXPO_PUBLIC_GATEWAY_URL||"").trim().replace(/\/+$/,"");
 const DEFAULT_MODEL=process.env.EXPO_PUBLIC_DEFAULT_MODEL||"AI Stoica Performance Max";
-const TOKEN_KEY="aiStoicaMobileTokenV4";
+const TOKEN_KEY="serasmartMobileTokenV4",LEGACY_TOKEN_KEY="aiStoicaMobileTokenV4";
 const API_TIMEOUT=30000,CHAT_TIMEOUT=180000;
 const EXPORT_FORMATS=[["pdf","PDF"],["docx","DOCX"],["pptx","PPTX"]];
 const STATUS_LABELS={pending:"În așteptare",active:"Activ",rejected:"Respins",suspended:"Suspendat",blocked:"Blocat"};
@@ -155,6 +155,8 @@ export default function Home(){
   useEffect(()=>{(async()=>{
     let t=null;
     try{t=await AsyncStorage.getItem(TOKEN_KEY)}catch{}
+    // 0.7.21: the login saved under the old key name moves to the new one.
+    if(!t){try{const old=await AsyncStorage.getItem(LEGACY_TOKEN_KEY);if(old){t=old;await AsyncStorage.setItem(TOKEN_KEY,old);await AsyncStorage.removeItem(LEGACY_TOKEN_KEY)}}catch{}}
     if(t)await checkSession(t);
     setLoading(false);
   })()},[]);

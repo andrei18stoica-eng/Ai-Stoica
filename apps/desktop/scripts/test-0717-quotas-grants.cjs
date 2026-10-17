@@ -59,7 +59,7 @@ async function main() {
     if (u.startsWith("https://image.pollinations.ai/")) { pollinationsCalls.push(u); return pollinationsOk ? new Response(PNG, { status: 200, headers: { "content-type": "image/png" } }) : new Response("no", { status: 503 }); }
     return new Response("{}", { status: 503 });
   };
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-quotas-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-quotas-"));
   const gw = startLocalGateway({ dataDir: dir, port: 8879, host: "127.0.0.1", getOmniConfig: () => cfg });
   const base = "http://127.0.0.1:8879";
   const call = (p, token, payload) => realFetch(base + p, { method: payload ? "POST" : "GET", headers: { "content-type": "application/json", authorization: "Bearer " + token }, body: payload ? JSON.stringify(payload) : undefined });

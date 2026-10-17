@@ -161,7 +161,7 @@ async function testGateway(dir) {
     const ownerToken = r.j.token;
 
     // Login of a Cloud-created account (no local password) is a clean 401, never a 500.
-    const storePath = path.join(dir, "ai-stoica-data.json");
+    const storePath = path.join(dir, "serasmart-data.json");
     const db0 = JSON.parse(fs.readFileSync(storePath, "utf8"));
     db0.users.push({ id: "shadow-1", email: "cloud@example.com", passwordHash: null, cloudUserId: "c1", createdAt: Date.now() });
     fs.writeFileSync(storePath, JSON.stringify(db0));
@@ -181,12 +181,12 @@ async function testGateway(dir) {
     r = await fetch(base + "/api/library/upload", { method: "POST", headers: { ...A, "content-type": "application/octet-stream", "x-file-name": "poza.png", "x-file-type": "image/png" }, body: png });
     const img = (await r.json()).data;
     r = await call("/api/conversations", { method: "POST", headers: A, body: JSON.stringify({ title: "Imagine", messages: [{ role: "user", content: [{ type: "text", text: "ce vezi?" }, { type: "image_url", image_url: { url: "data:image/png;base64," + png.toString("base64") } }], attachments: [{ name: "poza.png", type: "image", libraryId: img.id }] }] }) });
-    expect(r.j.data.messages[0].content[1].image_url.url === "aistoica-library://" + img.id, "data: image was not converted to a Library reference");
+    expect(r.j.data.messages[0].content[1].image_url.url === "serasmart-library://" + img.id, "data: image was not converted to a Library reference");
     r = await call("/api/conversations/" + r.j.data.id, { method: "PUT", headers: A, body: JSON.stringify({ title: { x: 1 } }) });
     expect(r.s === 400, "Conversation title must be text");
-    r = await call("/api/chat", { method: "POST", headers: A, body: JSON.stringify({ messages: [{ role: "user", content: [{ type: "text", text: "descrie" }, { type: "image_url", image_url: { url: "aistoica-library://" + img.id } }] }] }) });
+    r = await call("/api/chat", { method: "POST", headers: A, body: JSON.stringify({ messages: [{ role: "user", content: [{ type: "text", text: "descrie" }, { type: "image_url", image_url: { url: "serasmart-library://" + img.id } }] }] }) });
     expect(String(omniBody.messages[1].content[1].image_url.url).startsWith("data:image/png;base64,"), "Library image was not rehydrated");
-    r = await call("/api/chat", { method: "POST", headers: { authorization: "Bearer " + ownerToken }, body: JSON.stringify({ messages: [{ role: "user", content: [{ type: "text", text: "descrie" }, { type: "image_url", image_url: { url: "aistoica-library://" + img.id } }] }] }) });
+    r = await call("/api/chat", { method: "POST", headers: { authorization: "Bearer " + ownerToken }, body: JSON.stringify({ messages: [{ role: "user", content: [{ type: "text", text: "descrie" }, { type: "image_url", image_url: { url: "serasmart-library://" + img.id } }] }] }) });
     expect(omniBody.messages[1].content[1].type === "text", "Another account's image must not be sent");
 
     // Automations: validation, string booleans, time zone, "run now" keeps a one-time task.
@@ -294,7 +294,7 @@ async function testCloudPermissions(dir) {
 }
 
 async function main() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-0711-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-0711-"));
   try {
     await testSchedule();
     await testNetguard();

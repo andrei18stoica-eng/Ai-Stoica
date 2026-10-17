@@ -1,4 +1,4 @@
-name: AI Stoica Desktop Check
+name: Serasmart AI Desktop Check
 
 on:
   pull_request:

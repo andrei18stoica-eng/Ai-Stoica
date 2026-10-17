@@ -1,12 +1,12 @@
 {
-  "name": "ai-stoica-desktop",
-  "version": "0.7.20",
+  "name": "serasmart-desktop",
+  "version": "0.7.21",
   "private": true,
-  "description": "Serasmart AI 0.7.20 - answers, pictures and videos keep going when the app is minimised or closed; only Stop cancels them",
+  "description": "Serasmart AI 0.7.21 - the technical names become Serasmart too, with every existing piece of data carried over",
   "main": "main.cjs",
   "repository": {
     "type": "git",
-    "url": "https://github.com/andrei18stoica-eng/Ai-Stoica.git"
+    "url": "https://github.com/andrei18stoica-eng/Serasmart-AI.git"
   },
   "scripts": {
     "dev:ui": "vite --config vite.config.mjs",
@@ -42,8 +42,8 @@
     "vite": "^6.1.0"
   },
   "build": {
-    "appId": "ro.stoica.aistoica",
-    "productName": "AI Stoica",
+    "appId": "ro.serasmart.ai",
+    "productName": "Serasmart AI",
     "directories": {
       "output": "release"
     },
@@ -64,21 +64,22 @@
           ]
         }
       ],
-      "artifactName": "AI_Stoica_Setup_${version}_${arch}.${ext}",
+      "artifactName": "Serasmart_Setup_${version}_${arch}.${ext}",
       "icon": "build/icon.ico"
     },
     "nsis": {
+      "guid": "ebcb6e4a-55d6-520c-92fc-1817916ad533",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "AI Stoica"
+      "shortcutName": "Serasmart AI"
     },
     "publish": [
       {
         "provider": "github",
         "owner": "andrei18stoica-eng",
-        "repo": "Ai-Stoica"
+        "repo": "Serasmart-AI"
       }
     ]
   }

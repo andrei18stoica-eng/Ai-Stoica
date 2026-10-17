@@ -1,8 +1,8 @@
-// Local data store for AI Stoica (accounts, conversations, memory, library, plugins, automations, designs, skills).
+// Local data store for Serasmart AI (accounts, conversations, memory, library, plugins, automations, designs, skills).
 //
 // All requests share ONE in-memory copy of the data, so two actions saving at the same time
 // can no longer overwrite each other's changes. Every save is atomic (temp file + rename) and
-// keeps the previous version in ai-stoica-data.json.bak. A damaged data file is never replaced
+// keeps the previous version in serasmart-data.json.bak. A damaged data file is never replaced
 // with an empty database: it is kept aside and the last good backup is loaded instead.
 const fs = require("fs");
 const path = require("path");
@@ -30,8 +30,14 @@ function renameWithRetry(from, to) {
 }
 
 function createStore(dataDir) {
-  const file = path.join(dataDir, "ai-stoica-data.json");
+  const file = path.join(dataDir, "serasmart-data.json");
   const backup = `${file}.bak`;
+  // 0.7.21: the data file had the old name (ai-stoica-data.json). It is renamed once, with its backup; nothing is lost.
+  const legacy = path.join(dataDir, "ai-stoica-data.json");
+  if (!fs.existsSync(file) && fs.existsSync(legacy)) {
+    try { renameWithRetry(legacy, file); } catch {}
+    try { if (!fs.existsSync(backup) && fs.existsSync(`${legacy}.bak`)) renameWithRetry(`${legacy}.bak`, backup); } catch {}
+  }
   const conversationDir = path.join(dataDir, "conversations");
   let cache = null;
   let cacheMtime = -1;

@@ -1,4 +1,4 @@
-{$AI_STOICA_DOMAIN} {
+{$SERASMART_DOMAIN} {
   encode zstd gzip
   reverse_proxy api:8787
 
@@ -11,8 +11,8 @@
 }
 
 # Web version and installable phone app (PWA), served by the "web" service (profile "web").
-# Until AI_STOICA_WEB_DOMAIN is set in .env this block only answers on web.localhost.
-{$AI_STOICA_WEB_DOMAIN:web.localhost} {
+# Until SERASMART_WEB_DOMAIN is set in .env this block only answers on web.localhost.
+{$SERASMART_WEB_DOMAIN:web.localhost} {
   encode zstd gzip
   reverse_proxy web:8787
 
@@ -25,11 +25,11 @@
   }
 }
 
-# Claude MCP bridge, isolated from AI Stoica Web.
+# Claude MCP bridge, isolated from Serasmart AI Web.
 # Enable DNS A record mcp.aistoica.ro -> Hetzner VPS before HTTPS activation.
 mcp.aistoica.ro {
   encode zstd gzip
-  reverse_proxy ai-stoica-mcp:3010
+  reverse_proxy serasmart-mcp:3010
   header {
     Strict-Transport-Security "max-age=31536000; includeSubDomains"
     X-Content-Type-Options "nosniff"

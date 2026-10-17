@@ -21,7 +21,7 @@ async function main() {
   for (const text of ["Cum fac o poză bună?", "Scrie-mi un script pentru un video", "generează un prompt pentru o imagine", "vreau o imagine de ansamblu asupra proiectului", "ce e o poză RAW?", "poți să-mi explici cum funcționează un video codec?", "fă-mi un plan"])
     expect(ask(text) === null, `"${text}" must stay a text answer, got ${ask(text)}`);
 
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-chat-media-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-chat-media-"));
   const omniAsked = [], state = { codexExpired: false };
   const omni = http.createServer((req, res) => {
     let body = ""; req.on("data", (c) => body += c); req.on("end", () => {

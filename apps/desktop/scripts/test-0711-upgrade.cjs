@@ -6,7 +6,7 @@ function expect(v, m) { if (!v) throw new Error(m); }
 const listen = (srv) => new Promise((r) => srv.listen(0, "127.0.0.1", () => r(srv.address().port)));
 
 async function main() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-upgrade-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-upgrade-"));
   const lan = http.createServer((req, res) => { res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ ok: true, from: "lan" })); });
   const lanPort = await listen(lan);
   const cloud = http.createServer((req, res) => {
@@ -50,7 +50,7 @@ async function main() {
     await new Promise((r) => setTimeout(r, 150));
     r = await post("/auth/login", { email: "andrei@example.com", password: "parola-buna-1" }); j = await r.json();
     expect(r.ok, "cloud login: " + j.error);
-    const db = JSON.parse(fs.readFileSync(path.join(dir, "ai-stoica-data.json"), "utf8"));
+    const db = JSON.parse(fs.readFileSync(path.join(dir, "serasmart-data.json"), "utf8"));
     const users = db.users.filter((u) => u.email === "andrei@example.com");
     expect(users.length === 1 && users[0].cloudUserId === "cloud-42", "local account must be linked, not duplicated: " + JSON.stringify(users.map((u) => u.cloudUserId)));
     r = await fetch(base + "/api/conversations", { headers: { authorization: "Bearer " + j.token } }); j = await r.json();

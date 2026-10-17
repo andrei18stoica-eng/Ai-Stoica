@@ -1,10 +1,10 @@
 (function () {
   var shown = {};
   function host() {
-    var el = document.getElementById("aiStoicaToasts");
+    var el = document.getElementById("serasmartToasts");
     if (!el) {
       el = document.createElement("div");
-      el.id = "aiStoicaToasts";
+      el.id = "serasmartToasts";
       el.setAttribute("role", "status");
       el.setAttribute("aria-live", "polite");
       document.body.appendChild(el);
@@ -39,7 +39,7 @@
     }
     return "Serasmart AI: " + message;
   }
-  window.aiStoicaToast = toast;
+  window.serasmartToast = toast;
   window.addEventListener("unhandledrejection", function (event) {
     var message = describe(event.reason);
     if (!message) return;

@@ -236,7 +236,7 @@ function CatalogSetup({selected,onClose,onDone,reload}){
         clientId:form.oauthClientId.trim(),clientSecret:form.oauthClientSecret.trim(),...selected.oauth
       })});
       if(d.redirectUri)setRedirectUri(d.redirectUri);
-      const opened=await window.AIStoica?.openExternal?.(d.authorizeUrl);
+      const opened=await window.Serasmart?.openExternal?.(d.authorizeUrl);
       if(opened&&!opened.ok)throw new Error(opened.error||"Nu am putut deschide pagina OAuth.");
       setSetupResult({kind:"info",text:`Autorizarea s-a deschis în browser. Finalizează-o acolo; ${BRAND_NAME} salvează conexiunea automat.`});
       const name=String(selected.name).toLowerCase(),started=Date.now();
@@ -262,7 +262,7 @@ function CatalogSetup({selected,onClose,onDone,reload}){
     setSaving("direct");
     try{
       await api("/api/plugins/direct",{method:"POST",body:JSON.stringify({name:selected.name,description:selected.description,trigger:selected.trigger,appUrl:url})});
-      const r=await window.AIStoica?.openExternal?.(url);
+      const r=await window.Serasmart?.openExternal?.(url);
       if(r&&!r.ok)throw new Error(r.error||"Nu am putut deschide aplicația.");
       onDone({kind:"ok",text:`${selected.name}: salvat pentru deschidere directă, fără OAuth. Autentifică-te normal în aplicația oficială.`});
     }catch(e){if(mounted.current)setSetupResult({kind:"error",text:e.message})}
@@ -322,8 +322,8 @@ export function PluginsPage({onClose}){
   async function test(x){
     if(testing)return;
     if(x.mode==="direct_app"&&(x.appUrl||x.url)){
-      const r=await window.AIStoica?.openExternal?.(x.appUrl||x.url);
-      if(!window.AIStoica?.openExternal)openLink(x.appUrl||x.url);
+      const r=await window.Serasmart?.openExternal?.(x.appUrl||x.url);
+      if(!window.Serasmart?.openExternal)openLink(x.appUrl||x.url);
       setCardNotes(n=>({...n,[x.id]:r&&!r.ok?{kind:"error",text:`Nu am putut deschide aplicația — ${r.error||"eroare"}`}:{kind:"ok",text:"Aplicația a fost deschisă."}}));
       return;
     }

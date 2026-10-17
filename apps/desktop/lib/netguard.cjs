@@ -143,7 +143,7 @@ async function safeRequest(url, opts = {}) {
   const timeout = Number(opts.timeout || 15000);
   const signal = opts.signal ? AbortSignal.any([opts.signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout);
   let current = String(url), method = String(opts.method || "GET").toUpperCase(), body = opts.body ?? null;
-  let headers = { "user-agent": "AI-Stoica/0.7 (+desktop assistant)", ...(opts.headers || {}) };
+  let headers = { "user-agent": "Serasmart-AI/0.7 (+desktop assistant)", ...(opts.headers || {}) };
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const u = new URL(current);
     if (!["http:", "https:"].includes(u.protocol)) throw Object.assign(new Error("Sunt permise doar adrese http și https."), { code: "EBLOCKED", status: 400 });

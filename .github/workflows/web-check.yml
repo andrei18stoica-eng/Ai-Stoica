@@ -1,4 +1,4 @@
-name: AI Stoica Web Check
+name: Serasmart AI Web Check
 
 # The web version (aistoica.ro) and the installable phone app: builds the apps/cloud image (service + web interface),
 # starts it and checks that the interface and /health answer.
@@ -39,11 +39,11 @@ jobs:
           grep -qx web /tmp/services.txt
 
       - name: Build the web image (apps/cloud)
-        run: docker build -f apps/cloud/Dockerfile -t ai-stoica-web:test .
+        run: docker build -f apps/cloud/Dockerfile -t serasmart-web:test .
 
       - name: Start it and check the interface
         run: |
-          docker run -d --name web -p 127.0.0.1:8787:8787 ai-stoica-web:test
+          docker run -d --name web -p 127.0.0.1:8787:8787 serasmart-web:test
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8787/health && break; sleep 2; done
           curl -fsS http://127.0.0.1:8787/health | grep -q '"ok":true'
           curl -fsS http://127.0.0.1:8787/ | grep -q 'id="root"'

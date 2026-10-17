@@ -51,11 +51,11 @@ async function discover() {
     x && typeof x.id === 'string' && x.id && !excluded.has(x.id) && (!allowed.size || allowed.has(x.id)));
 }
 const toolDefs = [
-  { name:'list_ai_stoica_models', description:'Get the live OmniRoute model catalogue, including all providers. Models may be unavailable, paid, or incompatible with text chat.', inputSchema:{type:'object',properties:{},additionalProperties:false} },
-  { name:'ask_ai_stoica', description:'Send a standalone text question to a selected chat model in the live OmniRoute catalogue. Paid providers may charge for usage.', inputSchema:{type:'object',properties:{model:{type:'string',description:'Exact model ID from list_ai_stoica_models'},prompt:{type:'string',description:'Standalone text question. Never include secrets.'}},required:['model','prompt'],additionalProperties:false} },
+  { name:'list_serasmart_models', description:'Get the live OmniRoute model catalogue, including all providers. Models may be unavailable, paid, or incompatible with text chat.', inputSchema:{type:'object',properties:{},additionalProperties:false} },
+  { name:'ask_serasmart', description:'Send a standalone text question to a selected chat model in the live OmniRoute catalogue. Paid providers may charge for usage.', inputSchema:{type:'object',properties:{model:{type:'string',description:'Exact model ID from list_serasmart_models'},prompt:{type:'string',description:'Standalone text question. Never include secrets.'}},required:['model','prompt'],additionalProperties:false} },
 ];
 async function invoke(name, args) {
-  if (name === 'list_ai_stoica_models') {
+  if (name === 'list_serasmart_models') {
     const models = await discover();
     return textResult(JSON.stringify({
       totalVisible:models.length,
@@ -64,7 +64,7 @@ async function invoke(name, args) {
       note:'Live catalogue, not a guarantee of free credits or valid provider login. Audio, image and embeddings require separate tools.',
     }, null, 2));
   }
-  if (name === 'ask_ai_stoica') {
+  if (name === 'ask_serasmart') {
     if (typeof args?.model !== 'string' || typeof args?.prompt !== 'string' || !args.prompt.trim() || args.prompt.length > maxPrompt) {
       return textResult('Provide a current model ID and nonempty prompt of at most ' + maxPrompt + ' characters.', true);
     }
@@ -78,7 +78,7 @@ async function invoke(name, args) {
     const raw = data?.choices?.[0]?.message?.content;
     const answer = typeof raw === 'string' ? raw : Array.isArray(raw) ? raw.filter(x => x?.type === 'text').map(x => x.text || '').join('\n') : '';
     if (!answer) return textResult('OmniRoute did not return a usable text response.', true);
-    return textResult(answer + '\n\n[AI Stoica / OmniRoute: ' + args.model + ']');
+    return textResult(answer + '\n\n[Serasmart AI / OmniRoute: ' + args.model + ']');
   }
   return textResult('Unknown tool name.', true);
 }
@@ -116,7 +116,7 @@ const server = http.createServer(async (req, res) => {
   try {
     switch (request.method) {
       case 'initialize':
-        result = {protocolVersion: ['2025-03-26','2025-06-18','2025-11-25','2026-07-28'].includes(request.params?.protocolVersion) ? request.params.protocolVersion : '2025-03-26', capabilities:{tools:{listChanged:false}},serverInfo:{name:'ai-stoica-omniroute',version:'0.1.0'}};
+        result = {protocolVersion: ['2025-03-26','2025-06-18','2025-11-25','2026-07-28'].includes(request.params?.protocolVersion) ? request.params.protocolVersion : '2025-03-26', capabilities:{tools:{listChanged:false}},serverInfo:{name:'serasmart-omniroute',version:'0.1.0'}};
         break;
       case 'ping': result = {}; break;
       case 'tools/list': result = {tools:toolDefs}; break;
@@ -132,4 +132,4 @@ const server = http.createServer(async (req, res) => {
 });
 server.requestTimeout = 120000;
 server.headersTimeout = 15000;
-server.listen(port, process.env.HOST || '0.0.0.0', () => console.log('AI Stoica MCP listening on ' + port));
+server.listen(port, process.env.HOST || '0.0.0.0', () => console.log('Serasmart AI MCP listening on ' + port));

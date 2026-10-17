@@ -86,7 +86,7 @@ async function main(){
     res.statusCode=404;res.end("not found");
   });
   const omniPort=await listen(omni);
-  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),"ai-stoica-media-"));
+  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),"serasmart-media-"));
   const omniConfig={
     baseUrl:"http://127.0.0.1:"+omniPort+"/v1",imageProviders:"",videoProviders:"",
     controlApiUrl:"http://127.0.0.1:"+cloudPort,

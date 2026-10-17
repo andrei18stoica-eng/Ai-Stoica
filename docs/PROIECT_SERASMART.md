@@ -1,4 +1,4 @@
-# AI Stoica — situația completă a proiectului
+# Serasmart AI — situația completă a proiectului
 
 Document de bază, scris la 2026-10-03, după ce 0.7.11 a ajuns pe `main`. Pornește de la descrierea Owner-ului și o corectează acolo unde repo-ul spune altceva. Pentru lucrul zilnic cu Claude Code vezi `CLAUDE.md`; pentru publicare, `docs/PUBLICARE_RELEASE.md`.
 
@@ -15,14 +15,14 @@ Document de bază, scris la 2026-10-03, după ce 0.7.11 a ajuns pe `main`. Porne
 
 ## 1. Ce vrem să construim
 
-O platformă AI proprie, sub identitatea Stoica Enterprises AI, în care utilizatorul intră într-un singur loc și nu merge separat la ChatGPT, Gemini, Claude sau Groq. AI Stoica alege furnizorul și modelul prin rutare și arată răspunsul într-o singură interfață, cu conversații, istoric, atașamente, memorie, bibliotecă, pluginuri, automatizări, generare de imagini și video, conturi și sincronizare.
+O platformă AI proprie, sub identitatea Serasmart AI, în care utilizatorul intră într-un singur loc și nu merge separat la ChatGPT, Gemini, Claude sau Groq. Serasmart AI alege furnizorul și modelul prin rutare și arată răspunsul într-o singură interfață, cu conversații, istoric, atașamente, memorie, bibliotecă, pluginuri, automatizări, generare de imagini și video, conturi și sincronizare.
 
 Clienți țintă: Windows, telefon (iPhone/Android), orice browser. Pentru iPhone s-a ales PWA (Safari → Add to Home Screen), ca să nu fie nevoie de abonament Apple Developer.
 
 ## 2. Arhitectura
 
 ```
-Utilizator → clienți (Windows / telefon / PWA) → backend AI Stoica → rutare modele (OmniRoute sau chei directe) → furnizori AI → răspuns
+Utilizator → clienți (Windows / telefon / PWA) → backend Serasmart AI → rutare modele (OmniRoute sau chei directe) → furnizori AI → răspuns
 ```
 
 Alături de rutare, backend-ul ține autentificarea, conversațiile, memoria, fișierele și biblioteca.
@@ -34,11 +34,11 @@ GitHub (cod, versiuni, teste, build, Releases)
 Hetzner (API + PostgreSQL + Caddy) ── aistoica.ro / api.aistoica.ro ── utilizator
 ```
 
-GitHub nu este AI Stoica: după instalare, serverul are propria copie a codului și nu cere GitHub la fiecare mesaj. Totuși repo-ul rămâne: fără istoric nu poți vedea ce s-a schimbat între 0.7.11 și 0.7.12.
+GitHub nu este Serasmart AI: după instalare, serverul are propria copie a codului și nu cere GitHub la fiecare mesaj. Totuși repo-ul rămâne: fără istoric nu poți vedea ce s-a schimbat între 0.7.11 și 0.7.12.
 
 ## 3. Repo-ul
 
-`andrei18stoica-eng/Ai-Stoica` (privat). Structura și regulile de lucru sunt în `CLAUDE.md`. Se lucrează doar prin ramură → PR → verificări → merge; nu direct pe `main`.
+`andrei18stoica-eng/Serasmart-AI` (privat). Structura și regulile de lucru sunt în `CLAUDE.md`. Se lucrează doar prin ramură → PR → verificări → merge; nu direct pe `main`.
 
 ## 4. Versiunile și starea 0.7.11
 
@@ -46,7 +46,7 @@ GitHub nu este AI Stoica: după instalare, serverul are propria copie a codului 
 - După `e205278`, `main` a primit PR #19–#26 (lock-ul desktop, protecția ramurii, audituri desktop/core, actualizare automată Windows, mobile și cloud, Cloudflare, generare explicită de fișiere, paginare conversații), ajungând la `7fe0dc2`.
 - Patch-ul 0.7.11 fusese făcut pe `e205278` și nu se aplica curat. A fost rebazat pe `7fe0dc2`: unde 0.7.11 și PR #21–#26 rezolvau aceeași problemă s-a luat varianta 0.7.11; din `main` au rămas cititorul Access, stocarea conversațiilor în fișiere separate, secretul opțional `EXPO_PUBLIC_GATEWAY_URL` și `package-lock.json`.
 - **Rezultat:** PR #27, merge commit `67aedad` pe `main`.
-- **Verificat:** PR #27 a fost îmbinat cu verificările blocate de facturare (la cererea Owner-ului). După deblocare, toate cele 6 verificări de pe `main` au trecut: Build AI Stoica Windows, ZIP Windows, Desktop, Server, Cloudflare, Mobile. Local trecuseră deja testele desktop, serverul, Worker-ul și build-ul interfeței.
+- **Verificat:** PR #27 a fost îmbinat cu verificările blocate de facturare (la cererea Owner-ului). După deblocare, toate cele 6 verificări de pe `main` au trecut: Build Serasmart AI Windows, ZIP Windows, Desktop, Server, Cloudflare, Mobile. Local trecuseră deja testele desktop, serverul, Worker-ul și build-ul interfeței.
 - **Release:** `v0.7.11` e publicat (tag pe `67aedad`) cu `.exe`, `.blockmap`, `latest.yml` și ZIP.
 - **Defect găsit în `v0.7.11`:** `latest.yml` și `.blockmap` din Release provin dintr-un alt build decât `.exe` (le-a rescris workflow-ul ZIP). `sha512` nu se potrivește, deci actualizarea automată de la 0.7.10 ar fi respinsă.
 - **0.7.13:** workflow-ul ZIP nu mai urcă metadata (doar ZIP-ul), iar un test păzește regula. Nu a existat 0.7.12 în repo. Rămâne de confirmat după publicare: `sha512` din `latest.yml` = `sha512` al `.exe` din Release `v0.7.13`.
@@ -57,7 +57,7 @@ Schimbare față de Cloudflare 0.7.10: Owner-ul Worker-ului se creează și se r
 
 Totul din această secțiune este **declarat**; repo-ul conține doar configurația (`deploy/hetzner`), nu starea serverului.
 
-- Server Hetzner, proiect `ai-stoica-prod`, instalare în `/opt/ai-stoica`. Ales în locul variantelor gratuite (Oracle Always Free) pentru funcționare 24/7 predictibilă.
+- Server Hetzner, proiect `serasmart-prod`, instalare în `/opt/serasmart`. Ales în locul variantelor gratuite (Oracle Always Free) pentru funcționare 24/7 predictibilă.
 - Domeniu `aistoica.ro`; API la `api.aistoica.ro`, care rezolva către `178.104.117.42`.
 - Docker: PostgreSQL (healthy), API reconstruit (healthy), Caddy pornit. PostgreSQL ține datele persistente; API-ul ține logica; Caddy expune HTTPS.
 - Copia de pe server era în urma repo-ului cu ~145 de commit-uri (de la `d76c24f`) și a fost actualizată prin fast-forward: codul din GitHub nu e automat codul de pe server.
@@ -79,7 +79,7 @@ Ultima verificare declarată: rolurile Owner/User existau și contul Owner era a
 - Din 0.7.10 contul de pe PC funcționează și fără OmniRoute, direct cu cheile gratuite configurate (Gemini, Groq, Cerebras, Cloudflare). Setări → API-uri AI → „Testează cheile” verifică fiecare API.
 - Furnizori vizați: OpenAI, Gemini, Claude, Groq, Cerebras, Cloudflare AI, OpenRouter, posibil Grok.
 - Un abonament (de exemplu ChatGPT Plus) nu dă o cheie API: cheile se creează separat și se pun în configurația securizată a serviciului, niciodată în repo.
-- Numele „Ai principal” / „AI Stoica” nu mai sunt modele reale în 0.7.11 (selectarea automată e dezactivată): gateway-ul le înlocuiește cu modelul implicit configurat, iar GitHub Solve și automatizările cer un model ales explicit.
+- Numele „Ai principal” / „Serasmart AI” nu mai sunt modele reale în 0.7.11 (selectarea automată e dezactivată): gateway-ul le înlocuiește cu modelul implicit configurat, iar GitHub Solve și automatizările cer un model ales explicit.
 
 ## 8. Funcții
 
@@ -88,7 +88,7 @@ Ultima verificare declarată: rolurile Owner/User existau și contul Owner era a
 | Chat, proiecte, asistenți, istoric | În cod + teste | grupare Azi / Ieri / 7 zile / 30 de zile; listă „Arhivate”; redenumire și ștergere proiecte/asistenți |
 | Memorie persistentă | În cod + teste | diferită de istoric; înțelege forme românești, caută după sens când există cheie Gemini/Cloudflare; **nu** e echivalentă cu memoria ChatGPT și are nevoie de testare în producție |
 | Bibliotecă de fișiere | În cod + teste | text extras din Word, PowerPoint, Excel, PDF cu text, OpenDocument, Access (`.mdb`/`.accdb`) și text/cod |
-| Încărcare fișiere mari | În cod | limita se administrează pe server (memorie, spațiu, HTTP); Worker-ul folosește `AI_STOICA_FILE_MAX_MB` |
+| Încărcare fișiere mari | În cod | limita se administrează pe server (memorie, spațiu, HTTP); Worker-ul folosește `SERASMART_FILE_MAX_MB` |
 | Export PDF/DOCX/PPTX/XLSX/CSV/JSON/HTML etc. | În cod + teste | fișierul se face doar la comandă („Fă-mi un PDF cu…”) |
 | Generare imagini | În cod + teste | buton propriu; rezultatul merge în Bibliotecă; furnizorii reali (OpenAI, OpenRouter, Pollinations) cer cheie configurată și nu sunt testați în CI |
 | Generare video | În cod + teste | buton propriu; implicit 4 s, 720p, 16:9; jobul se urmărește și rezultatul MP4 se descarcă; același comentariu despre furnizori |
@@ -99,7 +99,7 @@ Ultima verificare declarată: rolurile Owner/User existau și contul Owner era a
 | Selector de modele, indicator de gândire, Copy/Paste, revenire la ultimul mesaj | În cod, **de confirmat în aplicație** | cerute de Owner în ciclurile 0.6.x–0.7.x; interfața 0.7.11 a fost verificată manual în browser (44 de verificări, vezi `VERIFICARE_FINALA.md`), nu în CI |
 | Aplicație Windows (Electron, tray, auto-update) | În cod + teste | actualizarea automată cere `latest.yml` + `.blockmap` în Release; de verificat manual la instalare |
 | Aplicație telefon (Expo) | În cod | se conectează la Worker-ul Cloudflare; verificată doar de workflow-ul Mobile, care n-a rulat pe 0.7.11 |
-| Web (aistoica.ro) și PWA pentru iPhone/Android | În producție (2026-10-04) | interfața e servită de `apps/cloud` (serviciul `web` din `deploy/hetzner`, conturile din `apps/server`); manifest, iconițe, service worker, butonul „Convertește AI Stoica în aplicație pe telefon” (0.7.16); site-ul răspunde cu certificat Let's Encrypt și vede OmniRoute de pe server; instalarea PWA pe telefon **de confirmat de Owner** |
+| Web (aistoica.ro) și PWA pentru iPhone/Android | În producție (2026-10-04) | interfața e servită de `apps/cloud` (serviciul `web` din `deploy/hetzner`, conturile din `apps/server`); manifest, iconițe, service worker, butonul „Convertește Serasmart AI în aplicație pe telefon” (0.7.16); site-ul răspunde cu certificat Let's Encrypt și vede OmniRoute de pe server; instalarea PWA pe telefon **de confirmat de Owner** |
 | Ecuații în Word, vizualizare fișiere, PDF cu diacritice | În cod + teste (0.7.16) | `lib/math.cjs`, `renderer/src/viewer.jsx`, `lib/pdftext.cjs`; ecuațiile verificate în LibreOffice, **de confirmat în Microsoft Word** |
 | Cloud Cloudflare (D1/R2) | În cod + teste | folosit de aplicația de telefon; Owner a decis să mute părți spre Hetzner, deci schemele Cloudflare istorice nu sunt arhitectura finală |
 
@@ -113,7 +113,7 @@ Ultima verificare declarată: rolurile Owner/User existau și contul Owner era a
 
 **Confirmat (2026-10-03):** codul 0.7.11 pe `main`; cele 6 verificări de pe `main` trec în GitHub (inclusiv Mobile și build-ul Windows); Release-ul `v0.7.11` există cu fișierele așteptate; versiune identică în toate fișierele.
 
-**Declarat, neverificat din repo:** serverul Hetzner și deploy-ul din `/opt/ai-stoica`, containerele healthy, DNS-ul `api.aistoica.ro`, rolurile și contul Owner, configurația OmniRoute de pe producție, cheile API configurate.
+**Declarat, neverificat din repo:** serverul Hetzner și deploy-ul din `/opt/serasmart`, containerele healthy, DNS-ul `api.aistoica.ro`, rolurile și contul Owner, configurația OmniRoute de pe producție, cheile API configurate.
 
 **Neconfirmat sau defect:** actualizarea automată (metadata din Release nu se potrivește cu `.exe`, vezi secțiunea 4), instalarea și pornirea efectivă pe Windows, HTTPS cap-coadă, memoria și automatizările în producție, PWA.
 

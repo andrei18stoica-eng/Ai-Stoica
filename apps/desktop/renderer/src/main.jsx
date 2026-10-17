@@ -192,7 +192,7 @@ async function libraryItemToAttachment(item) {
   const base={name:d.name,mime:d.mime||"",size:d.size||0,libraryId:d.id};
   if(kind==="image"){
     if(/heic|heif/i.test(`${d.mime} ${d.name}`))return {...base,type:"stored",part:{type:"text",text:`Imagine atașată: ${d.name}. Formatul HEIC/HEIF nu este acceptat de modelele AI; salvează poza ca JPG sau PNG și atașeaz-o din nou.`}};
-    if(Number(d.size||0)<=20*1024*1024)return {...base,type:"image",part:{type:"image_url",image_url:{url:`aistoica-library://${d.id}`}}};
+    if(Number(d.size||0)<=20*1024*1024)return {...base,type:"image",part:{type:"image_url",image_url:{url:`serasmart-library://${d.id}`}}};
     return {...base,type:"stored",part:{type:"text",text:`Imagine atașată: ${d.name} (${formatBytes(d.size)}). Depășește 20 MB, așa că AI-ul nu o poate analiza direct.`}};
   }
   if(kind==="text"&&Number(d.size||0)<=10*1024*1024){
@@ -295,9 +295,9 @@ function AuthScreen({ onAuth, notice:initialNotice="" }) {
     try{const r=await authPost("/auth/resend-code",{email});if(!r.ok)throw new Error(r.error);setNotice(r.data.message||"Ți-am trimis un cod nou.");setResendIn(60)}
     catch(e){setError(e.message)}finally{setBusy(false)}
   }
-  function resetGateway(){setGatewayUrl(DEFAULT_GATEWAY);Promise.resolve(window.AIStoica?.setConfig?.({gatewayUrl:DEFAULT_GATEWAY})).catch(()=>{});setNetworkIssue(false);setError("");setNotice("Am revenit la serviciul local implicit. Încearcă din nou autentificarea.");}
+  function resetGateway(){setGatewayUrl(DEFAULT_GATEWAY);Promise.resolve(window.Serasmart?.setConfig?.({gatewayUrl:DEFAULT_GATEWAY})).catch(()=>{});setNetworkIssue(false);setError("");setNotice("Am revenit la serviciul local implicit. Încearcă din nou autentificarea.");}
   return <div className="authShell"><div className="authGlow"/>
-    <div className="authBrand"><img src="./stoica-enterprises-ai-768.webp" alt={`${BRAND_NAME}`}/><h1>{BRAND_NAME}</h1><p>Asistentul tău AI</p>
+    <div className="authBrand"><img src="./serasmart-ai-768.webp" alt={`${BRAND_NAME}`}/><h1>{BRAND_NAME}</h1><p>Asistentul tău AI</p>
       <div className="authFeature"><Sparkles size={17}/> Chat AI profesional, memorie, fișiere, design și sarcini programate.</div>
       <div className="authFeature"><Wifi size={17}/> Conectare prin OmniRoute sau prin API-uri directe.</div>
       <div className="authFeature"><User size={17}/> {cloud?"Cont personal cu aprobare Owner.":"Cont personal protejat cu parolă."}</div>
@@ -329,7 +329,7 @@ function AuthScreen({ onAuth, notice:initialNotice="" }) {
   </div>;
 }
 
-function BrandMark({small=false}) { return <div className={cx("brandMark",small&&"small")}><img src="./stoica-enterprises-ai-mark.webp" alt={`${BRAND_NAME}`}/></div>; }
+function BrandMark({small=false}) { return <div className={cx("brandMark",small&&"small")}><img src="./serasmart-ai-mark.webp" alt={`${BRAND_NAME}`}/></div>; }
 
 const TOOL_ITEMS=[["explore",Compass,"Explorează",null],["code",SquareTerminal,`Code ${BRAND_NAME}`,"code"],["automations",CalendarClock,"Scheduled","automations"],["plugins",Plug,"Pluginuri","plugins"],["library",Library,"Bibliotecă",null],["design",Palette,"Design","document_generation"],["skills",Sparkles,"Skill-uri",null],["memory",Brain,"Memorie",null]];
 function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,conversations,currentId,busyIds,onSelect,onDeleteConversation,onUnarchive,onNew,selectedProject,setSelectedProject,activeAssistantId,onUseAssistant,onNewProject,onNewAssistant,onEditProject,onEditAssistant,onTool,onSettings,onLogout}) {
@@ -409,7 +409,7 @@ function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,convers
 
 const MODEL_PROVIDERS=[["cerebras","Cerebras"],["groq","Groq"],["gemini","Gemini"],["mistral","Mistral"],["nvidia","NVIDIA"],["github","GitHub Models"],["openrouter","OpenRouter"],["cloudflare","Cloudflare Workers AI"],["cohere","Cohere"],["huggingface","Hugging Face"],["openai","OpenAI"]];
 // Combinations (names without "provider/") first, then one group per direct provider, then the rest of OmniRoute.
-const COMBO_CACHE_KEY="aiStoicaComboModelsV1";
+const COMBO_CACHE_KEY="serasmartComboModelsV1";
 let COMBO_IDS=new Set(storage.json(COMBO_CACHE_KEY,[])||[]);
 function groupModels(list){
   const groups=new Map();
@@ -812,7 +812,7 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
   async function onDrop(e){if(![...(e.dataTransfer?.types||[])].includes("Files"))return;e.preventDefault();setDragOver(false);await addComposerFiles([...(e.dataTransfer.files||[])])}
   // Microphone: the words appear in the box while you speak (the browser's speech recognition) and the message is sent
   // when you stop. Where the browser has no recognition (the Windows app, Firefox) or it fails, the recording is sent to
-  // AI Stoica, which transcribes it (OmniRoute or Groq) and sends the text. No file permission is needed.
+  // Serasmart AI, which transcribes it (OmniRoute or Groq) and sends the text. No file permission is needed.
   function finishVoice(text){
     const t=String(text||"").trim();
     if(!t){toast("Nu am auzit nimic. Apasă microfonul și vorbește din nou.","info");return;}
@@ -820,7 +820,7 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
   }
   function startSpeech(){
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR||window.AIStoica)return false;
+    if(!SR||window.Serasmart)return false;
     const r=new SR();r.lang=speechLocale();r.interimResults=true;r.continuous=true;
     const base=draftRef.current?draftRef.current.replace(/\s+$/,"")+" ":"";
     let finals="",heard="",failed="";stoppedRef.current=false;
@@ -1153,11 +1153,11 @@ function ConversationFilesPanel({conversation,onClose}) {
 // Windows only: Settings shows saved keys masked, so this copies them for the server's setup script (aistoica.ro).
 function ServerKeysBox() {
   const [state,setState]=useState({busy:false,text:"",bad:false});
-  if(!window.AIStoica?.copyServerKeys)return null;
+  if(!window.Serasmart?.copyServerKeys)return null;
   async function run(){
     setState({busy:true,text:"",bad:false});
     try{
-      const r=await window.AIStoica.copyServerKeys();
+      const r=await window.Serasmart.copyServerKeys();
       const skipped=r?.skipped?.length?` Nu am copiat ${r.skipped.join(", ")}: au caractere pe care serverul nu le acceptă.`:"";
       setState({busy:false,bad:!r?.ok,text:r?.ok?`Am copiat ${r.count===1?"o cheie":r.count+" chei"} pentru server. Lipește-le când scriptul de pe server îți cere (click dreapta). Se șterg din clipboard în 2 minute.${skipped}`:(r?.error||"Cheile nu au putut fi copiate.")});
     }catch(e){setState({busy:false,bad:true,text:e.message})}
@@ -1201,7 +1201,7 @@ function FirstRunGuide({onDone,onOpenSettings}) {
     if(busy)return;
     setBusy(true);setStatus("Salvez cheia și o testez…");
     try{
-      const saved=await window.AIStoica?.setConfig?.({geminiApiKey:clean});
+      const saved=await window.Serasmart?.setConfig?.({geminiApiKey:clean});
       if(!saved)throw new Error(`Setările pot fi salvate doar din aplicația ${BRAND_NAME}.`);
       const d=await api("/api/providers/test",{method:"POST",body:"{}"});
       const gem=(d.data||[]).find(x=>x.provider==="gemini");
@@ -1296,7 +1296,7 @@ const WEB_SETTINGS={
 };
 function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initialTab="general",preferences,onPreferences,prefBusy}) {
   const {isOwner}=useAccess();
-  const bridge=window.AIStoica?.getConfig?window.AIStoica:IS_WEB&&isOwner?WEB_SETTINGS:null;
+  const bridge=window.Serasmart?.getConfig?window.Serasmart:IS_WEB&&isOwner?WEB_SETTINGS:null;
   const webServer=bridge===WEB_SETTINGS;
   const [cfg,setCfg]=useState(null),[keys,setKeys]=useState({}),[tab,setTab]=useState(initialTab),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState(""),[toolStatus,setToolStatus]=useState(""),[error,setError]=useState(""),[saving,setSaving]=useState(false),[updateStatus,setUpdateStatus]=useState("");
   const {ref,backdropProps}=useModal(onClose);
@@ -1338,9 +1338,9 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
   async function testMic(){setMicStatus("Se verifică…");try{const s=await navigator.mediaDevices.getUserMedia({audio:true});s.getTracks().forEach(t=>t.stop());setMicStatus("Microfon disponibil și permis ✓")}catch{setMicStatus("Microfon indisponibil sau fără permisiune")}}
   async function testServer(){setToolStatus("Testez conexiunea SSH…");try{const d=await api("/api/tools/server/check",{method:"POST",body:JSON.stringify({serverHost:cfg.serverHost,serverPort:cfg.serverPort,serverUser:cfg.serverUser,serverKeyPath:cfg.serverKeyPath})});setToolStatus(d?.output||"Server conectat ✓")}catch(e){setToolStatus("Server: "+e.message)}}
   async function checkUpdate(){
-    if(!window.AIStoica?.checkUpdate)return;
+    if(!window.Serasmart?.checkUpdate)return;
     setUpdateStatus("Caut actualizări…");
-    try{const r=await window.AIStoica.checkUpdate();setUpdateStatus(!r?.ok?`Nu am putut verifica: ${r?.error||"eroare"}`:r.available===false||!r.version?"Folosești ultima versiune.":r.available===true?`Versiunea ${r.version} este disponibilă. Se descarcă automat; vei primi o notificare când e gata.`:`Ultima versiune publicată: ${r.version}.`)}
+    try{const r=await window.Serasmart.checkUpdate();setUpdateStatus(!r?.ok?`Nu am putut verifica: ${r?.error||"eroare"}`:r.available===false||!r.version?"Folosești ultima versiune.":r.available===true?`Versiunea ${r.version} este disponibilă. Se descarcă automat; vei primi o notificare când e gata.`:`Ultima versiune publicată: ${r.version}.`)}
     catch(e){setUpdateStatus("Nu am putut verifica: "+e.message)}
   }
   const keyProps={cfg,keys,setKeys};
@@ -1359,7 +1359,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <label className="toggleRow"><div><b>Pornește {BRAND_NAME} cu Windows</b><span>Aplicația pornește automat și poate rămâne în fundal.</span></div><input type="checkbox" checked={!!cfg.startWithWindows} onChange={e=>set({startWithWindows:e.target.checked})}/></label>
         <label className="toggleRow"><div><b>Închidere în zona de notificare</b><span>Butonul X ascunde aplicația fără să oprească serviciile.</span></div><input type="checkbox" checked={cfg.closeToTray!==false} onChange={e=>set({closeToTray:e.target.checked})}/></label>
         <label className="toggleRow"><div><b>Actualizări automate (aplicația Windows)</b><span>La pornire, {BRAND_NAME} descarcă singur versiunea nouă din GitHub Releases și te anunță când e gata de instalat.</span></div><input type="checkbox" checked={cfg.autoUpdate!==false} onChange={e=>set({autoUpdate:e.target.checked})}/></label>
-        {window.AIStoica?.checkUpdate&&<div className="settingsButtons"><button type="button" className="secondary" onClick={checkUpdate}><RotateCcw size={15}/> Caută actualizări acum</button></div>}
+        {window.Serasmart?.checkUpdate&&<div className="settingsButtons"><button type="button" className="secondary" onClick={checkUpdate}><RotateCcw size={15}/> Caută actualizări acum</button></div>}
         {updateStatus&&<div className="micStatus" role="status">{updateStatus}</div>}
         </>}
         <ServerUpdate/>
@@ -1615,7 +1615,7 @@ function App() {
   const [conversations,setConversations]=useState([]),[projects,setProjects]=useState([]),[assistants,setAssistants]=useState([]);
   const [models,setModels]=useState(()=>cachedModels()),[modelPolicyEnforced,setModelPolicyEnforced]=useState(false),[refreshingModels,setRefreshingModels]=useState(false),[deniedModels,setDeniedModels]=useState(0),[lockedModels,setLockedModels]=useState([]),[modelsChecked,setModelsChecked]=useState(false);
   const [currentId,setCurrentId]=useState(null),[model,setModel]=useState(()=>storage.get(MANUAL_MODEL_KEY)||"");
-  // The model AI Stoica picked by itself (first in the list: your OmniRoute combination). Unlike a model you chose, it is
+  // The model Serasmart AI picked by itself (first in the list: your OmniRoute combination). Unlike a model you chose, it is
   // replaced as soon as a better one appears, so a direct API picked while OmniRoute was offline does not stay selected.
   const autoPickRef=useRef("");
   const [selectedProject,setSelectedProject]=useState(null),[selectedAssistant,setSelectedAssistant]=useState(null);
@@ -1738,8 +1738,8 @@ function App() {
     const renamed=e=>{const {id,name}=e.detail||{};if(!id||!name)return;
       const fix=a=>a&&(a.libraryId===id||a.id===id)?{...a,name}:a;
       setConversations(cs=>cs.map(c=>(c.messages||[]).some(m=>m.attachments?.some(a=>a&&(a.libraryId===id||a.id===id)))?{...c,messages:c.messages.map(m=>m.attachments?{...m,attachments:m.attachments.map(fix)}:m)}:c));};
-    window.addEventListener("ai-stoica:file-renamed",renamed);
-    return()=>window.removeEventListener("ai-stoica:file-renamed",renamed);
+    window.addEventListener("serasmart:file-renamed",renamed);
+    return()=>window.removeEventListener("serasmart:file-renamed",renamed);
   },[]);
   async function loadData({initial=false}={}){
     if(!storage.get(TOKEN_KEY)){setBoot(false);return}
@@ -1787,7 +1787,7 @@ function App() {
     let active=true;
     (async()=>{
       try{
-        const cfg=await window.AIStoica?.getConfig?.();
+        const cfg=await window.Serasmart?.getConfig?.();
         if(cfg&&active){
           machineCfgRef.current=cfg;
           if(cleanGatewayUrl(cfg.gatewayUrl))setGatewayUrl(cfg.gatewayUrl);
@@ -1800,7 +1800,7 @@ function App() {
     return()=>{active=false};
   },[user?.id]);
   useEffect(()=>{
-    const off=window.AIStoica?.onUpdateReady?.(()=>setUpdateReady(true));
+    const off=window.Serasmart?.onUpdateReady?.(()=>setUpdateReady(true));
     return()=>{if(typeof off==="function")off()};
   },[]);
   // Back from the background (phone unlocked, window restored): pick up the answers the server kept writing.
@@ -1812,7 +1812,7 @@ function App() {
     return()=>{document.removeEventListener("visibilitychange",onVisible);window.removeEventListener("focus",onVisible)};
   },[user?.id]);
   // 0.7.18: the results of the automations (and the other notices of the account) arrive while the app is open; each
-  // is shown once and marked as read. Without AI Stoica Cloud the list is empty.
+  // is shown once and marked as read. Without Serasmart Cloud the list is empty.
   useEffect(()=>{
     if(!user?.id||!cloudConfigured)return;
     let stopped=false;
@@ -1920,8 +1920,8 @@ function App() {
         const raw=line.slice(5).trim();if(!raw||raw==="[DONE]")return;
         let j;try{j=JSON.parse(raw)}catch{return}
         if(j?.error){streamError=String(j.error?.message||j.error);return}
-        if(j?.ai_stoica_route){
-          routeInfo=j.ai_stoica_route;
+        if(j?.serasmart_route){
+          routeInfo=j.serasmart_route;
           setGen(convId,{stage:`A ales ${providerLabel(routeInfo.provider,routeInfo.model)} · ${routeInfo.model}…`});
           working={...working,messages:[...messages,{...assistantMessage,routeInfo,content:answer,streaming:true}]};scheduleFlush();
           return;
@@ -2156,7 +2156,7 @@ function App() {
   }
   function focusComposer(){setTimeout(()=>document.querySelector(".composerLine textarea")?.focus(),0)}
   function newConversation(){setCurrentId(null);setDraft("");setAttachments([]);setMediaMode(null);setSidebar(false);focusComposer()}
-  // Code AI Stoica: the new Code conversation opens with its code model chosen.
+  // Code Serasmart AI: the new Code conversation opens with its code model chosen.
   function startCode(conv,assistant){
     if(!conv?.id)return;
     if(assistant)setAssistants(v=>v.some(a=>a.id===assistant.id)?v:[...v,assistant]);
@@ -2172,7 +2172,7 @@ function App() {
   function onAuth(nextUser,perms){setAuthNotice("");setPermissions(perms||{});setUser(nextUser)}
   function resetGatewayAndReload(){
     setGatewayUrl(DEFAULT_GATEWAY);
-    Promise.resolve(window.AIStoica?.setConfig?.({gatewayUrl:DEFAULT_GATEWAY})).catch(()=>{});
+    Promise.resolve(window.Serasmart?.setConfig?.({gatewayUrl:DEFAULT_GATEWAY})).catch(()=>{});
     loadData();
   }
 
@@ -2187,12 +2187,12 @@ function App() {
       <Header deniedCount={deniedModels} lockedModels={lockedModels} onMenu={toggleMenu} model={model} onSelectModel={chooseModel} models={models} onRefreshModels={()=>refreshModels()} refreshingModels={refreshingModels} policyEnforced={modelPolicyEnforced} omni={omni} showOmni={machineSettingsAllowed} onShare={share} current={current} projects={projects} onDetach={()=>moveCurrent(null)} onMoveProject={moveCurrent} onFiles={()=>setFilesPanel(true)} onGitHub={()=>setGithubModal(true)} onGitHubRollback={githubRollback} hasGitHubBackup={!!lastGithubBackup} onArchive={()=>current&&archiveConversation(current.id)} onUnarchive={()=>current&&unarchiveConversation(current.id)} onDelete={()=>current&&deleteConversation(current.id)}/>
       <InstallApp banner/>
       {loadError&&<div className="loadErrorBanner" role="alert"><span>Nu am putut încărca datele: {loadError}</span><button onClick={()=>loadData()}>Reîncearcă</button>{GATEWAY!==DEFAULT_GATEWAY&&<button onClick={resetGatewayAndReload}>Folosește serviciul local implicit</button>}</div>}
-      {updateReady&&!updateDismissed&&<div className="updateBanner" role="status"><button className="updateInstall" onClick={()=>window.AIStoica?.installUpdate?.()}>Actualizare {BRAND_NAME} disponibilă — instalează acum</button><button className="updateClose" onClick={()=>setUpdateDismissed(true)} aria-label="Ascunde notificarea" title="Mai târziu"><X size={14}/></button></div>}
+      {updateReady&&!updateDismissed&&<div className="updateBanner" role="status"><button className="updateInstall" onClick={()=>window.Serasmart?.installUpdate?.()}>Actualizare {BRAND_NAME} disponibilă — instalează acum</button><button className="updateClose" onClick={()=>setUpdateDismissed(true)} aria-label="Ascunde notificarea" title="Mai târziu"><X size={14}/></button></div>}
       <div className="chatScroll" ref={chatRef} onScroll={updateChatScrollState}><ConversationView conversation={current} busy={busy} busyStage={currentGen?.stage} busySteps={currentGen?.steps||[]} onRegenerate={regenerate} onRate={rate} canRunCode={isOwner} onCodeResult={text=>setDraft(v=>(v?v+"\n\n":"")+text)} onAnswer={text=>send(text)} onOpenSettings={tab=>setSettings(tab||true)}/></div>
       {showJumpBottom&&hasMessages&&<button className="jumpToLatest" onClick={()=>jumpToLatest({smooth:true})} title="Mergi la ultimul mesaj" aria-label="Mergi la ultimul mesaj"><ChevronDown size={19}/><span>Ultimul mesaj</span></button>}
       <Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} onStop={stopGeneration} busy={busy} attachments={attachmentsState} setAttachments={setAttachments} onOpenLibrary={()=>openTool("library","all")} responseMode={responseMode} setResponseMode={setResponseMode} mediaMode={mediaModeState} setMediaMode={setMediaMode} mentionsVersion={mentionsVersion} mediaPolicy={{imagePaid:machineCfgRef.current?.imageCostPolicy==="allow_paid"}}/>
     </main>
-    {settings&&<SettingsModal user={user} initialTab={typeof settings==="string"?settings:"general"} preferences={user?.preferences} onPreferences={updatePreferences} prefBusy={prefBusy} machineSettingsAllowed={machineSettingsAllowed} onClose={()=>setSettings(false)} onSaved={cfg=>{machineCfgRef.current={...(machineCfgRef.current||{}),...cfg};setCloudConfigured(!!String(cfg?.controlApiUrl||"").trim());Promise.resolve(window.AIStoica?.ensureOmni?.()).catch(()=>{});setTimeout(()=>loadData(),800)}}/>}
+    {settings&&<SettingsModal user={user} initialTab={typeof settings==="string"?settings:"general"} preferences={user?.preferences} onPreferences={updatePreferences} prefBusy={prefBusy} machineSettingsAllowed={machineSettingsAllowed} onClose={()=>setSettings(false)} onSaved={cfg=>{machineCfgRef.current={...(machineCfgRef.current||{}),...cfg};setCloudConfigured(!!String(cfg?.controlApiUrl||"").trim());Promise.resolve(window.Serasmart?.ensureOmni?.()).catch(()=>{});setTimeout(()=>loadData(),800)}}/>}
     {entityModal&&<EntityModal type={entityModal.type} item={entityModal.item} onClose={()=>setEntityModal(null)} onSave={saveEntity} onDelete={entityModal.item&&!entityModal.item.builtIn?deleteEntity:null}/>}
     {toolPanel?.name==="explore"&&<ExplorePanel onClose={closeTool} assistants={assistants} onUseAssistant={startWithAssistant} onImageMode={startImageMode} onOpenLibrary={filter=>openTool("library",filter)}/>}
     {toolPanel?.name==="library"&&<LibraryPage onClose={closeTool} onAttach={attachFromLibrary} toAttachment={libraryItemToAttachment} initialFilter={toolPanel.filter||"all"} onOpenDesign={id=>openTool("design",id)}/>}

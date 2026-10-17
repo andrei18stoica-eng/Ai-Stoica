@@ -24,7 +24,7 @@ const { DESIGN_KINDS, MAX_VERSIONS: MAX_DESIGN_VERSIONS, designMessages, reviseM
 function normalizeModelKey(value){return String(value||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g," ").trim();}
 function isSmartAlias(value){
   const n=normalizeModelKey(value).replace(/[^a-z0-9]+/g," ").trim();
-  return n==="ai principal"||n==="ai stoica"||n==="aistoica"||n==="auto"||n==="smart"||n==="smart router";
+  return n==="ai principal"||n==="ai stoica"||n==="aistoica"||n==="serasmart"||n==="serasmart ai"||n==="auto"||n==="smart"||n==="smart router";
 }
 function inferProvider(entry){
   const explicit=normalizeModelKey(entry&&typeof entry==="object"?entry.provider:"");
@@ -96,7 +96,7 @@ function mediaFamily(id,provider=""){
 function mediaProviderAllowed(cfg,kind,family){const allowed=mediaProviders(cfg,kind);return !allowed.size||allowed.has(family);}
 function mediaProvidersLabel(cfg,kind){return [...mediaProviders(cfg,kind)].map(x=>MEDIA_FAMILY_LABELS[x]||x).join(", ");}
 // «Făcute de» is the order of preference, not a wall: when the chosen makers make nothing (a provider down, a key
-// missing, a login expired), the other providers that work are tried after them. AI_STOICA_MEDIA_STRICT=true (or
+// missing, a login expired), the other providers that work are tried after them. SERASMART_MEDIA_STRICT=true (or
 // mediaStrict in Setări) keeps the old rule: only the chosen makers, or an error.
 function mediaFallbackAllowed(cfg,kind){return cfg?.mediaStrict!==true&&String(cfg?.mediaStrict||"").toLowerCase()!=="true"&&mediaProviders(cfg,kind).size>0;}
 
@@ -110,9 +110,9 @@ function loadOrCreateSecret(dataDir) {
 }
 
 function normalizeEmail(email) { return String(email || "").trim().toLowerCase(); }
-// Email domains used by spam bots for fake sign-ups: uberip.com always, plus AI_STOICA_BLOCKED_EMAIL_DOMAINS (comma-separated).
+// Email domains used by spam bots for fake sign-ups: uberip.com always, plus SERASMART_BLOCKED_EMAIL_DOMAINS (comma-separated).
 function blockedEmailDomains() {
-  return [...new Set(["uberip.com", ...String(process.env.AI_STOICA_BLOCKED_EMAIL_DOMAINS || "").split(",")]
+  return [...new Set(["uberip.com", ...String(process.env.SERASMART_BLOCKED_EMAIL_DOMAINS || "").split(",")]
     .map((d) => d.trim().toLowerCase().replace(/^@+/, "")).filter(Boolean))];
 }
 function emailDomainBlocked(email) {
@@ -140,7 +140,7 @@ function pluginHeaders(plugin) {
     if ((plugin.authType || "bearer") === "header") out[plugin.headerName || "X-API-Key"] = plugin.apiKey;
     else out.Authorization = `Bearer ${plugin.apiKey}`;
   }
-  if(plugin.oauthProvider==="github"){out.Accept="application/vnd.github+json";out["User-Agent"]="AI-Stoica";}
+  if(plugin.oauthProvider==="github"){out.Accept="application/vnd.github+json";out["User-Agent"]="Serasmart-AI";}
   if(plugin.oauthProvider==="notion")out["Notion-Version"]="2022-06-28";
   return out;
 }
@@ -200,7 +200,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.set("x-powered-by", false);
   const oauthPending = new Map();
   const timers = [];
-  const errorLogFile = path.join(dataDir, "ai-stoica-errors.log");
+  const errorLogFile = path.join(dataDir, "serasmart-errors.log");
   let logWindowStart = 0, logCount = 0;
   // At most 30 lines per minute; the log is rotated at 1 MB so it cannot fill the disk.
   function logError(line) {
@@ -233,7 +233,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     } catch {}
   }
   app.use(helmet({ crossOriginResourcePolicy: false }));
-  // Only the AI Stoica window may talk to this local service. Websites open in a browser
+  // Only the Serasmart AI window may talk to this local service. Websites open in a browser
   // (and DNS-rebinding tricks that point a domain at 127.0.0.1) are refused.
   const allowedOrigins=new Set(["null","file://","http://localhost:5173","http://127.0.0.1:5173",`http://127.0.0.1:${port}`,`http://localhost:${port}`]);
   const originAllowed=(origin)=>!origin||allowedOrigins.has(String(origin))||/^(file|app):/i.test(String(origin));
@@ -329,7 +329,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const limit=Math.max(1,Math.min(8,Number(maxResults)||5));
     const results=[];
     try{
-      const r=await safeRequest("https://html.duckduckgo.com/html/?q="+encodeURIComponent(q),{headers:{"User-Agent":"Mozilla/5.0 AI-Stoica/0.7","Accept":"text/html"},timeout:12000,maxBytes:2*1024*1024,truncate:true,signal});
+      const r=await safeRequest("https://html.duckduckgo.com/html/?q="+encodeURIComponent(q),{headers:{"User-Agent":"Mozilla/5.0 Serasmart-AI/0.7","Accept":"text/html"},timeout:12000,maxBytes:2*1024*1024,truncate:true,signal});
       if(r.status===200){
         const html=await r.text();
         const re=/<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
@@ -468,7 +468,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   async function githubCodeContext(cfg,text){
     const repo=String(cfg.githubRepo||"").trim(),token=String(cfg.githubToken||"").trim();
     if(!repo||!token||!shouldUseGithub(text))return "";
-    const headers={Authorization:"Bearer "+token,Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","User-Agent":"AI-Stoica"};
+    const headers={Authorization:"Bearer "+token,Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","User-Agent":"Serasmart-AI"};
     const words=githubSearchWords(text);if(!words.length)return "";
     const found=new Map();
     for(const word of words){
@@ -499,7 +499,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const repo=String(cfg.githubRepo||"").trim(),token=String(cfg.githubToken||"").trim();
     if(!repo)throw policyFailure("Configurează GitHub repository în Setări.",400);
     if(!token)throw policyFailure("Configurează GitHub token în Setări pentru repository-ul privat.",400);
-    const headers={Authorization:"Bearer "+token,Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","User-Agent":"AI-Stoica"};
+    const headers={Authorization:"Bearer "+token,Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","User-Agent":"Serasmart-AI"};
     const ref=String(branch||cfg.githubBranch||"main").trim()||"main";
     const encodedPath=String(filePath||"").split("/").map(encodeURIComponent).join("/");
     const url="https://api.github.com/repos/"+repo+"/contents/"+encodedPath+"?ref="+encodeURIComponent(ref);
@@ -513,7 +513,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   async function githubWriteFile(cfg,args){
     const repo=String(cfg.githubRepo||"").trim(),token=String(cfg.githubToken||"").trim();
     if(!repo||!token)throw policyFailure("GitHub repository/token nu sunt configurate.",400);
-    const headers={Authorization:"Bearer "+token,Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","User-Agent":"AI-Stoica","Content-Type":"application/json"};
+    const headers={Authorization:"Bearer "+token,Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","User-Agent":"Serasmart-AI","Content-Type":"application/json"};
     const ref=String(args.branch||cfg.githubBranch||"main").trim()||"main";
     const encodedPath=String(args.filePath||"").split("/").map(encodeURIComponent).join("/");
     const url="https://api.github.com/repos/"+repo+"/contents/"+encodedPath;
@@ -615,7 +615,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(host.startsWith("-")||user.startsWith("-")||/[\s@]/.test(host)||/[\s@]/.test(user))throw policyFailure("Adresa sau utilizatorul serverului SSH nu sunt valide.",400);
     const args=["-o","BatchMode=yes","-o","StrictHostKeyChecking=accept-new","-o","ConnectTimeout=8","-p",String(Math.max(1,Math.min(65535,Number(cfg.serverPort||22)||22)))];
     const key=String(cfg.serverKeyPath||"").trim();if(key)args.push("-i",key);
-    args.push(user+"@"+host,String(command||"echo AI_STOICA_SERVER_OK"));
+    args.push(user+"@"+host,String(command||"echo SERASMART_SERVER_OK"));
     try{return await spawnCapture("ssh",args,{timeout})}catch(e){if(e.code==="ENOENT")throw policyFailure("Clientul SSH nu este instalat pe acest calculator.",503);throw e}
   }
 
@@ -822,7 +822,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   async function omniModelIds(cfg){
     return (await omniEntriesCached(cfg)).map(x=>String(typeof x==="string"?x:x?.id||"")).filter(Boolean);
   }
-  // A request without a model (a client that left the choice to AI Stoica) goes to your own OmniRoute combination
+  // A request without a model (a client that left the choice to Serasmart AI) goes to your own OmniRoute combination
   // ("Ai principal"), then to OmniRoute's auto/* ones; the direct APIs only when OmniRoute has none.
   async function defaultOmniModel(cfg,context){
     const entries=await omniEntriesCached(cfg);
@@ -832,10 +832,10 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }
     return "";
   }
-  // "Ai principal" / "AI Stoica …" (mobile default): an OmniRoute combo with that name if one exists, otherwise the configured default model.
+  // "Ai principal" / "Serasmart AI …" (mobile default): an OmniRoute combo with that name if one exists, otherwise the configured default model.
   async function resolveModelAlias(cfg,requested){
     const value=String(requested||"").trim();
-    if(!value||!(isSmartAlias(value)||/^ai stoica\b/.test(normalizeModelKey(value))))return value;
+    if(!value||!(isSmartAlias(value)||/^(ai stoica|serasmart)\b/.test(normalizeModelKey(value))))return value;
     const combo=(await omniModelIds(cfg)).find(id=>normalizeModelKey(id)===normalizeModelKey(value));
     if(combo)return combo;
     const fallback=[cfg.defaultModel,cfg.model].map(x=>String(x||"").trim()).find(x=>x&&!isSmartAlias(x));
@@ -850,7 +850,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if((await omniModelIds(cfg)).some(x=>x.toLowerCase()===v.toLowerCase()))return false;
     try{return (await directChatCandidates(cfg,v)).some(c=>c.provider===provider)}catch{return false}
   }
-  // chosen=false: the client sent no model (or the mobile "AI Stoica …" name), so AI Stoica picks and may fall back.
+  // chosen=false: the client sent no model (or the mobile "Serasmart AI …" name), so Serasmart AI picks and may fall back.
   async function resolveChatRoute(context, messages, requestedModel, {chosen=true}={}) {
     const cfg=getOmniConfig();
     const asked=String(requestedModel||cfg.model||"").trim();
@@ -922,7 +922,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   // Claude Code, GitHub Copilot, Kiro, Grok CLI, Cursor, the "-web" accounts…): their terms forbid making an account
   // available to anyone else, so only the Owner may use them (or the single person of a PC with no Owner email set).
   // Every other model that costs nothing (OmniRoute and the direct APIs) works for every account; the paid ones when the
-  // Owner allows them (AI Stoica Cloud). Same lists as apps/server/ai-policy.cjs (test-0716-shared-access.cjs).
+  // Owner allows them (Serasmart Cloud). Same lists as apps/server/ai-policy.cjs (test-0716-shared-access.cjs).
   const PERSONAL_PREFIXES=new Set([
     "cx","codex","codex-app-server","cxa","cc","claude","claude-code","gc","grok-cli","gemini-cli","gweb","gemini-web","cgpt-web","chatgpt-web",
     "gh","ghe-copilot","copilot-web","m365copilot","kr","kiro","amazon-q","cu","cursor","kc","kilocode","cl","cline","cp","clinepass",
@@ -931,7 +931,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   ]);
   const KEYLESS_PREFIXES=new Set(["pol","pollinations","cfp","cloudflare-playground","ddgw","duckduckgo-web","felo","felo-web","veo-free","veoaifree-web","tllm","theoldllm","pepper","chipotle"]);
   const personalName=p=>!!p&&!KEYLESS_PREFIXES.has(p)&&(PERSONAL_PREFIXES.has(p)||/-web$/.test(p));
-  // OmniRoute's "github" is GitHub Copilot (a subscription); AI Stoica's own "github/…" models are GitHub Models (free).
+  // OmniRoute's "github" is GitHub Copilot (a subscription); Serasmart AI's own "github/…" models are GitHub Models (free).
   function isPersonalModel(id){
     const v=String(id||"").trim(),prefix=(v.includes("/")?v.split("/")[0]:"").toLowerCase();
     if(personalName(prefix))return true;
@@ -950,11 +950,11 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(isPersonalModel(model))
       throw notPermitted(model,PERSONAL_REASON);
   }
-  // Local mode (no AI Stoica Cloud): the account on this PC uses the API keys configured on this PC.
+  // Local mode (no Serasmart Cloud): the account on this PC uses the API keys configured on this PC.
   // Code execution, SSH and GitHub write stay Owner-only. All direct APIs, testing the keys: the Owner.
   function directApisAllowed(req){return ownerRequest(req)||!cloudBase();}
   // The other accounts on the site use the direct APIs too: the free ones (Groq, Gemini, Mistral…), and the paid ones
-  // only when the Owner allows them; AI Stoica Cloud decides per model, as for OmniRoute (directCandidatesFor).
+  // only when the Owner allows them; Serasmart Cloud decides per model, as for OmniRoute (directCandidatesFor).
   function freeDirectAllowed(req){return directApisAllowed(req)||(!!cloudBase()&&!!req?.cloudUser&&hasPermission(req,"chat"));}
   async function directCandidatesFor(req,cfg,requested=""){
     if(!freeDirectAllowed(req))return [];
@@ -968,7 +968,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   function normalizePermissions(raw, owner) {
     const out = {};
     for (const k of PERMISSION_KEYS) { const v = raw?.[k]; out[k] = owner || !(v === false || v === "false" || v === 0); }
-    // "Code AI Stoica" is opt-in: only the Owner, or an account the Owner gave it to.
+    // "Code Serasmart AI" is opt-in: only the Owner, or an account the Owner gave it to.
     out.code = owner || raw?.code === true || raw?.code === "true";
     return out;
   }
@@ -1090,7 +1090,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(!ownerRequest(req))throw policyFailure("Doar Owner-ul poate actualiza site-ul.",403);
     if(!updateDir)throw policyFailure(`Actualizarea din aplicație există doar pe serverul ${BRAND_DOMAIN}.`,404);
   }
-  const UPDATE_SETUP="Serviciul de actualizare nu e instalat pe server. Rulează o dată pe server: sudo bash /opt/ai-stoica/deploy/hetzner/update.sh";
+  const UPDATE_SETUP="Serviciul de actualizare nu e instalat pe server. Rulează o dată pe server: sudo bash /opt/serasmart/deploy/hetzner/update.sh";
   app.get("/api/server/update", auth, (req,res) => {
     if(!ownerRequest(req)||!updateDir)return res.json({data:{enabled:false}});
     const exists=(name)=>{try{return fs.existsSync(path.join(updateDir,name))}catch{return false}};
@@ -1125,7 +1125,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         signal: AbortSignal.timeout(2500)
       });
       omni = r.ok;
-      // OmniRoute 3.8 answers 401 on /v1/* without a valid client key: it is running, but AI Stoica cannot use it yet.
+      // OmniRoute 3.8 answers 401 on /v1/* without a valid client key: it is running, but Serasmart AI cannot use it yet.
       omniNeedsKey = r.status === 401 || r.status === 403;
       try { await r.body?.cancel(); } catch {}
     } catch {}
@@ -1201,7 +1201,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     } finally { registerLocks.delete(email); }
   });
 
-  // Sign-up code from the email (AI Stoica Cloud only): confirm it, or ask for a new one.
+  // Sign-up code from the email (Serasmart Cloud only): confirm it, or ask for a new one.
   for (const [route, limit] of [["/auth/verify-email", 20], ["/auth/resend-code", 10]]) {
     app.post(route, async (req, res) => {
       if (!cloudBase()) return res.status(404).json({ error: `Codul pe email există doar cu ${BRAND_SHORT} Cloud.` });
@@ -1260,7 +1260,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   // Owner Control Center is always backed by PostgreSQL on the Hetzner API.
   app.use("/api/admin", auth, cloudOwnerOnly, proxyCloud);
-  // The account's notifications (automation results, account notices) live in AI Stoica Cloud; without it there are none.
+  // The account's notifications (automation results, account notices) live in Serasmart Cloud; without it there are none.
   app.use("/api/notifications", auth, (req,res)=>cloudBase()?proxyCloud(req,res):res.json({data:[],unread:0}));
   // Permite / Refuză from the Owner's phone notification for a new account: the one-time link is the proof, so no login
   // is needed (the phone's service worker has no session). Unknown links count as failed attempts.
@@ -1325,7 +1325,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     res.status(Number.isInteger(e?.status)&&e.status>=400&&e.status<600?e.status:fallback).json({error:e?.status?e.message:roError(e)});
   }
 
-  // "Code AI Stoica": a programming workspace. The Owner codes with the subscriptions connected in OmniRoute (Codex = cx/…,
+  // "Code Serasmart AI": a programming workspace. The Owner codes with the subscriptions connected in OmniRoute (Codex = cx/…,
   // Claude Code = cc/…). An account the Owner gave "code" to (Control Center) gets the paid APIs only (OpenAI / Claude
   // through OmniRoute, or the OpenAI key): the subscriptions' terms forbid sharing them.
   const CODE_SUBSCRIPTION=/^(cx|codex|cc|claude-code)\//i,CODE_API=/^(openai|anthropic)\//i;
@@ -1356,7 +1356,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       res.json({data:{allowed:true,subscriptions:personalAllowed(req.user,req.cloudUser),owner:ownerRequest(req),models:await codeModels(req),repo:String(cfg.githubRepo||""),branch:String(cfg.githubBranch||"main")}});
     }catch(e){sendError(res,e,500)}
   });
-  // Starts a Code conversation: the "AI Stoica Code" assistant (made once per account) and the chosen code model.
+  // Starts a Code conversation: the "Serasmart Code" assistant (made once per account) and the chosen code model.
   app.post("/api/code/session", auth, async (req,res) => {
     try{
       if(!codeAllowed(req))return res.status(403).json({error:`Code ${BRAND_NAME} este disponibil doar pentru Owner și pentru conturile cărora Owner-ul le-a dat acces.`});
@@ -1382,7 +1382,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.post("/api/tools/server/check", auth, ownerOnlyLocal, async (req,res) => {
     try{
       const cfg={...getOmniConfig(),...Object.fromEntries(["serverHost","serverPort","serverUser","serverKeyPath"].filter(k=>typeof req.body?.[k]==="string"||typeof req.body?.[k]==="number").map(k=>[k,String(req.body[k]).slice(0,500)]))};
-      const result=await sshRun(cfg,'echo AI_STOICA_SERVER_OK; uname -a 2>/dev/null || ver; uptime 2>/dev/null || true',18000);
+      const result=await sshRun(cfg,'echo SERASMART_SERVER_OK; uname -a 2>/dev/null || ver; uptime 2>/dev/null || true',18000);
       res.json({ok:result.code===0,output:(result.stdout||result.stderr||"").trim(),data:result});
     }catch(e){sendError(res,e)}
   });
@@ -1471,7 +1471,10 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
 
   // C4: images inside saved conversations are references to the user's Library, never base64.
-  const LIBRARY_REF="aistoica-library://";
+  const LIBRARY_REF="serasmart-library://";
+  // Conversations saved before 0.7.21 point to their pictures with the old prefix; both are read.
+  const LEGACY_LIBRARY_REF="aistoica-library://";
+  const libraryRefId=(url)=>url.startsWith(LIBRARY_REF)?url.slice(LIBRARY_REF.length):url.startsWith(LEGACY_LIBRARY_REF)?url.slice(LEGACY_LIBRARY_REF.length):null;
   function referenceInlineImages(messages,userId,db){
     const owned=new Set(db.library.filter(x=>x.userId===userId).map(x=>x.id));
     return messages.map(m=>{
@@ -1685,7 +1688,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(item.text!=null){res.type(item.mime||"text/plain");return res.send(String(item.text));}
     return res.status(404).json({error:"Conținutul fișierului nu mai există pe disc."});
   });
-  // The text of a Word / PowerPoint / Excel / PDF file, to show it inside AI Stoica without downloading it.
+  // The text of a Word / PowerPoint / Excel / PDF file, to show it inside Serasmart AI without downloading it.
   app.get("/api/library/:id/preview", auth, async (req,res) => {
     const item=store.read().library.find(x=>x.id===req.params.id&&x.userId===req.user.id);
     if(!item)return res.status(404).json({error:"Fișierul nu a fost găsit."});
@@ -1695,7 +1698,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }else if(!text&&item.dataUrl){
       const m=String(item.dataUrl).match(/^data:([^;]+);base64,(.+)$/s);
       if(m){
-        const tmp=path.join(os.tmpdir(),"ai-stoica-preview-"+crypto.randomUUID()+path.extname(String(item.name||"")));
+        const tmp=path.join(os.tmpdir(),"serasmart-preview-"+crypto.randomUUID()+path.extname(String(item.name||"")));
         try{await fs.promises.writeFile(tmp,Buffer.from(m[2],"base64"));const r=await extractText(tmp,item.mime,item.name);text=r.text||"";status=r.status||status}
         catch{status="error"}
         finally{fs.promises.rm(tmp,{force:true}).catch(()=>{})}
@@ -1729,7 +1732,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
 
   // Free tier (0.7.17): every account except the Owner makes a few pictures, one short video and ten files a day. The Owner
-  // (and the single person of a PC with no Owner email) is unlimited. Limits: AI_STOICA_FREE_IMAGES / _VIDEOS / _DOCUMENTS.
+  // (and the single person of a PC with no Owner email) is unlimited. Limits: SERASMART_FREE_IMAGES / _VIDEOS / _DOCUMENTS.
   const FREE_LIMIT_DEFAULTS={image:3,video:1,document:10};
   const FREE_LIMIT_KEYS={image:"freeImagesPerDay",video:"freeVideosPerDay",document:"freeDocumentsPerDay"};
   const FREE_LIMIT_NOUNS={image:["poză gratuită","poze gratuite"],video:["videoclip gratuit","videoclipuri gratuite"],document:["fișier gratuit","fișiere gratuite"]};
@@ -3135,7 +3138,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   async function callPlugin(stored,message){
     const plugin=pluginWithSecrets(stored);
     // Built-in (0.7.18): public services that need no key; fetched through the same network guard as the others.
-    if(plugin.mode==="builtin")return runBuiltinPlugin(plugin.builtin,message,{request:url=>safeRequest(url,{method:"GET",headers:{"Accept":"application/json, text/xml, */*","User-Agent":`AI-Stoica/1.0 (+https://${BRAND_DOMAIN})`},timeout:10000,maxBytes:2*1024*1024,truncate:true})});
+    if(plugin.mode==="builtin")return runBuiltinPlugin(plugin.builtin,message,{request:url=>safeRequest(url,{method:"GET",headers:{"Accept":"application/json, text/xml, */*","User-Agent":`Serasmart-AI/1.0 (+https://${BRAND_DOMAIN})`},timeout:10000,maxBytes:2*1024*1024,truncate:true})});
     if(plugin.mode==="direct_app")return JSON.stringify({mode:"direct_app",name:plugin.name,appUrl:plugin.appUrl||plugin.url,message:"Plugin configurat pentru deschidere directă. Nu este necesar OAuth pentru lansarea aplicației."});
     if(plugin.oauthConnected&&plugin.accessToken)return callOAuthPlugin(plugin,message);
     const method=PLUGIN_METHODS.includes(String(plugin.method||"POST").toUpperCase())?String(plugin.method||"POST").toUpperCase():"POST";
@@ -3603,19 +3606,20 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if(typeof content==="string")return content;
     return (Array.isArray(content)?content:[]).find(p=>p?.type==="text")?.text||"";
   }
-  // C4: aistoica-library://<id> becomes a data URL read from the user's own Library (max 20 MB, newest 8 images).
+  // C4: serasmart-library://<id> becomes a data URL read from the user's own Library (max 20 MB, newest 8 images).
   async function rehydrateLibraryImages(messages,userId){
     const db=store.read();
     let remaining=8;
     const out=[...messages];
     for(let i=out.length-1;i>=0;i--){
       const m=out[i];
-      if(!Array.isArray(m.content)||!m.content.some(p=>p.type==="image_url"&&String(p.image_url?.url||"").startsWith(LIBRARY_REF)))continue;
+      if(!Array.isArray(m.content)||!m.content.some(p=>p.type==="image_url"&&libraryRefId(String(p.image_url?.url||""))!==null))continue;
       const parts=[];
       for(const p of m.content){
         const url=p.type==="image_url"?String(p.image_url?.url||""):"";
-        if(!url.startsWith(LIBRARY_REF)){parts.push(p);continue;}
-        const item=db.library.find(x=>x.id===url.slice(LIBRARY_REF.length)&&x.userId===userId);
+        const refId=libraryRefId(url);
+        if(refId===null){parts.push(p);continue;}
+        const item=db.library.find(x=>x.id===refId&&x.userId===userId);
         const st=item?await libraryFileStat(item):null;
         if(!item||(!st&&!item.dataUrl)){parts.push({type:"text",text:"[Imaginea atașată nu mai există în Bibliotecă.]"});continue;}
         if((st?.size||0)>20*1024*1024){parts.push({type:"text",text:`[Imaginea „${item.name}” depășește 20 MB și nu a fost trimisă modelului AI.]`});continue;}
@@ -3815,9 +3819,9 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   const directReason=(route)=>route?.direct?(route.reasons||[]):["rezervă automată: modelul ales nu a răspuns, a răspuns un API direct"];
   function chosenModelFailure(req,cfg,route,errors){
     if(route?.automatic)return policyFailure(`Niciun model selectat de ${BRAND_NAME} nu a putut răspunde. `+errors.slice(0,14).join(" | "),502);
-    // «Rezervă automată» is in the Windows Settings for the Owner; on the server it is AI_STOICA_CHAT_FALLBACK.
+    // «Rezervă automată» is in the Windows Settings for the Owner; on the server it is SERASMART_CHAT_FALLBACK.
     const hint=!directApisAllowed(req)||cfg.directChatEnabled===false?" Alege alt model din listă."
-      :webDir?" Alege alt model din listă (Owner-ul poate porni rezerva automată pe server: AI_STOICA_CHAT_FALLBACK=true).":" Alege alt model din listă sau pornește «Rezervă automată» în Setări → API-uri AI.";
+      :webDir?" Alege alt model din listă (Owner-ul poate porni rezerva automată pe server: SERASMART_CHAT_FALLBACK=true).":" Alege alt model din listă sau pornește «Rezervă automată» în Setări → API-uri AI.";
     return policyFailure(`Modelul ales «${route?.selectedModel||"?"}» nu a răspuns, iar ${BRAND_NAME} nu trece singur la alt model.${hint} Motiv: `+errors.slice(0,6).join(" | "),502);
   }
   // After 401/403/429 the remaining models of the same provider are skipped (same key, same limit).
@@ -3931,8 +3935,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
           const r=await fetchChatCandidate(cfg,candidate.id,messages,false,timer);
           const body=await r.text();
           if(!r.ok){errors.push(`${candidate.id}: ${r.status===401||r.status===403?await omniAuthError(cfg,r.status,body):"HTTP "+r.status+" "+upstreamErrorText(body)}`);continue;}
-          res.setHeader("X-AI-Stoica-Route",route.task);
-          res.setHeader("X-AI-Stoica-Model",headerSafe(candidate.id));
+          res.setHeader("X-Serasmart-Route",route.task);
+          res.setHeader("X-Serasmart-Model",headerSafe(candidate.id));
           return res.status(200).type(r.headers.get("content-type")||"application/json").send(withCleanQuestions(body));
         }catch(e){if(clientSignal.aborted)return;errors.push(`${candidate.id}: ${roError(e)}`)}
       }
@@ -3941,9 +3945,9 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
         errors.push(...direct.errors);
         if(direct.response){
           const body=await direct.response.text();
-          res.setHeader("X-AI-Stoica-Route",route.direct?"direct":"direct-fallback");
-          res.setHeader("X-AI-Stoica-Model",headerSafe(direct.candidate.model));
-          res.setHeader("X-AI-Stoica-Provider",direct.candidate.provider);
+          res.setHeader("X-Serasmart-Route",route.direct?"direct":"direct-fallback");
+          res.setHeader("X-Serasmart-Model",headerSafe(direct.candidate.model));
+          res.setHeader("X-Serasmart-Provider",direct.candidate.provider);
           return res.status(200).type(direct.response.headers.get("content-type")||"application/json").send(withCleanQuestions(body));
         }
       }
@@ -3985,14 +3989,14 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       res.setHeader("Cache-Control","no-cache, no-transform");
       res.setHeader("Connection","keep-alive");
       const routeTask=directCandidate?(route.direct?"direct":"direct-fallback"):route.task;
-      res.setHeader("X-AI-Stoica-Route",routeTask);
-      res.setHeader("X-AI-Stoica-Model",headerSafe(usedModel));
-      if(directCandidate)res.setHeader("X-AI-Stoica-Provider",directCandidate.provider);
+      res.setHeader("X-Serasmart-Route",routeTask);
+      res.setHeader("X-Serasmart-Model",headerSafe(usedModel));
+      if(directCandidate)res.setHeader("X-Serasmart-Provider",directCandidate.provider);
       const usedCandidate=directCandidate||route.candidates.find(x=>x.id===usedModel)||{};
       const routeInfo={task:routeTask,model:usedModel,provider:usedCandidate.provider||inferProvider(usedModel),reasons:directCandidate?directReason(route):(route.reasons||[])};
       if(job)job.routeInfo=routeInfo;
       const open=()=>!res.destroyed&&!res.writableEnded;
-      if(open())res.write(`data: ${JSON.stringify({ai_stoica_route:routeInfo})}\n\n`);
+      if(open())res.write(`data: ${JSON.stringify({serasmart_route:routeInfo})}\n\n`);
       if(!ctype.includes("text/event-stream")){
         const data=await upstream.json(),text=sanitizeQuestions(data?.choices?.[0]?.message?.content||"");
         if(job){job.text=text;saveJobMessage(job,{content:text||"Nu am primit răspuns.",routeInfo});endJob(job,"done");}
@@ -4194,13 +4198,13 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const selectedModel=await resolveModelAlias(cfg,askedModel);
       if(!selectedModel)throw policyFailure("Automatizarea nu are un model AI valid. Selectează un model permis de Owner.",400);
       await requirePersonalAccess(ctx,selectedModel);
-      // Same rule as chat: no model chosen for the automation (or "Ai principal" / "AI Stoica …") lets AI Stoica fall back.
+      // Same rule as chat: no model chosen for the automation (or "Ai principal" / "Serasmart AI …") lets Serasmart AI fall back.
       const automaticModel=!String(item.model||"").trim()||selectedModel!==askedModel;
       await requireModelAccess(ctx,selectedModel);
       await requireChatModel(cfg,selectedModel);
       const isWatch=item.timingMode==="condition_watch";
       const taskPrompt=isWatch
-        ? `${item.prompt}\n\nAceasta este o verificare condițională. Dacă nu există o schimbare relevantă sau condiția nu este îndeplinită, răspunde exact: AI_STOICA_NO_NOTIFICATION. Dacă este îndeplinită, răspunde numai cu informația utilă care trebuie notificată.`
+        ? `${item.prompt}\n\nAceasta este o verificare condițională. Dacă nu există o schimbare relevantă sau condiția nu este îndeplinită, răspunde exact: SERASMART_NO_NOTIFICATION. Dacă este îndeplinită, răspunde numai cu informația utilă care trebuie notificată.`
         : item.prompt;
       const messages=await prepareMessages([{role:"user",content:taskPrompt}],null,item.userId,{webAllowed:hasPermission(ctx,"web_search"),deepAllowed:hasPermission(ctx,"deep_research"),githubAllowed:hasPermission(ctx,"github_access"),pluginsAllowed:hasPermission(ctx,"plugins"),owner:false});
       // Same rule as chat: a direct-API model goes to its API; any other model to OmniRoute, and when it fails the direct
@@ -4221,7 +4225,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       }
       if(!data)throw new Error("Automatizarea nu a primit răspuns de la niciun AI. "+errors.slice(0,8).join(" | "));
       const answer=String(data?.choices?.[0]?.message?.content||"").trim();
-      const noNotification=isWatch&&/^AI_STOICA_NO_NOTIFICATION\b/i.test(answer);
+      const noNotification=isWatch&&/^SERASMART_NO_NOTIFICATION\b/i.test(answer);
       const fresh=store.read(),target=fresh.automations.find(x=>x.id===item.id);if(!target)return;
       const stillActive=manual||target.enabled!==false;
       target.lastRunAt=Date.now();target.failures=0;
@@ -4234,7 +4238,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       if(stillActive&&!noNotification&&target.notify!==false&&typeof onAutomationResult==="function"){
         try{onAutomationResult({title:target.title,body:answer.slice(0,500),automationId:item.id,userId:item.userId})}catch{}
       }
-      // 0.7.18: on the site (and on Windows signed in to AI Stoica Cloud) the result reaches the account as a notification
+      // 0.7.18: on the site (and on Windows signed in to Serasmart Cloud) the result reaches the account as a notification
       // and on its phones; before, the web version ran the automation and told no one.
       if(stillActive&&!noNotification&&target.notify!==false&&ctx.cloudToken&&cloudBase()){
         cloudFetch("/api/notifications/self",{method:"POST",headers:{Authorization:`Bearer ${ctx.cloudToken}`},body:{type:"automation",title:String(target.title||"Automatizare").slice(0,120),body:answer.slice(0,1000)},timeout:8000})

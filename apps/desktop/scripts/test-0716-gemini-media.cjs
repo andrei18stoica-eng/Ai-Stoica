@@ -11,7 +11,7 @@ const mp4 = Buffer.concat([Buffer.from("000000186674797069736f6d0000020069736f6d
 const json = (v, status = 200) => new Response(JSON.stringify(v), { status, headers: { "content-type": "application/json" } });
 
 async function main() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-gemini-media-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-gemini-media-"));
   const omniAsked = [];
   // OmniRoute with a Gemini Web picture model (its sign-in expired), a ChatGPT one and a free web video one.
   const omni = http.createServer((req, res) => {
@@ -124,10 +124,10 @@ async function main() {
   // The settings reach the site: apps/cloud reads the variables, both compose files pass them, the site can save them.
   const repo = path.join(__dirname, "..", "..", "..");
   const server = fs.readFileSync(path.join(repo, "apps", "cloud", "server.cjs"), "utf8");
-  expect(/imageProviders:[^\n]*AI_STOICA_IMAGE_PROVIDERS/.test(server) && /videoProviders:[^\n]*AI_STOICA_VIDEO_PROVIDERS/.test(server), "apps/cloud/server.cjs must read AI_STOICA_IMAGE_PROVIDERS / AI_STOICA_VIDEO_PROVIDERS");
+  expect(/imageProviders:[^\n]*SERASMART_IMAGE_PROVIDERS/.test(server) && /videoProviders:[^\n]*SERASMART_VIDEO_PROVIDERS/.test(server), "apps/cloud/server.cjs must read SERASMART_IMAGE_PROVIDERS / SERASMART_VIDEO_PROVIDERS");
   for (const f of [["apps", "cloud", "docker-compose.yml"], ["deploy", "hetzner", "docker-compose.yml"]]) {
     const text = fs.readFileSync(path.join(repo, ...f), "utf8");
-    expect(text.includes("AI_STOICA_IMAGE_PROVIDERS: ${AI_STOICA_IMAGE_PROVIDERS-gemini}") && text.includes("AI_STOICA_VIDEO_PROVIDERS: ${AI_STOICA_VIDEO_PROVIDERS-gemini}"), f.join("/") + ": Gemini by default, an empty value kept");
+    expect(text.includes("SERASMART_IMAGE_PROVIDERS: ${SERASMART_IMAGE_PROVIDERS-${AI_STOICA_IMAGE_PROVIDERS-gemini}}") && text.includes("SERASMART_VIDEO_PROVIDERS: ${SERASMART_VIDEO_PROVIDERS-${AI_STOICA_VIDEO_PROVIDERS-gemini}}"), f.join("/") + ": Gemini by default, an empty value kept");
   }
   const { EDITABLE } = require("../lib/serversettings.cjs");
   expect(EDITABLE.includes("imageProviders") && EDITABLE.includes("videoProviders"), "the Owner can change them on the site");

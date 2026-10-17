@@ -38,14 +38,14 @@ async function main(){
     if(req.url==="/v1/chat/completions"&&req.method==="POST"){
       const body=await jsonBody(req);
       const allText=JSON.stringify(body.messages||[]);
-      const content=allText.includes("AI_STOICA_NO_NOTIFICATION")?"AI_STOICA_NO_NOTIFICATION":"Rezultat automatizare test";
+      const content=allText.includes("SERASMART_NO_NOTIFICATION")?"SERASMART_NO_NOTIFICATION":"Rezultat automatizare test";
       return res.end(JSON.stringify({choices:[{message:{content}}]}));
     }
     res.statusCode=404;res.end(JSON.stringify({error:"not found"}));
   });
   const omniPort=await listen(omni);
 
-  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),"ai-stoica-infra-"));
+  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),"serasmart-infra-"));
   const gateway=startLocalGateway({
     dataDir,port:8802,host:"127.0.0.1",
     getOmniConfig:()=>({
@@ -81,7 +81,7 @@ async function main(){
     expect(directTest.appUrl==="https://github.com/","Direct plugin app URL missing");
 
     r=await fetch(base+"/api/memory/capture",{method:"POST",headers,body:JSON.stringify({
-      userText:"Prefer să folosesc tema întunecată și vreau ca AI Stoica să păstreze această preferință."
+      userText:"Prefer să folosesc tema întunecată și vreau ca Serasmart AI să păstreze această preferință."
     })});
     const captured=await r.json();
     expect(r.ok&&captured.stored===true,"Durable memory preference was not captured");

@@ -8,7 +8,7 @@ function expect(v, m) { if (!v) throw new Error(m); }
 const listen = (srv) => new Promise((r) => srv.listen(0, "127.0.0.1", () => r(srv.address().port)));
 
 async function main() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-voice-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-voice-"));
   const omniAsked = [];
   const omni = http.createServer((req, res) => {
     req.on("data", () => {}); req.on("end", () => {
@@ -37,7 +37,7 @@ async function main() {
     await new Promise((r) => setTimeout(r, 200));
     const token = (await (await realFetch(base + "/auth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "owner@example.com", password: "password123", name: "Owner" }) })).json()).token;
     const audio = Buffer.concat([Buffer.from("1a45dfa3", "hex"), Buffer.alloc(256)]);
-    const up = await realFetch(base + "/api/library/upload", { method: "POST", headers: { authorization: "Bearer " + token, "x-file-name": "Vocal_AI_Stoica.webm", "x-file-type": "audio/webm", "x-file-size": String(audio.length) }, body: audio });
+    const up = await realFetch(base + "/api/library/upload", { method: "POST", headers: { authorization: "Bearer " + token, "x-file-name": "Vocal_Serasmart.webm", "x-file-type": "audio/webm", "x-file-size": String(audio.length) }, body: audio });
     expect(up.ok, "the voice recording must upload, got " + up.status);
     const id = (await up.json()).data.id;
     const transcribe = () => realFetch(base + `/api/library/${id}/transcribe`, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + token }, body: JSON.stringify({ language: "ro" }) });

@@ -5,23 +5,37 @@ import remarkGfm from "remark-gfm";
 import { X, Check, Copy } from "lucide-react";
 import { BRAND_NAME } from "./brand.js";
 
-// Web version / installed phone app (PWA): the page is served by the AI Stoica server itself, so that server is the gateway.
+// Web version / installed phone app (PWA): the page is served by the Serasmart AI server itself, so that server is the gateway.
 // The Windows app (preload bridge, file://) and the Vite dev server (port 5173) keep the local service.
-export const IS_WEB = typeof window!=="undefined" && !window.AIStoica && /^https?:$/.test(window.location.protocol) && window.location.port!=="5173";
+export const IS_WEB = typeof window!=="undefined" && !window.Serasmart && /^https?:$/.test(window.location.protocol) && window.location.port!=="5173";
 export const DEFAULT_GATEWAY = IS_WEB ? window.location.origin : "http://127.0.0.1:8787";
-export const GATEWAY_KEY = "aiStoicaGatewayUrlV1";
-export const TOKEN_KEY = "aiStoicaAuthTokenV3";
-export const USER_KEY = "aiStoicaUserV3";
-export const PERMISSIONS_KEY = "aiStoicaPermissionsV1";
-export const MODEL_CACHE_KEY = "aiStoicaModelsV1";
-export const MODEL_SELECTED_KEY = "aiStoicaSelectedModelV1";
-export const MANUAL_MODEL_KEY = "aiStoicaManualModelV1";
-export const RESPONSE_MODE_KEY = "ai-stoica-response-mode";
-export const GITHUB_BACKUP_KEY = "ai-stoica-last-github-backup";
-export const FIRST_RUN_KEY = "ai-stoica-first-run-done";
-export const SIDEBAR_COLLAPSED_KEY = "aiStoicaSidebarCollapsedV1";
-export const ACCOUNT_KEYS = [TOKEN_KEY,USER_KEY,PERMISSIONS_KEY,MODEL_CACHE_KEY,MODEL_SELECTED_KEY,MANUAL_MODEL_KEY,GITHUB_BACKUP_KEY,"aiStoicaSmartRouterDefaultV1","aiStoicaAutoRouterEnabledV1"];
+export const GATEWAY_KEY = "serasmartGatewayUrlV1";
+export const TOKEN_KEY = "serasmartAuthTokenV3";
+export const USER_KEY = "serasmartUserV3";
+export const PERMISSIONS_KEY = "serasmartPermissionsV1";
+export const MODEL_CACHE_KEY = "serasmartModelsV1";
+export const MODEL_SELECTED_KEY = "serasmartSelectedModelV1";
+export const MANUAL_MODEL_KEY = "serasmartManualModelV1";
+export const RESPONSE_MODE_KEY = "serasmart-response-mode";
+export const GITHUB_BACKUP_KEY = "serasmart-last-github-backup";
+export const FIRST_RUN_KEY = "serasmart-first-run-done";
+export const SIDEBAR_COLLAPSED_KEY = "serasmartSidebarCollapsedV1";
+export const ACCOUNT_KEYS = [TOKEN_KEY,USER_KEY,PERMISSIONS_KEY,MODEL_CACHE_KEY,MODEL_SELECTED_KEY,MANUAL_MODEL_KEY,GITHUB_BACKUP_KEY,"serasmartSmartRouterDefaultV1","serasmartAutoRouterEnabledV1"];
 export const OAUTH_REDIRECT_PATH = "/api/plugins/oauth/callback";
+
+// 0.7.21: the keys this browser saved had the old name (aiStoica…, ai-stoica-…). They move once to the new names, so
+// nobody is logged out and no setting is lost.
+(function migrateLegacyKeys(){
+  try{
+    const keys=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k)keys.push(k)}
+    for(const key of keys){
+      const next=key.startsWith("aiStoica")?"serasmart"+key.slice(8):key.startsWith("ai-stoica-")?"serasmart-"+key.slice(10):"";
+      if(!next)continue;
+      if(localStorage.getItem(next)===null)localStorage.setItem(next,localStorage.getItem(key));
+      localStorage.removeItem(key);
+    }
+  }catch{}
+})();
 
 export const storage = {
   get(key,fallback=""){try{const v=localStorage.getItem(key);return v===null?fallback:v}catch{return fallback}},
@@ -41,7 +55,7 @@ export function setGatewayUrl(url){
 }
 export function toast(message,kind="error"){
   const text=String(message||"").trim();if(!text)return;
-  try{if(typeof window.aiStoicaToast==="function"){window.aiStoicaToast(text,kind);return;}}catch{}
+  try{if(typeof window.serasmartToast==="function"){window.serasmartToast(text,kind);return;}}catch{}
   alert(text);
 }
 
@@ -114,7 +128,7 @@ export async function writeClipboardText(value) {
   const text=String(value??"");
   if(!text) return false;
   try {
-    const result=await window.AIStoica?.writeClipboardText?.(text);
+    const result=await window.Serasmart?.writeClipboardText?.(text);
     if(result?.ok) return true;
   } catch {}
   try {
@@ -138,27 +152,27 @@ export async function writeClipboardText(value) {
 export function openLink(href){
   const url=String(href||"").trim();
   if(!/^(https?:|mailto:)/i.test(url)){toast(`Acest link nu poate fi deschis din ${BRAND_NAME}.`);return;}
-  if(!window.AIStoica?.openExternal){window.open(url,"_blank","noopener,noreferrer");return;}
-  Promise.resolve(window.AIStoica.openExternal(url)).then(r=>{if(r&&r.ok===false)toast(r.error||"Nu am putut deschide linkul în browser.")}).catch(e=>toast("Nu am putut deschide linkul: "+e.message));
+  if(!window.Serasmart?.openExternal){window.open(url,"_blank","noopener,noreferrer");return;}
+  Promise.resolve(window.Serasmart.openExternal(url)).then(r=>{if(r&&r.ok===false)toast(r.error||"Nu am putut deschide linkul în browser.")}).catch(e=>toast("Nu am putut deschide linkul: "+e.message));
 }
 
 export async function saveBlobDownload(blob,name) {
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
-  a.href=url;a.download=name||"AI-Stoica-fisier";
+  a.href=url;a.download=name||"Serasmart-AI-fisier";
   document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),4000);
 }
 export async function downloadGeneratedFile(file) {
   if(!file?.id)throw new Error("Fișierul nu mai este disponibil.");
   const r=await authedFetch(`/api/files/${file.id}`);
-  await saveBlobDownload(await r.blob(),file.name||"AI-Stoica-fisier");
+  await saveBlobDownload(await r.blob(),file.name||"Serasmart-AI-fisier");
 }
 export async function downloadLibraryFile(file) {
   const id=file?.libraryId||file?.id;
   if(!id)throw new Error("Fișierul nu mai este disponibil.");
   const r=await authedFetch(`/api/library/${id}/content`);
-  await saveBlobDownload(await r.blob(),file.name||"AI-Stoica-fisier");
+  await saveBlobDownload(await r.blob(),file.name||"Serasmart-AI-fisier");
 }
 export function fmtTime(ts) {
   if (!ts) return "—";

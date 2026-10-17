@@ -6,7 +6,7 @@ const {startLocalGateway}=require("../local-gateway.cjs");
 function expect(v,m){if(!v)throw new Error(m)}
 
 async function main(){
-  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),"ai-stoica-tools-"));
+  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),"serasmart-tools-"));
   const port=8797;
   const cfg={
     baseUrl:"http://127.0.0.1:65530/v1",
@@ -67,7 +67,7 @@ async function main(){
     });
     expect(r.status===403,"Non-owner code execution must be blocked");
 
-    const storePath=path.join(dataDir,"ai-stoica-data.json");
+    const storePath=path.join(dataDir,"serasmart-data.json");
     const db=JSON.parse(fs.readFileSync(storePath,"utf8"));
     const user=db.users.find(x=>x.email==="owner-tools@example.com");
     expect(user,"test user missing");
@@ -93,8 +93,8 @@ async function main(){
     data=await r.json();
     expect(r.ok,data.error||"Direct chat fallback failed");
     expect(data?.choices?.[0]?.message?.content==="GROQ_DIRECT_OK","Groq direct fallback response mismatch");
-    expect(r.headers.get("x-ai-stoica-route")==="direct-fallback","Direct fallback route header missing");
-    expect(r.headers.get("x-ai-stoica-provider")==="groq","Direct fallback provider header mismatch");
+    expect(r.headers.get("x-serasmart-route")==="direct-fallback","Direct fallback route header missing");
+    expect(r.headers.get("x-serasmart-provider")==="groq","Direct fallback provider header mismatch");
     expect(cerebrasCalls===1&&groqCalls===1,"Fallback order Cerebras -> Groq was not respected");
 
     r=await fetch(base+"/api/chat/stream",{method:"POST",headers,body:JSON.stringify({model:"test-model",messages:[{role:"user",content:"test streaming fallback"}]})});

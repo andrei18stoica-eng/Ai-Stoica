@@ -1,8 +1,8 @@
 {
-  "name": "ai-stoica",
+  "name": "serasmart",
   "private": true,
-  "version": "0.7.20",
-  "description": "AI Stoica — Stoica Enterprises AI. Windows + iPhone/iPad/Android, cont email, chat, proiecte, asistenți, API-uri AI gratuite și OmniRoute.",
+  "version": "0.7.21",
+  "description": "Serasmart AI — Serasmart AI. Windows + iPhone/iPad/Android, cont email, chat, proiecte, asistenți, API-uri AI gratuite și OmniRoute.",
   "scripts": {
     "desktop:install": "npm --prefix apps/desktop install --legacy-peer-deps",
     "desktop:dev": "npm --prefix apps/desktop run dev",

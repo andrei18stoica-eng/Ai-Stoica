@@ -1,9 +1,9 @@
 {
   "expo": {
     "name": "Serasmart AI",
-    "slug": "ai-stoica",
-    "scheme": "aistoica",
-    "version": "0.7.20",
+    "slug": "serasmart",
+    "scheme": "serasmart",
+    "version": "0.7.21",
     "orientation": "portrait",
     "icon": "./icon.png",
     "userInterfaceStyle": "dark",
@@ -13,14 +13,14 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "ro.stoica.aistoica",
+      "bundleIdentifier": "ro.serasmart.ai",
       "config": {
         "usesNonExemptEncryption": false
       },
       "requireFullScreen": true
     },
     "android": {
-      "package": "ro.stoica.aistoica",
+      "package": "ro.serasmart.ai",
       "adaptiveIcon": {
         "foregroundImage": "./adaptive-icon.png",
         "backgroundColor": "#05070b"

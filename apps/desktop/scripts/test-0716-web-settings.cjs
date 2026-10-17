@@ -7,7 +7,7 @@ const { createServerSettings, SECRET_KEYS, MASK } = require("../lib/serversettin
 function expect(v, m) { if (!v) throw new Error(m); }
 
 async function main() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-websettings-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-websettings-"));
   // What deploy/hetzner/.env gives apps/cloud/server.cjs.
   const envConfig = () => ({ baseUrl: "http://127.0.0.1:9/v1", apiKey: "sk-omni-env", model: "", ownerEmail: "owner@example.com", allowRegistration: true,
     webSearchEnabled: false, githubAutoContext: false, openAiApiKey: "sk-openai-env", groqApiKey: "", videoCostPolicy: undefined });

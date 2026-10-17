@@ -8,7 +8,7 @@
       "distribution": "internal",
       "environment": "preview",
       "env": {
-        "EXPO_PUBLIC_GATEWAY_URL": "https://ai-stoica.SUBDOMENIUL-TAU.workers.dev",
+        "EXPO_PUBLIC_GATEWAY_URL": "https://serasmart.SUBDOMENIUL-TAU.workers.dev",
         "EXPO_PUBLIC_DEFAULT_MODEL": "AI Stoica Performance Max"
       }
     },
@@ -16,7 +16,7 @@
       "autoIncrement": true,
       "environment": "production",
       "env": {
-        "EXPO_PUBLIC_GATEWAY_URL": "https://ai-stoica.SUBDOMENIUL-TAU.workers.dev",
+        "EXPO_PUBLIC_GATEWAY_URL": "https://serasmart.SUBDOMENIUL-TAU.workers.dev",
         "EXPO_PUBLIC_DEFAULT_MODEL": "AI Stoica Performance Max"
       }
     }

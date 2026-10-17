@@ -1,17 +1,17 @@
-name: Build AI Stoica Windows
+name: Build Serasmart AI Windows
 
 on:
   workflow_dispatch:
   push:
     branches:
       - main
-      - ai-stoica-main-files
+      - serasmart-main-files
 
 permissions:
   contents: write
 
 concurrency:
-  group: ai-stoica-release-${{ github.ref }}
+  group: serasmart-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -31,7 +31,7 @@ jobs:
         shell: pwsh
         run: |
           $version = node -p "require('./apps/desktop/package.json').version"
-          "AI_STOICA_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "SERASMART_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Install Windows app dependencies
         working-directory: apps/desktop
@@ -49,7 +49,7 @@ jobs:
         shell: bash
         run: for t in scripts/test-*.cjs; do echo "::group::$t"; node "$t"; echo "::endgroup::"; done
 
-      - name: Build AI Stoica Windows
+      - name: Build Serasmart AI Windows
         working-directory: apps/desktop
         run: npm run build
 
@@ -57,9 +57,9 @@ jobs:
         if: github.ref == 'refs/heads/main'
         shell: pwsh
         run: |
-          $version = $env:AI_STOICA_VERSION
+          $version = $env:SERASMART_VERSION
           $releaseDir = "apps/desktop/release"
-          $installer = Join-Path $releaseDir "AI_Stoica_Setup_${version}_x64.exe"
+          $installer = Join-Path $releaseDir "Serasmart_Setup_${version}_x64.exe"
           $latest = Join-Path $releaseDir "latest.yml"
           $blockmap = "$installer.blockmap"
           foreach ($file in @($installer,$latest,$blockmap)) {
@@ -72,10 +72,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = $env:AI_STOICA_VERSION
+          $version = $env:SERASMART_VERSION
           $tag = "v$version"
           $dir = "apps/desktop/release"
-          $installer = "$dir/AI_Stoica_Setup_${version}_x64.exe"
+          $installer = "$dir/Serasmart_Setup_${version}_x64.exe"
           # latest.yml + .blockmap are what the in-app auto-update reads; without them updates never arrive.
           $files = @($installer, "$dir/latest.yml") + @(Get-ChildItem "$dir/*.blockmap" | ForEach-Object { $_.FullName })
           foreach ($f in $files) { if (!(Test-Path $f)) { Write-Error "Lipseste fisierul de release: $f"; exit 1 } }
@@ -83,5 +83,5 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag @files --clobber
           } else {
-            gh release create $tag @files --title "AI Stoica $version" --notes "AI Stoica $version pentru Windows. Instaleaza AI_Stoica_Setup_${version}_x64.exe; versiunile instalate se actualizeaza automat."
+            gh release create $tag @files --title "Serasmart AI $version" --notes "Serasmart AI $version pentru Windows. Instaleaza Serasmart_Setup_${version}_x64.exe; versiunile instalate se actualizeaza automat."
           }

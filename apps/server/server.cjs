@@ -91,7 +91,7 @@ const DEFAULT_USER_PERMISSIONS = {
   github_access: false,
   openai: false,
   anthropic: false,
-  // "Code AI Stoica" (Codex / Claude Code). The Owner gives it per account; those accounts use the paid APIs, never
+  // "Code Serasmart AI" (Codex / Claude Code). The Owner gives it per account; those accounts use the paid APIs, never
   // the Owner's own subscriptions.
   code: false
 };

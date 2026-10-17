@@ -26,7 +26,7 @@ async function main() {
     });
   });
   const omniPort = await listen(omni);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-0712-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-0712-"));
   const cfg = { baseUrl: `http://127.0.0.1:${omniPort}/v1`, model: "", webSearchEnabled: false, githubAutoContext: false, directChatEnabled: true, groqApiKey: "gsk-test", nvidiaApiKey: "nvapi-test" };
   const port = 8861, base = "http://127.0.0.1:" + port;
   const gw = startLocalGateway({ dataDir: dir, port, host: "127.0.0.1", getOmniConfig: () => cfg });

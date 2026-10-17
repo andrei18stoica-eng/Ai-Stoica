@@ -31,7 +31,7 @@ async function main() {
   });
   const port = await listen(omni);
   const cfg = { baseUrl: `http://127.0.0.1:${port}/v1`, apiKey: "sk-omni", model: "", webSearchEnabled: false, githubAutoContext: false, ownerEmail: "owner@example.com", directChatEnabled: false };
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-chat-models-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-chat-models-"));
   const gw = startLocalGateway({ dataDir: dir, port: 8880, host: "127.0.0.1", getOmniConfig: () => cfg });
   const base = "http://127.0.0.1:8880";
   const call = (p, token, payload) => fetch(base + p, { method: payload ? "POST" : "GET", headers: { "content-type": "application/json", ...(token ? { authorization: "Bearer " + token } : {}) }, body: payload ? JSON.stringify(payload) : undefined });
@@ -49,7 +49,7 @@ async function main() {
     const r = await call("/api/chat", token, { model: "gemini/gemini-2.5-flash", messages: [{ role: "user", content: "Salut" }] });
     expect(r.status === 200 && (await r.json()).choices[0].message.content === "ok gemini/gemini-2.5-flash", "a chat model answers");
 
-    // Code AI Stoica offers no picture model either.
+    // Code Serasmart AI offers no picture model either.
     const code = await (await call("/api/code", token)).json();
     const codeIds = (code.data?.models || []).map((m) => m.id);
     expect(codeIds.includes("cx/gpt-5.5") && !codeIds.includes("cx/gpt-image-2"), "Code lists only chat models: " + codeIds.join());

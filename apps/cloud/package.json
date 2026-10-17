@@ -1,5 +1,5 @@
 {
-  "name": "ai-stoica-cloud",
+  "name": "serasmart-cloud",
   "version": "0.1.2",
   "private": true,
   "main": "server.cjs",

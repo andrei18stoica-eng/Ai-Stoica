@@ -11,7 +11,7 @@ const mp4 = Buffer.concat([Buffer.from("000000186674797069736f6d0000020069736f6d
 const json = (v, status = 200) => new Response(JSON.stringify(v), { status, headers: { "content-type": "application/json" } });
 
 async function main() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-providers-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-providers-"));
   const omniAsked = [];
   const omni = http.createServer((req, res) => {
     let body = ""; req.on("data", (c) => body += c); req.on("end", () => {
@@ -87,7 +87,7 @@ async function main() {
 
     // Grok answers when chosen, through api.x.ai, with the model name without the prefix.
     r = await chat("xai/grok-4.6"); j = await r.json();
-    expect(r.status === 200 && r.headers.get("x-ai-stoica-route") === "direct" && j.choices[0].message.content === "GROK grok-4.6" && calls.xaiChat.join() === "grok-4.6", "Grok must answer: " + JSON.stringify({ status: r.status, j, calls }));
+    expect(r.status === 200 && r.headers.get("x-serasmart-route") === "direct" && j.choices[0].message.content === "GROK grok-4.6" && calls.xaiChat.join() === "grok-4.6", "Grok must answer: " + JSON.stringify({ status: r.status, j, calls }));
 
     // «Rezervă automată»: the fallback skips Cerebras even though it is first in the order.
     cfg.chatFallbackOnFailure = true; await wait();

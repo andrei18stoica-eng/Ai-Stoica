@@ -27,7 +27,7 @@ if (process.platform === "win32" || spawnSync("bash", ["--version"]).error) {
   console.log("Copy-keys checks OK; setup-web.sh scenarios skipped (they run on Linux)");
   process.exit(0);
 }
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-setup-"));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-setup-"));
 const deploy = path.join(root, "deploy", "hetzner"), bin = path.join(root, "bin"), log = path.join(root, "calls.log");
 fs.mkdirSync(deploy, { recursive: true }); fs.mkdirSync(bin);
 fs.copyFileSync(path.join(repo, "deploy", "hetzner", "setup-web.sh"), path.join(deploy, "setup-web.sh"));
@@ -67,7 +67,7 @@ function run(input, extraEnv = {}) {
   fs.writeFileSync(log, "");
   const r = spawnSync("bash", [path.join(deploy, "setup-web.sh")], {
     input: input.join("\n") + "\n", encoding: "utf8", timeout: 30000,
-    env: { ...process.env, PATH: bin + path.delimiter + process.env.PATH, FAKE_LOG: log, AI_STOICA_MEMINFO: meminfo, ...extraEnv }
+    env: { ...process.env, PATH: bin + path.delimiter + process.env.PATH, FAKE_LOG: log, SERASMART_MEMINFO: meminfo, ...extraEnv }
   });
   return { status: r.status, out: (r.stdout || "") + (r.stderr || ""), calls: fs.readFileSync(log, "utf8") };
 }
@@ -88,7 +88,7 @@ try {
   ], { FAKE_DNS_IP: "178.104.117.42" });
   expect(r.status === 0, "setup failed:\n" + r.out);
   expect(value("COMPOSE_PROFILES") === "edge,web" && count("COMPOSE_PROFILES") === 1, "COMPOSE_PROFILES must be turned on once: " + value("COMPOSE_PROFILES"));
-  expect(value("AI_STOICA_WEB_DOMAIN") === "aistoica.ro" && value("OMNIROUTE_VERSION") === "3.8.51", "domain or OmniRoute version not set");
+  expect(value("SERASMART_WEB_DOMAIN") === "aistoica.ro" && value("OMNIROUTE_VERSION") === "3.8.51", "domain or OmniRoute version not set");
   expect(/^[0-9a-f]{64}$/.test(value("OMNIROUTE_WS_BRIDGE_SECRET")) && /^[0-9a-f]{16}$/.test(value("OMNIROUTE_INITIAL_PASSWORD")), "OmniRoute secrets must be generated");
   expect(value("OMNIROUTE_API_KEY") === "sk-good" && value("GROQ_API_KEY") === "gsk_test123" && value("HF_TOKEN") === "hf_a/b+c==&d" && value("CEREBRAS_API_KEY") === "csk-1", "pasted keys must be saved exactly: " + readEnv().split("\n").filter(l => /KEY|TOKEN/.test(l)).join(" | "));
   expect(value("GEMINI_API_KEY") === "" && !readEnv().includes("EVIL_VARIABLE"), "unknown names and values .env cannot hold must be skipped");
@@ -124,15 +124,15 @@ try {
   // GitHub deploy key), never as root; a checkout owned by root keeps plain git.
   const repoRoot = path.join(root, "repo"); fs.mkdirSync(path.join(repoRoot, "deploy", "hetzner"), { recursive: true });
   tool("id", `[ "$1" = -u ] && { echo "\${FAKE_UID:-0}"; exit 0; }; exec /usr/bin/id "$@"`);
-  tool("stat", `echo "\${FAKE_OWNER:-aistoica}"`);
+  tool("stat", `echo "\${FAKE_OWNER:-serasmart}"`);
   tool("runuser", `echo "runuser $*" >> "$FAKE_LOG"; while [ "$1" != -- ]; do shift; done; shift; exec "$@"`);
   tool("git", `echo "git $*" >> "$FAKE_LOG"; exit 0`);
   const update = (extraEnv) => { fs.writeFileSync(log, ""); const u = spawnSync("bash", [path.join(repo, "deploy", "hetzner", "update.sh")], { encoding: "utf8", timeout: 30000,
-    env: { ...process.env, PATH: bin + path.delimiter + process.env.PATH, FAKE_LOG: log, AI_STOICA_ROOT: repoRoot, ...extraEnv } }); return { status: u.status, out: (u.stdout || "") + (u.stderr || ""), calls: fs.readFileSync(log, "utf8") }; };
+    env: { ...process.env, PATH: bin + path.delimiter + process.env.PATH, FAKE_LOG: log, SERASMART_ROOT: repoRoot, ...extraEnv } }); return { status: u.status, out: (u.stdout || "") + (u.stderr || ""), calls: fs.readFileSync(log, "utf8") }; };
   r = update({});
-  expect(r.status === 0 && r.calls.includes("runuser -u aistoica -- git status --porcelain") && r.calls.includes("runuser -u aistoica -- git pull --ff-only origin main") && r.calls.includes("docker compose up -d --build api"), "update.sh must run git as the checkout owner:\n" + r.out + r.calls);
-  expect(/AI Stoica API is healthy/.test(r.out), "update.sh must report the health check:\n" + r.out);
-  // The health answer must not go through a fixed file in /tmp: one left there by another user (a run as "aistoica")
+  expect(r.status === 0 && r.calls.includes("runuser -u serasmart -- git status --porcelain") && r.calls.includes("runuser -u serasmart -- git pull --ff-only origin main") && r.calls.includes("docker compose up -d --build api"), "update.sh must run git as the checkout owner:\n" + r.out + r.calls);
+  expect(/Serasmart AI API is healthy/.test(r.out), "update.sh must report the health check:\n" + r.out);
+  // The health answer must not go through a fixed file in /tmp: one left there by another user (a run as "serasmart")
   // cannot be overwritten even by root on Ubuntu, and every check failed with "Permission denied" (2026-10-05).
   for (const name of ["update.sh", "update-runner.sh", "install-updater.sh", "setup-web.sh"]) {
     const src = fs.readFileSync(path.join(repo, "deploy", "hetzner", name), "utf8");

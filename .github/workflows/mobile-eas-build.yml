@@ -1,4 +1,4 @@
-name: Build AI Stoica Mobile with EAS
+name: Build Serasmart AI Mobile with EAS
 
 on:
   workflow_dispatch:

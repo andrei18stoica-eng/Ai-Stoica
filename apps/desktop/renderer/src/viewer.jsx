@@ -3,7 +3,7 @@ import { Download, X, Pencil } from "lucide-react";
 import { api, authedFetch, useAuthedBlobUrl, useModal, mediaKind, downloadLibraryFile, toast, formatBytes } from "./core.jsx";
 
 // The file's name, with "Redenumește": the name changes in the Library and in the conversations that show the file
-// (the app hears "ai-stoica:file-renamed"). Without an extension the server keeps the old one.
+// (the app hears "serasmart:file-renamed"). Without an extension the server keeps the old one.
 export function FileName({ id, name, onRenamed }) {
   const [editing, setEditing] = useState(false), [value, setValue] = useState(name || ""), [busy, setBusy] = useState(false);
   useEffect(() => { if (!editing) setValue(name || ""); }, [name, editing]);
@@ -16,7 +16,7 @@ export function FileName({ id, name, onRenamed }) {
     try {
       const r = await api(`/api/library/${id}`, { method: "PATCH", body: JSON.stringify({ name: next }) });
       const saved = r?.data?.name || next;
-      window.dispatchEvent(new CustomEvent("ai-stoica:file-renamed", { detail: { id, name: saved } }));
+      window.dispatchEvent(new CustomEvent("serasmart:file-renamed", { detail: { id, name: saved } }));
       onRenamed?.(saved); setEditing(false);
       toast(`Fișierul se numește acum „${saved}”.`, "ok");
     } catch (err) { toast("Redenumire: " + err.message); }
@@ -30,7 +30,7 @@ export function FileName({ id, name, onRenamed }) {
   </form>;
 }
 
-// Opens a file from the Library or a generated file inside AI Stoica, without downloading it: images, video and audio
+// Opens a file from the Library or a generated file inside Serasmart AI, without downloading it: images, video and audio
 // play here, PDFs open in the built-in reader, and Word / PowerPoint / Excel / text show their content.
 function viewKind(mime, name) {
   const m = String(mime || "").toLowerCase(), n = String(name || "").toLowerCase();

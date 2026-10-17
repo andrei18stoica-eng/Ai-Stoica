@@ -59,7 +59,7 @@ function freshDb(upTo = 99) {
   }
   return db;
 }
-const baseVars = { OWNER_EMAIL: "Owner@Example.com", OWNER_SETUP_CODE: "cod-secret-123", AI_STOICA_FILE_MAX_MB: "1", CF_MODEL: "@cf/test/model", CF_FALLBACK_MODEL: "@cf/test/model" };
+const baseVars = { OWNER_EMAIL: "Owner@Example.com", OWNER_SETUP_CODE: "cod-secret-123", SERASMART_FILE_MAX_MB: "1", CF_MODEL: "@cf/test/model", CF_FALLBACK_MODEL: "@cf/test/model" };
 function makeEnv(db, extra = {}) { return { DB: makeD1(db), FILES: makeR2(), AI, ...baseVars, ...extra }; }
 
 let ip = 1;
@@ -301,7 +301,7 @@ await test("export: PDF works offline (WinAnsi fallback) with emoji/arrows and k
   for (const format of ["docx", "pptx", "md", "txt"]) assert.equal((await call(env, "POST", "/api/export", { token: userToken, body: { format, title: "T", content: "Conținut" } })).status, 200, format);
 });
 
-const fontDir = process.env.AI_STOICA_FONT_DIR;
+const fontDir = process.env.SERASMART_FONT_DIR;
 if (fontDir) await test("export: PDF with the static NotoSans fonts", async () => {
   globalThis.fetch = async url => new Response(fs.readFileSync(path.join(fontDir, path.basename(new URL(url).pathname))));
   const r = await call(env, "POST", "/api/export", { token: userToken, body: { format: "pdf", title: "Șțăîâ titlu", content: "Diacritice: ăâîșț ĂÂÎȘȚ → 🚀 ✓\tok" } });

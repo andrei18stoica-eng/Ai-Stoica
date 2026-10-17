@@ -1,12 +1,16 @@
 services:
-  ai-stoica-mcp:
+  serasmart-mcp:
     build:
       context: ../..
       dockerfile: integrations/claude-mcp/Dockerfile
     restart: unless-stopped
-    # Credentials belong only to the isolated MCP service, not to AI Stoica Web.
+    # Credentials belong only to the isolated MCP service, not to Serasmart AI Web.
+    # /etc/serasmart after migrate-to-serasmart.sh; /etc/ai-stoica on a server not yet moved (0.7.21).
     env_file:
-      - /etc/ai-stoica/mcp.env
+      - path: /etc/ai-stoica/mcp.env
+        required: false
+      - path: /etc/serasmart/mcp.env
+        required: false
     environment:
       PORT: "3010"
       HOST: "0.0.0.0"

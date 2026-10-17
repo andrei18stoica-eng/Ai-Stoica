@@ -1,5 +1,5 @@
 // Web version / installable phone app (PWA): with webDir the service serves the interface and accepts its own origin;
-// without webDir (Windows) it stays limited to the AI Stoica window.
+// without webDir (Windows) it stays limited to the Serasmart AI window.
 const fs = require("fs"), http = require("http"), os = require("os"), path = require("path");
 const { startLocalGateway } = require("../local-gateway.cjs");
 
@@ -17,9 +17,9 @@ function request(port, method, p, headers = {}, body) {
 }
 
 async function main() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ai-stoica-web-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "serasmart-web-"));
   const webDir = path.join(root, "web"); fs.mkdirSync(path.join(webDir, "assets"), { recursive: true });
-  fs.writeFileSync(path.join(webDir, "index.html"), "<!doctype html><title>AI Stoica</title><div id=root></div>");
+  fs.writeFileSync(path.join(webDir, "index.html"), "<!doctype html><title>Serasmart AI</title><div id=root></div>");
   fs.writeFileSync(path.join(webDir, "sw.js"), "self.addEventListener('fetch',()=>{});");
   fs.writeFileSync(path.join(webDir, "assets", "index-abc123.js"), "console.log(1)");
   const site = { host: "ai.example.ro", origin: "https://ai.example.ro" };

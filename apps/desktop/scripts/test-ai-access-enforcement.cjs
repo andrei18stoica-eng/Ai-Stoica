@@ -53,7 +53,7 @@ async function main(){
   });
   const omniPort=await listen(omni);
 
-  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),"ai-stoica-policy-"));
+  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),"serasmart-policy-"));
   const gateway=startLocalGateway({
     dataDir,port:8798,host:"127.0.0.1",
     getOmniConfig:()=>({
@@ -83,8 +83,8 @@ async function main(){
     expect(r.status===403,"The OmniRoute combo behind the alias must still pass the Owner policy");
     expect(omniChatCalls===0,"Denied alias reached OmniRoute");
 
-    // "AI Stoica" has no combo in OmniRoute: it maps to the configured default model instead of failing with 409.
-    r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"AI Stoica",messages:[{role:"user",content:"test"}]})});
+    // "Serasmart AI" has no combo in OmniRoute: it maps to the configured default model instead of failing with 409.
+    r=await fetch(base+"/api/chat",{method:"POST",headers,body:JSON.stringify({model:"Serasmart AI",messages:[{role:"user",content:"test"}]})});
     let body=await r.json();
     expect(r.ok&&body?.choices?.[0]?.message?.content==="ok groq/llama-3.3-70b-versatile","Alias must map to the configured default model: "+JSON.stringify(body));
     expect(omniChatCalls===1,"Mapped alias did not reach OmniRoute");

@@ -1,5 +1,5 @@
 const { contextBridge, ipcRenderer } = require("electron");
-contextBridge.exposeInMainWorld("AIStoica", {
+contextBridge.exposeInMainWorld("Serasmart", {
   getConfig: () => ipcRenderer.invoke("config:get"),
   setConfig: (cfg) => ipcRenderer.invoke("config:set", cfg),
   systemStatus: () => ipcRenderer.invoke("system:status"),

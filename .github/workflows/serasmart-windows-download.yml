@@ -1,14 +1,14 @@
-name: AI Stoica - Descarcare Windows
+name: Serasmart AI - Descarcare Windows
 
 on:
-  # Manual only: "Build AI Stoica Windows" already publishes every push to main.
+  # Manual only: "Build Serasmart AI Windows" already publishes every push to main.
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: ai-stoica-release-${{ github.ref }}
+  group: serasmart-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -28,9 +28,9 @@ jobs:
         shell: pwsh
         run: |
           $version = node -p "require('./apps/desktop/package.json').version"
-          "AI_STOICA_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "SERASMART_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Instaleaza dependentele AI Stoica
+      - name: Instaleaza dependentele Serasmart AI
         working-directory: apps/desktop
         run: npm install --legacy-peer-deps
 
@@ -46,7 +46,7 @@ jobs:
         shell: bash
         run: for t in scripts/test-*.cjs; do echo "::group::$t"; node "$t"; echo "::endgroup::"; done
 
-      - name: Construieste AI Stoica pentru Windows
+      - name: Construieste Serasmart AI pentru Windows
         working-directory: apps/desktop
         run: npm run build
 
@@ -55,10 +55,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = $env:AI_STOICA_VERSION
+          $version = $env:SERASMART_VERSION
           $tag = "v$version"
           $dir = "apps/desktop/release"
-          $installer = "$dir/AI_Stoica_Setup_${version}_x64.exe"
+          $installer = "$dir/Serasmart_Setup_${version}_x64.exe"
           # latest.yml + .blockmap are what the in-app auto-update reads; without them updates never arrive.
           $files = @($installer, "$dir/latest.yml") + @(Get-ChildItem "$dir/*.blockmap" | ForEach-Object { $_.FullName })
           foreach ($f in $files) { if (!(Test-Path $f)) { Write-Error "Lipseste fisierul de release: $f"; exit 1 } }
@@ -66,29 +66,29 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag @files --clobber
           } else {
-            gh release create $tag @files --title "AI Stoica $version" --notes "AI Stoica $version pentru Windows. Instaleaza AI_Stoica_Setup_${version}_x64.exe; versiunile instalate se actualizeaza automat."
+            gh release create $tag @files --title "Serasmart AI $version" --notes "Serasmart AI $version pentru Windows. Instaleaza Serasmart_Setup_${version}_x64.exe; versiunile instalate se actualizeaza automat."
           }
 
       - name: Incarca installerul ca Artifact
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: AI-Stoica-Windows-${{ env.AI_STOICA_VERSION }}
-          path: apps/desktop/release/AI_Stoica_Setup_${{ env.AI_STOICA_VERSION }}_x64.exe
+          name: Serasmart-AI-Windows-${{ env.SERASMART_VERSION }}
+          path: apps/desktop/release/Serasmart_Setup_${{ env.SERASMART_VERSION }}_x64.exe
           if-no-files-found: error
           retention-days: 7
 
-      - name: DESCARCA AI STOICA WINDOWS
+      - name: DESCARCA SERASMART AI WINDOWS
         shell: pwsh
         run: |
-          $version = $env:AI_STOICA_VERSION
-          $url = "https://github.com/andrei18stoica-eng/Ai-Stoica/releases/download/v$version/AI_Stoica_Setup_${version}_x64.exe"
+          $version = $env:SERASMART_VERSION
+          $url = "https://github.com/andrei18stoica-eng/Serasmart-AI/releases/download/v$version/Serasmart_Setup_${version}_x64.exe"
           @"
-          # ✅ AI Stoica pentru Windows este gata
+          # ✅ Serasmart AI pentru Windows este gata
 
-          ## [⬇️ DESCARCĂ AI STOICA WINDOWS (.EXE)]($url)
+          ## [⬇️ DESCARCĂ SERASMART AI WINDOWS (.EXE)]($url)
 
-          Fișier: `AI_Stoica_Setup_${version}_x64.exe`
+          Fișier: `Serasmart_Setup_${version}_x64.exe`
 
           Dacă browserul întreabă dacă vrei să păstrezi fișierul, alege **Keep / Păstrează**.
           "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8

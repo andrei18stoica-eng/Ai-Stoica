@@ -6,10 +6,10 @@ const {startLocalGateway}=require("../local-gateway.cjs");
 
 function expect(v,m){if(!v)throw new Error(m)}
 
-// Local mode (no AI Stoica Cloud): the PC account must be able to use the free API keys
+// Local mode (no Serasmart Cloud): the PC account must be able to use the free API keys
 // configured on this PC, while code execution stays Owner-only.
 async function main(){
-  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),"ai-stoica-local-"));
+  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),"serasmart-local-"));
   const port=8811;
   const cfg={
     baseUrl:"http://127.0.0.1:65531/v1",imageProviders:"",videoProviders:"",
@@ -76,7 +76,7 @@ async function main(){
     expect(r.ok,data.error||"provider test failed");
     expect(data.data?.some(x=>x.provider==="groq"&&x.ok),"Provider test must report Groq as working");
 
-    // Only the AI Stoica window may call the local service.
+    // Only the Serasmart AI window may call the local service.
     r=await realFetch(base+"/api/models",{headers:{...headers,origin:"https://site-strain.example"}});
     expect(r.status===403,"Requests from foreign websites must be blocked");
     r=await realFetch(base+"/api/models",{headers:{...headers,origin:"null"}});
@@ -94,7 +94,7 @@ async function main(){
     let indexed=null;
     for(let i=0;i<40&&!indexed;i++){
       await new Promise(res=>setTimeout(res,100));
-      const db=JSON.parse(fs.readFileSync(path.join(dataDir,"ai-stoica-data.json"),"utf8"));
+      const db=JSON.parse(fs.readFileSync(path.join(dataDir,"serasmart-data.json"),"utf8"));
       const item=db.library.find(x=>x.id===data.data.id);
       if(item?.textStatus==="ok")indexed=item;
     }
@@ -103,7 +103,7 @@ async function main(){
     // Old sessions without an expiry are refused after 30 days.
     const jwt=require("jsonwebtoken");
     const secret=fs.readFileSync(path.join(dataDir,"auth-secret.txt"),"utf8").trim();
-    const userId=JSON.parse(fs.readFileSync(path.join(dataDir,"ai-stoica-data.json"),"utf8")).users[0].id;
+    const userId=JSON.parse(fs.readFileSync(path.join(dataDir,"serasmart-data.json"),"utf8")).users[0].id;
     const legacy=jwt.sign({sub:userId,email:"local@example.com",iat:Math.floor(Date.now()/1000)-40*86400},secret);
     r=await realFetch(base+"/auth/me",{headers:{authorization:"Bearer "+legacy}});
     expect(r.status===401,"A 40-day-old session without expiry must be refused");
@@ -119,7 +119,7 @@ async function main(){
   }
 
   // A normal Cloud account must stay logged in while the Cloud server is unreachable.
-  const cloudDir=fs.mkdtempSync(path.join(os.tmpdir(),"ai-stoica-cloud-down-"));
+  const cloudDir=fs.mkdtempSync(path.join(os.tmpdir(),"serasmart-cloud-down-"));
   const cloudPort=8812;
   const cloudGateway=startLocalGateway({dataDir:cloudDir,port:cloudPort,host:"127.0.0.1",getOmniConfig:()=>({...cfg,controlApiUrl:"http://127.0.0.1:65532"})});
   try{
@@ -133,7 +133,7 @@ async function main(){
   }
 
   // Public servers (apps/cloud): only the first account can sign up unless registration is opened.
-  const publicDir=fs.mkdtempSync(path.join(os.tmpdir(),"ai-stoica-public-"));
+  const publicDir=fs.mkdtempSync(path.join(os.tmpdir(),"serasmart-public-"));
   const publicPort=8813;
   const publicGateway=startLocalGateway({dataDir:publicDir,port:publicPort,host:"127.0.0.1",getOmniConfig:()=>({...cfg,allowRegistration:false})});
   try{
