@@ -2058,7 +2058,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   app.post("/api/export", auth, requirePermission("document_generation"), async (req,res) => {
     try {
-      reserveQuota(req,res,"document");
+      // 0.7.29: an account with a plan makes files freely (the answer was already paid for); the others keep the free limit.
+      if(!(metered(req)&&credits.status(req.user.id).mode==="plan"))reserveQuota(req,res,"document");
       const format=String(req.body?.format||"docx").toLowerCase().replace(/^\./,"");
       const title=String(req.body?.title||`${BRAND_NAME}`).trim().slice(0,120)||`${BRAND_NAME}`;
       const content=typeof req.body?.content==="string"?req.body.content:"";
@@ -4040,6 +4041,23 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     }
     return out;
   }
+  // What the AI is told when the answer becomes a file (0.7.29): only the file's content, in a shape the file builder
+  // (lib/documents.cjs) turns into real slides, sheets and headings; a change returns the whole changed file.
+  const FILE_SHAPES={
+    pptx:"Each slide starts with a «## Slide title» heading followed by short bullet points (at most 6 per slide); a Markdown table becomes a table slide.",
+    xlsx:"Put the data in Markdown tables with a header row; before each table write «## Sheet name» for its sheet. Numbers without units inside the cells.",
+    csv:"One Markdown table with a header row, or plain CSV.",
+    docx:"Use # for the title, ## and ### for sections, normal paragraphs, lists and Markdown tables.",
+    pdf:"Use # for the title, ## and ### for sections, normal paragraphs, lists and Markdown tables."
+  };
+  function fileAnswerInstruction(format,edit){
+    const name={docx:"Word (DOCX)",pptx:"PowerPoint (PPTX)",xlsx:"Excel (XLSX)",pdf:"PDF"}[format]||format.toUpperCase();
+    return [`FILE ANSWER: ${BRAND_NAME} turns your whole answer into a ${name} file and sends it to the user as a download, automatically. You can create and change files: never say you cannot create, attach or send files.`,
+      "Write only the file's content, in the user's language, with no greeting, no «here is your file» and no remarks before or after it.",
+      FILE_SHAPES[format]||"Write valid content for this format, without explanations outside it.",
+      edit?"The user wants a change to an existing file (attached in this message, or the one you made earlier in this chat). Return the complete updated file with every requested change made and everything else kept as it was; never only the changed part.":""
+    ].filter(Boolean).join(" ");
+  }
   async function prepareMessages(rawMessages, assistantId, userId, options={}) {
     const db=store.read();
     const messages=await rehydrateLibraryImages(sanitizeChatMessages(rawMessages),userId);
@@ -4050,6 +4068,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     system.push(`Formule matematice: scrie-le în LaTeX, $…$ în text și $$…$$ pe un rând separat (de exemplu $$x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}$$), inclusiv în conținutul unui fișier Word. ${BRAND_NAME} le afișează ca formule în chat și le transformă în ecuații Microsoft Word (Inserare → Ecuație), editabile. Nu folosi $ pentru sume de bani lângă cifre (scrie «10 USD» sau «10 lei»).`);
     system.push(`Capabilități ${BRAND_NAME}: aplicația are memorie persistentă, poate primi context din alte conversații ale aceluiași Proiect, poate căuta internetul în timp real, poate căuta fragmente relevante într-un repository GitHub configurat, iar Owner-ul poate rula cod JavaScript sau Python doar prin butonul explicit de rulare și poate lucra cu serverul SSH configurat. Nu afirma că aceste capabilități nu există atunci când contextul lor este prezent. Nu pretinde că un cod a fost executat dacă nu ai primit explicit un rezultat de rulare. Pentru proiecte mari, lucrează modular și folosește contextul relevant recuperat, fără a cere utilizatorului să copieze manual întreaga bază de cod.`);
     system.push("Fiabilitate: pentru informații actuale despre biblioteci, API-uri, modele, versiuni, prețuri sau servicii folosește prioritar contextul WEB LIVE dacă este disponibil și include la final o secțiune scurtă «Surse» cu linkurile folosite. Pentru cod, separă clar ce ai analizat de ce a fost efectiv rulat/testat. Pentru medical, juridic și financiar poți analiza și cita surse, dar păstrează recomandarea de validare umană atunci când decizia are consecințe importante.");
+    // 0.7.29: the app turns this answer into the file and sends it; the AI must not answer that it cannot.
+    if(options.fileFormat)system.push(fileAnswerInstruction(options.fileFormat,options.fileEdit));
     const assistant=db.assistants.find(a=>a.id===assistantId&&a.userId===userId);if(assistant?.systemPrompt)system.push(assistant.systemPrompt);
     const skillText=skillSystemText(skillsForMessage((db.skills||[]).filter(x=>x.userId===userId),typedText(latest?.content)||latestText));if(skillText)system.push(skillText);
     const user=db.users.find(u=>u.id===userId);
@@ -4087,7 +4107,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       projectId:typeof req.body?.projectId==="string"?req.body.projectId:null,
       conversationId:typeof req.body?.conversationId==="string"?req.body.conversationId.slice(0,100):null,clarify:true,
       webAllowed:hasPermission(req,"web_search"),deepAllowed:hasPermission(req,"deep_research")&&(!features||features.deepResearch),githubAllowed:hasPermission(req,"github_access"),pluginsAllowed:hasPermission(req,"plugins"),
-      owner:ownerRequest(req),responseMode:String(req.body?.responseMode||"rapid")
+      owner:ownerRequest(req),responseMode:String(req.body?.responseMode||"rapid"),
+      fileFormat:EXPORT_FORMATS.has(String(req.body?.fileFormat||"").toLowerCase())?String(req.body.fileFormat).toLowerCase():"",fileEdit:req.body?.fileEdit===true
     });
     const sent=typeof req.body?.model==="string"?req.body.model.trim().slice(0,200):"";
     const requestedModel=sent||String(cfg.model||"").trim();

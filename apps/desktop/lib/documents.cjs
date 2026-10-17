@@ -504,20 +504,42 @@ function sheetNameFrom(title) {
   if (!name || /^history$/i.test(name)) name = "Foaie1";
   return name;
 }
-async function createXlsxBytes(title, content) {
-  const rows = markdownTableRows(content).slice(0, 1048575);
-  const zip = new JSZip();
-  const sheetName = sheetNameFrom(safeGeneratedName(title || "Foaie"));
+// Excel (0.7.29: one sheet per table): "## Sheet name" before each Markdown table gives it its own sheet; a single table
+// (or JSON rows, or text) stays one sheet named after the file.
+function xlsxSheets(title, content) {
+  const blocks = parseDocumentBlocks(String(content || "").replace(/\r/g, ""));
+  const sheets = []; let heading = "";
+  for (const b of blocks) {
+    if (b.type === "heading" && b.level <= 3) { heading = plainMarkdownText(b.text); continue; }
+    if (b.type === "table") sheets.push({ name: heading, rows: b.rows.map((r) => r.map((c) => plainMarkdownText(c))) });
+  }
+  if (sheets.length < 2) return [{ name: sheetNameFrom(safeGeneratedName(title || "Sheet")), rows: markdownTableRows(content).slice(0, 1048575) }];
+  const used = new Set();
+  return sheets.slice(0, 50).map((sh, i) => {
+    let name = sheetNameFrom(safeGeneratedName(sh.name || `Sheet ${i + 1}`)) || `Sheet ${i + 1}`, n = 2;
+    const base = name.slice(0, 27);
+    while (used.has(name.toLowerCase())) name = `${base} ${n++}`;
+    used.add(name.toLowerCase());
+    return { name, rows: sh.rows.slice(0, 1048575) };
+  });
+}
+function xlsxSheetXml(rows) {
   const maxCols = Math.min(16384, Math.max(1, ...rows.map((r) => r.length)));
   const widths = Array.from({ length: maxCols }, (_, c) => { let w = 10; for (const r of rows) w = Math.max(w, Math.min(60, String(r[c] ?? "").length + 2)); return w; });
   const sheetData = rows.map((row, r) => `<row r="${r + 1}">${Array.from({ length: maxCols }, (_, c) => xlsxCellXml(row[c] ?? "", r, c, r === 0 ? 1 : 0)).join("")}</row>`).join("");
   const cols = widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join("");
-  zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`);
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${cols}</cols><sheetData>${sheetData}</sheetData></worksheet>`;
+}
+async function createXlsxBytes(title, content) {
+  const sheets = xlsxSheets(title, content);
+  const zip = new JSZip();
+  const overrides = sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("");
+  zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${overrides}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`);
   zip.folder("_rels").file(".rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`);
-  zip.folder("xl").file("workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${xmlEscape(sheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>`);
-  zip.folder("xl").folder("_rels").file("workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
+  zip.folder("xl").file("workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((sh, i) => `<sheet name="${xmlEscape(sh.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("")}</sheets></workbook>`);
+  zip.folder("xl").folder("_rels").file("workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("")}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
   zip.folder("xl").file("styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="11"/><name val="Aptos"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>`);
-  zip.folder("xl").folder("worksheets").file("sheet1.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${cols}</cols><sheetData>${sheetData}</sheetData></worksheet>`);
+  sheets.forEach((sh, i) => zip.folder("xl").folder("worksheets").file(`sheet${i + 1}.xml`, xlsxSheetXml(sh.rows)));
   return await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
 }
 // Romanian Excel uses ";" as list separator. Text that Excel would run as a formula is prefixed with "'".
@@ -653,4 +675,4 @@ async function createExportBytes(format, rawTitle, rawContent, opts = {}) {
   return { bytes: Buffer.from(stripOuterFence(content), "utf8"), mime: PLAIN_TEXT_MIME[format] || "text/plain; charset=utf-8" };
 }
 
-module.exports = { safeGeneratedName, EXPORT_FORMATS, createExportBytes, markdownTableRows, parseDocumentBlocks, plainMarkdownText, sanitizeText, parseNumberCell, safeZipPath, sheetNameFrom, findWindowsFont };
+module.exports = { safeGeneratedName, EXPORT_FORMATS, createExportBytes, xlsxSheets, markdownTableRows, parseDocumentBlocks, plainMarkdownText, sanitizeText, parseNumberCell, safeZipPath, sheetNameFrom, findWindowsFont };

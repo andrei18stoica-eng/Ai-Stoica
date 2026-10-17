@@ -29,7 +29,7 @@ import { AccessRequestDialog, PhoneNotifications } from "./accessRequest.jsx";
 import { ScheduledPage } from "./pages/Scheduled.jsx";
 import { CodePage } from "./pages/Code.jsx";
 import { requestedMediaGeneration } from "./mediaIntent.mjs";
-import { normalizeIntent, FILE_FORMATS, FORMAT_CANDIDATES, requestedDocumentFormat } from "./documentIntent.mjs";
+import { normalizeIntent, FILE_FORMATS, FORMAT_CANDIDATES, requestedDocumentFormat, editedDocumentFormat } from "./documentIntent.mjs";
 import { PluginsPage } from "./pages/Plugins.jsx";
 import { MemoryPage, PreferenceSwitches } from "./pages/Memory.jsx";
 import { SkillsPage } from "./pages/Skills.jsx";
@@ -133,6 +133,22 @@ async function exportMessageFile(message,format,title) {
   await downloadGeneratedFile(d.data);
 }
 
+// The last file the AI made in this chat (its format), so "add a slide" or "translate it" changes that file (0.7.29).
+function lastMadeFormat(messages){
+  for(const m of [...(messages||[])].reverse()){
+    if(m.role!=="assistant")continue;
+    const f=(m.attachments||[]).find(a=>a?.source==="ai-export"||a?.format);
+    if(f)return String(f.format||String(f.name||"").split(".").pop()||"").toLowerCase()||null;
+  }
+  return null;
+}
+// What file a message asks for: a new one ("make a PDF…") or a change to the attached / last made one.
+function fileRequestFor(text,attachmentNames,messages){
+  const made=requestedDocumentFormat(text);
+  if(made)return {format:made,edit:false};
+  const edited=editedDocumentFormat(text,attachmentNames,lastMadeFormat(messages));
+  return edited?{format:edited,edit:true,source:attachmentNames.find(n=>String(n||"").toLowerCase().endsWith("."+edited))||""}:null;
+}
 function answerFormat(answerText,messages){
   const request=[...messages].reverse().find(m=>m.role==="user");
   const original=request?requestedDocumentFormat(messageText(request)):null;
@@ -2045,7 +2061,7 @@ function App() {
     if(d?.data)setConversations(v=>v.map(x=>x.id===id?{...x,...Object.fromEntries(Object.keys(patch).map(k=>[k,d.data[k]])),updatedAt:d.data.updatedAt||x.updatedAt}:x));
     return d?.data;
   }
-  async function streamAssistant(baseConv,messages,{extra={},format=null}={}){
+  async function streamAssistant(baseConv,messages,{extra={},format=null,edit=false,sourceName=""}={}){
     const convId=baseConv.id;
     const lastUser=[...messages].reverse().find(m=>m.role==="user");
     const desiredModel=String(baseConv.model||model||"").trim();
@@ -2066,7 +2082,7 @@ function App() {
       const payload=toProviderMessages(messages,extra);
       if(!payload.some(m=>m.role==="user"))throw new Error("Mesajul este gol.");
       setGen(convId,{stage:"Verifică memoria, fișierele și contextul relevant…"});
-      const r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:authHeaders({"Content-Type":"application/json"}),body:JSON.stringify({model:effectiveModel,requestId:assistantMessage.id,conversationId:baseConv.id||null,assistantId:baseConv.assistantId||null,projectId:baseConv.projectId||null,responseMode,messages:payload}),signal:controller.signal});
+      const r=await fetch(`${GATEWAY}/api/chat/stream`,{method:"POST",headers:authHeaders({"Content-Type":"application/json"}),body:JSON.stringify({model:effectiveModel,requestId:assistantMessage.id,conversationId:baseConv.id||null,assistantId:baseConv.assistantId||null,projectId:baseConv.projectId||null,responseMode,messages:payload,fileFormat:format||undefined,fileEdit:edit||undefined}),signal:controller.signal});
       if(!r.ok){const text=await r.text().catch(()=>"");throw apiError(r.status,text,"/api/chat/stream")}
       setGen(convId,{stage:"Așteaptă răspunsul AI-ului ales…"});
       const handleLine=line=>{
@@ -2108,7 +2124,7 @@ function App() {
             const previousSource=previousAssistant?(previousAssistant.artifactSource||messageText(previousAssistant)):"";
             const content=standaloneExportRequest(messageText(lastUser))&&previousSource?previousSource:answer;
             if(!String(content||"").trim())throw new Error("nu există conținut pentru fișier");
-            const exported=await api("/api/export",{method:"POST",body:JSON.stringify({format,title:safeFileTitle(working.title||`${BRAND_NAME} - fișier`),content})});
+            const exported=await api("/api/export",{method:"POST",body:JSON.stringify({format,title:safeFileTitle(working.title||`${BRAND_NAME} - fișier`),content,...(sourceName?{fileName:sourceName.replace(/\.[^.]+$/,"")+" (edited)"}:{})})});
             if(exported?.data){
               files=[exported.data];
               // The file the user asked for is downloaded right away; the card under the answer stays for later.
@@ -2191,7 +2207,8 @@ function App() {
       if(!can(perm)){deny(perm);return}
       if(!text){toast(media==="video"?"Descrie videoclipul pe care vrei să-l creez.":"Descrie imaginea pe care vrei s-o creez.","info");return}
     }
-    const format=media?null:answer?answerFormat(text,current?.messages||[]):requestedDocumentFormat(text);
+    const fileReq=media||answer?null:fileRequestFor(text,attachments.map(a=>a.name),current?.messages||[]);
+    const format=media?null:answer?answerFormat(text,current?.messages||[]):fileReq?.format||null;
     const userId=uid();
     const parts=[...(text?[{type:"text",text}]:[]),...usable.flatMap(a=>Array.isArray(a.parts)&&a.parts.length?a.parts:[a.part].filter(Boolean))];
     const content=parts.length===1&&parts[0].type==="text"?parts[0].text:parts;
@@ -2207,7 +2224,7 @@ function App() {
     catch(e){if(!answer){setDraft(previous.draft);setAttachments(previous.attachments);setMediaMode(previous.mediaMode)}if(!isAuthLost(e.status,e.message))toast("Mesajul nu a putut fi trimis: "+e.message);return}
     if(base.archived)patchConversation(saved.id,{archived:false}).catch(()=>{});
     if(media)await generateMediaAssistant(saved,saved.messages||conv.messages,media,text);
-    else await streamAssistant(saved,saved.messages||conv.messages,{extra,format});
+    else await streamAssistant(saved,saved.messages||conv.messages,{extra,format,edit:!!fileReq?.edit,sourceName:fileReq?.source||""});
   }
   async function regenerate(index,needsConfirm){
     if(!current||generations[current.id])return;
@@ -2220,7 +2237,7 @@ function App() {
     let saved;
     try{saved=await saveConversation({...current,messages:msgs})}catch(e){toast(e.message);return}
     if(target?.mediaKind)await generateMediaAssistant(saved,saved.messages||msgs,target.mediaKind,target.mediaPrompt||messageText(lastUser));
-    else await streamAssistant(saved,saved.messages||msgs,{format:requestedDocumentFormat(messageText(lastUser))});
+    else{const req=fileRequestFor(messageText(lastUser),(lastUser?.attachments||[]).map(a=>a.name),msgs.slice(0,-1));await streamAssistant(saved,saved.messages||msgs,{format:req?.format||null,edit:!!req?.edit,sourceName:req?.source||""});}
   }
   async function rate(index,value){
     if(!current||generations[current.id])return;
