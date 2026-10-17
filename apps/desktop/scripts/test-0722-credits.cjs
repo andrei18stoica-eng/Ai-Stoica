@@ -24,7 +24,7 @@ function units() {
   // Action costs.
   expect(C.cost("chat", { model: "groq/llama-3.1-8b-instant" }) === 1 && C.cost("chat", { model: "anthropic/claude-sonnet-4.5" }) === 10 && C.cost("chat", { model: "claude-opus-4" }) === 40, "chat by model class");
   expect(C.cost("chat", { model: "gpt-4o", web: true }) === 15 && C.cost("image", {}) === 20 && C.cost("image", { hd: true }) === 50, "web search adds 5; pictures 20 / 50");
-  expect(C.cost("video", { seconds: 6 }) === 300 && C.cost("video", { seconds: 8 }) === 400 && C.cost("transcribe", { seconds: 61 }) === 6, "video from 300; voice 3 a minute");
+  expect(C.cost("video", { seconds: 6, model: "grok-imagine-video" }) === 216 && C.cost("video", { seconds: 8, model: "veo-3.1-fast-generate-preview" }) === 424 && C.cost("transcribe", { seconds: 61 }) === 6, "video by the model's price per second (0.7.27); voice 3 a minute");
   expect(C.isFreeModel("openrouter/x:free") && C.isFreeModel("groq/llama") && C.isFreeModel("pol/openai") && !C.isFreeModel("gemini/gemini-2.5-flash") && !C.isFreeModel("openai/gpt-4o"), "free models (Gemini's free tier excluded: not for the EU public)");
 
   // The ledger with a clock we move.

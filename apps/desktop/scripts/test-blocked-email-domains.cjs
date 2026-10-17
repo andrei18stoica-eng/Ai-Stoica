@@ -23,7 +23,7 @@ async function main() {
     for (let i = 0; i < 50; i++) { try { await request(port, "GET", "/health"); break; } catch { await new Promise((r) => setTimeout(r, 100)); } }
     for (const email of ["5wx3th65ofawn0@uberip.com", " X@UberIP.com ", "bot@mail.uberip.com", "bot@spam.example"]) {
       let r = await request(port, "POST", "/auth/register", { email, password: "password123", name: "Bot" });
-      expect(r.status === 400 && r.json.error === "Adresa de email nu este acceptată.", `register ${email}: ${r.status} ${r.body}`);
+      expect(r.status === 400 && r.json.error === "This email address is not accepted.", `register ${email}: ${r.status} ${r.body}`);
       r = await request(port, "POST", "/auth/login", { email, password: "password123" });
       expect(r.status === 403 && r.json.status === "blocked", `login ${email}: ${r.status} ${r.body}`);
     }

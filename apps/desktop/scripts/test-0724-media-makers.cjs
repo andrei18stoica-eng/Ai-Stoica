@@ -29,7 +29,7 @@ function sources() {
   expect(/^SERASMART_IMAGE_PROVIDERS=$/m.test(read("deploy/hetzner/.env.example")), ".env.example: every maker");
   // The interface: the picker, remembered per kind, sent with every picture / video.
   const ui = read("apps/desktop/renderer/src/main.jsx");
-  expect(/function MediaMakerPick\(\{kind\}\)/.test(ui) && /api\(`\/api\/media\/options\?kind=\$\{kind\}`\)/.test(ui) && /mediaMode&&<div className="makerRow"><MediaMakerPick kind=\{mediaMode\}\/><\/div>/.test(ui), "the picker is under the message box in the Poză / Video mode");
+  expect(/function MediaMakerPick\(\{kind\}\)/.test(ui) && /api\(`\/api\/media\/options\?kind=\$\{kind\}`\)/.test(ui) && /mediaMode&&<div className="makerRow"><MediaMakerPick kind=\{mediaMode\}\/>/.test(ui), "the picker is under the message box in the Poză / Video mode");
   expect(/maker:savedMaker\(kind\)\|\|"auto"/.test(ui) && /content:d\.data\?\.note\|\|""/.test(ui), "the picker's choice is sent and the note shown");
   expect(!/OpenAI \(Sora\)/.test(ui) && /Sora closed on 24 September 2026/.test(ui), "Settings say OpenAI makes no video");
 }

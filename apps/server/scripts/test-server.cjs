@@ -109,15 +109,15 @@ function freePort() {
   r = await call("POST", "/auth/login", { raw: "{nu e json" });
   assert.deepEqual([r.status, r.data.error], [400, "Corpul cererii nu este JSON valid."]);
   r = await call("POST", "/auth/register", { body: { email: "x", password: "parola123" } });
-  assert.equal(r.data.error, "Adresa de email nu este validă.");
+  assert.equal(r.data.error, "The email address is not valid.");
   r = await call("POST", "/auth/register", { body: { email: "a@b.ro", password: "scurt" } });
-  assert.equal(r.data.error, "Parola trebuie să aibă cel puțin 8 caractere.");
+  assert.equal(r.data.error, "The password needs at least 8 characters.");
 
   // Spam-bot domains: uberip.com always, BLOCKED_EMAIL_DOMAINS too, subdomains included; nothing reaches the database.
   assert.ok(db.log.some(x => /SET status='blocked'/.test(x.q) && x.params[0].includes("uberip.com") && x.params[0].includes("spam.example")), "existing accounts on blocked domains are blocked at start-up");
   for (const email of ["5wx3th65ofawn0@uberip.com", "X@UberIP.com", "bot@mail.uberip.com", "bot@spam.example"]) {
     r = await call("POST", "/auth/register", { body: { email, password: "parola123" } });
-    assert.deepEqual([r.status, r.data.error], [400, "Adresa de email nu este acceptată."], email);
+    assert.deepEqual([r.status, r.data.error], [400, "This email address is not accepted."], email);
     r = await call("POST", "/auth/login", { body: { email, password: "parola123" } });
     assert.deepEqual([r.status, r.data.status], [403, "blocked"], email);
   }
@@ -130,7 +130,7 @@ function freePort() {
   assert.deepEqual([r.status, r.data.status], [202, "verify_email"]);
   const anaMail = mails.at(-1);
   assert.equal(anaMail.to, "ana@example.com");
-  assert.match(anaMail.subject, /^Codul tău Serasmart AI: \d{6}$/);
+  assert.match(anaMail.subject, /^Your Serasmart AI code: \d{6}$/);
   assert.equal(anaMail.from, "Serasmart AI <ai@example.com>");
   assert.equal(anaMail.opts.port, 587);
   const anaId = db.users.find(u => u.email === "ana@example.com").id;
@@ -143,30 +143,30 @@ function freePort() {
   assert.equal(r.status, 200, "unknown addresses get the same answer");
   const wrong = codeFor("ana@example.com") === "000000" ? "111111" : "000000";
   r = await call("POST", "/auth/verify-email", { body: { email: "ana@example.com", code: wrong } });
-  assert.deepEqual([r.status, r.data.error], [400, "Codul nu este corect."]);
+  assert.deepEqual([r.status, r.data.error], [400, "The code is not correct."]);
   r = await call("POST", "/auth/verify-email", { body: { email: "ANA@example.com", code: codeFor("ana@example.com") } });
   assert.deepEqual([r.status, r.data.status], [202, "pending"]);
   assert.ok(db.users.find(u => u.id === anaId).email_verified_at, "the email is confirmed");
   r = await call("POST", "/auth/verify-email", { body: { email: "ana@example.com", code: codeFor("ana@example.com") } });
   assert.equal(r.status, 400, "a code works once");
   r = await call("POST", "/auth/login", { body: { email: "ana@example.com", password: "parola123" } });
-  assert.deepEqual([r.status, r.data.error], [403, "Contul așteaptă aprobarea Owner-ului."]);
+  assert.deepEqual([r.status, r.data.error], [403, "The account is waiting for the Owner's approval."]);
 
   r = await call("POST", "/auth/register", { body: { email: "x@fara-cutie.ro", password: "parola123" } });
-  assert.deepEqual([r.status, r.data.error], [502, "Nu am putut trimite emailul cu codul. Verifică adresa și încearcă din nou."]);
+  assert.deepEqual([r.status, r.data.error], [502, "We could not send the email with the code. Check the address and try again."]);
   assert.ok(!db.users.some(u => u.email === "x@fara-cutie.ro"), "an address that cannot receive mail leaves no account");
 
   r = await call("POST", "/auth/register", { body: { email: "ghicitor@example.com", password: "parola123" } });
   for (let i = 0; i < 5; i++) r = await call("POST", "/auth/verify-email", { body: { email: "ghicitor@example.com", code: String(i).repeat(6) === codeFor("ghicitor@example.com") ? "999999" : String(i).repeat(6) } });
-  assert.deepEqual([r.status, r.data.error], [400, "Prea multe coduri greșite. Cere un cod nou."]);
+  assert.deepEqual([r.status, r.data.error], [400, "Too many wrong codes. Ask for a new code."]);
   r = await call("POST", "/auth/verify-email", { body: { email: "ghicitor@example.com", code: codeFor("ghicitor@example.com") } });
   assert.equal(r.status, 429, "after 5 wrong codes even the right one is refused");
   r = await call("POST", "/auth/login", { body: { email: "nimeni@example.com", password: "parola123" } });
-  assert.deepEqual([r.status, r.data.error], [401, "Email sau parolă incorectă."]);
+  assert.deepEqual([r.status, r.data.error], [401, "Wrong email or password."]);
 
   db.failNextUserInsert = true;
   r = await call("POST", "/auth/register", { body: { email: "dublu@example.com", password: "parola123" } });
-  assert.deepEqual([r.status, r.data.error], [409, "Există deja un cont cu acest email."]);
+  assert.deepEqual([r.status, r.data.error], [409, "An account with this email already exists."]);
 
   r = await call("POST", "/auth/register", { body: { email: "owner@example.com", password: "parola-owner" } });
   assert.equal(r.status, 201);
