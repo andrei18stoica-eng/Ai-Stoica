@@ -1,8 +1,8 @@
 {
   "name": "serasmart-desktop",
-  "version": "0.7.27",
+  "version": "0.7.28",
   "private": true,
-  "description": "Serasmart AI 0.7.27 - Settings and Usage in English (with the translations), weekly credits counted from the plan start day",
+  "description": "Serasmart AI 0.7.28 - video in one generation priced by the model, Start 5 pictures a day, sign-in in English",
   "main": "main.cjs",
   "repository": {
     "type": "git",

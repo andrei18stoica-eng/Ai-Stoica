@@ -289,7 +289,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     if (!entry || entry.reset <= now) { entry = { count: 0, reset: now + windowMs }; attempts.set(attemptKey(req, kind), entry); }
     if (entry.count < limit) return false;
     res.setHeader("Retry-After", String(Math.max(1, Math.ceil((entry.reset - now) / 1000))));
-    res.status(429).json({ error: "Prea multe încercări de autentificare. Încearcă din nou peste câteva minute." });
+    res.status(429).json({ error: "Too many sign-in attempts. Try again in a few minutes." });
     return true;
   }
   function countAttempt(req, kind) { const entry = attempts.get(attemptKey(req, kind)); if (entry) entry.count++; }
@@ -684,7 +684,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     error.status = status;
     return error;
   }
-  function cloudDownMessage(status){return `${BRAND_SHORT} Cloud nu răspunde momentan${status?` (HTTP ${status})`:""}. Încearcă din nou peste câteva secunde.`;}
+  function cloudDownMessage(status){return `${BRAND_SHORT} Cloud is not answering right now${status?` (HTTP ${status})`:""}. Try again in a few seconds.`;}
   async function cloudModelPolicy(token, models) {
     const unique=[...new Set((models||[]).map(x=>String(x||"").trim()).filter(Boolean))];
     if (!cloudBase()) return { policyEnforced:false, data:unique.map(model=>({model,allowed:true})) };
@@ -1198,22 +1198,22 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.post("/auth/register", async (req, res) => {
     if (rateLimited(req, res, "register")) return;
     countAttempt(req, "register");
-    if (emailDomainBlocked(req.body?.email)) return res.status(400).json({ error: "Adresa de email nu este acceptată." });
+    if (emailDomainBlocked(req.body?.email)) return res.status(400).json({ error: "This email address is not accepted." });
     if (cloudBase()) return proxyCloudAuth(req, res, "/auth/register", "register");
     const email = normalizeEmail(req.body?.email), password = typeof req.body?.password === "string" ? req.body.password : "", name = String(req.body?.name || "").trim().slice(0, 80);
-    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "Adresa de email nu este validă." });
-    if (password.length < 8) return res.status(400).json({ error: "Parola trebuie să aibă cel puțin 8 caractere." });
-    if (Buffer.byteLength(password) > 72) return res.status(400).json({ error: "Parola poate avea cel mult 72 de caractere." });
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "The email address is not valid." });
+    if (password.length < 8) return res.status(400).json({ error: "The password needs at least 8 characters." });
+    if (Buffer.byteLength(password) > 72) return res.status(400).json({ error: "The password can have at most 72 characters." });
     const closed = () => getOmniConfig()?.allowRegistration === false && store.read().users.length;
     const taken = () => store.read().users.some((u) => normalizeEmail(u.email) === email);
     // Servers reachable from the internet (apps/cloud) can turn off sign-up after the first account.
-    if (closed()) return res.status(403).json({ error: "Crearea de conturi noi este dezactivată pe acest server." });
-    if (taken() || registerLocks.has(email)) return res.status(409).json({ error: "Există deja un cont cu acest email." });
+    if (closed()) return res.status(403).json({ error: "New accounts are turned off on this server." });
+    if (taken() || registerLocks.has(email)) return res.status(409).json({ error: "An account with this email already exists." });
     registerLocks.add(email);
     try {
       const passwordHash = await bcrypt.hash(password, 12);
-      if (closed()) return res.status(403).json({ error: "Crearea de conturi noi este dezactivată pe acest server." });
-      if (taken()) return res.status(409).json({ error: "Există deja un cont cu acest email." });
+      if (closed()) return res.status(403).json({ error: "New accounts are turned off on this server." });
+      if (taken()) return res.status(409).json({ error: "An account with this email already exists." });
       const db = store.read();
       const user = { id: crypto.randomUUID(), email, name: name || email.split("@")[0], passwordHash, memoryEnabled: true, createdAt: Date.now() };
       db.users.push(user);
@@ -1241,15 +1241,15 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
 
   app.post("/auth/login", async (req, res) => {
     if (rateLimited(req, res, "login")) return;
-    if (emailDomainBlocked(req.body?.email)) { countAttempt(req, "login"); return res.status(403).json({ error: "Contul nu este activ.", status: "blocked" }); }
+    if (emailDomainBlocked(req.body?.email)) { countAttempt(req, "login"); return res.status(403).json({ error: "The account is not active.", status: "blocked" }); }
     if (cloudBase()) return proxyCloudAuth(req, res, "/auth/login", "login");
     const email = normalizeEmail(req.body?.email), password = typeof req.body?.password === "string" ? req.body.password : "";
     const db = store.read(), user = db.users.find((u) => normalizeEmail(u.email) === email && u.passwordHash) || db.users.find((u) => normalizeEmail(u.email) === email);
-    if (!user) { countAttempt(req, "login"); return res.status(401).json({ error: "Email sau parolă incorectă." }); }
+    if (!user) { countAttempt(req, "login"); return res.status(401).json({ error: "Wrong email or password." }); }
     if (!user.passwordHash) { countAttempt(req, "login"); return res.status(401).json({ error: `Acest cont a fost creat prin ${BRAND_SHORT} Cloud și nu are parolă locală. Configurează din nou adresa ${BRAND_SHORT} Cloud în Setări sau creează un cont local cu alt email.` }); }
     let ok = false;
     try { ok = await bcrypt.compare(password, user.passwordHash); } catch {}
-    if (!ok) { countAttempt(req, "login"); return res.status(401).json({ error: "Email sau parolă incorectă." }); }
+    if (!ok) { countAttempt(req, "login"); return res.status(401).json({ error: "Wrong email or password." }); }
     clearAttempts(req, "login");
     if (typeof user.memoryEnabled !== "boolean") { user.memoryEnabled = true; store.write(db); }
     res.json({ token: sign(user), user: publicUser(user, roleFor(user, null)), permissions: permissionsFor({ user }) });

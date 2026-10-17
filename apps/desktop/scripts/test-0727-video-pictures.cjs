@@ -33,4 +33,13 @@ const ui = read("renderer/src/main.jsx");
 expect(/function VideoLengthPick\(\)/.test(ui) && /mediaMode==="video"&&<VideoLengthPick\/>/.test(ui) && /duration,requestId:base\.id/.test(ui), "the length is chosen under the message box and sent");
 const usage = read("renderer/src/pages/Usage.jsx");
 expect(/\["Picture generation", \(p\) => p\.imagesPerDay \?/.test(usage), "the Start card says 5 pictures a day");
-console.log("0.7.27 video and pictures OK");
+// 0.7.28: the sign-in screen, its errors and the code email are in English (the Romanian is in locales.js).
+const auth = ui.slice(ui.indexOf("function AuthScreen("), ui.indexOf("function BrandMark("));
+expect(auth.length > 1000 && !/[ăâîșțşţĂÂÎȘȚ]/.test(auth) && /<ThemeSwitch\/><LanguageMenu\/>/.test(auth) && /\{tr\(error\)\}/.test(auth), "the sign-in screen is in English, with theme and language, errors translated");
+const srv = fs.readFileSync(path.join(__dirname, "..", "..", "server", "server.cjs"), "utf8"), mail = fs.readFileSync(path.join(__dirname, "..", "..", "server", "mailer.cjs"), "utf8");
+const msg = srv.slice(srv.indexOf("const MSG = {"), srv.indexOf("};", srv.indexOf("const MSG = {")));
+expect(!/[ăâîșț]/.test(msg) && /credentials: "Wrong email or password\."/.test(msg), "the server's sign-in messages are English");
+expect(/subject: `Your \$\{BRAND_NAME\} code: \$\{code\}`/.test(mail) && !/Salut/.test(mail), "the code email is English");
+const loc = fs.readFileSync(path.join(__dirname, "..", "renderer", "src", "locales.js"), "utf8");
+for (const k of ["Wrong email or password.", "The code is not correct.", "An account with this email already exists."]) expect(loc.includes(JSON.stringify(k) + ":"), "Romanian for «" + k + "»");
+console.log("0.7.27 video and pictures, 0.7.28 sign-in OK");

@@ -22,7 +22,7 @@ async function main() {
       res.setHeader("content-type", "application/json");
       if (req.url === "/auth/register") { res.statusCode = 202; return res.end(JSON.stringify(JSON.parse(body).email === "vechi@example.com" ? { ok: true, status: "pending", message: "Cont creat." } : { ok: true, status: "verify_email", email: "maria@gmail.com", message: "Ți-am trimis un cod." })); }
       if (req.url === "/auth/login") { res.statusCode = 403; return res.end(JSON.stringify({ error: "Confirmă mai întâi emailul.", status: "verify_email", email: "maria@gmail.com" })); }
-      if (req.url === "/auth/verify-email") { const ok = JSON.parse(body).code === "123456"; res.statusCode = ok ? 202 : 400; return res.end(JSON.stringify(ok ? { ok: true, status: "pending", message: "Email confirmat." } : { error: "Codul nu este corect." })); }
+      if (req.url === "/auth/verify-email") { const ok = JSON.parse(body).code === "123456"; res.statusCode = ok ? 202 : 400; return res.end(JSON.stringify(ok ? { ok: true, status: "pending", message: "Email confirmat." } : { error: "The code is not correct." })); }
       if (req.url === "/auth/resend-code") return res.end(JSON.stringify({ ok: true, message: "Ți-am trimis un cod nou." }));
       if (req.url === `/auth/access-requests/${good}` && req.method === "GET") return res.end(JSON.stringify({ request: { name: "Maria", email: "maria@gmail.com" } }));
       if (req.url === `/auth/access-requests/${good}` && req.method === "POST") return res.end(JSON.stringify({ ok: true, status: JSON.parse(body).decision === "allow" ? "active" : "rejected", name: "Maria", email: "maria@gmail.com" }));
@@ -44,7 +44,7 @@ async function main() {
     r = await request(8881, "POST", "/auth/login", { email: "maria@gmail.com", password: "parola123" });
     expect(r.status === 403 && r.json.status === "verify_email", "login keeps the verify_email status: " + r.body);
     r = await request(8881, "POST", "/auth/verify-email", { email: "maria@gmail.com", code: "000000" });
-    expect(r.status === 400 && r.json.error === "Codul nu este corect.", "a wrong code is refused: " + r.body);
+    expect(r.status === 400 && r.json.error === "The code is not correct.", "a wrong code is refused: " + r.body);
     r = await request(8881, "POST", "/auth/verify-email", { email: "maria@gmail.com", code: "123456" });
     expect(r.status === 202 && r.json.status === "pending", "the right code passes: " + r.body);
     r = await request(8881, "POST", "/auth/resend-code", { email: "maria@gmail.com" });

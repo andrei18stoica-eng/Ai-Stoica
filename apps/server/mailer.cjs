@@ -31,14 +31,14 @@ function createMailer(env = process.env) {
   function escapeHtml(v) { return String(v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
   async function sendSignupCode(to, name, code, minutes) {
-    const text = `Salut, ${name}!\n\nCodul tău pentru contul ${BRAND_NAME} este: ${code}\n\nIntrodu-l în aplicație ca să confirmi că adresa ${to} este a ta. Codul expiră în ${minutes} minute.\n\nDacă nu tu ai creat contul, ignoră acest email.`;
+    const text = `Hi ${name},\n\nYour ${BRAND_NAME} code is: ${code}\n\nEnter it in the app to confirm that ${to} is your address. The code expires in ${minutes} minutes.\n\nIf you did not create an account, ignore this email.`;
     const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#111">
-<h2 style="margin:0 0 12px">Confirmă emailul pentru ${BRAND_NAME}</h2>
-<p>Salut, ${escapeHtml(name)}! Codul tău este:</p>
+<h2 style="margin:0 0 12px">Confirm your email for ${BRAND_NAME}</h2>
+<p>Hi ${escapeHtml(name)}, your code is:</p>
 <p style="font-size:32px;font-weight:700;letter-spacing:8px;margin:16px 0">${code}</p>
-<p>Introdu-l în aplicație ca să confirmi că adresa <b>${escapeHtml(to)}</b> este a ta. Codul expiră în ${minutes} minute.</p>
-<p style="color:#666;font-size:13px">Dacă nu tu ai creat contul, ignoră acest email.</p></div>`;
-    await send({ to, subject: `Codul tău ${BRAND_NAME}: ${code}`, text, html });
+<p>Enter it in the app to confirm that <b>${escapeHtml(to)}</b> is your address. The code expires in ${minutes} minutes.</p>
+<p style="color:#666;font-size:13px">If you did not create an account, ignore this email.</p></div>`;
+    await send({ to, subject: `Your ${BRAND_NAME} code: ${code}`, text, html });
   }
 
   return { configured, send, sendSignupCode };

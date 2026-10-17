@@ -1314,3 +1314,7 @@ h1,h2,h3,.wordmark,.welcome h1,.modalHead h2{font-family:var(--font-display)}
 .weekParts span.now b{color:var(--accent)}
 .makerRow{flex-wrap:wrap;gap:8px}
 .makerPick.lengthPick select{min-width:0}
+/* Theme and language on the sign-in screen (0.7.28): top right, above the page */
+.authTopTools{position:absolute;top:16px;right:16px;z-index:6;display:flex;gap:8px;align-items:center}
+:root[dir="rtl"] .authTopTools{right:auto;left:16px}
+@media(max-width:900px){.authShell{padding-top:72px}}

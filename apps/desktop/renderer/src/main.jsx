@@ -317,7 +317,7 @@ function AuthScreen({ onAuth, notice:initialNotice="" }) {
       <p className="muted">{tr("We sent a 6-digit code to {email}. If you do not see it, look in Spam. The code expires in 15 minutes.",{email})}</p>
       <label>{tr("Code from the email")}<input value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="123456" inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} required autoFocus className="codeInput"/></label>
       {notice&&<div className="authNotice" role="status"><UserCheck size={17}/><span>{notice}</span></div>}
-      {error&&<div className="authError" role="alert">{error}</div>}
+      {error&&<div className="authError" role="alert">{tr(error)}</div>}
       <button className="primaryWide" disabled={busy||code.length!==6}>{busy?tr("Working…"):tr("Confirm email")}</button>
       <div className="codeActions"><button type="button" className="linkBtn" disabled={busy||resendIn>0} onClick={resendCode}>{resendIn>0?tr("Send the code again ({s}s)",{s:resendIn}):tr("Send the code again")}</button><button type="button" className="linkBtn" onClick={()=>{setMode("login");setError("");setNotice("")}}>{tr("Back")}</button></div>
       </>:<>
@@ -327,7 +327,7 @@ function AuthScreen({ onAuth, notice:initialNotice="" }) {
       <label>{tr("Email")}<input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="name@example.com" required autoComplete="email"/></label>
       <label>{tr("Password")}<input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder={mode==="register"?tr("At least 10 characters"):tr("Your account password")} required minLength={mode==="register"?10:undefined} autoComplete={mode==="register"?"new-password":"current-password"}/></label>
       {notice&&<div className="authNotice" role="status"><UserCheck size={17}/><span>{notice}</span></div>}
-      {error&&<div className="authError" role="alert">{error}</div>}
+      {error&&<div className="authError" role="alert">{tr(error)}</div>}
       {networkIssue&&GATEWAY!==DEFAULT_GATEWAY&&<button type="button" className="secondary wideBtn" onClick={resetGateway}>{tr("Use the default local service")}</button>}
       <button className="primaryWide" disabled={busy}>{busy?tr("Working…"):mode==="login"?tr("Sign in to {brand}",{brand:BRAND_NAME}):(cloud?tr("Send the access request"):tr("Create the account"))}</button>
       <div className="localNote">{cloud?tr("The Owner approves accounts and decides which AI services they can use."):IS_WEB?tr("Accounts and chats are kept on the {brand} server.",{brand:BRAND_NAME}):tr("Accounts and chats are kept on this computer.")}</div>
