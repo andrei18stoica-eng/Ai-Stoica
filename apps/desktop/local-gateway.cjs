@@ -1329,7 +1329,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     res.setHeader("Content-Disposition",`attachment; filename="${BRAND_SHORT.toLowerCase()}-date-${new Date().toISOString().slice(0,10)}.json"`);
     res.type("application/json").send(JSON.stringify(data,null,2));
   });
-  // Deletes part or all of the account's data on this server. The word "STERGE" is the confirmation.
+  // Deletes part or all of the account's data on this server. The word "DELETE" (or the Romanian "STERGE") confirms it.
   async function deleteUserData(uid,scope){
     const db=store.read(),counts={};
     const drop=(k)=>{const before=(db[k]||[]).length;db[k]=(db[k]||[]).filter(x=>x.userId!==uid);counts[k]=before-db[k].length;return before-db[k].length;};
@@ -1346,7 +1346,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.post("/api/me/delete-data", auth, async (req,res) => {
     const scope=String(req.body?.scope||"");
     if(!["conversations","memories","library","all"].includes(scope))return res.status(400).json({error:"Alege ce ștergi: conversations, memories, library sau all."});
-    if(String(req.body?.confirm||"").trim().toUpperCase()!=="STERGE")return res.status(400).json({error:"Scrie STERGE ca să confirmi."});
+    if(!["DELETE","STERGE","ȘTERGE"].includes(String(req.body?.confirm||"").trim().toUpperCase()))return res.status(400).json({error:"Type DELETE to confirm."});
     res.json({ok:true,deleted:await deleteUserData(req.user.id,scope)});
   });
   // Deleting the account: the password confirms it; the Owner's account cannot be deleted from the app.

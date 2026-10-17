@@ -25,6 +25,6 @@ assert(store.includes('path.join(dataDir, "conversations")'),"split conversation
 const extract=fs.readFileSync(path.join(root,"lib","extract.cjs"),"utf8");
 assert(extract.includes("extractAccess")&&extract.includes('return "access"'),"Access support missing");
 const pkg=require(path.join(root,"package.json"));
-assert.strictEqual(pkg.version,"0.7.26");
+assert.strictEqual(pkg.version,"0.7.27");
 assert(pkg.dependencies["mdb-reader"],"mdb-reader missing");
 console.log("Serasmart AI full audit desktop checks OK");

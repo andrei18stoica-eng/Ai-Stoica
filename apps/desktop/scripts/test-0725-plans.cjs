@@ -70,7 +70,7 @@ function sources() {
   expect(/Math\.min\(askedDuration,videoMax,creditsLib\.VIDEO_CLIP_MAX\)/.test(gw), "a video is billed for at most one clip's length");
   const ui = fs.readFileSync(path.join(__dirname, "..", "renderer", "src", "pages", "Usage.jsx"), "utf8");
   for (const f of ["Top models", "HD pictures", "Video generation", "Deep Research", "Connected apps", "Skills", "Automations", "Priority access", "Team admin", "API access"]) expect(ui.includes(`["${f}`), `the plans list «${f}»`);
-  expect(/<s>\{label\}<\/s>/.test(ui) && /popular=\{p\.key === "pro"\}/.test(ui) && /toLocaleString\("ro-RO"/.test(ui), "struck through when not included, Pro marked, prices as 1.999,99");
+  expect(/<s>\{tr\(label\)\}<\/s>/.test(ui) && /popular=\{p\.key === "pro"\}/.test(ui) && /toLocaleString\("ro-RO"/.test(ui), "struck through when not included, Pro marked, prices as 1.999,99");
 }
 
 (async () => { units(); sources(); await gateway(); console.log("0.7.25 plans OK"); })().catch((e) => { console.error(e); process.exit(1); });

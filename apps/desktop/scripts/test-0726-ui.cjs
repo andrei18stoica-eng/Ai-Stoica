@@ -13,19 +13,22 @@ function locales() {
   const js = read("locales.js");
   const L = JSON.parse(js.slice(js.indexOf("export const LOCALES = ") + 23).trim().replace(/;$/, ""));
   expect(Object.keys(L).join() === "ro,es,fr,de", "the four languages carried with the app: " + Object.keys(L).join());
-  const keys = Object.keys(L.ro);
-  expect(keys.length >= 180, "the shell's texts are translated: " + keys.length);
-  for (const lang of ["es", "fr", "de"]) expect(Object.keys(L[lang]).sort().join("\n") === [...keys].sort().join("\n"), `${lang} has the same texts as ro`);
-  for (const lang of Object.keys(L)) for (const k of keys) {
+  // Romanian carries every text (it was the app's first language); Spanish, French and German carry the shell, and
+  // the server translates the rest once, like the other languages.
+  const keys = Object.keys(L.ro), shell = Object.keys(L.es);
+  expect(keys.length >= 600 && shell.length >= 180, "translations: ro " + keys.length + ", shell " + shell.length);
+  for (const lang of ["fr", "de"]) expect(Object.keys(L[lang]).sort().join("\n") === [...shell].sort().join("\n"), `${lang} has the same texts as es`);
+  for (const k of shell) expect(L.ro[k] !== undefined, `ro covers the shell text «${k}»`);
+  for (const lang of Object.keys(L)) for (const k of Object.keys(L[lang])) {
     const v = L[lang][k];
     expect(typeof v === "string" && v.trim(), `${lang}: «${k}» translated`);
     expect(placeholders(v) === placeholders(k), `${lang}: «${k}» keeps its {placeholders}`);
     expect(!/[<>]/.test(v), `${lang}: «${k}» has no markup`);
   }
   // Every fixed text the shell passes to tr() has its four translations.
-  for (const f of ["main.jsx", "install.jsx"]) {
+  for (const f of ["main.jsx", "install.jsx", "serverUpdate.jsx", "accessRequest.jsx", "pages/AccountSettings.jsx", "pages/Usage.jsx"]) {
     const src = read(f);
-    for (const m of src.matchAll(/\btr\("((?:[^"\\]|\\.)+)"/g)) expect(L.ro[m[1]] !== undefined, `${f}: «${m[1]}» is in locales.js`);
+    for (const m of src.matchAll(/\btr\("((?:[^"\\]|\\.)+)"/g)) { const key = JSON.parse(`"${m[1]}"`); expect(L.ro[key] !== undefined, `${f}: «${key}» is in locales.js`); }
   }
   for (const [, label] of read("main.jsx").matchAll(/\[\w+,\w+,"([^"]+)",(?:null|"\w+")\]/g)) expect(L.ro[label], `side menu «${label}» translated`);
   for (const part of ["Good morning", "Good afternoon", "Good evening"]) expect(L.ro[part] && L.ro[part + ", {name}"], `greeting «${part}»`);
@@ -79,6 +82,10 @@ function extraCredits() {
   for (const n of [100, 1000, 3750, 10000, 123456]) { const p = C.priceForCredits(n); expect(p && Math.round(p * 100) % 100 === 99, `${n} credits cost x,99 lei: ${p}`); }
   for (let n = 100; n < 20000; n += 100) expect(C.priceForCredits(n + 100) >= C.priceForCredits(n), "more credits never cost less: " + n);
   expect(C.priceForCredits(99) === null, "below the minimum there is no price");
+  // 0.7.27: the weekly parts are counted from the day the plan started, not from the calendar.
+  expect(!/days 1, 8, 15 and 22/.test(ui) && /one every 7 days counted from the day your plan started/.test(ui) && /function WeekParts/.test(ui), "the weekly parts are explained from the plan's start day");
+  const credits = fs.readFileSync(path.join(__dirname, "..", "lib", "credits.cjs"), "utf8");
+  expect(/const periodStart = w\.startedAt \+ p \* PERIOD;/.test(credits) && /Math\.floor\(\(t - periodStart\) \/ WEEK\)/.test(credits), "the ledger counts the weeks from the plan's start");
 }
 
 async function gateway() {

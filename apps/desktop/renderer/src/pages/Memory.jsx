@@ -2,16 +2,17 @@ import React, { useEffect, useRef, useState } from "react";
 import { Search, Trash2, Pin, PinOff, Pencil, Brain, History, Check, X } from "lucide-react";
 import { api, toast, cx, plural, fmtTime, ToolShell, Switch } from "../core.jsx";
 import { BRAND_NAME } from "../brand.js";
+import { t as tr, useLanguage } from "../i18n.jsx";
 
 export const PREFERENCE_ITEMS=[
-  ["memoryEnabled","Folosește memoria",`${BRAND_NAME} reține automat preferințele, deciziile și detaliile durabile și le folosește când sunt relevante.`],
-  ["searchPastChats","Caută în conversațiile anterioare","Când întrebi ceva, caută în celelalte conversații ale tale (și în cele arhivate) și folosește ce are legătură. Așa poți continua un subiect într-o conversație nouă."],
-  ["askClarifyingQuestions","Pune întrebări de clarificare (cu variante de răspuns)",`Când o cerere poate fi înțeleasă în mai multe feluri, ${BRAND_NAME} întreabă înainte, cu variante pe care le alegi cu un clic.`]
+  ["memoryEnabled","Use memory","{brand} keeps your preferences, decisions and lasting details on its own and uses them when they matter."],
+  ["searchPastChats","Search past chats","When you ask something, it searches your other chats (archived ones too) and uses what is related. So you can continue a topic in a new chat."],
+  ["askClarifyingQuestions","Ask clarifying questions (with answer choices)","When a request can be read in several ways, {brand} asks first, with choices you pick with one click."]
 ];
 export function PreferenceSwitches({preferences,onChange,busyKey=""}){
   return <div className="prefList">{PREFERENCE_ITEMS.map(([k,title,desc])=><div className="prefRow" key={k}>
-    <div className="prefText"><b>{title}</b><span>{desc}</span></div>
-    <Switch checked={preferences?.[k]!==false} label={title} disabled={busyKey===k} onChange={v=>onChange({[k]:v})}/>
+    <div className="prefText"><b>{tr(title)}</b><span>{tr(desc,{brand:BRAND_NAME})}</span></div>
+    <Switch checked={preferences?.[k]!==false} label={tr(title)} disabled={busyKey===k} onChange={v=>onChange({[k]:v})}/>
   </div>)}</div>;
 }
 
