@@ -1,8 +1,8 @@
 {
   "name": "serasmart-desktop",
-  "version": "0.7.23",
+  "version": "0.7.24",
   "private": true,
-  "description": "Serasmart AI 0.7.23 - account settings: profile, how the AI answers, default model, notifications, privacy, export and delete, sessions and password",
+  "description": "Serasmart AI 0.7.24 - pictures and video from every maker, a picker for who makes them, no OpenAI video (Sora closed)",
   "main": "main.cjs",
   "repository": {
     "type": "git",

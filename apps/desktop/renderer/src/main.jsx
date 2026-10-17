@@ -721,8 +721,29 @@ function TrayChip({attachment,onRemove}) {
   </span>;
 }
 
-const VIDEO_PROVIDERS_TEXT="Încearcă pe rând providerii video configurați (Pollinations, OpenRouter, Gemini Veo, fal.ai, Replicate); e nevoie de o cheie și de permisiunea pentru costuri din Setări → Video.";
+const VIDEO_PROVIDERS_TEXT="Alegi sub câmpul de mesaj cine face videoclipul, sau «Automat»: întâi cele gratuite, apoi Gemini Veo, Grok Imagine și celelalte chei (cu plată, dacă le permiți în Setări → Video).";
 function imageProvidersText(policy){return `Încearcă pe rând: Cloudflare și Pollinations (dacă ai cheie), Pollinations fără cheie, Hugging Face${policy?.imagePaid?", apoi providerii cu plată configurați":""}.`;}
+// Who makes the picture / video (0.7.24): picked under the message box in the Poză / Video mode and remembered on this
+// device for each kind; "" = Automat (the best one available, as in Settings → «Făcute de»).
+const makerKey=(kind)=>`serasmart-media-maker-${kind}`;
+function savedMaker(kind){try{return localStorage.getItem(makerKey(kind))||""}catch{return ""}}
+function saveMaker(kind,value){try{if(value)localStorage.setItem(makerKey(kind),value);else localStorage.removeItem(makerKey(kind))}catch{}}
+function MediaMakerPick({kind}) {
+  const [options,setOptions]=useState(null),[value,setValue]=useState(()=>savedMaker(kind));
+  useEffect(()=>{
+    let live=true;setValue(savedMaker(kind));setOptions(null);
+    api(`/api/media/options?kind=${kind}`).then(d=>{if(live)setOptions(Array.isArray(d?.data)?d.data:[])}).catch(()=>{if(live)setOptions([])});
+    return ()=>{live=false};
+  },[kind]);
+  const list=options||[],groups=[...new Set(list.map(o=>o.group))];
+  const shown=!value||list.some(o=>o.value===value&&!o.blocked)?value:"";
+  return <label className="makerPick"><span>{kind==="image"?"Poza o face":"Videoclipul îl face"}</span>
+    <select value={shown} disabled={options===null} onChange={e=>{setValue(e.target.value);saveMaker(kind,e.target.value)}}>
+      <option value="">{options===null?"Se încarcă…":"Automat · cel mai bun disponibil"}</option>
+      {groups.map(g=><optgroup key={g} label={g}>{list.filter(o=>o.group===g).map(o=><option key={o.value} value={o.value} disabled={!!o.blocked}>{o.label}{o.blocked?` (${o.blocked})`:""}</option>)}</optgroup>)}
+    </select>
+  </label>;
+}
 function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAttachments,onOpenLibrary,responseMode,setResponseMode,mediaMode,setMediaMode,mentionsVersion,mediaPolicy}) {
   const {can,deny}=useAccess();
   const ta=useRef(null),fileInput=useRef(null),imageInput=useRef(null),videoInput=useRef(null),audioInput=useRef(null),recorderRef=useRef(null),streamRef=useRef(null),chunksRef=useRef([]),attachRef=useRef(null),mountedRef=useRef(true),autoSendRef=useRef(false),speechRef=useRef(null),stoppedRef=useRef(false),startingRef=useRef(false),draftRef=useRef(draft);
@@ -931,6 +952,7 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
       <div className="composerLine">
         <textarea ref={ta} value={draft} onChange={e=>{setDraft(e.target.value);setMentionClosedFor(null)}} onPaste={pasteIntoComposer} spellCheck={true} aria-label={`Mesaj pentru ${BRAND_NAME}`} placeholder={placeholder} onKeyDown={onKeyDown}/>
       </div>
+      {mediaMode&&<div className="makerRow"><MediaMakerPick kind={mediaMode}/></div>}
       {/* One toolbar under the text, as in the big chat apps: attach and modes on the left, voice and send on the right. */}
       <div className="composerTools">
         <div className="attachWrap" ref={attachRef}><button className="composerIcon" onClick={()=>setMenu(v=>!v)} title="Fișiere și unelte" aria-label="Fișiere și unelte" aria-haspopup="menu" aria-expanded={menu}><Plus size={20}/></button>{menu&&<div className="attachMenu" role="menu">
@@ -1254,10 +1276,11 @@ function SharedCombos({cfg,set}) {
     {combos===null?<p className="settingsHelp">Încarc combinațiile…</p>:names.length?<div className="providerUseGrid">{names.map(name=><label key={name} className="providerUseItem"><input type="checkbox" checked={has(name)} onChange={e=>toggle(name,e.target.checked)}/><span>{name}</span></label>)}</div>:<p className="settingsHelp">OmniRoute nu are încă nicio combinație.</p>}
   </fieldset>;
 }
-// Poze / Video → «Făcute de»: Gemini only by default (Nano Banana, Veo); "" lets every provider in, the free ones too.
+// Poze / Video → «Făcute de» (0.7.24): every maker by default, best first; a list keeps only those. OpenAI makes no video
+// any more (Sora closed on 24 September 2026).
 const MEDIA_MAKERS={
-  image:[["gemini","Doar Gemini · Nano Banana"],["gemini,openai,xai","Gemini, OpenAI și Grok"],["","Toți furnizorii, și cei gratuiți"]],
-  video:[["gemini","Doar Gemini · Veo"],["gemini,openai,xai","Gemini, OpenAI (Sora) și Grok"],["","Toți furnizorii, și cei gratuiți"]]
+  image:[["","Toți, cei mai buni întâi (ChatGPT, Gemini, Grok, gratuite)"],["openai","Doar ChatGPT · GPT Image"],["gemini","Doar Gemini · Nano Banana"],["gemini,openai,xai","ChatGPT, Gemini și Grok"]],
+  video:[["","Toți, cei mai buni întâi (gratuite, Gemini Veo, Grok)"],["gemini","Doar Gemini · Veo"],["gemini,xai","Gemini și Grok"]]
 };
 const GEMINI_MEDIA_MODELS={
   image:[["gemini-3.1-flash-image","Nano Banana 2 · gemini-3.1-flash-image"],["gemini-3-pro-image-preview","Nano Banana Pro · gemini-3-pro-image-preview"],["gemini-2.5-flash-image","Nano Banana · gemini-2.5-flash-image"]],
@@ -1265,7 +1288,7 @@ const GEMINI_MEDIA_MODELS={
 };
 function MediaMakers({kind,cfg,set,paidOff}) {
   const field=kind==="image"?"imageProviders":"videoProviders",modelField=kind==="image"?"geminiImageModel":"geminiVideoModel";
-  const value=String(cfg[field]??"gemini").split(",").map(x=>x.trim().toLowerCase()).filter(Boolean).join(",");
+  const value=String(cfg[field]??"").split(",").map(x=>x.trim().toLowerCase()).filter(x=>x&&!(kind==="video"&&x==="openai")).join(",");
   const options=MEDIA_MAKERS[kind].some(([v])=>v===value)?MEDIA_MAKERS[kind]:[...MEDIA_MAKERS[kind],[value,"Ales de tine: "+value]];
   const model=String(cfg[modelField]||GEMINI_MEDIA_MODELS[kind][0][0]);
   const models=GEMINI_MEDIA_MODELS[kind].some(([v])=>v===model)?GEMINI_MEDIA_MODELS[kind]:[...GEMINI_MEDIA_MODELS[kind],[model,model]];
@@ -1276,7 +1299,7 @@ function MediaMakers({kind,cfg,set,paidOff}) {
     <p className="settingsHelp">{geminiOnly
       ?`Doar Gemini: prin Gemini conectat în OmniRoute (abonament, fără API) sau prin cheia Gemini de la API-uri AI. Ceilalți furnizori de mai jos nu sunt folosiți.${paidOff?" Gemini prin API e cu plată: ca să meargă cu cheia, alege mai jos «Permite provideri cu plată».":""}`
       :`Dacă modelul Gemini ales nu există pentru cheia ta, ${BRAND_NAME} încearcă singur celelalte nume Gemini, apoi furnizorii permiși aici.`}
-      {" "}Când în chat ai ales un model Gemini, ChatGPT sau Grok, {kind==="image"?"poza o face":"videoclipul îl face"} compania acelui model: întâi abonamentul conectat în OmniRoute, apoi API-ul ei. Setarea de aici e pentru combinații („Ai principal”) și modelele care nu fac {kind==="image"?"poze":"video"}.</p>
+      {" "}Sub câmpul de mesaj, în modul {kind==="image"?"Poză":"Video"}, poți alege de fiecare dată cine îl face. Pe «Automat», când în chat ai ales un model {kind==="image"?"Gemini, ChatGPT sau Grok":"Gemini sau Grok"}, {kind==="image"?"poza o face":"videoclipul îl face"} compania acelui model (întâi abonamentul din OmniRoute, apoi API-ul ei); altfel se folosește setarea de aici.</p>
   </fieldset>;
 }
 function KeyField({label,name,cfg,keys,setKeys,placeholder,token=false}) {
@@ -1512,8 +1535,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <label>Model video OpenRouter<input value={cfg.openRouterVideoModel||(cfg.videoMode==="quality"?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast")} onChange={e=>set({openRouterVideoModel:e.target.value})}/></label>
         <div className="providerGroup"><b>Gemini · Veo</b><small>Veo prin aceeași cheie Gemini folosită la chat; modelul îl alegi sus, la «Video făcut de».</small></div>
         <KeyField label="Cheie API Gemini" name="geminiApiKey" placeholder="AIza..." {...keyProps}/>
-        <div className="providerGroup"><b>OpenAI · Sora</b><small>Prin cheia OpenAI de la API-uri AI; videoclipuri de 4, 8 sau 12 secunde.</small></div>
-        <label>Model video OpenAI<input value={cfg.openAiVideoModel||"sora-2"} onChange={e=>set({openAiVideoModel:e.target.value})}/></label>
+        <p className="settingsHelp">OpenAI (ChatGPT) nu mai face videoclipuri: Sora a fost închis pe 24 septembrie 2026, și aplicația, și API-ul. Pozele cu ChatGPT merg în continuare.</p>
         <div className="providerGroup"><b>Grok Imagine Video (xAI)</b><small>Prin cheia xAI de la API-uri AI; 1–15 secunde.</small></div>
         <label>Model video Grok<input value={cfg.xaiVideoModel||"grok-imagine-video"} onChange={e=>set({xaiVideoModel:e.target.value})}/></label>
         <div className="providerGroup"><b>fal.ai Video</b><small>LTX Video. Poate folosi creditele inițiale, apoi credit plătit.</small></div>
@@ -2036,9 +2058,9 @@ function App() {
     try{
       let message;
       try{
-        const d=await api(kind==="video"?"/api/generate/video":"/api/generate/image",{method:"POST",body:JSON.stringify({prompt,via:baseConv.model||model||"",requestId:base.id,conversationId:convId}),signal:controller.signal});
+        const d=await api(kind==="video"?"/api/generate/video":"/api/generate/image",{method:"POST",body:JSON.stringify({prompt,via:baseConv.model||model||"",maker:savedMaker(kind)||"auto",requestId:base.id,conversationId:convId}),signal:controller.signal});
         const file={...d.data,type:d.data?.kind||kind,kind:d.data?.kind||kind};
-        message={...base,content:"",attachments:[file],routeInfo:{task:kind==="video"?"video_generation":"image_generation",model:file.model||"",provider:inferModelProvider(file.model||"")}};
+        message={...base,content:d.data?.note||"",attachments:[file],routeInfo:{task:kind==="video"?"video_generation":"image_generation",model:file.model||"",provider:inferModelProvider(file.model||"")}};
         checkCreditNotice();
       }catch(e){
         const reason=controller.signal.reason;

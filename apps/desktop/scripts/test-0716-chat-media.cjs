@@ -106,12 +106,13 @@ async function main() {
     expect(out.status === 502 && /Grok Imagine/.test(out.j.error) && /cheia xAI/.test(out.j.error) && /compania modelului ales/.test(out.j.error) && calls.gemini === 0 && calls.openai === 0, "Grok without a key: " + JSON.stringify(out).slice(0, 500));
     cfg.xaiApiKey = "xai-test"; reset();
 
-    // Video follows the same rule: Grok → Grok Imagine Video, ChatGPT → Sora.
+    // Video follows the same rule: Grok → Grok Imagine Video. ChatGPT makes no video any more (Sora closed on
+    // 24.09.2026): with a ChatGPT model the video comes from the others and the answer says so (0.7.24).
     out = await video("xai/grok-4.6");
     expect(out.status === 200 && out.j.data?.kind === "video" && calls.xaiVideo === 1 && calls.sora === 0, "Grok video: " + JSON.stringify({ out, calls }).slice(0, 400));
     reset();
     out = await video("cx/gpt-5.6");
-    expect(out.status === 200 && out.j.data?.kind === "video" && calls.sora === 1 && calls.xaiVideo === 0, "ChatGPT video → Sora: " + JSON.stringify({ out, calls }).slice(0, 400));
+    expect(out.status === 200 && out.j.data?.kind === "video" && calls.sora === 0 && /Sora a fost închis/.test(out.j.data?.note || ""), "ChatGPT video: no Sora, made by another maker, with the note: " + JSON.stringify({ out, calls }).slice(0, 400));
 
     // The interface sends the chosen model with every picture / video request.
     const src = fs.readFileSync(path.join(__dirname, "../renderer/src/main.jsx"), "utf8");

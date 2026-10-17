@@ -1146,3 +1146,10 @@ h1,h2,h3{text-wrap:balance}
 .sessionNow{font-size:11px;font-weight:600;color:#5fd39a;background:#0f2a1f;border-radius:999px;padding:1px 8px}
 .settingsPane h4{margin:16px 0 8px;font-size:14px}
 @media(max-width:640px){.accountGrid{grid-template-columns:1fr}}
+
+/* 0.7.24: who makes the picture / video, under the message box in the Poză / Video mode */
+.makerRow{display:flex;padding:0 12px 6px}
+.makerPick{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;font-size:12.5px;color:#9fb0c6}
+.makerPick span{white-space:nowrap}
+.makerPick select{min-width:0;max-width:min(420px,100%);flex:1;background:#080d14;border:1px solid #26354a;border-radius:9px;color:#edf3fb;padding:6px 10px;font-size:12.5px;outline:0}
+.makerPick select:focus-visible{border-color:#4d8dff}

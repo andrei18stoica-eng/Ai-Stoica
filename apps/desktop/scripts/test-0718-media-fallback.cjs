@@ -39,7 +39,8 @@ async function main() {
   // The server as it was on 2026-10-16: «Făcute de» not set (Gemini), the Gemini key failing.
   const cfg = {
     baseUrl: `http://127.0.0.1:${omniPort}/v1`, apiKey: "sk-omni", model: "", webSearchEnabled: false, githubAutoContext: false, ownerEmail: "owner@example.com",
-    geminiApiKey: "AIza-test", pollinationsFreeEnabled: true, imageCostPolicy: "allow_paid", videoCostPolicy: "allow_paid"
+    geminiApiKey: "AIza-test", pollinationsFreeEnabled: true, imageCostPolicy: "allow_paid", videoCostPolicy: "allow_paid",
+    imageProviders: "gemini", videoProviders: "gemini"
   };
   const calls = { gemini: 0, pollinations: 0 };
   const realFetch = globalThis.fetch;

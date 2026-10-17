@@ -19,7 +19,7 @@ const TEXT_KEYS = [
   "baseUrl","model","speechModel","directChatProviderOrder","blockedProviders","sharedCombos","imageProviders","videoProviders",
   "cerebrasModel","groqModel","geminiModels","mistralModel","nvidiaModel","githubModelsModel","openRouterChatModel","cloudflareChatModel","cohereModel","huggingFaceChatModel","openAiChatModels","xaiModels",
   "imageModel","imageProviderOrder","cloudflareAccountId","openAiImageModel","replicateImageModel","falImageModel","openRouterImageModel","pollinationsImageModel","geminiImageModel","xaiImageModel",
-  "videoModel","videoProviderOrder","geminiVideoModel","falVideoModel","replicateVideoModel","openRouterVideoModel","pollinationsVideoModel","openAiVideoModel","xaiVideoModel",
+  "videoModel","videoProviderOrder","geminiVideoModel","falVideoModel","replicateVideoModel","openRouterVideoModel","pollinationsVideoModel","xaiVideoModel",
   "githubRepo","githubBranch"
 ];
 const EDITABLE = [...TEXT_KEYS, ...BOOLEAN_KEYS, ...Object.keys(CHOICES), ...SECRET_KEYS];
