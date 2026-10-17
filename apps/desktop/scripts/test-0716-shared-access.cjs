@@ -137,7 +137,7 @@ async function main() {
     expect(fs.readFileSync(path.join(repo, ...f), "utf8").includes("SERASMART_SHARED_COMBOS: ${SERASMART_SHARED_COMBOS-${AI_STOICA_SHARED_COMBOS-}}"), f.join("/") + " passes SERASMART_SHARED_COMBOS");
   const ui = fs.readFileSync(path.join(__dirname, "..", "renderer", "src", "main.jsx"), "utf8");
   expect(/function SharedCombos/.test(ui), "Settings show «Combinații pentru toate conturile»");
-  expect(ui.includes("locked={lockedModels}") && ui.includes('className="modelOption locked" onClick={()=>notAllowed(x)}') && ui.includes("nu îți este permis de Owner"), "the model list shows the locked models and says why when one is chosen");
+  expect(ui.includes("locked={lockedModels}") && ui.includes('className="modelOption locked" onClick={()=>notAllowed(x)}') && ui.includes("is not allowed for you by the Owner"), "the model list shows the locked models and says why when one is chosen");
   console.log("0.7.16 free models for every account, the Owner's subscriptions his alone OK");
 }
 

@@ -55,24 +55,40 @@ function Meter({ percent }) {
   return <div className={cx("usageMeter", p >= 90 && "high", p >= 100 && "full")} role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={p} aria-label={`${p}% of this week's credits used`}><span style={{ width: `${p}%` }} /></div>;
 }
 
-function PackCalculator({ min = 100 }) {
-  const [credits, setCredits] = useState(1000), [price, setPrice] = useState(null), [busy, setBusy] = useState(false);
+// Extra credits (0.7.26): a card next to the plans where the person writes how many credits they want; the price
+// (x,99 lei, from lib/credits.cjs priceForCredits) follows the number as it is typed.
+const PACK_PRESETS = [500, 1000, 2500, 5000, 10000];
+const PACK_MAX = 1000000;
+const EXTRA_FEATURES = ["Any number of credits you choose", "Used at once, no weekly limit", "Valid 12 months", "Added on top of any plan, or without one", "Every model and tool your plan allows"];
+function ExtraCreditsCard({ min = 100 }) {
+  const [credits, setCredits] = useState(1000), [price, setPrice] = useState(null), [busy, setBusy] = useState(false), [loading, setLoading] = useState(false);
+  const valid = credits >= min && credits <= PACK_MAX;
   useEffect(() => {
-    if (!(credits >= min)) { setPrice(null); return; }
-    let live = true;
-    const t = setTimeout(() => api(`/api/credits/price?credits=${credits}`).then((d) => live && setPrice(d.price)).catch(() => live && setPrice(null)), 200);
+    if (!valid) { setPrice(null); return; }
+    let live = true; setLoading(true);
+    const t = setTimeout(() => api(`/api/credits/price?credits=${credits}`).then((d) => live && setPrice(d.price)).catch(() => live && setPrice(null)).finally(() => live && setLoading(false)), 200);
     return () => { live = false; clearTimeout(t); };
-  }, [credits, min]);
+  }, [credits, valid]);
   async function buy() {
     setBusy(true);
     try { await api("/api/credits/buy", { method: "POST", body: JSON.stringify({ credits }) }); }
     catch (e) { toast(e.message, "info"); } finally { setBusy(false); }
   }
-  return <div className="usagePack">
-    <label>Extra credits<input type="number" min={min} step={100} value={credits} onChange={(e) => setCredits(Math.floor(Number(e.target.value) || 0))} /></label>
-    <div className="usagePackPrice"><b>{price ? lei(price) : "—"}</b><small>{credits >= min ? "used at once, no weekly limit, valid 12 months" : `minimum ${min} credits`}</small></div>
-    <button className="primary" disabled={busy || !price} onClick={buy}><CreditCard size={15} /> Buy</button>
-  </div>;
+  return <article className="planCard extraCard" aria-label="Extra credits">
+    <span className="planBadge extra"><Plus size={12} /> Top up</span>
+    <header>
+      <h4>Extra credits</h4>
+      <div className="planPrice" aria-live="polite"><b>{valid && price ? lei(price) : "—"}</b><span>{valid ? "once" : ""}</span></div>
+      <small className="planYearly">{valid && price ? `for ${num(credits)} credits · paid once` : credits > PACK_MAX ? `at most ${num(PACK_MAX)} credits` : `minimum ${num(min)} credits`}</small>
+    </header>
+    <label className="extraInput"><span>How many credits?</span>
+      <input type="number" inputMode="numeric" min={min} max={PACK_MAX} step={100} value={credits || ""} placeholder={String(min)} onChange={(e) => setCredits(Math.max(0, Math.floor(Number(e.target.value) || 0)))} aria-describedby="extraHint" />
+    </label>
+    <div className="extraPresets" role="group" aria-label="Quick amounts">{PACK_PRESETS.map((n) => <button key={n} type="button" className={cx(credits === n && "on")} aria-pressed={credits === n} onClick={() => setCredits(n)}>{num(n)}</button>)}</div>
+    <ul className="planFeatures">{EXTRA_FEATURES.map((f) => <li key={f} className="on"><Check size={14} aria-hidden="true" /><span>{f}</span></li>)}</ul>
+    <small id="extraHint" className="extraHint">{loading ? "Working out the price…" : "The price changes with the number of credits."}</small>
+    <button className="planCta extraCta" disabled={busy || !valid || !price} onClick={buy}><CreditCard size={15} /> {valid && price ? `Buy for ${lei(price)}` : "Buy credits"}</button>
+  </article>;
 }
 
 function OwnerPanel({ plans }) {
@@ -139,10 +155,9 @@ export function UsagePage({ onClose }) {
             <div><small>Free messages today</small><b>{d.free.left}/{d.free.limit}</b></div>
           </div>
         </section>}
-        {d.enabled && !d.unlimited && <section className="usageSection"><h3><CreditCard size={17} /> Buy extra credits</h3><PackCalculator min={cat.minPack} /></section>}
         <section className="usageSection">
-          <h3>Plans</h3>
-          <div className="planGrid">{cat.plans.map((p) => <PlanCard key={p.key} plan={p} current={d.plan?.key === p.key} popular={p.key === "pro"} />)}</div>
+          <h3>Plans and extra credits</h3>
+          <div className="planGrid">{cat.plans.map((p) => <PlanCard key={p.key} plan={p} current={d.plan?.key === p.key} popular={p.key === "pro"} />)}<ExtraCreditsCard min={cat.minPack} /></div>
           <p className="settingsHelp">Without a plan: {cat.free.dailyMessages} messages a day on the free models, after a {cat.trial.days}-day trial with {num(cat.trial.credits)} credits. Card payments open soon; until then plans are given by the Owner.</p>
           <p className="settingsHelp">Credits come in four weekly parts (days 1, 8, 15 and 22); what you don't use moves to the next week. At 100% the paid models stop until the next part, or you buy extra credits; {cat.freeDaily.planExhausted} messages a day stay on the free models.</p>
         </section>
