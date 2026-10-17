@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Download, X } from "lucide-react";
 import { IS_WEB, storage } from "./core.jsx";
 import { BRAND_NAME, BRAND_DOMAIN } from "./brand.js";
+import { t as tr, useLanguage } from "./i18n.jsx";
 
 // Installable app (PWA) for the web version: free, no App Store / Google Play.
 // Chrome / Edge / Android fire "beforeinstallprompt" once, often before React mounts, so it is caught here at load.
@@ -36,20 +37,21 @@ async function promptInstall(refresh) {
 
 function InstallSteps() {
   if (isIos()) return <ol className="installSteps">
-    {!isIosSafari() && <li>Deschide <b>{BRAND_DOMAIN}</b> în <b>Safari</b> (pe iPhone doar Safari poate instala aplicația).</li>}
-    <li>Apasă <b>Distribuie</b> (pătratul cu săgeata în sus) sau <b>•••</b> → <b>Distribuie</b>.</li>
-    <li>Derulează și alege <b>Adaugă pe ecranul principal</b>, apoi <b>Adaugă</b>.</li>
+    {!isIosSafari() && <li>{tr("Open {domain} in Safari (on iPhone only Safari can install the app).",{domain:BRAND_DOMAIN})}</li>}
+    <li>{tr("Press Share (the square with the arrow up), or ••• → Share.")}</li>
+    <li>{tr("Scroll and choose Add to Home Screen, then Add.")}</li>
   </ol>;
   return <ol className="installSteps">
-    <li>Apasă meniul browserului (<b>⋮</b> sau <b>≡</b>).</li>
-    <li>Alege <b>Instalează aplicația</b> sau <b>Adaugă pe ecranul de pornire</b>.</li>
+    <li>{tr("Open the browser menu (⋮ or ≡).")}</li>
+    <li>{tr("Choose Install app or Add to Home screen.")}</li>
   </ol>;
 }
 
-// "Convertește Serasmart AI în aplicație": a card with the logo and the name, on the sign-in page and (until dismissed
+// "Get Serasmart AI as an app": a card with the logo and the name, on the sign-in page and (until dismissed
 // for a week) as a banner under the app's header, whenever Serasmart AI is open in a browser instead of as the installed
 // app. The banner takes its own row, so it never covers the conversation or the side menu.
 export function InstallApp({ banner = false }) {
+  useLanguage();
   const refresh = useInstallState();
   const [open, setOpen] = useState(false);
   const [hidden, setHidden] = useState(() => {
@@ -60,14 +62,14 @@ export function InstallApp({ banner = false }) {
   if (!IS_WEB || isStandalone() || hidden) return null;
   async function install() { if (!(await promptInstall(refresh))) setOpen(v => !v); }
   function dismiss() { storage.set(DISMISS_KEY, String(Date.now())); setHidden(true); }
-  return <div className={banner ? "installCard banner" : "installCard"} role="region" aria-label={`Instalează aplicația ${BRAND_NAME}`}>
+  return <div className={banner ? "installCard banner" : "installCard"} role="region" aria-label={tr("Install the {brand} app",{brand:BRAND_NAME})}>
     <img src="./icons/icon-192.png" alt="" width="44" height="44"/>
     <div className="installText">
       <b>{BRAND_NAME}</b>
-      <span>Convertește {BRAND_NAME} în aplicație pe telefon, gratuit</span>
+      <span>{tr("Get {brand} as an app on your phone, free",{brand:BRAND_NAME})}</span>
       {open && <InstallSteps/>}
     </div>
-    <button type="button" className="installBtn" onClick={install}><Download size={15}/> {deferredPrompt ? "Instalează" : open ? "Ascunde pașii" : "Cum instalez"}</button>
-    {banner && <button type="button" className="installClose" onClick={dismiss} aria-label="Închide" title="Închide"><X size={15}/></button>}
+    <button type="button" className="installBtn" onClick={install}><Download size={15}/> {deferredPrompt ? tr("Install") : open ? tr("Hide the steps") : tr("How to install")}</button>
+    {banner && <button type="button" className="installClose" onClick={dismiss} aria-label={tr("Close")} title={tr("Close")}><X size={15}/></button>}
   </div>;
 }

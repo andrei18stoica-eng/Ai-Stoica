@@ -40,7 +40,7 @@ export function ProfileTab({ account, models = [], preferences, onPreferences, p
     <div className="accountGrid">
       <label>Nume<input value={f.name} onChange={(e) => set("name", e.target.value)} maxLength={80} required /></label>
       <label>Email<input value={f.email} disabled /></label>
-      <label><span className="labelLine">Cum să-ți spună AI-ul <span className="optional">opțional</span></span><input value={f.nickname} onChange={(e) => set("nickname", e.target.value)} maxLength={60} placeholder="ex. Andrei" /></label>
+      <label><span className="labelLine">Cum să-ți spună AI-ul <span className="optional">opțional</span></span><input value={f.nickname} onChange={(e) => set("nickname", e.target.value)} maxLength={60} placeholder="ex. un nume sau o poreclă" /></label>
       <label><span className="labelLine">Ce faci <span className="optional">opțional</span></span><input value={f.occupation} onChange={(e) => set("occupation", e.target.value)} maxLength={120} placeholder="ex. elev, web designer, contabil" /></label>
     </div>
     <label><span className="labelLine">Despre tine <span className="optional">opțional</span></span><textarea rows={3} value={f.about} onChange={(e) => set("about", e.target.value)} maxLength={1500} placeholder="Ce ar fi util ca AI-ul să știe despre tine: interese, proiecte, nivelul de experiență." /></label>

@@ -7,9 +7,14 @@ import {
   CalendarClock, Plug, Library, Brain, Upload, Trash2, Play, Pin, PinOff,
   FileText, Image as ImageIcon, HardDrive, ToggleLeft, ToggleRight,
   Compass, Map as MapIcon, Globe2, Archive, ArchiveRestore, ExternalLink, SlidersHorizontal, Volume2,
-  PanelTopOpen, ShieldCheck, UserCheck, Download, Bell, Lock, Pencil, Palette, Clapperboard, Eye, Maximize2, LoaderCircle, SquareTerminal, Gauge
+  PanelTopOpen, ShieldCheck, UserCheck, Download, Bell, Lock, Pencil, Palette, Clapperboard, Eye, Maximize2, LoaderCircle, SquareTerminal, Gauge,
+  Mail, Sun, Moon
 } from "lucide-react";
+import "@fontsource-variable/manrope";
+import "@fontsource-variable/dm-sans";
 import "./styles.css";
+import { t as tr, LANGUAGES, getLanguage, setLanguage, useLanguage } from "./i18n.jsx";
+import { useTheme, setTheme, resolvedTheme } from "./theme.js";
 import {
   DEFAULT_GATEWAY, TOKEN_KEY, USER_KEY, PERMISSIONS_KEY, MODEL_CACHE_KEY, MODEL_SELECTED_KEY, MANUAL_MODEL_KEY, RESPONSE_MODE_KEY, GITHUB_BACKUP_KEY,
   FIRST_RUN_KEY, SIDEBAR_COLLAPSED_KEY, ACCOUNT_KEYS, storage, cleanGatewayUrl, GATEWAY, setGatewayUrl, toast, isAuthLost, apiError, authHeaders, api,
@@ -149,11 +154,11 @@ function groupLabel(ts) {
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const t = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const days = Math.floor((start - t) / 86400000);
-  if (days <= 0) return "Azi";
-  if (days === 1) return "Ieri";
-  if (days <= 7) return "Ultimele 7 zile";
-  if (days <= 30) return "Ultimele 30 de zile";
-  return "Mai vechi";
+  if (days <= 0) return tr("Today");
+  if (days === 1) return tr("Yesterday");
+  if (days <= 7) return tr("Previous 7 days");
+  if (days <= 30) return tr("Previous 30 days");
+  return tr("Older");
 }
 async function extractVideoFrames(blob,count=4) {
   if(typeof document==="undefined")return [];
@@ -333,7 +338,19 @@ function AuthScreen({ onAuth, notice:initialNotice="" }) {
 
 function BrandMark({small=false}) { return <div className={cx("brandMark",small&&"small")}><img src="./serasmart-ai-mark.webp" alt={`${BRAND_NAME}`}/></div>; }
 
-const TOOL_ITEMS=[["explore",Compass,"Explorează",null],["code",SquareTerminal,`Code ${BRAND_NAME}`,"code"],["automations",CalendarClock,"Scheduled","automations"],["plugins",Plug,"Pluginuri","plugins"],["library",Library,"Bibliotecă",null],["design",Palette,"Design","document_generation"],["skills",Sparkles,"Skill-uri",null],["memory",Brain,"Memorie",null],["usage",Gauge,"Usage",null]];
+// 0.7.26: the order of the approved mockup; labels in English, shown through tr().
+const TOOL_ITEMS=[["explore",Compass,"Explore",null],["library",Library,"Library",null],["plugins",Plug,"Apps","plugins"],["skills",Sparkles,"Skills",null],["automations",CalendarClock,"Automations","automations"],["design",Palette,"Design","document_generation"],["memory",Brain,"Memory",null],["code",SquareTerminal,"Code","code"],["usage",Gauge,"Usage",null]];
+// The plan's week under the menu (only when plans and credits are on and the account pays): opens Usage.
+function SideUsage({onOpen}) {
+  const [d,setD]=useState(null);
+  useEffect(()=>{let live=true;const load=()=>api("/api/credits?peek=1").then(x=>{if(live)setD(x)}).catch(()=>{});load();window.addEventListener("focus",load);return()=>{live=false;window.removeEventListener("focus",load)}},[]);
+  if(!d?.enabled||d.unlimited||!d.week)return null;
+  const p=Math.max(0,Math.min(100,Number(d.week.percent)||0));
+  return <button className="sideUsage" onClick={onOpen} aria-label={tr("{plan} plan: {percent}% of this week used",{plan:d.plan?.name||"",percent:p})}>
+    <span className="sideUsageHead"><span>{d.plan?.name} · {tr("this week")}</span><b>{p}%</b></span>
+    <span className="sideUsageBar"><span style={{width:`${p}%`}}/></span>
+  </button>;
+}
 function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,conversations,currentId,busyIds,onSelect,onDeleteConversation,onUnarchive,onNew,selectedProject,setSelectedProject,activeAssistantId,onUseAssistant,onNewProject,onNewAssistant,onEditProject,onEditAssistant,onTool,onSettings,onLogout}) {
   const {can,isOwner}=useAccess();
   const [showArchived,setShowArchived]=useState(false);
@@ -366,46 +383,52 @@ function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,convers
   },[conversations,selectedProject]);
   const anyVisible=conversations.some(c=>!c.archived);
   const busySet=new Set(busyIds||[]);
-  return <aside className={cx("sidebar",open&&"open")} aria-label="Navigare">
-    <div className="sideTop"><div className="brandLine"><BrandMark small/><div><b>{BRAND_NAME}</b><span>Asistentul tău AI</span></div></div><button className="iconOnly mobileClose" onClick={()=>setOpen(false)} aria-label="Închide meniul" title="Închide meniul"><X size={20}/></button></div>
-    <button className="newChat" onClick={onNew}><SquarePen size={17}/> Conversație nouă</button>
-    <div className="searchBox"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Escape"&&search){e.preventDefault();setSearch("")}}} placeholder="Caută în conversații" aria-label="Caută în conversații"/>{search&&<button className="searchClear" onClick={()=>setSearch("")} title="Șterge căutarea" aria-label="Șterge căutarea"><X size={14}/></button>}</div>
+  useLanguage();
+  const brandWords=BRAND_NAME.split(" "),brandLast=brandWords.length>1?brandWords.pop():"";
+  return <aside className={cx("sidebar",open&&"open")} aria-label={tr("Navigation")}>
+    <div className="sideTop"><div className="brandLine"><BrandMark small/><div><b className="wordmark">{brandWords.join(" ").toUpperCase()}{brandLast&&<> <em>{brandLast.toUpperCase()}</em></>}</b><span>{tr("Your AI, every model")}</span></div></div><button className="iconOnly mobileClose" onClick={()=>setOpen(false)} aria-label={tr("Close the menu")} title={tr("Close the menu")}><X size={20}/></button></div>
+    <button className="newChat" onClick={onNew}><SquarePen size={17}/> {tr("New chat")}</button>
+    <div className="searchBox"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Escape"&&search){e.preventDefault();setSearch("")}}} placeholder={tr("Search chats")} aria-label={tr("Search chats")}/>{search&&<button className="searchClear" onClick={()=>setSearch("")} title={tr("Clear the search")} aria-label={tr("Clear the search")}><X size={14}/></button>}</div>
     <div className="sideScroll">
-      <div className="sideSection"><div className="sectionHead"><span>Instrumente</span></div>
-        {TOOL_ITEMS.filter(([name])=>name!=="code"||can("code")).map(([name,Icon,label,perm])=>{const locked=perm&&!can(perm);return <button key={name} className={cx("sideItem",name==="explore"?"exploreItem":"toolItem",locked&&"locked")} onClick={()=>onTool(name)} title={locked?deniedMessage(perm):label}><Icon size={16}/> {label}{locked&&<Lock size={13} className="lockIcon"/>}</button>})}
-        {isOwner&&<button className="sideItem ownerItem" onClick={()=>onTool("admin")}><ShieldCheck size={16}/> Control Center</button>}
+      <nav className="sideSection sideTools" aria-label={tr("Tools")}>
+        {TOOL_ITEMS.filter(([name])=>name!=="code"||can("code")).map(([name,Icon,label,perm])=>{const locked=perm&&!can(perm);return <button key={name} className={cx("sideItem",name==="explore"?"exploreItem":"toolItem",locked&&"locked")} onClick={()=>onTool(name)} title={locked?deniedMessage(perm):tr(label)}><Icon size={17}/> {tr(label)}{locked&&<Lock size={13} className="lockIcon"/>}</button>})}
+        {isOwner&&<button className="sideItem ownerItem" onClick={()=>onTool("admin")}><ShieldCheck size={17}/> Control Center</button>}
+      </nav>
+      <div className="sideSection"><div className="sectionHead"><span>{tr("Projects")}</span><button onClick={onNewProject} aria-label={tr("New project")} title={tr("New project")}><Plus size={15}/></button></div>
+        <button className={cx("sideItem",selectedProject===null&&"active")} onClick={()=>setSelectedProject(null)}><Folder size={16}/> {tr("All chats")}</button>
+        {projects.map(p=><div key={p.id} className={cx("sideRow",selectedProject===p.id&&"active")}><button className={cx("sideItem",selectedProject===p.id&&"active")} onClick={()=>setSelectedProject(p.id)} title={p.name}><Folder size={16}/><span className="sideLabel">{p.name}</span></button><button className="sideEdit" onClick={()=>onEditProject(p)} aria-label={tr("Edit the project {name}",{name:p.name})} title={tr("Edit the project")}><Pencil size={13}/></button></div>)}
       </div>
-      <div className="sideSection"><div className="sectionHead"><span>Proiecte</span><button onClick={onNewProject} aria-label="Proiect nou" title="Proiect nou"><Plus size={15}/></button></div>
-        <button className={cx("sideItem",selectedProject===null&&"active")} onClick={()=>setSelectedProject(null)}><Folder size={16}/> Toate conversațiile</button>
-        {projects.map(p=><div key={p.id} className={cx("sideRow",selectedProject===p.id&&"active")}><button className={cx("sideItem",selectedProject===p.id&&"active")} onClick={()=>setSelectedProject(p.id)} title={p.name}><Folder size={16}/><span className="sideLabel">{p.name}</span></button><button className="sideEdit" onClick={()=>onEditProject(p)} aria-label={`Editează proiectul ${p.name}`} title="Editează proiectul"><Pencil size={13}/></button></div>)}
-      </div>
-      <div className="sideSection"><div className="sectionHead"><span>Asistenți</span><button onClick={onNewAssistant} aria-label="Asistent nou" title="Asistent nou"><Plus size={15}/></button></div>
-        {assistants.map(a=><div key={a.id} className={cx("sideRow",activeAssistantId===a.id&&"active")}><button className={cx("sideItem",activeAssistantId===a.id&&"active")} onClick={()=>onUseAssistant(a.id)} title={`Conversație nouă cu ${a.name}`}><Bot size={16}/><span className="sideLabel">{a.name}</span></button>{!a.builtIn&&<button className="sideEdit" onClick={()=>onEditAssistant(a)} aria-label={`Editează asistentul ${a.name}`} title="Editează asistentul"><Pencil size={13}/></button>}</div>)}
-        {!assistants.length&&<div className="sideEmpty">Nu ai asistenți personalizați.</div>}
+      <div className="sideSection"><div className="sectionHead"><span>{tr("Assistants")}</span><button onClick={onNewAssistant} aria-label={tr("New assistant")} title={tr("New assistant")}><Plus size={15}/></button></div>
+        {assistants.map(a=><div key={a.id} className={cx("sideRow",activeAssistantId===a.id&&"active")}><button className={cx("sideItem",activeAssistantId===a.id&&"active")} onClick={()=>onUseAssistant(a.id)} title={tr("New chat with {name}",{name:a.name})}><Bot size={16}/><span className="sideLabel">{a.name}</span></button>{!a.builtIn&&<button className="sideEdit" onClick={()=>onEditAssistant(a)} aria-label={tr("Edit the assistant {name}",{name:a.name})} title={tr("Edit the assistant")}><Pencil size={13}/></button>}</div>)}
+        {!assistants.length&&<div className="sideEmpty">{tr("No custom assistants yet.")}</div>}
       </div>
       <div className="sideSection historySection">
-        <div className="sectionHead"><span>{searchQuery?"Rezultate căutare":"Conversații"}</span>{searchQuery&&<small>{searchResults.length}</small>}</div>
+        <div className="sectionHead"><span>{searchQuery?tr("Search results"):tr("Chats")}</span>{searchQuery&&<small>{searchResults.length}</small>}</div>
         {searchQuery?<>
-          {currentId&&<button className="currentConversationReturn" onClick={()=>{onSelect(currentId);setSearch("")}}><RotateCcw size={15}/><span><b>Conversația curentă</b><small>Revino la conversația în care erai</small></span></button>}
+          {currentId&&<button className="currentConversationReturn" onClick={()=>{onSelect(currentId);setSearch("")}}><RotateCcw size={15}/><span><b>{tr("Current chat")}</b><small>{tr("Go back to the chat you were in")}</small></span></button>}
           <div className="conversationSearchResults">
             {searchResults.map(({conversation:c,snippet})=><button key={c.id} className={cx("conversationSearchResult",currentId===c.id&&"current")} onClick={()=>{onSelect(c.id);setSearch("")}}>
-              <div className="conversationSearchHead"><b>{c.title||"Conversație"}</b>{currentId===c.id?<span>Curentă</span>:c.archived?<span>Arhivată</span>:null}</div>
+              <div className="conversationSearchHead"><b>{c.title||tr("Chat")}</b>{currentId===c.id?<span>{tr("Current")}</span>:c.archived?<span>{tr("Archived")}</span>:null}</div>
               {snippet&&<p>{snippet}</p>}
-              <small><Search size={12}/> Deschide conversația</small>
+              <small><Search size={12}/> {tr("Open the chat")}</small>
             </button>)}
-            {!searchResults.length&&<div className="searchNoResults"><Search size={18}/><span>Nu am găsit textul în conversațiile tale.</span></div>}
+            {!searchResults.length&&<div className="searchNoResults"><Search size={18}/><span>{tr("This text is not in your chats.")}</span></div>}
           </div>
         </>:<>
-          {groups.map(([g,items])=><div key={g} className="historyGroup"><div className="historyLabel">{g}</div>{items.map(c=><div className={cx("historyRow",currentId===c.id&&"active")} key={c.id}><button className="historyItem" onClick={()=>onSelect(c.id)} title={c.title}>{busySet.has(c.id)&&<span className="historyBusy" aria-label="Răspuns în curs"/>}{c.title||"Conversație"}</button><button className="historyDelete" title="Șterge conversația" aria-label={`Șterge conversația ${c.title||""}`} onClick={e=>{e.stopPropagation();onDeleteConversation(c.id)}}><Trash2 size={14}/></button></div>)}</div>)}
-          {!groups.length&&<div className="sideEmpty">{selectedProject?"Nicio conversație în acest proiect. Scrie un mesaj pentru a începe una.":anyVisible?"Nu există conversații de afișat.":"Nu ai încă nicio conversație."}</div>}
+          {groups.map(([g,items])=><div key={g} className="historyGroup"><div className="historyLabel">{g}</div>{items.map(c=><div className={cx("historyRow",currentId===c.id&&"active")} key={c.id}><button className="historyItem" onClick={()=>onSelect(c.id)} title={c.title}>{busySet.has(c.id)&&<span className="historyBusy" aria-label={tr("Answer in progress")}/>}{c.title||tr("Chat")}</button><button className="historyDelete" title={tr("Delete the chat")} aria-label={tr("Delete the chat {name}",{name:c.title||""})} onClick={e=>{e.stopPropagation();onDeleteConversation(c.id)}}><Trash2 size={14}/></button></div>)}</div>)}
+          {!groups.length&&<div className="sideEmpty">{selectedProject?tr("No chats in this project yet. Write a message to start one."):anyVisible?tr("No chats to show."):tr("No chats yet.")}</div>}
           {archived.length>0&&<div className="archivedBlock">
-            <button className="archivedToggle" onClick={()=>setShowArchived(v=>!v)} aria-expanded={showArchived}><Archive size={14}/> Arhivate ({archived.length}) <ChevronDown size={14} className={showArchived?"open":""}/></button>
-            {showArchived&&archived.map(c=><div className={cx("historyRow archivedRow",currentId===c.id&&"active")} key={c.id}><button className="historyItem" onClick={()=>onSelect(c.id)} title={c.title}>{c.title||"Conversație"}</button><button className="historyDelete" title="Restaurează conversația" aria-label={`Restaurează conversația ${c.title||""}`} onClick={e=>{e.stopPropagation();onUnarchive(c.id)}}><ArchiveRestore size={14}/></button></div>)}
+            <button className="archivedToggle" onClick={()=>setShowArchived(v=>!v)} aria-expanded={showArchived}><Archive size={14}/> {tr("Archived")} ({archived.length}) <ChevronDown size={14} className={showArchived?"open":""}/></button>
+            {showArchived&&archived.map(c=><div className={cx("historyRow archivedRow",currentId===c.id&&"active")} key={c.id}><button className="historyItem" onClick={()=>onSelect(c.id)} title={c.title}>{c.title||tr("Chat")}</button><button className="historyDelete" title={tr("Restore the chat")} aria-label={tr("Restore the chat {name}",{name:c.title||""})} onClick={e=>{e.stopPropagation();onUnarchive(c.id)}}><ArchiveRestore size={14}/></button></div>)}
           </div>}
         </>}
       </div>
     </div>
-    <div className="accountArea"><div className="accountBadge"><div className="accountAvatar">{(user?.name||user?.email||"S")[0].toUpperCase()}</div><div className="accountText"><b>{user?.name||`Cont ${BRAND_SHORT}`}</b><span>{user?.email}{user?.role==="owner"?" · Owner":""}</span></div></div><div className="accountButtons"><button onClick={onSettings}><Settings size={17}/> Setări</button><button onClick={onLogout}><LogOut size={17}/> Deconectare</button></div></div>
+    <div className="accountArea">
+      <SideUsage onOpen={()=>onTool("usage")}/>
+      <div className="accountBadge"><div className="accountAvatar">{(user?.name||user?.email||"S")[0].toUpperCase()}</div><div className="accountText"><b>{user?.name||tr("{brand} account",{brand:BRAND_SHORT})}</b><span>{user?.email}{user?.role==="owner"?" · Owner":""}</span></div>
+        <div className="accountButtons"><button onClick={onSettings} aria-label={tr("Settings")} title={tr("Settings")}><Settings size={17}/></button><button onClick={onLogout} aria-label={tr("Sign out")} title={tr("Sign out")}><LogOut size={17}/></button></div></div>
+    </div>
   </aside>;
 }
 
@@ -418,10 +441,10 @@ function groupModels(list){
   const add=(key,name,x,opts)=>{if(!groups.has(key))groups.set(key,{name,items:[],...opts});groups.get(key).items.push(x)};
   for(const x of list){
     const id=String(x||"");
-    if(COMBO_IDS.has(id)||!id.includes("/")){add("combo","Combinații OmniRoute",id,{combo:true,short:v=>v});continue;}
+    if(COMBO_IDS.has(id)||!id.includes("/")){add("combo","OmniRoute combinations",id,{combo:true,short:v=>v});continue;}
     const prefix=id.split("/")[0].toLowerCase(),known=MODEL_PROVIDERS.find(([k])=>k===prefix);
     if(known)add(known[0],known[1],id,{short:v=>v.slice(prefix.length+1)});
-    else add("omni","Alte modele OmniRoute",id,{short:v=>v});
+    else add("omni","Other OmniRoute models",id,{short:v=>v});
   }
   // Your own combinations ("Ai principal" …) before OmniRoute's automatic auto/* ones.
   const combo=groups.get("combo");
@@ -440,7 +463,7 @@ function ModelPicker({model,onSelect,models,onRefresh,refreshing,policyEnforced,
   const lockedMap=new Map((locked||[]).filter(x=>x&&x.id&&!list.includes(x.id)).map(x=>[String(x.id),String(x.reason||"")]));
   const all=[...list,...lockedMap.keys()];
   const filtered=all.filter(x=>!query||x.toLowerCase().includes(query.toLowerCase()));
-  const notAllowed=x=>toast(`«${x}» nu îți este permis de Owner.${lockedMap.get(x)?" "+lockedMap.get(x):""} Cere-i acces sau alege alt model.`);
+  const notAllowed=x=>toast(tr("«{model}» is not allowed for you by the Owner.",{model:x})+(lockedMap.get(x)?" "+lockedMap.get(x):"")+" "+tr("Ask for access or pick another model."));
   function onListKey(e){
     if(e.key!=="ArrowDown"&&e.key!=="ArrowUp")return;
     const items=[...(listRef.current?.querySelectorAll(".modelOption")||[])];if(!items.length)return;
@@ -449,68 +472,97 @@ function ModelPicker({model,onSelect,models,onRefresh,refreshing,policyEnforced,
   }
   return <div className="modelSelectCluster" ref={ref}>
     <div className="modelPicker">
-      <button className={cx("modelPickerButton",open&&"open")} onClick={()=>setOpen(v=>!v)} aria-haspopup="listbox" aria-expanded={open} aria-label={`Model AI: ${model||"neales"}`}>
+      <button className={cx("modelPickerButton",open&&"open")} onClick={()=>setOpen(v=>!v)} aria-haspopup="listbox" aria-expanded={open} aria-label={tr("AI model: {model}",{model:model||tr("none")})}>
         <span className="modelPickerDot"/>
-        <span className="modelPickerText"><b>{model||"Alege AI"}</b><small>{list.length?plural(list.length,"model disponibil","modele disponibile"):"Niciun model disponibil"}{lockedMap.size?` · ${lockedMap.size} nepermise`:policyEnforced?" · stabilite de Owner":""}</small></span>
+        <span className="modelPickerText"><b>{model||tr("Choose an AI")}</b><small>{list.length?tr(list.length===1?"{n} model available":"{n} models available",{n:list.length}):tr("No model available")}{lockedMap.size?" · "+tr("{n} not allowed",{n:lockedMap.size}):policyEnforced?" · "+tr("set by the Owner"):""}</small></span>
         <ChevronDown size={15}/>
       </button>
     {open&&<div className="modelPickerMenu" onKeyDown={onListKey}>
-      <div className="modelPickerHead"><div><b>Alege AI-ul</b><span>Schimbarea se aplică acestei conversații.</span></div><button className="modelRefresh" onClick={async e=>{e.stopPropagation();await onRefresh?.()}} disabled={refreshing} title="Actualizează lista de modele" aria-label="Actualizează lista de modele"><RotateCcw size={14} className={refreshing?"spin":""}/></button></div>
-      {all.length>7&&<div className="modelSearch"><Search size={14}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Caută model" aria-label="Caută model"/></div>}
+      <div className="modelPickerHead"><div><b>{tr("Choose the AI")}</b><span>{tr("The change applies to this chat.")}</span></div><button className="modelRefresh" onClick={async e=>{e.stopPropagation();await onRefresh?.()}} disabled={refreshing} title={tr("Refresh the list of models")} aria-label={tr("Refresh the list of models")}><RotateCcw size={14} className={refreshing?"spin":""}/></button></div>
+      {all.length>7&&<div className="modelSearch"><Search size={14}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder={tr("Search models")} aria-label={tr("Search models")}/></div>}
       <div className="modelPickerList" role="listbox" ref={listRef}>
-        {groupModels(filtered).map(g=><div className="modelGroup" key={g.name} role="group" aria-label={g.name}>
-          <div className="modelGroupName">{g.name}</div>
-          {g.items.map(x=>lockedMap.has(x)?<button key={x} className="modelOption locked" onClick={()=>notAllowed(x)} role="option" aria-selected={false} aria-disabled="true" title={lockedMap.get(x)||"Nepermis de Owner"}>
+        {groupModels(filtered).map(g=><div className="modelGroup" key={g.name} role="group" aria-label={tr(g.name)}>
+          <div className="modelGroupName">{tr(g.name)}</div>
+          {g.items.map(x=>lockedMap.has(x)?<button key={x} className="modelOption locked" onClick={()=>notAllowed(x)} role="option" aria-selected={false} aria-disabled="true" title={lockedMap.get(x)||tr("Not allowed by the Owner")}>
             <span className="modelOptionIcon"><Lock size={15}/></span>
-            <span className="modelOptionCopy"><b>{g.short(x)}</b><small>Nepermis de Owner</small></span>
+            <span className="modelOptionCopy"><b>{g.short(x)}</b><small>{tr("Not allowed by the Owner")}</small></span>
           </button>:<button key={x} className={cx("modelOption",x===model&&"active")} onClick={()=>{onSelect(x);setOpen(false)}} role="option" aria-selected={x===model}>
             <span className="modelOptionIcon"><Sparkles size={15}/></span>
-            <span className="modelOptionCopy"><b>{g.short(x)}</b><small>{x===model?"Selectat acum":g.combo?"Combinație OmniRoute":"Folosește acest AI"}</small></span>
+            <span className="modelOptionCopy"><b>{g.short(x)}</b><small>{x===model?tr("Selected"):g.combo?tr("OmniRoute combination"):tr("Use this AI")}</small></span>
             {x===model&&<Check size={16}/>}
           </button>)}
         </div>)}
-        {!all.length&&<div className="modelEmpty">Nu există modele disponibile. {policyEnforced?"Cere Owner-ului acces la cel puțin un model.":IS_WEB?"Owner-ul serverului trebuie să adauge o cheie AI (în fișierul .env de pe server).":"Pornește OmniRoute sau adaugă o cheie API în Setări."}</div>}
-        {all.length>0&&!filtered.length&&<div className="modelEmpty">Nu am găsit modelul căutat.</div>}
+        {!all.length&&<div className="modelEmpty">{tr("No models available.")} {policyEnforced?tr("Ask the Owner for access to at least one model."):IS_WEB?tr("The server's Owner has to add an AI key."):tr("Start OmniRoute or add an API key in Settings.")}</div>}
+        {all.length>0&&!filtered.length&&<div className="modelEmpty">{tr("No model matches.")}</div>}
       </div>
-      <div className="modelPickerFoot">{refreshing?"Actualizez lista de modele…":policyEnforced||lockedMap.size?"Owner-ul stabilește ce modele sunt disponibile pentru contul tău."+(lockedMap.size?" Cele cu lacăt nu îți sunt permise de Owner.":deniedCount>0?` ${plural(deniedCount,"model OmniRoute este ascuns","modele OmniRoute sunt ascunse")} de Owner.`:""):(IS_WEB?"Modelele vin din OmniRoute și din API-urile configurate pe server.":"Modelele vin din OmniRoute și din API-urile configurate pe acest PC.")}</div>
+      <div className="modelPickerFoot">{refreshing?tr("Refreshing the list…"):policyEnforced||lockedMap.size?tr("The Owner decides which models your account can use.")+(lockedMap.size?" "+tr("The locked ones are not allowed for you."):deniedCount>0?" "+tr("{n} OmniRoute models are hidden by the Owner.",{n:deniedCount}):""):(IS_WEB?tr("The models come from OmniRoute and the APIs set up on the server."):tr("The models come from OmniRoute and the APIs set up on this PC."))}</div>
     </div>}
     </div>
   </div>;
 }
 
+// Dark / light (0.7.26), stored on this device.
+function ThemeSwitch() {
+  useTheme();useLanguage();
+  const now=resolvedTheme();
+  return <div className="themeSwitch" role="group" aria-label={tr("Theme")}>
+    <button aria-pressed={now==="dark"} className={cx(now==="dark"&&"on")} onClick={()=>setTheme("dark")} title={tr("Dark")}><Moon size={15}/><span>{tr("Dark")}</span></button>
+    <button aria-pressed={now==="light"} className={cx(now==="light"&&"on")} onClick={()=>setTheme("light")} title={tr("Light")}><Sun size={15}/><span>{tr("Light")}</span></button>
+  </div>;
+}
+// The interface language (0.7.26): English by default, 24 languages, stored on this device.
+function LanguageMenu() {
+  const lang=useLanguage();
+  const [open,setOpen]=useState(false),[q,setQ]=useState("");
+  const ref=useRef(null);
+  useDismiss(open,()=>setOpen(false),ref);
+  useEffect(()=>{if(!open)setQ("")},[open]);
+  const name=(LANGUAGES.find(([c])=>c===lang)||LANGUAGES[0])[1];
+  const shown=LANGUAGES.filter(([c,n])=>!q||n.toLowerCase().includes(q.toLowerCase())||c.includes(q.toLowerCase()));
+  return <div className="langWrap" ref={ref}>
+    <button className={cx("langButton",open&&"open")} onClick={()=>setOpen(v=>!v)} aria-haspopup="menu" aria-expanded={open} aria-label={tr("Language: {name}",{name})} title={tr("Language")}><Globe2 size={16}/><span>{name}</span><ChevronDown size={14}/></button>
+    {open&&<div className="langMenu" role="menu" aria-label={tr("Language")}>
+      <label className="langSearch"><Search size={14}/><input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder={tr("Search {n} languages",{n:LANGUAGES.length})} aria-label={tr("Search languages")}/></label>
+      <div className="langGrid">{shown.map(([c,n])=><button key={c} role="menuitemradio" aria-checked={c===lang} lang={c} className={cx(c===lang&&"on")} onClick={()=>{setLanguage(c);setOpen(false)}}><span>{n}</span>{c===lang&&<Check size={14}/>}</button>)}</div>
+    </div>}
+  </div>;
+}
 function Header({deniedCount,lockedModels=[],onMenu,model,onSelectModel,models,onRefreshModels,refreshingModels,policyEnforced,omni,showOmni,onShare,current,projects,onDetach,onMoveProject,onFiles,onGitHub,onGitHubRollback,hasGitHubBackup,onArchive,onUnarchive,onDelete}) {
   const {isOwner}=useAccess();
   const [more,setMore]=useState(false),[moveOpen,setMoveOpen]=useState(false);
   const moreRef=useRef(null);
   useDismiss(more,()=>{setMore(false);setMoveOpen(false)},moreRef);
   const close=()=>{setMore(false);setMoveOpen(false)};
+  useLanguage();
   return <header className="topbar">
-    <button className="iconOnly menuBtn" onClick={onMenu} aria-label="Afișează sau ascunde meniul" title="Meniu"><Menu size={20}/></button>
+    <button className="iconOnly menuBtn" onClick={onMenu} aria-label={tr("Show or hide the menu")} title={tr("Menu")}><Menu size={20}/></button>
     <ModelPicker model={model} onSelect={onSelectModel} models={models} onRefresh={onRefreshModels} refreshing={refreshingModels} policyEnforced={policyEnforced} deniedCount={deniedCount} locked={lockedModels}/>
     <div className="topSpacer"/>
-    {showOmni&&<div className={cx("connection",omni===true?"ok":"bad")} title={omni===true?"OmniRoute răspunde.":omni==="key"?"OmniRoute rulează, dar cere cheia API: creează una în OmniRoute → API Manager și pune-o în Setări → AI & OmniRoute. Până atunci răspund modelele API-urilor directe (Groq, Gemini…), dacă le alegi din listă.":"OmniRoute nu răspunde. Alege din listă un model al API-urilor directe configurate (Groq, Gemini…) sau pornește «Rezervă automată»."}>{omni===true?<Wifi size={15}/>:<WifiOff size={15}/>} {omni===true?"OmniRoute conectat":omni==="key"?"OmniRoute cere cheie API":"OmniRoute oprit"}</div>}
-    <button className="topAction" onClick={onShare} disabled={!current} title="Copiază conversația în clipboard"><Share2 size={16}/> Copiază conversația</button>
+    {showOmni&&<div className={cx("connection",omni===true?"ok":"bad")} title={omni===true?tr("OmniRoute is answering."):omni==="key"?tr("OmniRoute is running but needs an API key: make one in OmniRoute → API Manager and put it in Settings → AI & OmniRoute. Until then the direct APIs (Groq, Gemini…) answer, if you pick them in the list."):tr("OmniRoute is not answering. Pick a model from a direct API (Groq, Gemini…) in the list, or turn on the automatic fallback.")}>{omni===true?<Wifi size={15}/>:<WifiOff size={15}/>} {omni===true?tr("OmniRoute connected"):omni==="key"?tr("OmniRoute needs an API key"):tr("OmniRoute stopped")}</div>}
+    <ThemeSwitch/>
+    <LanguageMenu/>
+    <button className="topAction" onClick={onShare} disabled={!current} title={tr("Copy the chat to the clipboard")}><Share2 size={16}/> <span>{tr("Copy chat")}</span></button>
     <div className="moreWrap" ref={moreRef}>
-      <button className="iconOnly" onClick={()=>{setMore(v=>!v);setMoveOpen(false)}} aria-label="Opțiuni conversație" title="Opțiuni conversație" aria-haspopup="menu" aria-expanded={more}><MoreHorizontal size={20}/></button>
+      <button className="iconOnly" onClick={()=>{setMore(v=>!v);setMoveOpen(false)}} aria-label={tr("Chat options")} title={tr("Chat options")} aria-haspopup="menu" aria-expanded={more}><MoreHorizontal size={20}/></button>
       {more&&<div className="conversationMenu" role="menu">
-        <button role="menuitem" disabled={!current?.projectId} onClick={()=>{onDetach();close()}}><PanelTopOpen size={18}/> Scoate din proiect</button>
+        <button role="menuitem" disabled={!current?.projectId} onClick={()=>{onDetach();close()}}><PanelTopOpen size={18}/> {tr("Remove from project")}</button>
         <div className="menuSubWrap">
-          <button role="menuitem" disabled={!current} onClick={()=>setMoveOpen(v=>!v)} aria-expanded={moveOpen}><Folder size={18}/> Mută în proiect <span className="menuChevron">›</span></button>
+          <button role="menuitem" disabled={!current} onClick={()=>setMoveOpen(v=>!v)} aria-expanded={moveOpen}><Folder size={18}/> {tr("Move to project")} <span className="menuChevron">›</span></button>
           {moveOpen&&<div className="projectSubmenu">
-            <button onClick={()=>{onMoveProject(null);close()}}>Fără proiect</button>
+            <button onClick={()=>{onMoveProject(null);close()}}>{tr("No project")}</button>
             {projects.map(p=><button key={p.id} onClick={()=>{onMoveProject(p.id);close()}}>{p.name}</button>)}
-            {!projects.length&&<span className="menuNote">Nu ai proiecte. Creează unul din bara laterală.</span>}
+            {!projects.length&&<span className="menuNote">{tr("No projects yet. Create one from the side menu.")}</span>}
           </div>}
         </div>
         <div className="menuDivider"/>
-        <button role="menuitem" disabled={!current} onClick={()=>{onFiles();close()}}><Library size={18}/> Vizualizare fișiere din conversație</button>
+        <button role="menuitem" disabled={!current} onClick={()=>{onFiles();close()}}><Library size={18}/> {tr("Files in this chat")}</button>
         {isOwner&&<button role="menuitem" onClick={()=>{onGitHub();close()}}><Globe2 size={18}/> GitHub Solve</button>}
-        {isOwner&&hasGitHubBackup&&<button role="menuitem" onClick={()=>{onGitHubRollback();close()}}><RotateCcw size={18}/> Revino la ultima modificare GitHub</button>}
+        {isOwner&&hasGitHubBackup&&<button role="menuitem" onClick={()=>{onGitHubRollback();close()}}><RotateCcw size={18}/> {tr("Undo the last GitHub change")}</button>}
         <div className="menuDivider"/>
         {current?.archived
-          ?<button role="menuitem" onClick={()=>{onUnarchive();close()}}><ArchiveRestore size={18}/> Restaurează din arhivă</button>
-          :<button role="menuitem" disabled={!current} onClick={()=>{onArchive();close()}}><Archive size={18}/> Arhivează</button>}
-        <button role="menuitem" className="dangerMenuItem" disabled={!current} onClick={()=>{onDelete();close()}}><Trash2 size={18}/> Șterge</button>
+          ?<button role="menuitem" onClick={()=>{onUnarchive();close()}}><ArchiveRestore size={18}/> {tr("Restore from archive")}</button>
+          :<button role="menuitem" disabled={!current} onClick={()=>{onArchive();close()}}><Archive size={18}/> {tr("Archive")}</button>}
+        <button role="menuitem" className="dangerMenuItem" disabled={!current} onClick={()=>{onDelete();close()}}><Trash2 size={18}/> {tr("Delete")}</button>
       </div>}
     </div>
   </header>;
@@ -639,7 +691,21 @@ function guessCodeLanguage(code,className){
   if(cls)return cls;
   return /^\s*(def |import \w|from \S+ import |print\(|class \w+:|if __name__)/m.test(String(code||""))?"python":"javascript";
 }
-function ConversationView({conversation,busy,busyStage,busySteps,onRegenerate,onRate,onCodeResult,canRunCode,onAnswer,onOpenSettings}) {
+// The empty chat (0.7.26): a greeting with the account's own first name and four general starting points, no names,
+// places or addresses in them.
+const WELCOME_STARTS=[[Mail,"Write an email","Write a short, friendly email that "],[ImageIcon,"Make a picture",null,"image"],[FileText,"Summarize a document","Summarize the attached document in five clear points."],[CalendarClock,"Plan my week","Help me plan my week. My priorities are: "]];
+function Welcome({user,onPick}) {
+  useLanguage();
+  const h=new Date().getHours(),part=h<5||h>=18?"Good evening":h<12?"Good morning":"Good afternoon";
+  const first=String(user?.name||"").trim().split(/\s+/)[0];
+  return <div className="welcome">
+    <BrandMark/>
+    <h1>{first?tr(part+", {name}",{name:first}):tr(part)}</h1>
+    <p>{tr("What are we working on today?")}</p>
+    <div className="welcomeStarts">{WELCOME_STARTS.map(([Icon,label,text,mode])=><button key={label} onClick={()=>onPick?.(text?tr(text):"",mode)}><Icon size={15}/>{tr(label)}</button>)}</div>
+  </div>;
+}
+function ConversationView({conversation,busy,busyStage,busySteps,onRegenerate,onRate,onCodeResult,canRunCode,onAnswer,onOpenSettings,user,onPick}) {
   const {isOwner}=useAccess();
   const [contextMenu,setContextMenu]=useState(null),[running,setRunning]=useState(false);
   useEffect(()=>{
@@ -678,7 +744,7 @@ function ConversationView({conversation,busy,busyStage,busySteps,onRegenerate,on
     }catch(e){toast("Rulare cod: "+e.message)}
     finally{setRunning(false)}
   }
-  if(!conversation||!conversation.messages?.length)return <div className="welcome"><BrandMark/><h1>Cu ce lucrăm astăzi?</h1><p>Întreabă orice. {BRAND_NAME} poate folosi memoria, internetul, contextul proiectului, biblioteca, pluginurile și sarcinile programate (Scheduled).{isOwner?" Ca Owner, poți rula cod direct din blocurile de cod (clic dreapta pe cod).":""}</p></div>;
+  if(!conversation||!conversation.messages?.length)return <Welcome user={user} onPick={onPick}/>;
   const lastIndex=conversation.messages.length-1;
   return <div className="messagesColumn">
     {conversation.messages.map((m,i)=>{
@@ -721,8 +787,8 @@ function TrayChip({attachment,onRemove}) {
   </span>;
 }
 
-const VIDEO_PROVIDERS_TEXT="Alegi sub câmpul de mesaj cine face videoclipul, sau «Automat»: întâi cele gratuite, apoi Gemini Veo, Grok Imagine și celelalte chei (cu plată, dacă le permiți în Setări → Video).";
-function imageProvidersText(policy){return `Încearcă pe rând: Cloudflare și Pollinations (dacă ai cheie), Pollinations fără cheie, Hugging Face${policy?.imagePaid?", apoi providerii cu plată configurați":""}.`;}
+const VIDEO_PROVIDERS_TEXT="Pick who makes the video under the message box, or Automatic: the free ones first, then Gemini Veo, Grok Imagine and the other keys (paid, if you allow them in Settings).";
+function imageProvidersText(){return "Pick who makes the picture under the message box, or Automatic: the best one available.";}
 // Who makes the picture / video (0.7.24): picked under the message box in the Poză / Video mode and remembered on this
 // device for each kind; "" = Automat (the best one available, as in Settings → «Făcute de»).
 const makerKey=(kind)=>`serasmart-media-maker-${kind}`;
@@ -737,9 +803,10 @@ function MediaMakerPick({kind}) {
   },[kind]);
   const list=options||[],groups=[...new Set(list.map(o=>o.group))];
   const shown=!value||list.some(o=>o.value===value&&!o.blocked)?value:"";
-  return <label className="makerPick"><span>{kind==="image"?"Poza o face":"Videoclipul îl face"}</span>
+  useLanguage();
+  return <label className="makerPick"><span>{kind==="image"?tr("Picture made by"):tr("Video made by")}</span>
     <select value={shown} disabled={options===null} onChange={e=>{setValue(e.target.value);saveMaker(kind,e.target.value)}}>
-      <option value="">{options===null?"Se încarcă…":"Automat · cel mai bun disponibil"}</option>
+      <option value="">{options===null?tr("Loading…"):tr("Automatic · the best available")}</option>
       {groups.map(g=><optgroup key={g} label={g}>{list.filter(o=>o.group===g).map(o=><option key={o.value} value={o.value} disabled={!!o.blocked}>{o.label}{o.blocked?` (${o.blocked})`:""}</option>)}</optgroup>)}
     </select>
   </label>;
@@ -808,7 +875,7 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
       catch(err){failed.push(`${f.name}: ${err.message}`)}
     }
     if(added.length)setAttachments(v=>[...v,...added]);
-    if(failed.length)toast("Nu am putut atașa: "+failed.join(" · "));
+    if(failed.length)toast(tr("Could not attach: ")+failed.join(" · "));
     if(mountedRef.current)setUploading(n=>Math.max(0,n-1));
   }
   async function filesChosen(e){
@@ -838,7 +905,7 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
   // Serasmart AI, which transcribes it (OmniRoute or Groq) and sends the text. No file permission is needed.
   function finishVoice(text){
     const t=String(text||"").trim();
-    if(!t){toast("Nu am auzit nimic. Apasă microfonul și vorbește din nou.","info");return;}
+    if(!t){toast(tr("I heard nothing. Press the microphone and speak again."),"info");return;}
     autoSendRef.current=true;setVoiceTick(n=>n+1);
   }
   function startSpeech(){
@@ -917,9 +984,9 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
   useEffect(()=>{if(autoSendRef.current&&!transcribing&&!recording&&draft.trim()){if(busy){toast("Textul vocal e în câmp; trimite-l când AI-ul termină răspunsul.","info");autoSendRef.current=false;return;}autoSendRef.current=false;trySend();}},[draft,transcribing,voiceTick]);
   function trySend(){
     if(busy)return;
-    if(uploading){toast("Așteaptă să se termine încărcarea fișierului.","info");return;}
-    if(recording){toast("Oprește mai întâi înregistrarea vocală.","info");return;}
-    if(transcribing){toast("Aștept să se termine transcrierea vocalului.","info");return;}
+    if(uploading){toast(tr("Wait for the file to finish uploading."),"info");return;}
+    if(recording){toast(tr("Stop the voice recording first."),"info");return;}
+    if(transcribing){toast(tr("Waiting for the voice to be written out."),"info");return;}
     if(!hasContent)return;
     onSend();
   }
@@ -938,41 +1005,42 @@ function Composer({centered,draft,setDraft,onSend,onStop,busy,attachments,setAtt
     setMediaMode(m=>m===kind?null:kind);setMenu(false);setTimeout(()=>ta.current?.focus(),0);
   }
   const uploadLocked=!can("file_upload");
-  const placeholder=uploading?"Se încarcă fișierul…":recording?"Ascult… apasă microfonul pentru oprire":transcribing?"Transcriu vocea…":mediaMode==="image"?"Descrie poza pe care vrei s-o creez…":mediaMode==="video"?"Descrie videoclipul pe care vrei să-l creez…":`Mesaj pentru ${BRAND_NAME}`;
-  const hint=uploading?`Fișierul se salvează în Biblioteca ${BRAND_NAME} (maxim 2 GB per fișier)…`:recording?"Microfon activ — vorbește acum":transcribing?`${BRAND_NAME} transcrie înregistrarea…`:mediaMode==="image"?"Mod Poză: următorul mesaj creează o imagine. Apasă din nou „Poză” pentru a renunța.":mediaMode==="video"?"Mod Video: următorul mesaj creează un videoclip. Apasă din nou „Video” pentru a renunța.":`${BRAND_NAME} poate greși. Verifică informațiile importante.`;
+  useLanguage();
+  const placeholder=uploading?tr("Uploading the file…"):recording?tr("Listening… press the microphone to stop"):transcribing?tr("Writing out your voice…"):mediaMode==="image"?tr("Describe the picture you want…"):mediaMode==="video"?tr("Describe the video you want…"):tr("Message {brand}",{brand:BRAND_NAME});
+  const hint=uploading?tr("The file is saved in your Library (up to 2 GB a file)…"):recording?tr("Microphone on — speak now"):transcribing?tr("{brand} is writing out the recording…",{brand:BRAND_NAME}):mediaMode==="image"?tr("Picture mode: the next message makes a picture. Press Picture again to leave."):mediaMode==="video"?tr("Video mode: the next message makes a video. Press Video again to leave."):tr("{brand} can make mistakes. Check important information.",{brand:BRAND_NAME});
   return <div className={cx("composerDock",centered&&"centered")} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
-    {mentionOptions.length>0&&<div className="mentionMenu" role="listbox" aria-label="Pluginuri și sarcini programate">{mentionOptions.map((x,i)=><button key={x.type+x.trigger+i} role="option" aria-selected={i===mentionIndex} className={cx(i===mentionIndex&&"active")} onMouseDown={e=>e.preventDefault()} onClick={()=>insertMention(x)}><span className={cx("mentionType",x.type)}>{x.type==="plugin"?<Plug size={14}/>:<CalendarClock size={14}/>}</span><span><b>{x.name}</b><small>{x.type==="plugin"?"Plugin":"Sarcină programată"} · {x.trigger}</small></span></button>)}</div>}
+    {mentionOptions.length>0&&<div className="mentionMenu" role="listbox" aria-label={tr("Apps and automations")}>{mentionOptions.map((x,i)=><button key={x.type+x.trigger+i} role="option" aria-selected={i===mentionIndex} className={cx(i===mentionIndex&&"active")} onMouseDown={e=>e.preventDefault()} onClick={()=>insertMention(x)}><span className={cx("mentionType",x.type)}>{x.type==="plugin"?<Plug size={14}/>:<CalendarClock size={14}/>}</span><span><b>{x.name}</b><small>{x.type==="plugin"?tr("App"):tr("Automation")} · {x.trigger}</small></span></button>)}</div>}
     <div className={cx("composerCard",dragOver&&"dragOver")}>
-      {dragOver&&<div className="dropHint">{uploadLocked?deniedMessage("file_upload"):"Eliberează pentru a atașa fișierele"}</div>}
+      {dragOver&&<div className="dropHint">{uploadLocked?deniedMessage("file_upload"):tr("Drop to attach the files")}</div>}
       {attachments.length>0&&<div className="attachmentTray">{attachments.map((a,i)=><TrayChip key={(a.libraryId||a.name)+i} attachment={a} onRemove={()=>setAttachments(v=>v.filter((_,j)=>j!==i))}/>)}</div>}
       <input ref={fileInput} type="file" hidden multiple onChange={filesChosen}/>
       <input ref={imageInput} type="file" hidden multiple accept="image/png,image/jpeg,image/webp,image/gif" onChange={filesChosen}/>
       <input ref={videoInput} type="file" hidden multiple accept="video/mp4,video/webm,video/quicktime,.mp4,.mov,.m4v,.avi,.mkv,.mpeg,.mpg" onChange={filesChosen}/>
       <input ref={audioInput} type="file" hidden multiple accept="audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/flac,audio/opus,.mp3,.m4a,.aac,.wav,.ogg,.flac,.opus" onChange={filesChosen}/>
       <div className="composerLine">
-        <textarea ref={ta} value={draft} onChange={e=>{setDraft(e.target.value);setMentionClosedFor(null)}} onPaste={pasteIntoComposer} spellCheck={true} aria-label={`Mesaj pentru ${BRAND_NAME}`} placeholder={placeholder} onKeyDown={onKeyDown}/>
+        <textarea ref={ta} value={draft} onChange={e=>{setDraft(e.target.value);setMentionClosedFor(null)}} onPaste={pasteIntoComposer} spellCheck={true} aria-label={tr("Message {brand}",{brand:BRAND_NAME})} placeholder={placeholder} onKeyDown={onKeyDown}/>
       </div>
       {mediaMode&&<div className="makerRow"><MediaMakerPick kind={mediaMode}/></div>}
       {/* One toolbar under the text, as in the big chat apps: attach and modes on the left, voice and send on the right. */}
       <div className="composerTools">
-        <div className="attachWrap" ref={attachRef}><button className="composerIcon" onClick={()=>setMenu(v=>!v)} title="Fișiere și unelte" aria-label="Fișiere și unelte" aria-haspopup="menu" aria-expanded={menu}><Plus size={20}/></button>{menu&&<div className="attachMenu" role="menu">
-          <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>{setMenu(false);imageInput.current?.click()})}><ImageIcon size={16}/> Încarcă poze{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
-          <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>{setMenu(false);videoInput.current?.click()})}><Play size={16}/> Încarcă video{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
-          <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>{setMenu(false);audioInput.current?.click()})}><Volume2 size={16}/> Încarcă audio{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
-          <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>{setMenu(false);fileInput.current?.click()})}><Upload size={16}/> Încarcă orice fișier{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
-          <button role="menuitem" onClick={()=>{setMenu(false);onOpenLibrary()}}><Library size={16}/> Alege din Bibliotecă</button>
+        <div className="attachWrap" ref={attachRef}><button className="composerIcon" onClick={()=>setMenu(v=>!v)} title={tr("Files and tools")} aria-label={tr("Files and tools")} aria-haspopup="menu" aria-expanded={menu}><Plus size={20}/></button>{menu&&<div className="attachMenu" role="menu">
+          <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>{setMenu(false);imageInput.current?.click()})}><ImageIcon size={16}/> {tr("Upload pictures")}{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
+          <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>{setMenu(false);videoInput.current?.click()})}><Play size={16}/> {tr("Upload video")}{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
+          <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>{setMenu(false);audioInput.current?.click()})}><Volume2 size={16}/> {tr("Upload audio")}{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
+          <button role="menuitem" className={cx(uploadLocked&&"locked")} onClick={lockedItem("file_upload",()=>{setMenu(false);fileInput.current?.click()})}><Upload size={16}/> {tr("Upload any file")}{uploadLocked&&<Lock size={12} className="lockIcon"/>}</button>
+          <button role="menuitem" onClick={()=>{setMenu(false);onOpenLibrary()}}><Library size={16}/> {tr("Choose from Library")}</button>
           <div className="menuDivider"/>
-          <button role="menuitem" className={cx(!can("web_search")&&"locked")} onClick={lockedItem("web_search",()=>toolPrompt("Caută pe internet informații actuale despre "))}><Globe2 size={16}/> Căutare web{!can("web_search")&&<Lock size={12} className="lockIcon"/>}</button>
-          <button role="menuitem" className={cx(!can("deep_research")&&"locked")} onClick={lockedItem("deep_research",()=>toolPrompt("Fă deep research, verifică mai multe surse și explică-mi complet: "))}><Search size={16}/> Deep Research{!can("deep_research")&&<Lock size={12} className="lockIcon"/>}</button>
+          <button role="menuitem" className={cx(!can("web_search")&&"locked")} onClick={lockedItem("web_search",()=>toolPrompt(tr("Search the web for the latest on ")))}><Globe2 size={16}/> {tr("Web search")}{!can("web_search")&&<Lock size={12} className="lockIcon"/>}</button>
+          <button role="menuitem" className={cx(!can("deep_research")&&"locked")} onClick={lockedItem("deep_research",()=>toolPrompt(tr("Do deep research, check several sources and explain fully: ")))}><Search size={16}/> Deep Research{!can("deep_research")&&<Lock size={12} className="lockIcon"/>}</button>
         </div>}</div>
-        <button className={cx("mediaMake",mediaMode==="image"&&"active",!can("image_generation")&&"locked")} aria-pressed={mediaMode==="image"} aria-label="Poză" title={can("image_generation")?`Poză: următorul mesaj creează o imagine. ${imageProvidersText(mediaPolicy)}`:deniedMessage("image_generation")} onClick={()=>toggleMedia("image")}><ImageIcon size={16}/><span>Poză</span></button>
-        <button className={cx("mediaMake",mediaMode==="video"&&"active",!can("video_generation")&&"locked")} aria-pressed={mediaMode==="video"} aria-label="Video" title={can("video_generation")?`Video: următorul mesaj creează un videoclip. ${VIDEO_PROVIDERS_TEXT}`:deniedMessage("video_generation")} onClick={()=>toggleMedia("video")}><Clapperboard size={16}/><span>Video</span></button>
-        <button className={cx("mediaMake thinkToggle",responseMode==="thinking"&&"active")} aria-pressed={responseMode==="thinking"} aria-label="Gândire" title={responseMode==="thinking"?"Gândire pornită: răspunsuri mai atente, puțin mai lente. Apasă pentru modul Rapid.":"Mod Rapid. Apasă pentru Gândire: răspunsuri mai atente, puțin mai lente."} onClick={()=>setResponseMode(responseMode==="thinking"?"rapid":"thinking")}><Brain size={16}/><span>Gândire</span></button>
+        <button className={cx("mediaMake",mediaMode==="image"&&"active",!can("image_generation")&&"locked")} aria-pressed={mediaMode==="image"} aria-label={tr("Picture")} title={can("image_generation")?tr("Picture: the next message makes a picture.")+" "+tr(imageProvidersText()):deniedMessage("image_generation")} onClick={()=>toggleMedia("image")}><ImageIcon size={16}/><span>{tr("Picture")}</span></button>
+        <button className={cx("mediaMake",mediaMode==="video"&&"active",!can("video_generation")&&"locked")} aria-pressed={mediaMode==="video"} aria-label={tr("Video")} title={can("video_generation")?tr("Video: the next message makes a video.")+" "+tr(VIDEO_PROVIDERS_TEXT):deniedMessage("video_generation")} onClick={()=>toggleMedia("video")}><Clapperboard size={16}/><span>{tr("Video")}</span></button>
+        <button className={cx("mediaMake thinkToggle",responseMode==="thinking"&&"active")} aria-pressed={responseMode==="thinking"} aria-label={tr("Think")} title={responseMode==="thinking"?tr("Think is on: more careful answers, a little slower. Press for Fast."):tr("Fast mode. Press for Think: more careful answers, a little slower.")} onClick={()=>setResponseMode(responseMode==="thinking"?"rapid":"thinking")}><Brain size={16}/><span>{tr("Think")}</span></button>
         <span className="composerSpacer"/>
-        <button className={cx("composerIcon",recording&&"recording")} onClick={mic} title={recording?"Oprește și trimite":"Vorbește: textul apare în câmp și se trimite singur"} aria-label={recording?"Oprește înregistrarea vocală":"Înregistrează vocal"} aria-pressed={recording} disabled={transcribing}><Mic size={19}/></button>
+        <button className={cx("composerIcon",recording&&"recording")} onClick={mic} title={recording?tr("Stop and send"):tr("Speak: the text appears in the box and is sent by itself")} aria-label={recording?tr("Stop the voice recording"):tr("Record your voice")} aria-pressed={recording} disabled={transcribing}><Mic size={19}/></button>
         {busy
-          ? <button className="sendButton stopButton" onClick={onStop} title="Oprește răspunsul" aria-label="Oprește răspunsul"><Square size={15} fill="currentColor"/></button>
-          : <button className="sendButton" disabled={!!uploading||recording||transcribing||!hasContent} onClick={trySend} title="Trimite" aria-label="Trimite mesajul"><ArrowUp size={20}/></button>}
+          ? <button className="sendButton stopButton" onClick={onStop} title={tr("Stop the answer")} aria-label={tr("Stop the answer")}><Square size={15} fill="currentColor"/></button>
+          : <button className="sendButton" disabled={!!uploading||recording||transcribing||!hasContent} onClick={trySend} title={tr("Send")} aria-label={tr("Send the message")}><ArrowUp size={20}/></button>}
       </div>
     </div>
     <div className="composerHint" aria-live="polite">{hint}</div>
@@ -2250,8 +2318,8 @@ function App() {
       <InstallApp banner/>
       {loadError&&<div className="loadErrorBanner" role="alert"><span>Nu am putut încărca datele: {loadError}</span><button onClick={()=>loadData()}>Reîncearcă</button>{GATEWAY!==DEFAULT_GATEWAY&&<button onClick={resetGatewayAndReload}>Folosește serviciul local implicit</button>}</div>}
       {updateReady&&!updateDismissed&&<div className="updateBanner" role="status"><button className="updateInstall" onClick={()=>window.Serasmart?.installUpdate?.()}>Actualizare {BRAND_NAME} disponibilă — instalează acum</button><button className="updateClose" onClick={()=>setUpdateDismissed(true)} aria-label="Ascunde notificarea" title="Mai târziu"><X size={14}/></button></div>}
-      <div className="chatScroll" ref={chatRef} onScroll={updateChatScrollState}><ConversationView conversation={current} busy={busy} busyStage={currentGen?.stage} busySteps={currentGen?.steps||[]} onRegenerate={regenerate} onRate={rate} canRunCode={isOwner} onCodeResult={text=>setDraft(v=>(v?v+"\n\n":"")+text)} onAnswer={text=>send(text)} onOpenSettings={tab=>setSettings(tab||true)}/></div>
-      {showJumpBottom&&hasMessages&&<button className="jumpToLatest" onClick={()=>jumpToLatest({smooth:true})} title="Mergi la ultimul mesaj" aria-label="Mergi la ultimul mesaj"><ChevronDown size={19}/><span>Ultimul mesaj</span></button>}
+      <div className="chatScroll" ref={chatRef} onScroll={updateChatScrollState}><ConversationView user={user} onPick={(text,mode)=>{if(mode)setMediaMode(mode);else{setMediaMode(null);setDraft(text)}}} conversation={current} busy={busy} busyStage={currentGen?.stage} busySteps={currentGen?.steps||[]} onRegenerate={regenerate} onRate={rate} canRunCode={isOwner} onCodeResult={text=>setDraft(v=>(v?v+"\n\n":"")+text)} onAnswer={text=>send(text)} onOpenSettings={tab=>setSettings(tab||true)}/></div>
+      {showJumpBottom&&hasMessages&&<button className="jumpToLatest" onClick={()=>jumpToLatest({smooth:true})} title={tr("Go to the latest message")} aria-label={tr("Go to the latest message")}><ChevronDown size={19}/><span>{tr("Latest message")}</span></button>}
       <Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} onStop={stopGeneration} busy={busy} attachments={attachmentsState} setAttachments={setAttachments} onOpenLibrary={()=>openTool("library","all")} responseMode={responseMode} setResponseMode={setResponseMode} mediaMode={mediaModeState} setMediaMode={setMediaMode} mentionsVersion={mentionsVersion} mediaPolicy={{imagePaid:machineCfgRef.current?.imageCostPolicy==="allow_paid"}}/>
     </main>
     {settings&&<SettingsModal user={user} models={models} onDataDeleted={()=>loadData()} onAccountDeleted={()=>{setSettings(false);logout({skipServer:true,notice:"Contul a fost șters."})}} initialTab={typeof settings==="string"?settings:"general"} preferences={user?.preferences} onPreferences={updatePreferences} prefBusy={prefBusy} machineSettingsAllowed={machineSettingsAllowed} onClose={()=>setSettings(false)} onSaved={cfg=>{machineCfgRef.current={...(machineCfgRef.current||{}),...cfg};setCloudConfigured(!!String(cfg?.controlApiUrl||"").trim());Promise.resolve(window.Serasmart?.ensureOmni?.()).catch(()=>{});setTimeout(()=>loadData(),800)}}/>}

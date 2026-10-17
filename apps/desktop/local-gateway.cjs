@@ -4445,6 +4445,50 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     throw policyFailure("Niciun model AI nu a putut genera designul. "+errors.slice(0,8).join(" | "),502);
   }
 
+  // Interface languages (0.7.26). The app is written in English and carries Romanian, Spanish, French and German; any
+  // other language (and any text added later) is translated once with the AI and kept in <data>/i18n/<lang>.json for
+  // every account. Reading is open (the sign-in screen needs it too); translating needs an account, a few times an
+  // hour, and only keeps translations that keep every {placeholder}. Nobody is charged credits for it.
+  const I18N_NAMES={ro:"Romanian",es:"Spanish",fr:"French",de:"German",it:"Italian",pt:"Portuguese",nl:"Dutch",pl:"Polish",hu:"Hungarian",cs:"Czech",sv:"Swedish",el:"Greek",tr:"Turkish",ru:"Russian",uk:"Ukrainian",ar:"Arabic",hi:"Hindi",zh:"Simplified Chinese",ja:"Japanese",ko:"Korean",id:"Indonesian",vi:"Vietnamese",th:"Thai"};
+  const i18nDir=path.join(dataDir,"i18n"),i18nBusy=new Map(),i18nAsks=new Map(),I18N_MAX_KEYS=4000;
+  function i18nRead(lang){try{const d=JSON.parse(fs.readFileSync(path.join(i18nDir,lang+".json"),"utf8"));return d&&typeof d==="object"?d:{}}catch{return {}}}
+  function i18nWrite(lang,data){fs.mkdirSync(i18nDir,{recursive:true});const f=path.join(i18nDir,lang+".json"),tmp=f+"."+process.pid+".tmp";fs.writeFileSync(tmp,JSON.stringify(data));fs.renameSync(tmp,f);}
+  const placeholdersOf=(text)=>String(text).match(/\{\w+\}/g)?.sort().join()||"";
+  app.get("/api/i18n/:lang",(req,res)=>{
+    if(!I18N_NAMES[req.params.lang])return res.status(404).json({error:"Unknown language."});
+    res.set("Cache-Control","no-cache");res.json({data:i18nRead(req.params.lang)});
+  });
+  app.post("/api/i18n/:lang",auth,async(req,res)=>{
+    const lang=req.params.lang,name=I18N_NAMES[lang];
+    if(!name)return res.status(404).json({error:"Unknown language."});
+    const keys=[...new Set((Array.isArray(req.body?.keys)?req.body.keys:[]).filter(k=>typeof k==="string"&&k.trim()&&k.length<=400&&!/[<>]/.test(k)))].slice(0,300);
+    let have=i18nRead(lang);
+    const missing=keys.filter(k=>!Object.prototype.hasOwnProperty.call(have,k));
+    if(!missing.length)return res.json({data:have});
+    if(Object.keys(have).length>=I18N_MAX_KEYS)return res.json({data:have});
+    const hour=Math.floor(Date.now()/3600000),askKey=req.user.id+":"+hour,asked=(i18nAsks.get(askKey)||0)+1;
+    if(asked>6&&!ownerRequest(req))return res.status(429).json({error:"Too many translation requests. Try again later.",data:have});
+    i18nAsks.set(askKey,asked);if(i18nAsks.size>5000)i18nAsks.clear();
+    if(!i18nBusy.has(lang)){
+      const work=(async()=>{
+        const out={};
+        for(let i=0;i<missing.length;i+=60){
+          const part=missing.slice(i,i+60);
+          const messages=[{role:"system",content:`You translate the interface of an AI chat app from English into ${name}. Reply with one JSON object and nothing else: every English text is a key, its ${name} translation the value. Keep {placeholders}, « », punctuation, leading and trailing spaces, and these names exactly as they are: ${BRAND_NAME}, OmniRoute, Owner, Gemini, Grok, ChatGPT, Deep Research, GitHub. Short, natural interface wording; informal "you".`},{role:"user",content:JSON.stringify(part)}];
+          try{
+            const {text}=await completeTextRouted(req,messages,"",null,null);
+            const json=JSON.parse(text.slice(text.indexOf("{"),text.lastIndexOf("}")+1));
+            for(const k of part){const v=json?.[k];if(typeof v==="string"&&v.trim()&&v.length<=800&&!/[<>]/.test(v)&&placeholdersOf(v)===placeholdersOf(k))out[k]=v;}
+          }catch(e){console.warn(`[i18n] ${lang}: ${roError(e)}`);break;}
+        }
+        if(Object.keys(out).length)i18nWrite(lang,{...i18nRead(lang),...out});
+      })();
+      i18nBusy.set(lang,work);work.finally(()=>i18nBusy.delete(lang));
+    }
+    try{await i18nBusy.get(lang)}catch{}
+    res.json({data:i18nRead(lang)});
+  });
+
   // C5 Design: metadata in the "designs" collection, every version's HTML in designs/<id>/v<n>.html.
   const designsDir=path.join(dataDir,"designs"),designBusy=new Set(),DESIGN_MAX_BYTES=1024*1024;
   const isUuid=(v)=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v||""));
