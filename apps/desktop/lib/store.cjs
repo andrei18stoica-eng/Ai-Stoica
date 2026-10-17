@@ -103,9 +103,11 @@ function createStore(dataDir) {
       atomicJson(target,conv,`${target}.bak`);
     }
     for(const name of fs.readdirSync(conversationDir)){
+      if(name.endsWith(".json.bak")&&!ids.has(name.slice(0,-9))){try{fs.unlinkSync(path.join(conversationDir,name))}catch{}continue;}
       if(!name.endsWith(".json"))continue;
       const id=name.slice(0,-5);
-      if(!ids.has(id)){try{fs.unlinkSync(path.join(conversationDir,name))}catch{}}
+      // A deleted conversation leaves nothing behind, its backup copy included (0.7.23).
+      if(!ids.has(id)){try{fs.unlinkSync(path.join(conversationDir,name))}catch{}try{fs.unlinkSync(path.join(conversationDir,name+".bak"))}catch{}}
     }
     const compact={...cache,conversations:[]};
     atomicJson(file,compact,backup);

@@ -92,7 +92,7 @@ function Auth({onAuth,initialNotice}){
   return <View style={[s.safe,{paddingTop:insets.top,paddingBottom:insets.bottom}]}><StatusBar style="light"/>
     <KeyboardAvoidingView style={s.flex} behavior="padding">
       <ScrollView contentContainerStyle={s.authWrap} keyboardShouldPersistTaps="handled">
-        <View style={s.logoBox}><Text style={s.logoAI}>AI</Text><Text style={s.logoStoica}>STOICA</Text></View>
+        <View style={s.logoBox}><Text style={s.logoAI}>AI</Text><Text style={s.logoName}>SERASMART</Text></View>
         <Text style={s.title} accessibilityRole="header">Serasmart AI</Text><Text style={s.sub}>ASISTENTUL TĂU AI</Text>
         <View style={s.card}>
           <View style={s.tabs}>
@@ -468,7 +468,7 @@ export default function Home(){
 const s=StyleSheet.create({
   flex:{flex:1},safe:{flex:1,backgroundColor:"#05070b"},center:{alignItems:"center",justifyContent:"center"},disabled:{opacity:0.5},
   authWrap:{padding:24,alignItems:"center",justifyContent:"center",flexGrow:1},logoBox:{width:145,height:92,borderRadius:24,borderWidth:1,borderColor:"#31537a",alignItems:"center",justifyContent:"center",backgroundColor:"#09111c"},
-  logoAI:{color:"#50a7ff",fontSize:36,fontWeight:"900"},logoStoica:{color:"#fff",fontSize:13,fontWeight:"800",letterSpacing:3},
+  logoAI:{color:"#50a7ff",fontSize:36,fontWeight:"900"},logoName:{color:"#fff",fontSize:13,fontWeight:"800",letterSpacing:3},
   logoBoxSmall:{width:90,height:90,borderRadius:24,borderWidth:1,borderColor:"#31537a",alignItems:"center",justifyContent:"center",backgroundColor:"#09111c"},logoAISmall:{color:"#50a7ff",fontSize:34,fontWeight:"900"},
   title:{color:"#fff",fontSize:30,fontWeight:"800",marginTop:14},sub:{color:"#7f9cc0",fontSize:11,letterSpacing:2,marginTop:4},
   card:{width:"100%",maxWidth:430,backgroundColor:"#0d131d",borderColor:"#243248",borderWidth:1,borderRadius:20,padding:18,marginTop:24},

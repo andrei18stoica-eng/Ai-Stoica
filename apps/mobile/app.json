@@ -3,7 +3,7 @@
     "name": "Serasmart AI",
     "slug": "serasmart",
     "scheme": "serasmart",
-    "version": "0.7.22",
+    "version": "0.7.23",
     "orientation": "portrait",
     "icon": "./icon.png",
     "userInterfaceStyle": "dark",

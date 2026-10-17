@@ -29,6 +29,7 @@ import { PluginsPage } from "./pages/Plugins.jsx";
 import { MemoryPage, PreferenceSwitches } from "./pages/Memory.jsx";
 import { SkillsPage } from "./pages/Skills.jsx";
 import { UsagePage, CreditsDialog } from "./pages/Usage.jsx";
+import { useAccountSettings, ProfileTab, NotifyTab, PrivacyTab, SecurityTab } from "./pages/AccountSettings.jsx";
 import { LibraryPage } from "./pages/Library.jsx";
 import { DesignPage } from "./pages/Design.jsx";
 import { splitQuestions, QuestionCard, QuestionsPending } from "./questions.jsx";
@@ -404,7 +405,7 @@ function Sidebar({open,setOpen,user,search,setSearch,projects,assistants,convers
         </>}
       </div>
     </div>
-    <div className="accountArea"><div className="accountBadge"><div className="accountAvatar">{(user?.name||user?.email||"S")[0].toUpperCase()}</div><div className="accountText"><b>{user?.name||"Cont Stoica"}</b><span>{user?.email}{user?.role==="owner"?" · Owner":""}</span></div></div><div className="accountButtons"><button onClick={onSettings}><Settings size={17}/> Setări</button><button onClick={onLogout}><LogOut size={17}/> Deconectare</button></div></div>
+    <div className="accountArea"><div className="accountBadge"><div className="accountAvatar">{(user?.name||user?.email||"S")[0].toUpperCase()}</div><div className="accountText"><b>{user?.name||`Cont ${BRAND_SHORT}`}</b><span>{user?.email}{user?.role==="owner"?" · Owner":""}</span></div></div><div className="accountButtons"><button onClick={onSettings}><Settings size={17}/> Setări</button><button onClick={onLogout}><LogOut size={17}/> Deconectare</button></div></div>
   </aside>;
 }
 
@@ -1057,10 +1058,10 @@ function AdminPanel({onClose}) {
             <span className="adminUserCopy"><b>{u.name||u.email}</b><small>{u.email}</small></span>
             <span className={cx("adminStatus","s-"+u.status)}>{u.role==="owner"?"Owner":ADMIN_STATUS_LABELS[u.status]||u.status}</span>
           </button>)}
-          {!visible.length&&<div className="stoicaPluginEmpty">{busy?"Se încarcă utilizatorii…":"Nu există utilizatori în această categorie."}</div>}
+          {!visible.length&&<div className="seraPluginEmpty">{busy?"Se încarcă utilizatorii…":"Nu există utilizatori în această categorie."}</div>}
         </div>
         <div className="adminDetail">
-          {!selected?<div className="stoicaPluginEmpty">Selectează un utilizator.</div>:<>
+          {!selected?<div className="seraPluginEmpty">Selectează un utilizator.</div>:<>
             <div className="adminIdentity">
               <div className="accountAvatar big">{(selected.name||selected.email||"U")[0].toUpperCase()}</div>
               <div><h3>{selected.name||"Utilizator"}</h3><p>{selected.email}</p><small>{selected.role==="owner"?"Owner":"Utilizator"} · {ADMIN_STATUS_LABELS[selected.status]||selected.status} · {plural(Number(selected.active_sessions||0),"sesiune activă","sesiuni active")}</small></div>
@@ -1088,8 +1089,8 @@ function AdminPanel({onClose}) {
               {selected.permissions?.chat!==true&&<div className="adminModelHint" role="note">«Activat» nu are efect cât timp «Chat AI» este oprit pentru acest cont: pornește întâi permisiunea Chat de mai sus.</div>}
               <input className="adminModelSearch" type="search" placeholder="Caută un model…" value={modelQuery} onChange={e=>setModelQuery(e.target.value)} aria-label="Caută un model"/>
               <div className="adminModels">
-                {modelIds===null&&<div className="stoicaPluginEmpty">Se încarcă modelele…</div>}
-                {modelIds!==null&&!modelIds.length&&<div className="stoicaPluginEmpty">{modelsError?`Nu am putut încărca lista de modele: ${modelsError}`:"Lista de modele este goală."} <button type="button" className="secondary" onClick={()=>{setModelIds(null);setModelsError("");setModelsTry(n=>n+1)}}>Reîncearcă</button></div>}
+                {modelIds===null&&<div className="seraPluginEmpty">Se încarcă modelele…</div>}
+                {modelIds!==null&&!modelIds.length&&<div className="seraPluginEmpty">{modelsError?`Nu am putut încărca lista de modele: ${modelsError}`:"Lista de modele este goală."} <button type="button" className="secondary" onClick={()=>{setModelIds(null);setModelsError("");setModelsTry(n=>n+1)}}>Reîncearcă</button></div>}
                 {[...new Set([...(modelIds||[]),...Object.keys(selected.permissions?.model_overrides||{})])].sort((a,b)=>a.localeCompare(b)).filter(m=>m.toLowerCase().includes(modelQuery.trim().toLowerCase())).slice(0,200).map(m=>{
                   const ov=Object.entries(selected.permissions?.model_overrides||{}).find(([k])=>k.toLowerCase()===m.toLowerCase())?.[1];
                   const mode=ov==="allow"||ov==="deny"?ov:"default",busyKey=!!pending[`${selected.id}:model:${m}`],personal=personalIds.has(m.toLowerCase());
@@ -1295,16 +1296,21 @@ const WEB_SETTINGS={
   getConfig:async()=>(await api("/api/server/settings")).data,
   setConfig:async(payload)=>{const r=await api("/api/server/settings",{method:"PUT",body:JSON.stringify(payload)});return {ok:true,config:r.config};}
 };
-function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initialTab="general",preferences,onPreferences,prefBusy}) {
+// The tabs every account has (0.7.23): saved for the account on the server, each with its own buttons.
+const ACCOUNT_TABS=["profile","notify","privacy","security"];
+function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initialTab="general",preferences,onPreferences,prefBusy,models=[],onAccountDeleted,onDataDeleted}) {
   const {isOwner}=useAccess();
   const bridge=window.Serasmart?.getConfig?window.Serasmart:IS_WEB&&isOwner?WEB_SETTINGS:null;
   const webServer=bridge===WEB_SETTINGS;
-  const [cfg,setCfg]=useState(null),[keys,setKeys]=useState({}),[tab,setTab]=useState(initialTab),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState(""),[toolStatus,setToolStatus]=useState(""),[error,setError]=useState(""),[saving,setSaving]=useState(false),[updateStatus,setUpdateStatus]=useState("");
+  // Without machine settings (an account on the site that is not the Owner) only the account's own tabs are shown.
+  const accountOnly=!bridge;
+  const account=useAccountSettings();
+  const [cfg,setCfg]=useState(null),[keys,setKeys]=useState({}),[tab,setTab]=useState(accountOnly&&!ACCOUNT_TABS.includes(initialTab)?"profile":initialTab),[status,setStatus]=useState(null),[micStatus,setMicStatus]=useState(""),[toolStatus,setToolStatus]=useState(""),[error,setError]=useState(""),[saving,setSaving]=useState(false),[updateStatus,setUpdateStatus]=useState("");
   const {ref,backdropProps}=useModal(onClose);
   const mounted=useRef(true);
   useEffect(()=>()=>{mounted.current=false},[]);
   useEffect(()=>{
-    if(!bridge){setError(IS_WEB?"Cheile AI și OmniRoute le configurează Owner-ul pe server. Aici poți schimba preferințele contului tău.":`Setările sunt disponibile doar în aplicația ${BRAND_NAME} pentru Windows.`);return;}
+    if(!bridge)return;
     Promise.all([bridge.getConfig(),bridge.systemStatus?.().catch(()=>null)])
       .then(([c,s])=>{if(mounted.current){setCfg(c||{});setStatus(s)}})
       .catch(e=>{if(mounted.current)setError("Nu am putut citi setările: "+e.message)});
@@ -1347,15 +1353,18 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
   const keyProps={cfg,keys,setKeys};
   // The site's server allows paid pictures when nothing was chosen (no imageCostPolicy in .env); Windows saves "free_only".
   const imageCost=cfg?.imageCostPolicy||(webServer?"allow_paid":"free_only");
-  const tabs=[["general",SlidersHorizontal,"General",true],["ai",Bot,"AI & OmniRoute",machineSettingsAllowed],["chatapis",Plug,"API-uri AI",machineSettingsAllowed],["images",ImageIcon,"Poze",machineSettingsAllowed],["video",Play,"Video",machineSettingsAllowed],["voice",Volume2,"Voce și microfon",true],["notify",Bell,"Notificări pe telefon",webServer],["account",User,"Cont și date",true]];
-  return <div className="modalBackdrop" {...backdropProps}><div className="settingsModal" ref={ref} role="dialog" aria-modal="true" aria-label={`Setări ${BRAND_NAME}`} tabIndex={-1}><div className="modalHead"><div><h2>Setări {BRAND_NAME}</h2><p>Aplicația, vocea, serviciile AI și actualizările.</p></div><button className="iconOnly" onClick={onClose} aria-label="Închide" title="Închide"><X size={20}/></button></div>
-    {!cfg?<div className="settingsLoading">{error||"Se încarcă setările…"}{error&&onPreferences&&<div className="settingsPrefs"><h3>Memorie și conversații</h3><PreferenceSwitches preferences={preferences} onChange={onPreferences} busyKey={prefBusy}/></div>}{error&&<ServerUpdate/>}</div>:<>
+  const tabs=[["profile",User,"Profil",true],["general",SlidersHorizontal,"General",!!bridge],["ai",Bot,"AI & OmniRoute",machineSettingsAllowed&&!!bridge],["chatapis",Plug,"API-uri AI",machineSettingsAllowed&&!!bridge],["images",ImageIcon,"Poze",machineSettingsAllowed&&!!bridge],["video",Play,"Video",machineSettingsAllowed&&!!bridge],["voice",Volume2,"Voce și microfon",!!bridge],["notify",Bell,"Notificări",true],["privacy",ShieldCheck,"Confidențialitate",true],["security",Lock,"Securitate",true],["account",HardDrive,"Owner pe acest PC",machineSettingsAllowed&&!webServer&&!!bridge]];
+  const onAccountTab=accountOnly||ACCOUNT_TABS.includes(tab);
+  return <div className="modalBackdrop" {...backdropProps}><div className="settingsModal" ref={ref} role="dialog" aria-modal="true" aria-label={`Setări ${BRAND_NAME}`} tabIndex={-1}><div className="modalHead"><div><h2>Setări {BRAND_NAME}</h2><p>{accountOnly?"Profilul tău, cum îți răspunde AI-ul, notificări, confidențialitate și securitate.":"Contul tău, aplicația, vocea, serviciile AI și actualizările."}</p></div><button className="iconOnly" onClick={onClose} aria-label="Închide" title="Închide"><X size={20}/></button></div>
+    {!cfg&&!onAccountTab?<div className="settingsLoading">{error||"Se încarcă setările…"}{error&&<ServerUpdate/>}</div>:<>
     <div className="settingsBody"><div className="settingsNav" role="tablist" aria-orientation="vertical">
       {tabs.filter(t=>t[3]).map(([k,Icon,label])=><button key={k} role="tab" aria-selected={tab===k} className={tab===k?"active":""} onClick={()=>setTab(k)}><Icon size={17}/> {label}</button>)}
     </div>
     <div className="settingsPane">
-      {tab==="general"&&<><h3>General</h3>
-        {onPreferences&&<div className="settingsPrefs"><h4>Memorie și conversații</h4><p className="settingsHelp">Se aplică imediat, pentru contul tău.</p><PreferenceSwitches preferences={preferences} onChange={onPreferences} busyKey={prefBusy}/></div>}
+      {tab==="profile"&&<ProfileTab account={account} models={models} preferences={preferences} onPreferences={onPreferences} prefBusy={prefBusy}/>}
+      {tab==="privacy"&&<PrivacyTab account={account} onDataDeleted={onDataDeleted}/>}
+      {tab==="security"&&<SecurityTab account={account} onAccountDeleted={onAccountDeleted}/>}
+      {tab==="general"&&cfg&&<><h3>General</h3>
         {!IS_WEB&&<>
         <label className="toggleRow"><div><b>Pornește {BRAND_NAME} cu Windows</b><span>Aplicația pornește automat și poate rămâne în fundal.</span></div><input type="checkbox" checked={!!cfg.startWithWindows} onChange={e=>set({startWithWindows:e.target.checked})}/></label>
         <label className="toggleRow"><div><b>Închidere în zona de notificare</b><span>Butonul X ascunde aplicația fără să oprească serviciile.</span></div><input type="checkbox" checked={cfg.closeToTray!==false} onChange={e=>set({closeToTray:e.target.checked})}/></label>
@@ -1365,7 +1374,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         </>}
         <ServerUpdate/>
       </>}
-      {tab==="ai"&&<><h3>AI & OmniRoute</h3>
+      {tab==="ai"&&cfg&&<><h3>AI & OmniRoute</h3>
         {webServer&&<p className="settingsHelp">Setările site-ului: se salvează pe server și se aplică imediat pentru toate conturile. Cheile rămân pe server și se văd doar mascat. Emailul Owner și înregistrarea conturilor rămân în fișierul <code>.env</code> de pe server.</p>}
         {!webServer&&<>
         <label>Adresa serviciului {BRAND_NAME}<input value={cfg.gatewayUrl||DEFAULT_GATEWAY} onChange={e=>set({gatewayUrl:e.target.value})} placeholder={DEFAULT_GATEWAY}/></label>
@@ -1400,7 +1409,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <div className="statusGrid"><div><span>Serviciul {BRAND_NAME}</span><b>{status?.gatewayRunning?"Pornit":"Indisponibil"}</b></div><div><span>OmniRoute</span><b>{status?.omniRunning?"Conectat":status?.omniInstalled===false?"Neinstalat — npm install -g omniroute":"Indisponibil"}</b></div></div>
         </>}
       </>}
-      {tab==="chatapis"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><Plug size={22}/></div><div><h3>API-uri AI</h3><p>Modelele lor apar în listă și răspund direct, fără OmniRoute.</p></div></div>
+      {tab==="chatapis"&&cfg&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><Plug size={22}/></div><div><h3>API-uri AI</h3><p>Modelele lor apar în listă și răspund direct, fără OmniRoute.</p></div></div>
         <ProviderTestBox/>
         <ServerKeysBox/>
         <label className="toggleRow"><div><b>Folosește API-urile directe</b><span>Modelele lor apar în listă (Groq, Gemini, Cerebras…). Răspund când le alegi sau când nu ai ales niciun model.</span></div><input type="checkbox" checked={cfg.directChatEnabled!==false} onChange={e=>set({directChatEnabled:e.target.checked})}/></label>
@@ -1448,7 +1457,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <KeyField label="Cheie API xAI" name="xaiApiKey" placeholder="xai-..." {...keyProps}/>
         <label>Modele Grok · separate prin virgulă<input value={cfg.xaiModels||""} onChange={e=>set({xaiModels:e.target.value})} placeholder="grok-4.6,grok-4.3"/></label>
       </>}
-      {tab==="images"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><ImageIcon size={22}/></div><div><h3>Poze</h3><p>Generare imagini, API-uri, modele și încercare automată a altui provider.</p></div></div>
+      {tab==="images"&&cfg&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><ImageIcon size={22}/></div><div><h3>Poze</h3><p>Generare imagini, API-uri, modele și încercare automată a altui provider.</p></div></div>
         <MediaMakers kind="image" cfg={cfg} set={set} paidOff={imageCost!=="allow_paid"||cfg.imageProviderMode==="free"}/>
         <label><span className="labelLine">Model generare imagini <span className="optional">opțional</span></span><input value={cfg.imageModel||""} onChange={e=>set({imageModel:e.target.value})} placeholder="Automat — primul model de imagine disponibil"/></label>
         <details className="mediaProviderSettings" open><summary>Provideri de imagini</summary>
@@ -1489,7 +1498,7 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         </details>
         <p className="settingsHelp">Când ceri o poză, {BRAND_NAME} încearcă providerii în ordinea stabilită, pune fișierul real în chat și îl salvează în Bibliotecă.</p>
       </>}
-      {tab==="video"&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><Play size={22}/></div><div><h3>Video</h3><p>Generare videoclipuri, API-uri, modele și încercare automată a altui provider.</p></div></div>
+      {tab==="video"&&cfg&&<><div className="settingsSectionTitle"><div className="settingsSectionIcon"><Play size={22}/></div><div><h3>Video</h3><p>Generare videoclipuri, API-uri, modele și încercare automată a altui provider.</p></div></div>
         <MediaMakers kind="video" cfg={cfg} set={set} paidOff={cfg.videoCostPolicy!=="allow_paid"||cfg.videoMode==="free"}/>
         <label>Mod video<select value={cfg.videoMode||"fast"} onChange={e=>{const videoMode=e.target.value;const quality=videoMode==="quality";set({videoMode,videoModel:quality?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast",openRouterVideoModel:quality?"bytedance/seedance-2.5":"bytedance/seedance-2.0-fast",geminiVideoModel:quality?"veo-3.1-generate-preview":"veo-3.1-fast-generate-preview"})}}><option value="fast">⚡ Rapid</option><option value="quality">🎬 Calitate</option><option value="free">🛡️ Doar gratuit</option></select></label>
         <label>Protecție costuri<select value={cfg.videoCostPolicy||"free_only"} onChange={e=>set({videoCostPolicy:e.target.value})}><option value="free_only">Nu porni joburi cu plată</option><option value="allow_paid">Permite provideri cu plată</option></select></label>
@@ -1515,14 +1524,14 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
         <label>Model video Replicate<input value={cfg.replicateVideoModel||"wan-video/wan-2.2-t2v-fast"} onChange={e=>set({replicateVideoModel:e.target.value})}/></label>
         <p className="settingsHelp">Când ceri un videoclip, {BRAND_NAME} încearcă providerii în ordine, descarcă fișierul MP4 real, îl pune în chat și îl salvează în Bibliotecă.</p>
       </>}
-      {tab==="voice"&&<><h3>Voce și microfon</h3>
+      {tab==="voice"&&cfg&&<><h3>Voce și microfon</h3>
         <label>Limba dictării, a transcrierii și a citirii cu voce<select value={cfg.speechLanguage||"ro"} onChange={e=>set({speechLanguage:e.target.value})}><option value="ro">Română</option><option value="en">English</option><option value="fr">Français</option></select></label>
         {machineSettingsAllowed&&<label>Model transcriere<input value={cfg.speechModel||"openai/whisper-1"} onChange={e=>set({speechModel:e.target.value})}/></label>}
         <button type="button" className="secondary testMicBtn" onClick={testMic}><Mic size={16}/> Testează microfonul</button>{micStatus&&<div className="micStatus" role="status">{micStatus}</div>}
         <p className="settingsHelp">Apasă microfonul o dată pentru a începe înregistrarea și încă o dată pentru a o opri. {BRAND_NAME} salvează vocalul în Bibliotecă și îl transcrie automat.</p>
       </>}
-      {tab==="notify"&&webServer&&<PhoneNotifications/>}
-      {tab==="account"&&<><h3>Cont și date</h3>
+      {tab==="notify"&&<NotifyTab account={account}>{webServer&&<PhoneNotifications/>}</NotifyTab>}
+      {tab==="account"&&cfg&&<><h3>Owner pe acest PC</h3>
         <div className="accountSettingsCard"><div className="accountAvatar big">{(user?.name||user?.email||"S")[0].toUpperCase()}</div><div><b>{user?.name||`Cont ${BRAND_NAME}`}</b><span>{user?.email}{user?.role==="owner"?" · Owner":""}</span></div></div>
         <p className="settingsHelp">Conversațiile, memoria, biblioteca, designurile, proiectele, pluginurile și sarcinile programate sunt păstrate {IS_WEB?`pe serverul ${BRAND_NAME}`:"pe acest calculator"}.</p>
         {machineSettingsAllowed&&!webServer&&<>
@@ -1532,7 +1541,8 @@ function SettingsModal({onClose,onSaved,user,machineSettingsAllowed=true,initial
       </>}
       {error&&<div className="inlineError" role="alert">{error}</div>}
     </div></div>
-    <div className="modalActions"><button className="secondary" onClick={onClose}>Anulează</button><button className="primary" onClick={save} disabled={saving}>{saving?"Se salvează…":"Salvează setările"}</button></div>
+    {onAccountTab?<div className="modalActions"><button className="secondary" onClick={onClose}>Închide</button></div>
+    :<div className="modalActions"><button className="secondary" onClick={onClose}>Anulează</button><button className="primary" onClick={save} disabled={saving}>{saving?"Se salvează…":"Salvează setările"}</button></div>}
     </>}
   </div></div>;
 }
@@ -1625,7 +1635,9 @@ function App() {
   const [search,setSearch]=useState(""),[sidebar,setSidebar]=useState(false),[sidebarCollapsed,setSidebarCollapsed]=useState(()=>storage.get(SIDEBAR_COLLAPSED_KEY)==="1");
   const [omni,setOmni]=useState(false),[cloudConfigured,setCloudConfigured]=useState(null),[showJumpBottom,setShowJumpBottom]=useState(false);
   const [creditsDialog,setCreditsDialog]=useState(null);
+  const [preferredModel,setPreferredModel]=useState("");const preferredModelRef=useRef("");
   const [settings,setSettings]=useState(false),[prefBusy,setPrefBusy]=useState(""),[entityModal,setEntityModal]=useState(null),[toolPanel,setToolPanel]=useState(null),[filesPanel,setFilesPanel]=useState(false),[githubModal,setGithubModal]=useState(false);
+  useEffect(()=>{if(!user?.id)return;api("/api/me/settings").then(d=>{const m=String(d?.data?.preferredModel||"");preferredModelRef.current=m;setPreferredModel(m)}).catch(()=>{})},[user?.id,settings]);
   const [updateReady,setUpdateReady]=useState(false),[updateDismissed,setUpdateDismissed]=useState(false);
   const [lastGithubBackup,setLastGithubBackup]=useState(()=>storage.json(GITHUB_BACKUP_KEY,null));
   const [firstRunDismissed,setFirstRunDismissed]=useState(()=>storage.get(FIRST_RUN_KEY)==="1");
@@ -1887,8 +1899,14 @@ function App() {
   },[currentId]);
   useEffect(()=>{
     if(current?.model&&(!modelPolicyEnforced||models.includes(current.model))){setModel(current.model);return;}
-    if(!current){const manual=storage.get(MANUAL_MODEL_KEY);if(manual&&(!modelPolicyEnforced||models.includes(manual)))setModel(manual);}
-  },[currentId,modelPolicyEnforced,models.join("|")]);
+    if(!current){
+      const manual=storage.get(MANUAL_MODEL_KEY);
+      // 0.7.23: without a model picked by hand, new conversations start on the one chosen in Setări → Profil.
+      const preferred=preferredModelRef.current;
+      if(manual&&(!modelPolicyEnforced||models.includes(manual)))setModel(manual);
+      else if(preferred&&models.includes(preferred))setModel(preferred);
+    }
+  },[currentId,modelPolicyEnforced,models.join("|"),preferredModel]);
 
   async function saveConversation(conv){
     const body=JSON.stringify({title:conv.title,projectId:conv.projectId??null,assistantId:conv.assistantId??null,model:conv.model??null,messages:conv.messages||[]});
@@ -2214,7 +2232,7 @@ function App() {
       {showJumpBottom&&hasMessages&&<button className="jumpToLatest" onClick={()=>jumpToLatest({smooth:true})} title="Mergi la ultimul mesaj" aria-label="Mergi la ultimul mesaj"><ChevronDown size={19}/><span>Ultimul mesaj</span></button>}
       <Composer centered={!hasMessages} draft={draft} setDraft={setDraft} onSend={send} onStop={stopGeneration} busy={busy} attachments={attachmentsState} setAttachments={setAttachments} onOpenLibrary={()=>openTool("library","all")} responseMode={responseMode} setResponseMode={setResponseMode} mediaMode={mediaModeState} setMediaMode={setMediaMode} mentionsVersion={mentionsVersion} mediaPolicy={{imagePaid:machineCfgRef.current?.imageCostPolicy==="allow_paid"}}/>
     </main>
-    {settings&&<SettingsModal user={user} initialTab={typeof settings==="string"?settings:"general"} preferences={user?.preferences} onPreferences={updatePreferences} prefBusy={prefBusy} machineSettingsAllowed={machineSettingsAllowed} onClose={()=>setSettings(false)} onSaved={cfg=>{machineCfgRef.current={...(machineCfgRef.current||{}),...cfg};setCloudConfigured(!!String(cfg?.controlApiUrl||"").trim());Promise.resolve(window.Serasmart?.ensureOmni?.()).catch(()=>{});setTimeout(()=>loadData(),800)}}/>}
+    {settings&&<SettingsModal user={user} models={models} onDataDeleted={()=>loadData()} onAccountDeleted={()=>{setSettings(false);logout({skipServer:true,notice:"Contul a fost șters."})}} initialTab={typeof settings==="string"?settings:"general"} preferences={user?.preferences} onPreferences={updatePreferences} prefBusy={prefBusy} machineSettingsAllowed={machineSettingsAllowed} onClose={()=>setSettings(false)} onSaved={cfg=>{machineCfgRef.current={...(machineCfgRef.current||{}),...cfg};setCloudConfigured(!!String(cfg?.controlApiUrl||"").trim());Promise.resolve(window.Serasmart?.ensureOmni?.()).catch(()=>{});setTimeout(()=>loadData(),800)}}/>}
     {entityModal&&<EntityModal type={entityModal.type} item={entityModal.item} onClose={()=>setEntityModal(null)} onSave={saveEntity} onDelete={entityModal.item&&!entityModal.item.builtIn?deleteEntity:null}/>}
     {toolPanel?.name==="explore"&&<ExplorePanel onClose={closeTool} assistants={assistants} onUseAssistant={startWithAssistant} onImageMode={startImageMode} onOpenLibrary={filter=>openTool("library",filter)}/>}
     {toolPanel?.name==="library"&&<LibraryPage onClose={closeTool} onAttach={attachFromLibrary} toAttachment={libraryItemToAttachment} initialFilter={toolPanel.filter||"all"} onOpenDesign={id=>openTool("design",id)}/>}

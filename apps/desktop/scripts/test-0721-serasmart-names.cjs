@@ -23,7 +23,7 @@ const BRIDGES = new Set([
   "apps/mobile/app/index.js", "apps/desktop/local-gateway.cjs", "apps/server/ai-policy.cjs", "apps/desktop/lib/memory.cjs", "apps/cloudflare/src/index.js",
   "apps/cloud/docker-compose.yml", "deploy/hetzner/docker-compose.yml", "deploy/hetzner/claude-mcp.override.yml",
   "deploy/hetzner/update.sh", "deploy/hetzner/update-runner.sh", "deploy/hetzner/install-updater.sh", "deploy/hetzner/setup-web.sh", "deploy/hetzner/migrate-to-serasmart.sh",
-  "apps/mobile/eas.json", "CLAUDE.md"
+  "apps/mobile/eas.json", "apps/cloud/server.cjs", "CLAUDE.md"
 ]);
 const files = execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" }).split("\n")
   .filter((f) => f && !/\.(png|webp|ico|jpe?g|gif|pdf|woff2?|ttf|zip|sqlite)$/i.test(f) && !f.startsWith(".claude/") && !f.endsWith("package-lock.json") && !/\/scripts\/test-/.test(f) && !f.includes("test-worker"));
@@ -33,7 +33,7 @@ for (const f of files) {
   const lines = read(f).split("\n");
   lines.forEach((line, i) => {
     const clean = line.replace(/aistoica\.ro/g, "").replace(/AI Stoica Performance Max/g, "").replace(/andrei18stoica/g, "");
-    if (clean.includes(OLD) || clean.includes(OLD_ENV) || clean.toLowerCase().includes(OLD_DASH) || clean.toLowerCase().includes(OLD_FLAT) || /Stoica Enterprises/i.test(clean))
+    if (clean.includes(OLD) || clean.includes(OLD_ENV) || clean.toLowerCase().includes(OLD_DASH) || clean.toLowerCase().includes(OLD_FLAT) || /stoica/i.test(clean))
       stray.push(`${f}:${i + 1}: ${line.trim().slice(0, 100)}`);
   });
 }
