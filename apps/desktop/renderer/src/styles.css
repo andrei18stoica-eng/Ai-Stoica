@@ -1153,3 +1153,33 @@ h1,h2,h3{text-wrap:balance}
 .makerPick span{white-space:nowrap}
 .makerPick select{min-width:0;max-width:min(420px,100%);flex:1;background:#080d14;border:1px solid #26354a;border-radius:9px;color:#edf3fb;padding:6px 10px;font-size:12.5px;outline:0}
 .makerPick select:focus-visible{border-color:#4d8dff}
+
+/* 0.7.25: the plans side by side, every feature on every card (tick = included, struck = not included) */
+.planGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:18px 14px;align-items:stretch;padding-top:12px}
+.planCard{position:relative;display:flex;flex-direction:column;gap:12px;padding:18px 16px 16px;border:1px solid #223047;border-radius:16px;background:linear-gradient(180deg,#0e1622,#0a1019)}
+.planCard.popular{border-color:#3d6fd8;box-shadow:0 0 0 1px #3d6fd8 inset,0 10px 30px -18px #3d6fd8}
+.planCard.current{border-color:#2fa36b;box-shadow:0 0 0 1px #2fa36b inset}
+.planBadge{position:absolute;top:-10px;left:16px;display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;background:#3d6fd8;color:#fff;font-size:11.5px;font-weight:600}
+.planBadge.current{background:#2fa36b}
+.planCard header h4{margin:0;font-size:17px;display:flex;align-items:baseline;gap:8px}
+.planCard header h4 small{font-size:11.5px;font-weight:600;color:#9fb0c6;text-transform:uppercase;letter-spacing:.06em}
+.planPrice{display:flex;align-items:baseline;gap:6px;margin-top:6px}
+.planPrice b{font-size:26px;letter-spacing:-.02em}
+.planPrice span,.planYearly{color:#8a9bb2;font-size:12.5px}
+.planCredits{padding:10px 12px;border-radius:11px;background:#0b1320;border:1px solid #1c2738;font-size:13px;color:#c9d6e6}
+.planCredits b{font-size:16px;color:#fff}
+.planCredits span{display:block;color:#8a9bb2;font-size:12px;margin-top:2px}
+.planFeatures{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px;flex:1}
+.planFeatures li{display:flex;gap:8px;align-items:flex-start;font-size:13px;line-height:1.35}
+.planFeatures li svg{flex:none;margin-top:2px}
+.planFeatures li.on{color:#e3ebf5}
+.planFeatures li.on svg{color:#3ccf8e}
+.planFeatures li.off{color:#5f6f85}
+.planFeatures li.off svg{color:#4a5568}
+.planFeatures li.off s{text-decoration-color:#5f6f85}
+.planFeatures em{display:block;font-style:normal;color:#7fb2ff;font-size:12px;margin-top:1px}
+.planFeatures .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.planCta{margin-top:4px;padding:10px;border-radius:11px;border:1px solid #2a3a52;background:#13203a;color:#dbe7f7;font-weight:600}
+.planCard.popular .planCta{background:#2f62cc;border-color:#2f62cc;color:#fff}
+.planCta:disabled{cursor:default;opacity:.85}
+.planCta.current{background:transparent;border-color:#2fa36b;color:#6fe0a8;opacity:1}

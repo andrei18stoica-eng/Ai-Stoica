@@ -1,13 +1,54 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Gauge, CreditCard, Clock, Plus, Users, Check } from "lucide-react";
+import { Gauge, CreditCard, Clock, Plus, Users, Check, X, Sparkles } from "lucide-react";
 import { api, toast, cx, ToolShell, Modal, useAccess } from "../core.jsx";
 
 // Usage (0.7.22): the account's plan, this week's credits, extra credits, the free messages and the history; the plans
 // and the credit packs; for the Owner, every account's plan. In English, like the credit messages.
 const when = (ms) => ms ? new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(ms)) : "";
-const lei = (n) => `${Number(n).toFixed(2).replace(".", ",")} lei`;
+const lei = (n) => `${Number(n).toLocaleString("ro-RO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} lei`;
 const num = (n) => Number(n || 0).toLocaleString("en-GB");
 const KIND = { chat: "Message", image: "Picture", video: "Video", transcribe: "Voice", plan: "Plan started", extra: "Credits added" };
+
+// Everything Serasmart AI does, in the same order on every plan (0.7.25): what the plan includes has a tick (with its
+// amount), what it does not is struck through, so the difference between the plans is easy to see.
+const limit = (v, unit) => v === null || v === undefined ? "Unlimited" : v ? `${num(v)} ${unit}${v === 1 ? "" : "s"}` : false;
+const PLAN_FEATURES = [
+  ["Fast and advanced models", () => true],
+  ["Top models (the strongest Claude, GPT, Gemini and Grok)", (p) => p.tiers.includes("top")],
+  ["Web search with sources", () => true],
+  ["Picture generation", () => true],
+  ["HD pictures", (p) => !!p.imageHd],
+  ["Video generation", (p) => p.videoSeconds ? `up to ${p.videoSeconds} s` : false],
+  ["Deep Research", (p) => !!p.deepResearch],
+  ["Compare models side by side", (p) => p.compare ? `${p.compare} at once` : false],
+  ["Connected apps (Gmail, Drive, Notion, GitHub…)", (p) => limit(p.plugins, "app")],
+  ["Skills", (p) => limit(p.skills, "skill")],
+  ["Automations", (p) => limit(p.automations, "automation")],
+  ["Memory, projects and file library", () => true],
+  ["Word, Excel, PowerPoint and PDF files", () => true],
+  ["Voice input", () => true],
+  ["Answers keep going when the app is closed", () => true],
+  ["Priority access at busy times", (p) => !!p.priority],
+  ["Team admin with shared credits", (p) => !!p.team],
+  ["API access", (p) => !!p.api]
+];
+function PlanCard({ plan, current, popular }) {
+  return <article className={cx("planCard", current && "current", popular && "popular")} aria-label={`${plan.name} plan`}>
+    {popular && !current && <span className="planBadge"><Sparkles size={12} /> Most popular</span>}
+    {current && <span className="planBadge current"><Check size={12} /> Your plan</span>}
+    <header>
+      <h4>{plan.name}{plan.label && <small>{plan.label}</small>}</h4>
+      <div className="planPrice"><b>{lei(plan.price)}</b><span>/ 30 days</span></div>
+      <small className="planYearly">{lei(plan.yearly)} a year · 2 months free</small>
+    </header>
+    <div className="planCredits"><b>{num(plan.credits)}</b> credits<span>{num(plan.perWeek)} a week · {plan.seats > 1 ? `${plan.seats} people` : "1 person"}</span></div>
+    <ul className="planFeatures">{PLAN_FEATURES.map(([label, get]) => {
+      const v = get(plan);
+      return <li key={label} className={v ? "on" : "off"}>{v ? <Check size={14} aria-hidden="true" /> : <X size={14} aria-hidden="true" />}<span>{v ? label : <s>{label}</s>}{typeof v === "string" && <em>{v}</em>}</span><span className="sr">{v ? "included" : "not included"}</span></li>;
+    })}</ul>
+    <button className={current ? "planCta current" : "planCta"} disabled title={current ? "" : "Card payments open soon"}>{current ? "Current plan" : `Choose ${plan.name}`}</button>
+  </article>;
+}
 
 function Meter({ percent }) {
   const p = Math.max(0, Math.min(100, Number(percent) || 0));
@@ -101,18 +142,8 @@ export function UsagePage({ onClose }) {
         {d.enabled && !d.unlimited && <section className="usageSection"><h3><CreditCard size={17} /> Buy extra credits</h3><PackCalculator min={cat.minPack} /></section>}
         <section className="usageSection">
           <h3>Plans</h3>
-          <div className="usagePlans">{cat.plans.map((p) => <div key={p.key} className={cx("usagePlan", d.plan?.key === p.key && "current")}>
-            <b>{p.name}{d.plan?.key === p.key && <Check size={14} />}</b>
-            <span className="usagePlanPrice">{lei(p.price)}<small> / 30 days</small></span>
-            <small>{lei(p.yearly)} a year (2 months free)</small>
-            <ul>
-              <li>{num(p.credits)} credits a month ({num(p.perWeek)} a week)</li>
-              <li>{p.seats > 1 ? `${p.seats} people` : "1 person"}</li>
-              <li>{p.tiers.includes("top") ? "Top models" : "Fast and advanced models"}</li>
-              <li>{p.videoSeconds ? `Video up to ${p.videoSeconds} s` : "No video"}</li>
-              <li>Compare {p.compare} models · {p.automations} automation{p.automations === 1 ? "" : "s"}</li>
-            </ul>
-          </div>)}</div>
+          <div className="planGrid">{cat.plans.map((p) => <PlanCard key={p.key} plan={p} current={d.plan?.key === p.key} popular={p.key === "pro"} />)}</div>
+          <p className="settingsHelp">Without a plan: {cat.free.dailyMessages} messages a day on the free models, after a {cat.trial.days}-day trial with {num(cat.trial.credits)} credits. Card payments open soon; until then plans are given by the Owner.</p>
           <p className="settingsHelp">Credits come in four weekly parts (days 1, 8, 15 and 22); what you don't use moves to the next week. At 100% the paid models stop until the next part, or you buy extra credits; {cat.freeDaily.planExhausted} messages a day stay on the free models.</p>
         </section>
         <section className="usageSection">

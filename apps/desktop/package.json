@@ -1,8 +1,8 @@
 {
   "name": "serasmart-desktop",
-  "version": "0.7.24",
+  "version": "0.7.25",
   "private": true,
-  "description": "Serasmart AI 0.7.24 - pictures and video from every maker, a picker for who makes them, no OpenAI video (Sora closed)",
+  "description": "Serasmart AI 0.7.25 - seven plans from Start to Enterprise, every feature ticked or struck through on the Usage page",
   "main": "main.cjs",
   "repository": {
     "type": "git",
