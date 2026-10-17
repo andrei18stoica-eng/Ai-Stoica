@@ -8,13 +8,14 @@ const listen = (srv) => new Promise((r) => srv.listen(0, "127.0.0.1", () => r(sr
 
 function units() {
   // The table: price -> credits through the formula (fees, 1% tax, 50% profit, 15% margin), rounded down to 10.
-  const table = { start: [29.99, 299.99, 1120], plus: [64.99, 649.99, 2570], pro: [99.99, 999.99, 4010], max: [199.99, 1999.99, 8150], business: [599.99, 5999.99, 24670], enterprise: [1199.99, 11999.99, 49450] };
+  // (0.7.25: the plans of 2026-10-17; Pro x2 / x5 / x10 have 2 / 5 / 10 times Pro's credits.)
+  const table = { start: [29.99, 299.99, 1120], plus: [64.99, 649.99, 2570], pro: [99.99, 999.99, 4010], pro2: [199.99, 1999.99, 8150], max5: [499.99, 4999.99, 20540], business: [999.99, 9999.99, 41190], enterprise: [1999.99, 19999.99, 82490] };
   for (const [k, [price, yearly, credits]] of Object.entries(table)) {
     expect(C.PLANS[k].price === price && C.PLANS[k].yearly === yearly && C.PLANS[k].credits === credits, `${k}: price and credits from the table`);
     expect(C.creditsForPrice(price) === credits, `${k}: the formula gives ${credits}, not ${C.creditsForPrice(price)}`);
     expect(String(price).endsWith(".99") && String(yearly).endsWith(".99"), `${k}: prices end in ,99`);
   }
-  expect(C.PLANS.business.seats === 5 && C.PLANS.enterprise.seats === 15 && C.PLANS.start.automations === 1 && C.PLANS.plus.automations === 5 && C.PLANS.pro.automations === 20 && C.PLANS.max.automations === 50, "seats and automations per plan");
+  expect(C.PLANS.business.seats === 5 && C.PLANS.enterprise.seats === 15 && C.PLANS.start.automations === 3 && C.PLANS.plus.automations === 10 && C.PLANS.pro.automations === 25 && C.PLANS.pro2.automations === 50 && C.PLANS.max5.automations === null, "seats and automations per plan (null = unlimited)");
   expect(C.PLANS.start.compare === 2 && C.PLANS.plus.compare === 3 && C.PLANS.pro.compare === 4 && C.PLANS.start.videoSeconds === 0 && C.PLANS.plus.videoSeconds > 0 && !C.PLANS.plus.tiers.includes("top") && C.PLANS.pro.tiers.includes("top"), "what each plan adds");
   // Extra packs: minimum 100, price rounded up to ,99.
   const packs = { 100: 5.99, 500: 14.99, 1000: 26.99, 5000: 123.99, 10000: 244.99 };
@@ -136,7 +137,7 @@ async function gateway() {
     expect((await chat(owner, "anthropic/claude-opus-4")).status === 200 && (await call("/api/credits", { token: owner })).j.unlimited === true, "the Owner is unlimited");
     // Ana: trial, 50 credits; an advanced model costs 10, a top model needs Pro.
     let c = (await call("/api/credits", { token: ana })).j;
-    expect(c.enabled && !c.unlimited && c.mode === "trial" && c.available === 50 && c.catalog.plans.length === 6 && c.catalog.packs[2].price === 26.99, "Ana's trial and the catalog: " + JSON.stringify(c).slice(0, 300));
+    expect(c.enabled && !c.unlimited && c.mode === "trial" && c.available === 50 && c.catalog.plans.length === 7 && c.catalog.packs[2].price === 26.99, "Ana's trial and the catalog: " + JSON.stringify(c).slice(0, 300));
     expect((await chat(ana, "anthropic/claude-sonnet-4.5")).status === 200 && (await call("/api/credits", { token: ana })).j.available === 40, "an advanced answer costs 10");
     let r = await chat(ana, "anthropic/claude-opus-4");
     expect(r.status === 403 && r.j.code === "plan_upgrade" && /Pro plan/.test(r.j.error), "a top model needs Pro: " + JSON.stringify(r.j));
@@ -157,7 +158,7 @@ async function gateway() {
     // Plan limits: skills and automations.
     expect((await call("/api/skills", { method: "POST", token: ana, body: { name: "S1", instructions: "x" } })).status === 200, "a skill in the trial");
     // The Owner starts a Plus plan for Ana and adds 100 credits.
-    expect((await call("/api/credits/accounts/plan", { method: "POST", token: ana, body: { email: "ana@example.com", plan: "max" } })).status === 403, "only the Owner gives plans");
+    expect((await call("/api/credits/accounts/plan", { method: "POST", token: ana, body: { email: "ana@example.com", plan: "pro2" } })).status === 403, "only the Owner gives plans");
     r = await call("/api/credits/accounts/plan", { method: "POST", token: owner, body: { email: "ana@example.com", plan: "plus" } });
     expect(r.status === 200 && r.j.data.plan.key === "plus" && r.j.data.week.budget === 642, "the Owner starts Plus for Ana: " + JSON.stringify(r.j).slice(0, 200));
     expect((await call("/api/credits/accounts/grant", { method: "POST", token: owner, body: { email: "ana@example.com", credits: 100 } })).j.data.extras === 100, "and adds 100 extra credits");
@@ -181,4 +182,4 @@ async function gateway() {
   }
 }
 
-(async () => { units(); await gateway(); console.log("0.7.22 credits OK"); })().catch((e) => { console.error(e); process.exit(1); });
+(async () => { units(); await gateway(); console.log("0.7.22 credits (0.7.25 plans) OK"); })().catch((e) => { console.error(e); process.exit(1); });

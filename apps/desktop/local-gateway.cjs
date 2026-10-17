@@ -1939,6 +1939,15 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const f=credits.status(req.user.id).features;
     if(!f[key])throw planUpgrade(`${label} ${label.endsWith("s")?"are":"is"} available from the ${planWith(p=>!!p[key])} plan.`);
   }
+  // Connected apps (0.7.25): the plan's number of them (null = no limit); the built-in plugins are for every account.
+  function requirePluginSlot(req){
+    if(!metered(req))return;
+    const max=credits.status(req.user.id).features.plugins;
+    if(max===null||max===undefined)return;
+    if(!max)throw planUpgrade(`Connected apps are available from the ${planWith(p=>p.plugins!==0)} plan.`);
+    const used=store.read().plugins.filter(x=>x.userId===req.user.id&&x.mode!=="builtin").length;
+    if(used>=max)throw planUpgrade(`Your plan includes ${max} connected app${max===1?"":"s"}. Upgrade your plan to connect more.`);
+  }
   // How many of something (automations, skills) the plan allows; null = no limit applies.
   function planLimit(req,key){return metered(req)?credits.status(req.user.id).features[key]:null;}
   const requestedModelOf=(req)=>(typeof req.body?.model==="string"?req.body.model.trim().slice(0,200):"")||String(getOmniConfig().model||"").trim();
@@ -3084,7 +3093,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
     const model=typeof req.body?.model==="string"?req.body.model.trim().slice(0,200):"";
     const size=IMAGE_SIZES.has(String(req.body?.size||""))?String(req.body.size):"1024x1024";
     const d=Number(req.body?.duration);
-    const duration=Number.isFinite(d)?Math.max(1,Math.min(10,Math.round(d))):4;
+    const duration=Number.isFinite(d)?Math.max(1,Math.min(30,Math.round(d))):4;
     const aspectRatio=["16:9","9:16","1:1"].includes(String(req.body?.aspectRatio||""))?String(req.body.aspectRatio):"16:9";
     const via=typeof req.body?.via==="string"?req.body.via.trim().slice(0,200):"";
     const maker=typeof req.body?.maker==="string"&&/^(auto|(omni|direct):.{1,200})$/.test(req.body.maker.trim())?req.body.maker.trim():"";
@@ -3166,6 +3175,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const {prompt,model:requestedModel,size,via,maker}=mediaRequest(req,"image");
       // 0.7.20: an account with credits pays for the picture (the good models); without credits, the daily free tier.
       const hd=String(size).split("x").some(n=>Number(n)>1024),billModel=requestedModel||makerModel(maker)||via;
+      if(hd)requirePlanFeature(req,"imageHd","HD pictures");
       const bill=mediaBill(req,"image",{hd,model:billModel});
       if(bill)mediaSettle(bill,res,"image",{hd,model:billModel},job);else reserveQuota(req,res,"image");
       const freeTier=!quotaUnlimited(req)&&!bill;
@@ -3301,7 +3311,8 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
       const {prompt,model:requestedModel,duration:askedDuration,aspectRatio,via,maker}=mediaRequest(req,"video");
       // 0.7.20: a plan with video (Plus and up) pays with credits, up to its length; otherwise the daily free tier.
       const videoMax=metered(req)?credits.status(req.user.id).features.videoSeconds:0;
-      const billSeconds=videoMax>0?Math.min(askedDuration,videoMax):0,billModel=requestedModel||makerModel(maker)||via;
+      // One clip is at most VIDEO_CLIP_MAX seconds: nobody pays for seconds that do not come out.
+      const billSeconds=videoMax>0?Math.min(askedDuration,videoMax,creditsLib.VIDEO_CLIP_MAX):0,billModel=requestedModel||makerModel(maker)||via;
       const bill=billSeconds?mediaBill(req,"video",{seconds:billSeconds,model:billModel}):null;
       if(bill)mediaSettle(bill,res,"video",{seconds:billSeconds,model:billModel},job);else reserveQuota(req,res,"video");
       const freeTier=!quotaUnlimited(req)&&!bill;
@@ -3535,7 +3546,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   timers[timers.length-1].unref?.();
   app.post("/api/plugins/oauth/start", auth, requirePermission("plugins"), (req,res) => {
     try{
-      requirePlanFeature(req,"plugins","Connected plugins");
+      requirePluginSlot(req);
       const name=textInput(req.body?.name,80),provider=textInput(req.body?.provider,40);
       const clientId=textInput(req.body?.clientId,500),clientSecret=textInput(req.body?.clientSecret,2000);
       const authUrl=textInput(req.body?.authUrl,2000),tokenUrl=textInput(req.body?.tokenUrl,2000),apiUrl=textInput(req.body?.apiUrl,2000);
@@ -3618,7 +3629,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   app.post("/api/plugins/direct", auth, requirePermission("plugins"), (req,res) => {
     const name=textInput(req.body?.name,80),appUrl=textInput(req.body?.appUrl,2000);
     if(!name||!appUrl)return res.status(400).json({error:"Numele și adresa aplicației sunt obligatorii."});
-    try{requirePlanFeature(req,"plugins","Connected plugins")}catch(e){return sendError(res,e,403)}
+    try{requirePluginSlot(req)}catch(e){return sendError(res,e,403)}
     try{
       const u=new URL(appUrl);
       if(!["https:","http:"].includes(u.protocol))throw new Error("protocol");
@@ -3636,7 +3647,7 @@ function startLocalGateway({ dataDir, port = 8787, host = "127.0.0.1", serviceNa
   });
 
   app.post("/api/plugins", auth, requirePermission("plugins"), (req,res) => {
-    try{requirePlanFeature(req,"plugins","Connected plugins")}catch(e){return sendError(res,e,403)}
+    try{requirePluginSlot(req)}catch(e){return sendError(res,e,403)}
     const parsed=pluginFields(req.body||{},null);if(parsed.error)return res.status(400).json({error:parsed.error});
     const db=store.read(),item={id:crypto.randomUUID(),userId:req.user.id,description:"",auto:false,enabled:true,apiKey:"",...parsed.value,createdAt:Date.now()};
     db.plugins.push(item);store.write(db);res.json({data:publicPlugin(item)});
